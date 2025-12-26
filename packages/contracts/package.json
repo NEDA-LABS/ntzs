@@ -1,0 +1,21 @@
+{
+  "name": "@ntzs/contracts",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "compile": "HARDHAT_DISABLE_TELEMETRY_PROMPT=true hardhat compile",
+    "test": "HARDHAT_DISABLE_TELEMETRY_PROMPT=true hardhat test",
+    "deploy:base-sepolia": "HARDHAT_DISABLE_TELEMETRY_PROMPT=true hardhat run scripts/deploy-base-sepolia.ts --network baseSepolia"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.1.0",
+    "chai": "^4.3.10",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

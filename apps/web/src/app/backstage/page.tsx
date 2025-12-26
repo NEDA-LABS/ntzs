@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { UserRole, requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { users } from '@ntzs/db'
+import { NtzsAdminPanel } from './NtzsAdminPanel'
 
 async function updateUserRoleAction(formData: FormData) {
   'use server'
@@ -40,6 +41,13 @@ async function updateUserRoleAction(formData: FormData) {
 
 export default async function BackstagePage() {
   await requireRole('super_admin')
+
+  const ntzsContractAddress =
+    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA ??
+    process.env.NTZS_CONTRACT_ADDRESS_BASE ??
+    ''
+  const ntzsSafeAdmin = process.env.NTZS_SAFE_ADMIN ?? ''
+  const chainLabel = '84532'
 
   const { db } = getDb()
 
@@ -119,6 +127,22 @@ export default async function BackstagePage() {
           </table>
         </div>
       </div>
+
+      {ntzsContractAddress && ntzsSafeAdmin ? (
+        <NtzsAdminPanel
+          contractAddress={ntzsContractAddress}
+          chainLabel={chainLabel}
+          safeAdmin={ntzsSafeAdmin}
+        />
+      ) : (
+        <div className="rounded-lg border bg-white p-6 shadow-sm dark:bg-black">
+          <h2 className="text-lg font-semibold">nTZS Admin</h2>
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            Set NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA and NTZS_SAFE_ADMIN to enable
+            admin actions.
+          </p>
+        </div>
+      )}
     </main>
   )
 }

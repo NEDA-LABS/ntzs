@@ -1,0 +1,18 @@
+{
+  "name": "nTZS Token List",
+  "timestamp": "2025-12-26T00:00:00.000Z",
+  "version": { "major": 1, "minor": 0, "patch": 0 },
+  "tags": {},
+  "logoURI": "/ntzs-logo.png",
+  "keywords": ["ntzs", "stablecoin"],
+  "tokens": [
+    {
+      "chainId": 84532,
+      "address": "0x6A9525A5C82F92E10741Fcdcb16DbE9111630077",
+      "name": "nTZS",
+      "symbol": "nTZS",
+      "decimals": 18,
+      "logoURI": "/ntzs-logo.png"
+    }
+  ]
+}
