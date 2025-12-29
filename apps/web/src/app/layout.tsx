@@ -18,6 +18,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "nTZS",
   description: "nTZS issuance portal",
+  icons: {
+    icon: "/ntzs-logo.png",
+    apple: "/ntzs-logo.png",
+  },
 };
 
 export default function RootLayout({
