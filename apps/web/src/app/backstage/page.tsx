@@ -1,10 +1,10 @@
-import { desc, eq, and, count } from 'drizzle-orm'
+import { desc, eq, count } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import Link from 'next/link'
 
 import { UserRole, requireRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { users, kycCases, depositRequests, depositApprovals, banks, wallets } from '@ntzs/db'
-import { NtzsAdminPanel } from './NtzsAdminPanel'
 
 // Icon components
 function UsersIcon({ className }: { className?: string }) {
@@ -39,10 +39,10 @@ function ClockIcon({ className }: { className?: string }) {
   )
 }
 
-function ChevronRightIcon({ className }: { className?: string }) {
+function ArrowRightIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
     </svg>
   )
 }
@@ -213,15 +213,6 @@ function StatCard({
 }
 
 export default async function BackstagePage() {
-  await requireRole('super_admin')
-
-  const ntzsContractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA ??
-    process.env.NTZS_CONTRACT_ADDRESS_BASE ??
-    ''
-  const ntzsSafeAdmin = process.env.NTZS_SAFE_ADMIN ?? ''
-  const chainLabel = '84532'
-
   const { db } = getDb()
 
   // Fetch stats
@@ -291,26 +282,24 @@ export default async function BackstagePage() {
     .limit(50)
 
   return (
-    <main className="min-h-screen bg-black">
-      {/* Header */}
-      <div className="border-b border-white/10 bg-zinc-950">
-        <div className="mx-auto max-w-7xl px-6 py-6">
+    <div className="min-h-screen">
+      {/* Page Header */}
+      <div className="border-b border-white/10 bg-zinc-950/50">
+        <div className="px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-white">Backstage</h1>
-              <p className="mt-1 text-sm text-zinc-400">Super admin dashboard</p>
+              <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+              <p className="mt-1 text-sm text-zinc-400">Overview of platform activity</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                System Online
-              </span>
-            </div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              System Online
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="p-8">
         {/* Stats Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
@@ -345,10 +334,13 @@ export default async function BackstagePage() {
           <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-zinc-950 overflow-hidden">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">Users</h2>
+                <h2 className="text-lg font-semibold text-white">Recent Users</h2>
                 <p className="text-sm text-zinc-500">{totalUsers} total accounts</p>
               </div>
-              <ChevronRightIcon className="h-5 w-5 text-zinc-600" />
+              <Link href="/backstage/users" className="flex items-center gap-1 text-sm text-zinc-400 hover:text-white transition-colors">
+                View all
+                <ArrowRightIcon className="h-4 w-4" />
+              </Link>
             </div>
             <div className="max-h-[400px] overflow-y-auto">
               <table className="w-full">
@@ -531,24 +523,68 @@ export default async function BackstagePage() {
           </div>
         </div>
 
-        {/* Token Admin Section */}
-        <div className="mt-8">
-          {ntzsContractAddress && ntzsSafeAdmin ? (
-            <NtzsAdminPanel
-              contractAddress={ntzsContractAddress}
-              chainLabel={chainLabel}
-              safeAdmin={ntzsSafeAdmin}
-            />
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6">
-              <h2 className="text-lg font-semibold text-white">nTZS Token Admin</h2>
-              <p className="mt-2 text-sm text-zinc-500">
-                Set NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA and NTZS_SAFE_ADMIN environment variables to enable on-chain admin actions.
-              </p>
+        {/* Quick Links */}
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Link
+            href="/backstage/users"
+            className="group rounded-2xl border border-white/10 bg-zinc-900/50 p-5 transition-colors hover:border-white/20 hover:bg-zinc-900"
+          >
+            <div className="flex items-center justify-between">
+              <div className="rounded-lg bg-blue-500/10 p-2.5">
+                <UsersIcon className="h-5 w-5 text-blue-400" />
+              </div>
+              <ArrowRightIcon className="h-4 w-4 text-zinc-600 transition-transform group-hover:translate-x-1 group-hover:text-white" />
             </div>
-          )}
+            <h3 className="mt-4 font-semibold text-white">User Management</h3>
+            <p className="mt-1 text-sm text-zinc-500">Manage roles and permissions</p>
+          </Link>
+
+          <Link
+            href="/backstage/kyc"
+            className="group rounded-2xl border border-white/10 bg-zinc-900/50 p-5 transition-colors hover:border-white/20 hover:bg-zinc-900"
+          >
+            <div className="flex items-center justify-between">
+              <div className="rounded-lg bg-amber-500/10 p-2.5">
+                <ShieldCheckIcon className="h-5 w-5 text-amber-400" />
+              </div>
+              <ArrowRightIcon className="h-4 w-4 text-zinc-600 transition-transform group-hover:translate-x-1 group-hover:text-white" />
+            </div>
+            <h3 className="mt-4 font-semibold text-white">KYC Verification</h3>
+            <p className="mt-1 text-sm text-zinc-500">Review identity submissions</p>
+          </Link>
+
+          <Link
+            href="/backstage/minting"
+            className="group rounded-2xl border border-white/10 bg-zinc-900/50 p-5 transition-colors hover:border-white/20 hover:bg-zinc-900"
+          >
+            <div className="flex items-center justify-between">
+              <div className="rounded-lg bg-emerald-500/10 p-2.5">
+                <BanknotesIcon className="h-5 w-5 text-emerald-400" />
+              </div>
+              <ArrowRightIcon className="h-4 w-4 text-zinc-600 transition-transform group-hover:translate-x-1 group-hover:text-white" />
+            </div>
+            <h3 className="mt-4 font-semibold text-white">Minting Queue</h3>
+            <p className="mt-1 text-sm text-zinc-500">Approve deposit requests</p>
+          </Link>
+
+          <Link
+            href="/backstage/token-admin"
+            className="group rounded-2xl border border-white/10 bg-zinc-900/50 p-5 transition-colors hover:border-white/20 hover:bg-zinc-900"
+          >
+            <div className="flex items-center justify-between">
+              <div className="rounded-lg bg-violet-500/10 p-2.5">
+                <svg className="h-5 w-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <ArrowRightIcon className="h-4 w-4 text-zinc-600 transition-transform group-hover:translate-x-1 group-hover:text-white" />
+            </div>
+            <h3 className="mt-4 font-semibold text-white">Token Admin</h3>
+            <p className="mt-1 text-sm text-zinc-500">On-chain contract actions</p>
+          </Link>
         </div>
       </div>
-    </main>
+    </div>
   )
 }
