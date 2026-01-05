@@ -76,7 +76,13 @@ export function WalletSetupClient() {
           {isInitialized && evmAddress && 'Your wallet is set up.'}
         </div>
         {statusMessage && <div className="mt-2 text-sm text-blue-300">{statusMessage}</div>}
-        {error && <div className="mt-2 text-sm text-red-300">{error}</div>}
+        {error && (
+          <div className="mt-2 text-sm text-red-300">
+            <div className="font-medium">Error:</div>
+            <div className="mt-1 break-all">{error}</div>
+            <div className="mt-2 text-xs text-white/50">Check browser console (F12) for details</div>
+          </div>
+        )}
       </div>
 
       {evmAddress ? (
