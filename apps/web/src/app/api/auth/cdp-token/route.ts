@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { signCDPToken } from '@/lib/cdp-jwt'
+import { neonAuth } from '@neondatabase/auth/next/server'
 
 // Get the app's base URL for issuer/audience
 function getBaseUrl() {
@@ -15,47 +15,20 @@ function getBaseUrl() {
 
 export async function GET() {
   try {
-    const cookieStore = await cookies()
+    // Use Neon Auth's server-side helper to get session
+    const { session, user } = await neonAuth()
     
-    // Get all cookies to find the session
-    const allCookies = cookieStore.getAll()
-    console.log('[CDP-Token] Available cookies:', allCookies.map(c => c.name))
-    
-    // Forward all cookies to the session endpoint
-    const cookieHeader = allCookies.map(c => `${c.name}=${c.value}`).join('; ')
-    
-    if (allCookies.length === 0) {
-      return NextResponse.json(
-        { error: 'No cookies found. Please log in first.' },
-        { status: 401 }
-      )
-    }
+    console.log('[CDP-Token] Session:', session ? 'exists' : 'null')
+    console.log('[CDP-Token] User:', user?.id || 'null')
 
-    // Use our own API to get session (it uses the same cookies)
-    const baseUrl = getBaseUrl()
-    const sessionResponse = await fetch(`${baseUrl}/api/auth/get-session`, {
-      headers: {
-        Cookie: cookieHeader,
-      },
-    })
-
-    if (!sessionResponse.ok) {
-      console.log('[CDP-Token] Session response not ok:', sessionResponse.status)
-      // Try parsing error
-      try {
-        const errData = await sessionResponse.json()
-        console.log('[CDP-Token] Session error:', errData)
-      } catch {}
-      
+    if (!session || !user) {
       return NextResponse.json(
         { error: 'No valid session found. Please log in first.' },
         { status: 401 }
       )
     }
 
-    const session = await sessionResponse.json()
-    console.log('[CDP-Token] Session data:', JSON.stringify(session).slice(0, 200))
-    return await issueToken(session)
+    return await issueToken({ user, session })
   } catch (error) {
     console.error('[CDP-Token] Error:', error)
     return NextResponse.json(
