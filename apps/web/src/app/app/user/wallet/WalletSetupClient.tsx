@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import {
-  useAuthenticateWithJWT,
+  useSignInWithEmail,
+  useVerifyEmailOTP,
   useCreateEvmEoaAccount,
   useCurrentUser,
   useEvmAddress,
@@ -12,18 +13,22 @@ import {
 
 import { saveEmbeddedWalletAction } from './actions'
 
-type UiStatus = 'idle' | 'creating'
+type UiStatus = 'idle' | 'entering-email' | 'entering-otp' | 'creating'
 
 export function WalletSetupClient() {
   const { isInitialized } = useIsInitialized()
   const { currentUser } = useCurrentUser()
   const { evmAddress } = useEvmAddress()
-  const { authenticateWithJWT } = useAuthenticateWithJWT()
+  const { signInWithEmail } = useSignInWithEmail()
+  const { verifyEmailOTP } = useVerifyEmailOTP()
   const { createEvmEoaAccount } = useCreateEvmEoaAccount()
 
   const [status, setStatus] = useState<UiStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string>('')
+  const [email, setEmail] = useState('')
+  const [otpCode, setOtpCode] = useState('')
+  const [flowId, setFlowId] = useState('')
 
   const canCreate = isInitialized && !evmAddress
 
@@ -32,29 +37,54 @@ export function WalletSetupClient() {
     return String(evmAddress)
   }, [evmAddress])
 
-  // Single unified flow: authenticate + create wallet
-  async function handleCreateWallet() {
+  // Step 1: Start authentication - enter email
+  function handleStartAuth() {
+    setError(null)
+    setStatus('entering-email')
+  }
+
+  // Step 2: Send OTP to email
+  async function handleSendOTP(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    
+    try {
+      setStatusMessage('Sending verification code...')
+      const result = await signInWithEmail({ email })
+      setFlowId(result.flowId)
+      setStatus('entering-otp')
+      setStatusMessage('Check your email for the verification code.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send OTP'
+      setError(message)
+      setStatusMessage('')
+    }
+  }
+
+  // Step 3: Verify OTP and create wallet
+  async function handleVerifyAndCreate(e: React.FormEvent) {
+    e.preventDefault()
     setError(null)
     setStatus('creating')
 
     try {
-      // Step 1: Authenticate with JWT if not already authenticated
-      if (!currentUser) {
-        setStatusMessage('Authenticating...')
-        await authenticateWithJWT()
+      // Verify OTP
+      setStatusMessage('Verifying code...')
+      await verifyEmailOTP({ flowId, otp: otpCode })
+
+      // Create the embedded wallet if not already created
+      if (!evmAddress) {
+        setStatusMessage('Creating your secure wallet...')
+        await createEvmEoaAccount()
       }
 
-      // Step 2: Create the embedded wallet
-      setStatusMessage('Creating your secure wallet...')
-      await createEvmEoaAccount()
-
       setStatusMessage('Wallet created successfully!')
+      setStatus('idle')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create wallet'
+      const message = err instanceof Error ? err.message : 'Failed to verify or create wallet'
       setError(message)
       setStatusMessage('')
-    } finally {
-      setStatus('idle')
+      setStatus('entering-otp') // Stay on OTP step for retry
     }
   }
 
@@ -107,16 +137,66 @@ export function WalletSetupClient() {
             Create a secure embedded wallet to hold your nTZS and receive settlements.
           </div>
 
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={handleCreateWallet}
-              disabled={!canCreate || status !== 'idle'}
-              className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90 disabled:opacity-60"
-            >
-              {status === 'creating' ? 'Creating...' : 'Create wallet'}
-            </button>
-          </div>
+          {status === 'idle' && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={handleStartAuth}
+                disabled={!canCreate}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90 disabled:opacity-60"
+              >
+                Create wallet
+              </button>
+            </div>
+          )}
+
+          {status === 'entering-email' && (
+            <form onSubmit={handleSendOTP} className="mt-4 flex flex-col gap-3">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
+                required
+                className="h-11 rounded-lg border border-white/20 bg-black/40 px-4 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+              >
+                Send verification code
+              </button>
+            </form>
+          )}
+
+          {status === 'entering-otp' && (
+            <form onSubmit={handleVerifyAndCreate} className="mt-4 flex flex-col gap-3">
+              <div className="text-sm text-white/70">
+                Enter the 6-digit code sent to <span className="font-medium text-white">{email}</span>
+              </div>
+              <input
+                type="text"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value)}
+                placeholder="Enter 6-digit code"
+                maxLength={6}
+                required
+                className="h-11 rounded-lg border border-white/20 bg-black/40 px-4 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+              >
+                Verify & Create Wallet
+              </button>
+            </form>
+          )}
+
+          {status === 'creating' && (
+            <div className="mt-4 text-sm text-white/70">
+              Please wait...
+            </div>
+          )}
         </div>
       )}
     </div>
