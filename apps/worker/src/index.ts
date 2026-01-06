@@ -7,6 +7,9 @@ import { ethers } from 'ethers'
 import { createDbClient } from '@ntzs/db'
 import { sleep } from '@ntzs/shared'
 
+const ZENOPAY_API_URL = process.env.ZENOPAY_API_URL || 'https://zenoapi.com/api'
+const ZENOPAY_API_KEY = process.env.ZENOPAY_API_KEY || ''
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..')
 
@@ -97,6 +100,68 @@ async function logAudit(
     insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
     values (${action}, ${entityType}, ${entityId}, ${JSON.stringify(metadata)}::jsonb, now())
   `
+}
+
+/**
+ * Poll ZenoPay for completed payments that are still in "submitted" status
+ * This is a fallback in case webhooks don't fire
+ */
+async function pollZenoPayForCompletedPayments(sql: ReturnType<typeof createDbClient>['sql']) {
+  if (!ZENOPAY_API_KEY) {
+    return // Skip if no API key configured
+  }
+
+  // Find submitted ZenoPay deposits older than 30 seconds
+  const pendingDeposits = await sql<{ id: string; created_at: Date }[]>`
+    select id, created_at from deposit_requests
+    where status = 'submitted'
+      and payment_provider = 'zenopay'
+      and created_at < now() - interval '30 seconds'
+    order by created_at asc
+    limit 5
+  `
+
+  for (const deposit of pendingDeposits) {
+    try {
+      const response = await fetch(
+        `${ZENOPAY_API_URL}/payments/order-status?order_id=${encodeURIComponent(deposit.id)}`,
+        { headers: { 'x-api-key': ZENOPAY_API_KEY } }
+      )
+
+      if (!response.ok) continue
+
+      const data = await response.json() as {
+        result: string
+        data?: Array<{
+          payment_status: string
+          transid: string
+          channel: string
+        }>
+      }
+
+      if (data.result === 'SUCCESS' && data.data?.[0]?.payment_status === 'COMPLETED') {
+        const payment = data.data[0]
+        
+        await sql`
+          update deposit_requests
+          set status = 'mint_pending',
+              psp_reference = ${payment.transid},
+              psp_channel = ${payment.channel},
+              fiat_confirmed_at = now(),
+              updated_at = now()
+          where id = ${deposit.id} and status = 'submitted'
+        `
+
+        console.log('[worker] polled ZenoPay, found completed payment', {
+          depositId: deposit.id,
+          transid: payment.transid,
+        })
+      }
+    } catch (err) {
+      // Silently continue on errors - will retry next poll
+      console.warn('[worker] ZenoPay poll error for', deposit.id, err instanceof Error ? err.message : err)
+    }
+  }
 }
 
 async function claimNextMintJob(sql: ReturnType<typeof createDbClient>['sql']) {
@@ -282,8 +347,20 @@ async function main() {
 
   const pollMs = Number(process.env.WORKER_POLL_MS ?? '5000')
 
+  const databaseUrl = requiredEnv('DATABASE_URL')
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Poll ZenoPay for completed payments (webhook fallback)
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await pollZenoPayForCompletedPayments(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] ZenoPay poll cycle error:', err instanceof Error ? err.message : err)
+    }
+
+    // Process mint jobs
     await processOne()
     await sleep(pollMs)
   }
