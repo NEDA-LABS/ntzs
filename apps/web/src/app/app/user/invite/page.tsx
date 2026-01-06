@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { requireRole, requireDbUser } from '@/lib/auth/rbac'
 
+import { IconCopy, IconGift, IconLink } from '@/app/app/_components/icons'
+
 export default async function InvitePage() {
   await requireRole('end_user')
   const dbUser = await requireDbUser()
@@ -10,29 +12,14 @@ export default async function InvitePage() {
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
-      <div className="border-b border-white/10 bg-black/40 backdrop-blur-xl">
-        <div className="px-8 py-6">
-          <Link href="/app/user" className="mb-2 inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-            </svg>
-            Back to Dashboard
-          </Link>
-          <h1 className="text-2xl font-bold text-white">Invite & Earn</h1>
-          <p className="mt-1 text-sm text-zinc-400">Share nTZS with friends and earn rewards together</p>
-        </div>
-      </div>
-
       <div className="p-8">
         <div className="mx-auto max-w-2xl">
           {/* Reward Banner */}
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-emerald-950/50 via-black to-teal-950/30 p-8">
-            <div className="flex flex-col items-center text-center sm:flex-row sm:text-left">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+            <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_0%,rgba(16,185,129,0.16),transparent_55%),radial-gradient(circle_at_80%_100%,rgba(0,112,243,0.08),transparent_55%)]" />
+            <div className="relative flex flex-col items-center text-center sm:flex-row sm:text-left">
               <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
-                <svg className="h-10 w-10 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-                </svg>
+                <IconGift className="h-10 w-10 text-emerald-300" />
               </div>
               <div className="mt-4 sm:ml-6 sm:mt-0">
                 <h2 className="text-2xl font-bold text-white">Earn 5,000 TZS</h2>
@@ -60,7 +47,7 @@ export default async function InvitePage() {
           </div>
 
           {/* Referral Code Card */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
             <h3 className="font-semibold text-white">Your Referral Code</h3>
             <p className="mt-1 text-sm text-zinc-500">Share this code with friends to earn rewards</p>
 
@@ -69,9 +56,7 @@ export default async function InvitePage() {
                 <code className="text-xl font-bold tracking-wider text-violet-300">{referralCode}</code>
               </div>
               <button className="rounded-xl bg-violet-500 p-4 text-white transition-colors hover:bg-violet-600">
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-                </svg>
+                <IconCopy className="h-5 w-5" />
               </button>
             </div>
 
@@ -92,9 +77,7 @@ export default async function InvitePage() {
                   Twitter
                 </button>
                 <button className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-white/20">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-                  </svg>
+                  <IconLink className="h-5 w-5" />
                   Copy Link
                 </button>
               </div>
@@ -102,7 +85,7 @@ export default async function InvitePage() {
           </div>
 
           {/* How It Works */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/40 p-6">
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
             <h3 className="font-semibold text-white">How It Works</h3>
             <div className="mt-4 space-y-4">
               <div className="flex gap-4">
