@@ -7,14 +7,15 @@ import { ethers } from 'ethers'
 import { createDbClient } from '@ntzs/db'
 import { sleep } from '@ntzs/shared'
 
-const ZENOPAY_API_URL = process.env.ZENOPAY_API_URL || 'https://zenoapi.com/api'
-const ZENOPAY_API_KEY = process.env.ZENOPAY_API_KEY || ''
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..')
 
 dotenv.config({ path: path.join(repoRoot, '.env') })
 dotenv.config({ path: path.join(repoRoot, '.env.local'), override: true })
+
+// Must be after dotenv.config()
+const ZENOPAY_API_URL = process.env.ZENOPAY_API_URL || 'https://zenoapi.com/api'
+const ZENOPAY_API_KEY = process.env.ZENOPAY_API_KEY || ''
 
 const NTZS_ABI = [
   'function mint(address to, uint256 amount)',
