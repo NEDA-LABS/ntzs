@@ -335,18 +335,10 @@ async function processOne() {
 }
 
 async function main() {
-  // Placeholder worker loop. We’ll replace this with:
-  // - DB polling for mint_pending deposits
-  // - limit checks (daily TZS cap)
-  // - Base/BNB mint tx submission
-  // - status updates + audit logs
-  //
-  // Keeping it simple for the first commit so the worker can run.
   // eslint-disable-next-line no-console
   console.log('[worker] started')
 
   const pollMs = Number(process.env.WORKER_POLL_MS ?? '5000')
-
   const databaseUrl = requiredEnv('DATABASE_URL')
 
   // eslint-disable-next-line no-constant-condition
@@ -357,11 +349,18 @@ async function main() {
       await pollZenoPayForCompletedPayments(sql)
       await sql.end({ timeout: 5 })
     } catch (err) {
-      console.warn('[worker] ZenoPay poll cycle error:', err instanceof Error ? err.message : err)
+      console.warn('[worker] ZenoPay poll error:', err instanceof Error ? err.message : err)
     }
 
-    // Process mint jobs
-    await processOne()
+    // Process mint jobs with error recovery
+    try {
+      await processOne()
+    } catch (err) {
+      console.error('[worker] processOne error:', err instanceof Error ? err.message : err)
+      // Wait a bit longer on errors before retrying
+      await sleep(10000)
+    }
+
     await sleep(pollMs)
   }
 }
