@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
+import Link from 'next/link'
 
 import { IconArrowDown, IconBank, IconCard, IconInfo, IconPhone } from '@/app/app/_components/icons'
 
@@ -31,6 +32,14 @@ function SubmitButton() {
   )
 }
 
+function SuccessIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
 interface DepositFormProps {
   defaultBankId?: string
   userPhone?: string | null
@@ -38,6 +47,56 @@ interface DepositFormProps {
 
 export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   const [phone, setPhone] = useState(userPhone || '')
+  const [submitted, setSubmitted] = useState(false)
+  const [submittedAmount, setSubmittedAmount] = useState('')
+
+  if (submitted) {
+    return (
+      <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+        <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.15),transparent_50%)]" />
+        
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
+            <SuccessIcon className="h-8 w-8 text-emerald-400" />
+          </div>
+          
+          <h2 className="mt-6 text-xl font-semibold text-white">Deposit Submitted!</h2>
+          <p className="mt-2 text-zinc-400">
+            Check your phone for the M-Pesa prompt
+          </p>
+          
+          <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+            <p className="text-3xl font-bold text-emerald-400">{submittedAmount} TZS</p>
+            <p className="mt-1 text-sm text-emerald-300/70">will be minted as nTZS after payment</p>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            <p className="text-sm text-zinc-500">
+              Enter your M-Pesa PIN to confirm. Your nTZS will appear in your wallet automatically.
+            </p>
+          </div>
+
+          <div className="mt-8 flex flex-col gap-3">
+            <Link
+              href="/app/user"
+              className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-violet-500/25 transition-all hover:shadow-violet-500/40"
+            >
+              Go to Dashboard
+            </Link>
+            <button
+              onClick={() => {
+                setSubmitted(false)
+                setSubmittedAmount('')
+              }}
+              className="w-full rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-base font-medium text-white transition-colors hover:bg-white/10"
+            >
+              Make Another Deposit
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (!defaultBankId) {
     return (
@@ -54,7 +113,15 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
     <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
       <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_20%_0%,rgba(121,40,202,0.16),transparent_55%),radial-gradient(circle_at_80%_100%,rgba(0,112,243,0.10),transparent_55%)]" />
 
-      <form action={createDepositRequestAction} className="space-y-5">
+      <form
+        action={async (formData: FormData) => {
+          const amount = formData.get('amountTzs') as string
+          setSubmittedAmount(amount)
+          await createDepositRequestAction(formData)
+          setSubmitted(true)
+        }}
+        className="space-y-5"
+      >
         <input type="hidden" name="bankId" value={defaultBankId} />
         <input type="hidden" name="paymentMethod" value="mpesa" />
 
