@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireRole } from '@/lib/auth/rbac'
@@ -21,16 +21,13 @@ export default async function NewDepositPage() {
     redirect('/app/user/wallet')
   }
 
-  const latestKyc = await db
-    .select({ status: kycCases.status })
+  const approvedKyc = await db
+    .select({ id: kycCases.id })
     .from(kycCases)
-    .where(eq(kycCases.userId, dbUser.id))
-    .orderBy(desc(kycCases.createdAt))
+    .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
     .limit(1)
 
-  const kycStatus = latestKyc[0]?.status ?? null
-
-  if (kycStatus !== 'approved') {
+  if (!approvedKyc.length) {
     redirect('/app/user/kyc')
   }
 
