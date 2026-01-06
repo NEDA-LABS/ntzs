@@ -53,16 +53,13 @@ export async function createDepositRequestAction(formData: FormData) {
     redirect('/app/user/wallet')
   }
 
-  const latestKyc = await db
-    .select({ status: kycCases.status })
+  const approvedKyc = await db
+    .select({ id: kycCases.id })
     .from(kycCases)
-    .where(eq(kycCases.userId, dbUser.id))
-    .orderBy(kycCases.createdAt)
+    .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
     .limit(1)
 
-  const kycStatus = latestKyc[0]?.status ?? null
-
-  if (kycStatus !== 'approved') {
+  if (!approvedKyc.length) {
     redirect('/app/user/kyc')
   }
 
