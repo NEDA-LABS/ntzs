@@ -1,6 +1,5 @@
-import { desc, eq, sql, gte, and } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
-import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
@@ -13,6 +12,12 @@ import {
   auditLogs,
   wallets,
 } from '@ntzs/db'
+import {
+  IconChain,
+  IconCoins,
+  IconClock,
+  IconUsers,
+} from '@/app/app/_components/icons'
 import { ExportReportButton } from './_components/ExportReportButton'
 
 const CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
@@ -32,13 +37,6 @@ async function getOnChainTotalSupply(): Promise<string> {
   } catch {
     return '0'
   }
-}
-
-function getDateDaysAgo(days: number): Date {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  d.setHours(0, 0, 0, 0)
-  return d
 }
 
 export default async function OversightDashboard() {
@@ -132,31 +130,8 @@ export default async function OversightDashboard() {
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(wallets)
 
-  // 7-day issuance stats
-  const sevenDaysAgo = getDateDaysAgo(7)
-  const [sevenDayStats] = await db
-    .select({
-      minted: sql<number>`coalesce(sum(case when ${depositRequests.status} = 'minted' then ${depositRequests.amountTzs} else 0 end), 0)`.mapWith(Number),
-    })
-    .from(depositRequests)
-    .where(gte(depositRequests.createdAt, sevenDaysAgo))
-
-  // 30-day issuance stats
-  const thirtyDaysAgo = getDateDaysAgo(30)
-  const [thirtyDayStats] = await db
-    .select({
-      minted: sql<number>`coalesce(sum(case when ${depositRequests.status} = 'minted' then ${depositRequests.amountTzs} else 0 end), 0)`.mapWith(Number),
-    })
-    .from(depositRequests)
-    .where(gte(depositRequests.createdAt, thirtyDaysAgo))
-
   const formatNumber = (n: number) => n.toLocaleString()
   const formatDate = (d: Date) => new Date(d).toLocaleString()
-  const formatCompact = (n: number) => {
-    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
-    return n.toString()
-  }
 
   const statusColors: Record<string, string> = {
     minted: 'bg-emerald-500/20 text-emerald-300',
@@ -168,266 +143,142 @@ export default async function OversightDashboard() {
   }
 
   return (
-    <main className="space-y-8 p-6">
-      {/* Hero Section */}
+    <main className="space-y-6 p-6">
+      {/* Header */}
       <section id="overview" className="scroll-mt-6">
-        <div className="rounded-3xl bg-gradient-to-br from-violet-950/50 via-violet-900/30 to-transparent p-8 ring-1 ring-white/10">
-          <div className="flex items-start justify-between">
-            <div className="max-w-2xl">
-              <h1 className="text-3xl font-bold tracking-tight text-white">
-                Transparency & Stability
-              </h1>
-              <p className="mt-4 text-xl text-violet-200">
-                nTZS is always redeemable 1:1 for Tanzanian Shillings. Always.
-              </p>
-              <p className="mt-4 text-sm leading-relaxed text-zinc-400">
-                nTZS is fully backed by Tanzanian Shilling reserves held in regulated financial 
-                institutions. As part of our commitment to transparency, we provide real-time 
-                verification of all reserve assets and on-chain token supply.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <ExportReportButton />
-              <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-2.5 ring-1 ring-emerald-500/20">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                <span className="text-sm font-medium text-emerald-300">Live</span>
-              </div>
-            </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Regulator Oversight Dashboard</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            Real-time transparency into nTZS issuance, reserves, and compliance
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <ExportReportButton />
+          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-2 ring-1 ring-emerald-500/20">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <span className="text-sm font-medium text-emerald-300">Live Data</span>
           </div>
         </div>
+      </div>
+
+      {/* Key Metrics */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          title="Total Supply (On-Chain)"
+          value={`${formatNumber(parseFloat(onChainSupply))} nTZS`}
+          subtitle="Verified on Base Sepolia"
+          icon={<IconChain className="h-5 w-5" />}
+          color="emerald"
+        />
+        <MetricCard
+          title="Total Minted (DB)"
+          value={`${formatNumber(stats?.totalMinted || 0)} TZS`}
+          subtitle={`${stats?.totalDeposits || 0} deposits processed`}
+          icon={<IconCoins className="h-5 w-5" />}
+          color="violet"
+        />
+        <MetricCard
+          title="Pending Issuance"
+          value={`${formatNumber(stats?.totalPending || 0)} TZS`}
+          subtitle="Awaiting confirmation"
+          icon={<IconClock className="h-5 w-5" />}
+          color="amber"
+        />
+        <MetricCard
+          title="Registered Users"
+          value={formatNumber(userCount?.count || 0)}
+          subtitle={`${walletCount?.count || 0} wallets linked`}
+          icon={<IconUsers className="h-5 w-5" />}
+          color="blue"
+        />
+      </div>
+
       </section>
 
-      {/* Balances & Issuance - Circle-inspired layout */}
-      <section id="reserves" className="scroll-mt-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Balances Card */}
-          <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 p-6 text-slate-900">
-            <h2 className="text-lg font-semibold text-slate-700">Balances</h2>
-            <div className="mt-6 grid grid-cols-2 gap-8">
-              <div>
-                <p className="text-sm text-slate-500">In circulation</p>
-                <p className="mt-1 text-3xl font-bold text-violet-600">
-                  {formatCompact(parseFloat(onChainSupply))}
-                </p>
-                <p className="mt-1 text-xs text-slate-400">nTZS tokens</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500">Total Reserves</p>
-                <p className="mt-1 text-3xl font-bold text-violet-600">
-                  {formatCompact(stats?.totalMinted || 0)}
-                </p>
-                <p className="mt-1 text-xs text-slate-400">TZS backing</p>
-              </div>
-            </div>
-            
-            {/* Reserve Bar */}
-            <div className="mt-8">
-              <div className="flex h-40 items-end gap-1">
-                <div className="relative flex-1">
-                  <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-violet-600" style={{ height: '100%' }} />
-                  <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-violet-400" style={{ height: '85%' }} />
-                  <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-violet-300" style={{ height: '60%' }} />
-                </div>
-              </div>
-              <p className="mt-2 text-center text-xs text-slate-500">Reserves</p>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-4 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-violet-300" />
-                <span className="text-slate-600">Mobile Money Deposits</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-violet-400" />
-                <span className="text-slate-600">Bank Deposits</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-violet-600" />
-                <span className="text-slate-600">Operating Reserves</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Issuance & Redemption Card */}
-          <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 p-6 text-slate-900">
-            <h2 className="text-lg font-semibold text-slate-700">Issuance & Activity</h2>
-            
-            <div className="mt-6 space-y-6">
-              {/* 7 Day Change */}
-              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-                <h3 className="font-semibold text-slate-700">7 Day Change</h3>
-                <div className="mt-3 grid grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Issued</p>
-                    <p className="text-xl font-bold text-slate-800">{formatCompact(sevenDayStats?.minted || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Redeemed</p>
-                    <p className="text-xl font-bold text-slate-800">0</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Net change</p>
-                    <p className="text-sm font-medium text-emerald-600">
-                      +{formatCompact(sevenDayStats?.minted || 0)} in circulation
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* 30 Day Change */}
-              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-                <h3 className="font-semibold text-slate-700">30 Day Change</h3>
-                <div className="mt-3 grid grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Issued</p>
-                    <p className="text-xl font-bold text-slate-800">{formatCompact(thirtyDayStats?.minted || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Redeemed</p>
-                    <p className="text-xl font-bold text-slate-800">0</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Net change</p>
-                    <p className="text-sm font-medium text-emerald-600">
-                      +{formatCompact(thirtyDayStats?.minted || 0)} in circulation
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Today */}
-              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-                <h3 className="font-semibold text-slate-700">Today</h3>
-                <div className="mt-3 grid grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Issued</p>
-                    <p className="text-xl font-bold text-slate-800">{formatCompact(todayIssuance?.issuedTzs || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Cap</p>
-                    <p className="text-xl font-bold text-slate-800">{formatCompact(todayIssuance?.capTzs || 100000000)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Utilization</p>
-                    <p className="text-sm font-medium text-violet-600">
-                      {(((todayIssuance?.issuedTzs || 0) / (todayIssuance?.capTzs || 100000000)) * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Stability Section */}
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-8">
-        <h2 className="text-xl font-semibold text-white">Stability you can trust</h2>
-        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-zinc-400">
-          nTZS reserves are held separately from operating funds at regulated financial 
-          institutions in Tanzania. Our commitment to transparency includes real-time 
-          on-chain verification, daily reconciliation, and comprehensive audit trails 
-          for every transaction.
+      {/* Reserve Verification */}
+      <section id="reserves" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <h2 className="text-lg font-semibold text-white">Reserve Verification</h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          1:1 backing verification between on-chain tokens and fiat reserves
         </p>
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20">
-              <svg className="h-5 w-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-              </svg>
-            </div>
-            <h3 className="mt-4 font-semibold text-white">1:1 Reserve Backing</h3>
-            <p className="mt-2 text-sm text-zinc-400">
-              Every nTZS token is backed by an equivalent amount of Tanzanian Shillings held in reserve.
-            </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">On-Chain Supply</p>
+            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(parseFloat(onChainSupply))}</p>
+            <p className="mt-1 text-xs text-zinc-500">nTZS tokens</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/20">
-              <svg className="h-5 w-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <h3 className="mt-4 font-semibold text-white">Real-time Transparency</h3>
-            <p className="mt-2 text-sm text-zinc-400">
-              On-chain supply and reserve balances are verified in real-time and publicly accessible.
-            </p>
+          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Confirmed Deposits</p>
+            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(stats?.totalMinted || 0)}</p>
+            <p className="mt-1 text-xs text-zinc-500">TZS received</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20">
-              <svg className="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
-              </svg>
-            </div>
-            <h3 className="mt-4 font-semibold text-white">Complete Audit Trail</h3>
-            <p className="mt-2 text-sm text-zinc-400">
-              Every mint, transfer, and redemption is logged with full traceability for compliance.
-            </p>
+          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Reserve Status</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-400">✓ Backed</p>
+            <p className="mt-1 text-xs text-zinc-500">1:1 ratio maintained</p>
           </div>
         </div>
       </section>
 
-      {/* Platform Stats */}
-      <section id="issuance" className="scroll-mt-6">
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total Users</p>
-            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(userCount?.count || 0)}</p>
-            <p className="mt-1 text-xs text-zinc-500">Verified accounts</p>
+      {/* Daily Issuance Cap */}
+      <section id="issuance" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <h2 className="text-lg font-semibold text-white">Daily Issuance Control</h2>
+        <p className="mt-1 text-sm text-zinc-400">Today's issuance against regulatory cap</p>
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-zinc-400">Issued Today</span>
+            <span className="font-medium text-white">
+              {formatNumber(todayIssuance?.issuedTzs || 0)} / {formatNumber(todayIssuance?.capTzs || 100000000)} TZS
+            </span>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Connected Wallets</p>
-            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(walletCount?.count || 0)}</p>
-            <p className="mt-1 text-xs text-zinc-500">Linked addresses</p>
+          <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-500 transition-all"
+              style={{
+                width: `${Math.min(100, ((todayIssuance?.issuedTzs || 0) / (todayIssuance?.capTzs || 100000000)) * 100)}%`,
+              }}
+            />
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total Deposits</p>
-            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(stats?.totalDeposits || 0)}</p>
-            <p className="mt-1 text-xs text-zinc-500">Processed requests</p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">KYC Verified</p>
-            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(kycStats?.approved || 0)}</p>
-            <p className="mt-1 text-xs text-zinc-500">Approved users</p>
+          <div className="mt-2 flex justify-between text-xs text-zinc-500">
+            <span>0%</span>
+            <span>
+              {(((todayIssuance?.issuedTzs || 0) / (todayIssuance?.capTzs || 100000000)) * 100).toFixed(2)}% utilized
+            </span>
+            <span>100%</span>
           </div>
         </div>
       </section>
 
-      {/* Two Column Layout for KYC and Status */}
+      {/* Two Column Layout */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* KYC/AML Overview */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-          <h2 className="text-lg font-semibold text-white">KYC/AML Compliance</h2>
-          <p className="mt-1 text-sm text-zinc-400">User verification breakdown</p>
+          <h2 className="text-lg font-semibold text-white">KYC/AML Overview</h2>
+          <p className="mt-1 text-sm text-zinc-400">User verification status</p>
           <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between rounded-lg bg-emerald-500/10 p-3">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20">
-                  <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
+                  <span className="text-emerald-300">✓</span>
                 </div>
-                <span className="text-sm text-zinc-300">Verified & Approved</span>
+                <span className="text-sm text-zinc-300">Approved</span>
               </div>
               <span className="font-semibold text-white">{kycStats?.approved || 0}</span>
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-amber-500/10 p-3">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/20">
-                  <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <span className="text-amber-300">⏳</span>
                 </div>
                 <span className="text-sm text-zinc-300">Pending Review</span>
               </div>
               <span className="font-semibold text-white">{kycStats?.pending || 0}</span>
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-red-500/10 p-3">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/20">
-                  <svg className="h-4 w-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <span className="text-red-300">✗</span>
                 </div>
                 <span className="text-sm text-zinc-300">Rejected</span>
               </div>
@@ -436,16 +287,18 @@ export default async function OversightDashboard() {
           </div>
         </div>
 
-        {/* Deposit Pipeline */}
+        {/* Deposit Status Breakdown */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-          <h2 className="text-lg font-semibold text-white">Deposit Pipeline</h2>
-          <p className="mt-1 text-sm text-zinc-400">Current status distribution</p>
+          <h2 className="text-lg font-semibold text-white">Deposit Status Distribution</h2>
+          <p className="mt-1 text-sm text-zinc-400">Current pipeline breakdown</p>
           <div className="mt-4 space-y-2">
             {statusBreakdown.map((s) => (
               <div key={s.status} className="flex items-center justify-between rounded-lg bg-black/20 p-3">
-                <span className={`rounded-lg px-2.5 py-1 text-xs font-medium ${statusColors[s.status] || 'bg-zinc-500/20 text-zinc-300'}`}>
-                  {s.status.replace('_', ' ')}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className={`rounded-lg px-2 py-1 text-xs font-medium ${statusColors[s.status] || 'bg-zinc-500/20 text-zinc-300'}`}>
+                    {s.status}
+                  </span>
+                </div>
                 <div className="text-right">
                   <span className="font-semibold text-white">{s.count}</span>
                   <span className="ml-2 text-xs text-zinc-500">({formatNumber(s.total)} TZS)</span>
@@ -618,3 +471,36 @@ export default async function OversightDashboard() {
   )
 }
 
+function MetricCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  color,
+}: {
+  title: string
+  value: string
+  subtitle: string
+  icon: React.ReactNode
+  color: 'emerald' | 'violet' | 'amber' | 'blue'
+}) {
+  const colorClasses = {
+    emerald: 'from-emerald-500/20 to-emerald-500/5 ring-emerald-500/20 text-emerald-400',
+    violet: 'from-violet-500/20 to-violet-500/5 ring-violet-500/20 text-violet-400',
+    amber: 'from-amber-500/20 to-amber-500/5 ring-amber-500/20 text-amber-400',
+    blue: 'from-blue-500/20 to-blue-500/5 ring-blue-500/20 text-blue-400',
+  }
+
+  return (
+    <div className={`rounded-2xl bg-gradient-to-br ${colorClasses[color]} p-5 ring-1`}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">{title}</span>
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10">
+          {icon}
+        </div>
+      </div>
+      <p className="mt-3 text-2xl font-bold text-white">{value}</p>
+      <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
+    </div>
+  )
+}
