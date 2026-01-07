@@ -144,6 +144,7 @@ export default async function OversightDashboard() {
   return (
     <main className="space-y-6 p-6">
       {/* Header */}
+      <section id="overview" className="scroll-mt-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Regulator Oversight Dashboard</h1>
@@ -189,8 +190,10 @@ export default async function OversightDashboard() {
         />
       </div>
 
+      </section>
+
       {/* Reserve Verification */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <section id="reserves" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <h2 className="text-lg font-semibold text-white">Reserve Verification</h2>
         <p className="mt-1 text-sm text-zinc-400">
           1:1 backing verification between on-chain tokens and fiat reserves
@@ -212,10 +215,10 @@ export default async function OversightDashboard() {
             <p className="mt-1 text-xs text-zinc-500">1:1 ratio maintained</p>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Daily Issuance Cap */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <section id="issuance" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <h2 className="text-lg font-semibold text-white">Daily Issuance Control</h2>
         <p className="mt-1 text-sm text-zinc-400">Today's issuance against regulatory cap</p>
         <div className="mt-4">
@@ -241,7 +244,7 @@ export default async function OversightDashboard() {
             <span>100%</span>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Two Column Layout */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -303,7 +306,7 @@ export default async function OversightDashboard() {
       </div>
 
       {/* Recent Deposits Table */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <section id="deposits" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-white">Recent Deposit Activity</h2>
@@ -375,10 +378,10 @@ export default async function OversightDashboard() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {/* Audit Trail */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <section id="audit" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-white">Audit Trail</h2>
@@ -427,10 +430,10 @@ export default async function OversightDashboard() {
             ))
           )}
         </div>
-      </div>
+      </section>
 
       {/* Contract Info */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <section id="contract" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <h2 className="text-lg font-semibold text-white">Smart Contract Details</h2>
         <p className="mt-1 text-sm text-zinc-400">On-chain verification links</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -459,7 +462,7 @@ export default async function OversightDashboard() {
             <p className="mt-1 text-xs text-zinc-500">Verify all transactions publicly</p>
           </div>
         </div>
-      </div>
+      </section>
     </main>
   )
 }

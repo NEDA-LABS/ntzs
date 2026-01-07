@@ -13,12 +13,12 @@ import {
 } from '@/app/app/_components/icons'
 
 const navItems = [
-  { href: '/app/oversight', label: 'Overview', icon: IconDashboard },
-  { href: '/app/oversight/reserves', label: 'Reserves', icon: IconDatabase },
-  { href: '/app/oversight/issuance', label: 'Issuance', icon: IconBarChart },
-  { href: '/app/oversight/compliance', label: 'Compliance', icon: IconShieldCheck },
-  { href: '/app/oversight/users', label: 'Users', icon: IconUsers },
-  { href: '/app/oversight/audit', label: 'Audit Trail', icon: IconFileText },
+  { href: '/app/oversight#overview', label: 'Overview', icon: IconDashboard },
+  { href: '/app/oversight#reserves', label: 'Reserves', icon: IconDatabase },
+  { href: '/app/oversight#issuance', label: 'Daily Issuance', icon: IconBarChart },
+  { href: '/app/oversight#deposits', label: 'Deposit Activity', icon: IconShieldCheck },
+  { href: '/app/oversight#audit', label: 'Audit Trail', icon: IconFileText },
+  { href: '/app/oversight#contract', label: 'Smart Contract', icon: IconSettings },
 ]
 
 export default async function OversightLayout({ children }: { children: ReactNode }) {
