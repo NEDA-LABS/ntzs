@@ -23,47 +23,50 @@ function getTodayUTC(): string {
 }
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret
-  const authHeader = request.headers.get('authorization')
-  if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  try {
+    // Verify cron secret
+    const authHeader = request.headers.get('authorization')
+    if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-  if (!MINTER_PRIVATE_KEY) {
-    return NextResponse.json({ error: 'MINTER_PRIVATE_KEY not configured' }, { status: 500 })
-  }
+    if (!MINTER_PRIVATE_KEY) {
+      return NextResponse.json({ status: 'skipped', reason: 'MINTER_PRIVATE_KEY not configured' })
+    }
 
-  if (!NTZS_CONTRACT_ADDRESS) {
-    return NextResponse.json({ error: 'Contract address not configured' }, { status: 500 })
-  }
+    if (!NTZS_CONTRACT_ADDRESS) {
+      return NextResponse.json({ status: 'skipped', reason: 'Contract address not configured' })
+    }
 
-  const { db } = getDb()
+    const { db } = getDb()
 
-  // Claim a mint job (atomically select and update to processing)
-  const [job] = await db
-    .update(depositRequests)
-    .set({ status: 'mint_processing', updatedAt: new Date() })
-    .where(
-      eq(
-        depositRequests.id,
-        sql`(
-          SELECT id FROM ${depositRequests}
-          WHERE status = 'mint_pending' AND chain = 'base'
-          ORDER BY created_at ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        )`
-      )
-    )
-    .returning({
+  // Find a pending mint job
+  const pendingJobs = await db
+    .select({
       id: depositRequests.id,
       walletId: depositRequests.walletId,
       amountTzs: depositRequests.amountTzs,
       chain: depositRequests.chain,
     })
+    .from(depositRequests)
+    .where(and(eq(depositRequests.status, 'mint_pending'), eq(depositRequests.chain, 'base')))
+    .orderBy(depositRequests.createdAt)
+    .limit(1)
 
+  const job = pendingJobs[0]
   if (!job) {
     return NextResponse.json({ status: 'no_pending_jobs' })
+  }
+
+  // Claim the job by updating to processing
+  const [claimed] = await db
+    .update(depositRequests)
+    .set({ status: 'mint_processing', updatedAt: new Date() })
+    .where(and(eq(depositRequests.id, job.id), eq(depositRequests.status, 'mint_pending')))
+    .returning({ id: depositRequests.id })
+
+  if (!claimed) {
+    return NextResponse.json({ status: 'job_claimed_by_another' })
   }
 
   // Create mint transaction record
@@ -196,5 +199,9 @@ export async function GET(request: NextRequest) {
     console.error(`[cron/process-mints] Failed to mint ${job.id}:`, errorMessage)
 
     return NextResponse.json({ status: 'failed', depositId: job.id, error: errorMessage }, { status: 500 })
+  }
+  } catch (err) {
+    console.error('[cron/process-mints] Unhandled error:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
   }
 }

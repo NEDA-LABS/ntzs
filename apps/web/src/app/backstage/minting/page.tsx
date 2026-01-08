@@ -75,21 +75,22 @@ async function approveDepositAction(formData: FormData) {
   revalidatePath('/backstage/minting')
 }
 
-async function confirmSafeMintAction(formData: FormData) {
+async function confirmSafeMintAction(formData: FormData): Promise<{ success: boolean; error?: string }> {
   'use server'
 
-  await requireAnyRole(['super_admin', 'bank_admin'])
+  try {
+    await requireAnyRole(['super_admin', 'bank_admin'])
 
-  const depositId = String(formData.get('depositId') ?? '')
-  const txHash = String(formData.get('txHash') ?? '')
+    const depositId = String(formData.get('depositId') ?? '')
+    const txHash = String(formData.get('txHash') ?? '')
 
-  if (!depositId) {
-    throw new Error('Invalid parameters')
-  }
+    if (!depositId) {
+      return { success: false, error: 'Invalid parameters' }
+    }
 
-  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    throw new Error('Invalid transaction hash')
-  }
+    if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      return { success: false, error: 'Invalid transaction hash' }
+    }
 
   const { db } = getDb()
 
@@ -107,16 +108,16 @@ async function confirmSafeMintAction(formData: FormData) {
     .limit(1)
 
   if (!dep) {
-    throw new Error('Deposit not found')
+    return { success: false, error: 'Deposit not found' }
   }
 
   if (dep.status !== 'mint_requires_safe') {
-    throw new Error('Deposit is not awaiting Safe mint')
+    return { success: false, error: 'Deposit is not awaiting Safe mint' }
   }
 
   const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
   if (!contractAddress || !ethers.isAddress(contractAddress)) {
-    throw new Error('Contract address not configured')
+    return { success: false, error: 'Contract address not configured' }
   }
 
   const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
@@ -124,15 +125,15 @@ async function confirmSafeMintAction(formData: FormData) {
   const receipt = await provider.getTransactionReceipt(txHash)
 
   if (!receipt) {
-    throw new Error('Transaction not found on chain')
+    return { success: false, error: 'Transaction not found on chain' }
   }
 
   if (receipt.status !== 1) {
-    throw new Error('Transaction failed')
+    return { success: false, error: 'Transaction failed on chain' }
   }
 
   if (!receipt.to || receipt.to.toLowerCase() !== contractAddress.toLowerCase()) {
-    throw new Error('Transaction is not for the nTZS contract')
+    return { success: false, error: 'Transaction is not for the nTZS contract' }
   }
 
   const decimals = BigInt(18)
@@ -162,7 +163,7 @@ async function confirmSafeMintAction(formData: FormData) {
   })
 
   if (!sawExpectedMint) {
-    throw new Error('Transaction does not match expected mint transfer')
+    return { success: false, error: 'Transaction does not match expected mint transfer' }
   }
 
   await db
@@ -201,6 +202,11 @@ async function confirmSafeMintAction(formData: FormData) {
     .where(eq(dailyIssuance.day, today))
 
   revalidatePath('/backstage/minting')
+  return { success: true }
+  } catch (err) {
+    console.error('[confirmSafeMintAction] Error:', err)
+    return { success: false, error: err instanceof Error ? err.message : 'An unexpected error occurred' }
+  }
 }
 
 async function retryMintAction(formData: FormData) {

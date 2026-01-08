@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { ethers } from 'ethers'
 
 type Props = {
@@ -9,7 +9,7 @@ type Props = {
   walletAddress: string
   contractAddress: string
   chainId: string
-  onConfirm: (formData: FormData) => void | Promise<void>
+  onConfirm: (formData: FormData) => Promise<{ success: boolean; error?: string }>
 }
 
 export function SafeMintActions({
@@ -22,6 +22,8 @@ export function SafeMintActions({
 }: Props) {
   const [txHash, setTxHash] = useState('')
   const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
   const amountWei = useMemo(() => {
     const decimals = BigInt(18)
@@ -99,22 +101,58 @@ export function SafeMintActions({
         </button>
       </div>
 
-      <form action={onConfirm} className="flex items-center gap-2">
-        <input type="hidden" name="depositId" value={depositId} />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          setError(null)
+          
+          // Client-side validation
+          if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+            setError('Invalid transaction hash. Must be 0x followed by 64 hex characters.')
+            return
+          }
+          
+          const formData = new FormData()
+          formData.set('depositId', depositId)
+          formData.set('txHash', txHash)
+          
+          startTransition(async () => {
+            try {
+              const result = await onConfirm(formData)
+              if (!result.success) {
+                setError(result.error || 'Failed to confirm mint')
+              }
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+            }
+          })
+        }}
+        className="flex items-center gap-2"
+      >
         <input
           name="txHash"
           value={txHash}
-          onChange={(e) => setTxHash(e.target.value)}
+          onChange={(e) => {
+            setTxHash(e.target.value)
+            setError(null)
+          }}
           placeholder="Paste tx hash (0x...)"
           className="w-64 rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
         />
         <button
           type="submit"
-          className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+          disabled={isPending || !txHash}
+          className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
         >
-          Confirm Mint
+          {isPending ? 'Confirming...' : 'Confirm Mint'}
         </button>
       </form>
+
+      {error && (
+        <div className="text-[11px] text-red-400 bg-red-500/10 rounded px-2 py-1">
+          {error}
+        </div>
+      )}
 
       <div className="text-[11px] text-zinc-500">
         Over threshold: requires Safe execution. After execution, paste the tx hash and confirm.

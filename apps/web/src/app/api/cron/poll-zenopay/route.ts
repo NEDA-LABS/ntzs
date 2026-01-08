@@ -11,17 +11,18 @@ const SAFE_MINT_THRESHOLD_TZS = 9000
 export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret to prevent unauthorized access
-  const authHeader = request.headers.get('authorization')
-  if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  try {
+    // Verify cron secret to prevent unauthorized access
+    const authHeader = request.headers.get('authorization')
+    if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-  if (!ZENOPAY_API_KEY) {
-    return NextResponse.json({ error: 'ZENOPAY_API_KEY not configured' }, { status: 500 })
-  }
+    if (!ZENOPAY_API_KEY) {
+      return NextResponse.json({ status: 'skipped', reason: 'ZENOPAY_API_KEY not configured' })
+    }
 
-  const { db } = getDb()
+    const { db } = getDb()
 
   // Find submitted ZenoPay deposits older than 30 seconds
   const thirtySecondsAgo = new Date(Date.now() - 30 * 1000)
@@ -101,4 +102,8 @@ export async function GET(request: NextRequest) {
     results,
     timestamp: new Date().toISOString(),
   })
+  } catch (err) {
+    console.error('[cron/poll-zenopay] Unhandled error:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
+  }
 }
