@@ -132,9 +132,9 @@ async function confirmSafeMintAction(formData: FormData): Promise<{ success: boo
     return { success: false, error: 'Transaction failed on chain' }
   }
 
-  if (!receipt.to || receipt.to.toLowerCase() !== contractAddress.toLowerCase()) {
-    return { success: false, error: 'Transaction is not for the nTZS contract' }
-  }
+  // Note: We don't check receipt.to because Safe multisig transactions
+  // have receipt.to = Safe address, not the target contract.
+  // Instead, we validate via the Transfer event logs below.
 
   const decimals = BigInt(18)
   const base = BigInt(10)
