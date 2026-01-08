@@ -147,7 +147,7 @@ async function pollZenoPayForCompletedPayments(sql: ReturnType<typeof createDbCl
         
         await sql`
           update deposit_requests
-          set status = case when amount_tzs > ${SAFE_MINT_THRESHOLD_TZS} then 'mint_requires_safe' else 'mint_pending' end,
+          set status = case when amount_tzs >= ${SAFE_MINT_THRESHOLD_TZS} then 'mint_requires_safe' else 'mint_pending' end,
               psp_reference = ${payment.transid},
               psp_channel = ${payment.channel},
               fiat_confirmed_at = now(),

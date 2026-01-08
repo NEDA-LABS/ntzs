@@ -62,7 +62,7 @@ async function approveDepositAction(formData: FormData) {
   // When approved, set to mint_pending so the worker picks it up
   const newStatus =
     decision === 'approved'
-      ? deposit.paymentProvider === 'zenopay' && deposit.amountTzs > SAFE_MINT_THRESHOLD_TZS
+      ? deposit.paymentProvider === 'zenopay' && deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS
         ? 'mint_requires_safe'
         : 'mint_pending'
       : 'rejected'
