@@ -144,6 +144,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
   await requireAnyRole(['super_admin'])
 
   const depositId = String(formData.get('depositId') ?? '')
+  const manualTransId = String(formData.get('manualTransId') ?? '').trim()
 
   if (!depositId) {
     throw new Error('Invalid deposit ID')
@@ -161,39 +162,37 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     throw new Error('Deposit not found or not in submitted status')
   }
 
-  // Verify with ZenoPay API that payment is actually completed
+  let transid = manualTransId
+  let channel = 'manual_verify'
+
+  // Try ZenoPay API first, fall back to manual if provided
   const ZENOPAY_API_KEY = process.env.ZENOPAY_API_KEY
-  if (!ZENOPAY_API_KEY) {
-    throw new Error('ZenoPay API key not configured')
+  if (ZENOPAY_API_KEY && !manualTransId) {
+    try {
+      const response = await fetch(
+        `https://api.zeno.africa/order-status?order_id=${encodeURIComponent(depositId)}`,
+        { headers: { 'x-api-key': ZENOPAY_API_KEY } }
+      )
+
+      if (response.ok) {
+        const text = await response.text()
+        if (text && text.trim() !== '') {
+          const data = JSON.parse(text)
+          if (data.result === 'SUCCESS' && data.data?.[0]?.payment_status === 'COMPLETED') {
+            transid = data.data[0].transid
+            channel = data.data[0].channel
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[Admin] ZenoPay API failed for ${depositId}, checking manual entry`)
+    }
   }
 
-  const response = await fetch(
-    `https://api.zeno.africa/order-status?order_id=${encodeURIComponent(depositId)}`,
-    { headers: { 'x-api-key': ZENOPAY_API_KEY } }
-  )
-
-  if (!response.ok) {
-    throw new Error(`ZenoPay API error: ${response.status}`)
+  // Require either API confirmation or manual transaction ID
+  if (!transid) {
+    throw new Error('Could not verify with ZenoPay API. Enter the ZenoPay Transaction ID from your dashboard to proceed.')
   }
-
-  const text = await response.text()
-  if (!text || text.trim() === '') {
-    throw new Error('ZenoPay returned empty response - cannot verify payment')
-  }
-
-  let data: { result: string; data?: Array<{ payment_status: string; transid: string; channel: string }> }
-  try {
-    data = JSON.parse(text)
-  } catch {
-    throw new Error('ZenoPay returned invalid JSON - cannot verify payment')
-  }
-
-  // Only advance if ZenoPay confirms payment is COMPLETED
-  if (data.result !== 'SUCCESS' || data.data?.[0]?.payment_status !== 'COMPLETED') {
-    throw new Error(`Payment not confirmed by ZenoPay. Status: ${data.data?.[0]?.payment_status || 'unknown'}`)
-  }
-
-  const payment = data.data[0]
 
   // Route to Safe approval if amount >= threshold
   const newStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS 
@@ -204,14 +203,14 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     .update(depositRequests)
     .set({
       status: newStatus,
-      pspReference: payment.transid,
-      pspChannel: payment.channel,
+      pspReference: transid,
+      pspChannel: channel,
       fiatConfirmedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(depositRequests.id, depositId))
 
-  console.log(`[Admin] Verified and advanced deposit ${depositId} to ${newStatus}`, { transid: payment.transid })
+  console.log(`[Admin] Advanced deposit ${depositId} to ${newStatus}`, { transid, channel })
   revalidatePath('/backstage/minting')
 }
 
@@ -688,8 +687,14 @@ export default async function MintingPage() {
                             onConfirm={confirmSafeMintAction}
                           />
                         ) : dep.status === 'submitted' ? (
-                          <form action={verifyAndAdvanceSubmittedAction}>
+                          <form action={verifyAndAdvanceSubmittedAction} className="flex flex-col gap-1.5">
                             <input type="hidden" name="depositId" value={dep.id} />
+                            <input
+                              type="text"
+                              name="manualTransId"
+                              placeholder="ZenoPay Trans ID"
+                              className="rounded bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-emerald-500/50 outline-none w-32"
+                            />
                             <button
                               type="submit"
                               className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
