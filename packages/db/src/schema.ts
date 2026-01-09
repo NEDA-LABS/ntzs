@@ -309,3 +309,37 @@ export const auditLogs = pgTable(
     actionIdx: index('audit_logs_action_idx').on(t.action),
   })
 )
+
+export const reconciliationEntryType = pgEnum('reconciliation_entry_type', [
+  'untracked_mint',
+  'test_mint',
+  'manual_correction',
+  'double_mint',
+  'other',
+])
+
+export const reconciliationEntries = pgTable(
+  'reconciliation_entries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    chain: chain('chain').notNull(),
+    txHash: text('tx_hash').notNull(),
+    toAddress: text('to_address').notNull(),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+
+    entryType: reconciliationEntryType('entry_type').notNull(),
+    reason: text('reason').notNull(),
+    notes: text('notes'),
+
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    txHashUq: uniqueIndex('reconciliation_entries_tx_hash_uq').on(t.txHash),
+    chainIdx: index('reconciliation_entries_chain_idx').on(t.chain),
+  })
+)

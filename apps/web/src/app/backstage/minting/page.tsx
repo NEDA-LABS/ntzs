@@ -14,6 +14,7 @@ import {
   mintTransactions,
   dailyIssuance,
   auditLogs,
+  reconciliationEntries,
 } from '@ntzs/db'
 import { SafeMintActions } from './_components/SafeMintActions'
 
@@ -430,6 +431,68 @@ async function retryMintAction(formData: FormData) {
   revalidatePath('/backstage/minting')
 }
 
+async function addReconciliationEntryAction(formData: FormData) {
+  'use server'
+
+  await requireAnyRole(['super_admin'])
+  const currentUser = await getCurrentDbUser()
+  if (!currentUser) throw new Error('User not found')
+
+  const txHash = String(formData.get('txHash') ?? '').trim()
+  const toAddress = String(formData.get('toAddress') ?? '').trim()
+  const amountTzs = Number(formData.get('amountTzs') ?? 0)
+  const entryType = String(formData.get('entryType') ?? 'untracked_mint') as 'untracked_mint' | 'test_mint' | 'manual_correction' | 'double_mint' | 'other'
+  const reason = String(formData.get('reason') ?? '').trim()
+  const notes = String(formData.get('notes') ?? '').trim() || null
+
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    throw new Error('Invalid transaction hash')
+  }
+  if (!toAddress || !ethers.isAddress(toAddress)) {
+    throw new Error('Invalid wallet address')
+  }
+  if (!amountTzs || amountTzs <= 0) {
+    throw new Error('Invalid amount')
+  }
+  if (!reason) {
+    throw new Error('Reason is required')
+  }
+
+  const { db } = getDb()
+
+  await db.insert(reconciliationEntries).values({
+    chain: 'base',
+    txHash,
+    toAddress,
+    amountTzs,
+    entryType,
+    reason,
+    notes,
+    createdByUserId: currentUser.id,
+  })
+
+  revalidatePath('/backstage/minting')
+}
+
+async function getOnChainSupply(): Promise<number | null> {
+  try {
+    const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC_URL)
+    const token = new ethers.Contract(
+      NTZS_CONTRACT_ADDRESS,
+      ['function totalSupply() view returns (uint256)', 'function decimals() view returns (uint8)'],
+      provider
+    )
+    const [totalSupply, decimals] = await Promise.all([
+      token.totalSupply(),
+      token.decimals(),
+    ])
+    return Number(ethers.formatUnits(totalSupply, decimals))
+  } catch (err) {
+    console.error('[Minting] Failed to fetch on-chain supply:', err)
+    return null
+  }
+}
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     submitted: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
@@ -459,31 +522,38 @@ export default async function MintingPage() {
   const { db } = getDb()
 
   // Fetch all deposit requests with related data including mint transaction info
-  const allDeposits = await db
-    .select({
-      id: depositRequests.id,
-      amountTzs: depositRequests.amountTzs,
-      status: depositRequests.status,
-      chain: depositRequests.chain,
-      createdAt: depositRequests.createdAt,
-      userEmail: users.email,
-      userId: users.id,
-      bankName: banks.name,
-      walletAddress: wallets.address,
-      txHash: mintTransactions.txHash,
-      mintStatus: mintTransactions.status,
-      mintError: mintTransactions.error,
-      paymentProvider: depositRequests.paymentProvider,
-      pspReference: depositRequests.pspReference,
-      pspChannel: depositRequests.pspChannel,
-    })
-    .from(depositRequests)
-    .innerJoin(users, eq(depositRequests.userId, users.id))
-    .innerJoin(banks, eq(depositRequests.bankId, banks.id))
-    .innerJoin(wallets, eq(depositRequests.walletId, wallets.id))
-    .leftJoin(mintTransactions, eq(depositRequests.id, mintTransactions.depositRequestId))
-    .orderBy(desc(depositRequests.createdAt))
-    .limit(200)
+  const [allDeposits, allReconciliationEntries, onChainSupply] = await Promise.all([
+    db
+      .select({
+        id: depositRequests.id,
+        amountTzs: depositRequests.amountTzs,
+        status: depositRequests.status,
+        chain: depositRequests.chain,
+        createdAt: depositRequests.createdAt,
+        userEmail: users.email,
+        userId: users.id,
+        bankName: banks.name,
+        walletAddress: wallets.address,
+        txHash: mintTransactions.txHash,
+        mintStatus: mintTransactions.status,
+        mintError: mintTransactions.error,
+        paymentProvider: depositRequests.paymentProvider,
+        pspReference: depositRequests.pspReference,
+        pspChannel: depositRequests.pspChannel,
+      })
+      .from(depositRequests)
+      .innerJoin(users, eq(depositRequests.userId, users.id))
+      .innerJoin(banks, eq(depositRequests.bankId, banks.id))
+      .innerJoin(wallets, eq(depositRequests.walletId, wallets.id))
+      .leftJoin(mintTransactions, eq(depositRequests.id, mintTransactions.depositRequestId))
+      .orderBy(desc(depositRequests.createdAt))
+      .limit(200),
+    db
+      .select()
+      .from(reconciliationEntries)
+      .orderBy(desc(reconciliationEntries.createdAt)),
+    getOnChainSupply(),
+  ])
 
   const pendingApproval = allDeposits.filter(d => d.status === 'bank_approved').length
   const pendingMints = allDeposits.filter(d => d.status === 'mint_pending').length
@@ -491,6 +561,11 @@ export default async function MintingPage() {
   const totalVolume = allDeposits
     .filter(d => d.status === 'minted')
     .reduce((sum, d) => sum + d.amountTzs, 0)
+  
+  // Reconciliation totals
+  const reconciliationTotal = allReconciliationEntries.reduce((sum, e) => sum + e.amountTzs, 0)
+  const dbTrackedTotal = totalVolume + reconciliationTotal
+  const discrepancy = onChainSupply !== null ? onChainSupply - dbTrackedTotal : null
 
   return (
     <div className="min-h-screen">
@@ -520,6 +595,40 @@ export default async function MintingPage() {
       </div>
 
       <div className="p-8">
+        {/* Supply Reconciliation */}
+        <div className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-6">
+          <h2 className="text-lg font-semibold text-white mb-4">Supply Reconciliation</h2>
+          <div className="grid gap-4 sm:grid-cols-5">
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+              <p className="text-2xl font-bold text-cyan-400">{onChainSupply !== null ? onChainSupply.toLocaleString() : '—'}</p>
+              <p className="text-sm text-zinc-500">On-Chain Supply</p>
+              <p className="text-xs text-zinc-600 mt-1">Source of truth</p>
+            </div>
+            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+              <p className="text-2xl font-bold text-blue-400">{totalVolume.toLocaleString()}</p>
+              <p className="text-sm text-zinc-500">DB Minted</p>
+              <p className="text-xs text-zinc-600 mt-1">From deposits</p>
+            </div>
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
+              <p className="text-2xl font-bold text-violet-400">{reconciliationTotal.toLocaleString()}</p>
+              <p className="text-sm text-zinc-500">Reconciled</p>
+              <p className="text-xs text-zinc-600 mt-1">{allReconciliationEntries.length} entries</p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <p className="text-2xl font-bold text-emerald-400">{dbTrackedTotal.toLocaleString()}</p>
+              <p className="text-sm text-zinc-500">Total Tracked</p>
+              <p className="text-xs text-zinc-600 mt-1">DB + Reconciled</p>
+            </div>
+            <div className={`rounded-xl border p-4 ${discrepancy === 0 ? 'border-emerald-500/20 bg-emerald-500/5' : discrepancy !== null ? 'border-amber-500/20 bg-amber-500/5' : 'border-zinc-500/20 bg-zinc-500/5'}`}>
+              <p className={`text-2xl font-bold ${discrepancy === 0 ? 'text-emerald-400' : discrepancy !== null ? 'text-amber-400' : 'text-zinc-400'}`}>
+                {discrepancy !== null ? (discrepancy === 0 ? '✓ Balanced' : `${discrepancy > 0 ? '+' : ''}${discrepancy.toLocaleString()}`) : '—'}
+              </p>
+              <p className="text-sm text-zinc-500">Discrepancy</p>
+              <p className="text-xs text-zinc-600 mt-1">{discrepancy === 0 ? 'All accounted' : discrepancy !== null ? 'Needs attention' : 'Loading...'}</p>
+            </div>
+          </div>
+        </div>
+
         {/* Stats */}
         <div className="mb-6 grid gap-4 sm:grid-cols-4">
           <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
@@ -713,6 +822,159 @@ export default async function MintingPage() {
             </table>
           </div>
         </div>
+
+        {/* Reconciliation Section */}
+        {(discrepancy !== null && discrepancy !== 0) || allReconciliationEntries.length > 0 ? (
+          <div className="mt-8 space-y-6">
+            {/* Add Reconciliation Entry Form */}
+            {discrepancy !== null && discrepancy > 0 && (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
+                <h3 className="text-lg font-semibold text-amber-400 mb-4">Log Untracked Mint</h3>
+                <p className="text-sm text-zinc-400 mb-4">
+                  There are {discrepancy.toLocaleString()} nTZS on-chain not tracked in the database. 
+                  Add a reconciliation entry to account for this discrepancy.
+                </p>
+                <form action={addReconciliationEntryAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Transaction Hash *</label>
+                    <input
+                      type="text"
+                      name="txHash"
+                      placeholder="0x..."
+                      required
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-amber-500/50 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">To Address *</label>
+                    <input
+                      type="text"
+                      name="toAddress"
+                      placeholder="0x..."
+                      required
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-amber-500/50 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Amount (TZS) *</label>
+                    <input
+                      type="number"
+                      name="amountTzs"
+                      placeholder={discrepancy.toString()}
+                      defaultValue={discrepancy}
+                      required
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-amber-500/50 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Entry Type *</label>
+                    <select
+                      name="entryType"
+                      required
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white border border-zinc-700 focus:border-amber-500/50 outline-none"
+                    >
+                      <option value="double_mint">Double Mint</option>
+                      <option value="test_mint">Test Mint</option>
+                      <option value="untracked_mint">Untracked Mint</option>
+                      <option value="manual_correction">Manual Correction</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Reason *</label>
+                    <input
+                      type="text"
+                      name="reason"
+                      placeholder="e.g., Safe transaction executed twice"
+                      required
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-amber-500/50 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Notes (optional)</label>
+                    <input
+                      type="text"
+                      name="notes"
+                      placeholder="Additional details..."
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-amber-500/50 outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-amber-500/20 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/30 transition-colors"
+                    >
+                      Add Reconciliation Entry
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Reconciliation Entries Table */}
+            {allReconciliationEntries.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-zinc-900/50 overflow-hidden">
+                <div className="px-6 py-4 border-b border-white/10">
+                  <h3 className="text-lg font-semibold text-white">Reconciliation Entries</h3>
+                  <p className="text-sm text-zinc-400">On-chain mints not linked to deposit requests</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-zinc-900/80">
+                      <tr className="text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                        <th className="px-6 py-4">Type</th>
+                        <th className="px-6 py-4">Amount</th>
+                        <th className="px-6 py-4">To Address</th>
+                        <th className="px-6 py-4">Reason</th>
+                        <th className="px-6 py-4">Tx Hash</th>
+                        <th className="px-6 py-4">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {allReconciliationEntries.map((entry) => (
+                        <tr key={entry.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-6 py-4">
+                            <span className="rounded bg-violet-500/20 px-2 py-1 text-xs font-medium text-violet-400">
+                              {entry.entryType.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-lg font-bold text-amber-400">
+                              {entry.amountTzs.toLocaleString()}
+                            </span>
+                            <span className="text-xs text-zinc-500 ml-1">TZS</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <code className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-zinc-300">
+                              {entry.toAddress.slice(0, 6)}...{entry.toAddress.slice(-4)}
+                            </code>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="text-sm text-white">{entry.reason}</p>
+                            {entry.notes && <p className="text-xs text-zinc-500 mt-1">{entry.notes}</p>}
+                          </td>
+                          <td className="px-6 py-4">
+                            <a
+                              href={`https://sepolia.basescan.org/tx/${entry.txHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-xs text-cyan-400 hover:underline"
+                            >
+                              {entry.txHash.slice(0, 10)}...
+                            </a>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-zinc-400">
+                            {new Date(entry.createdAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   )
