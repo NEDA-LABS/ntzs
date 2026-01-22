@@ -14,7 +14,7 @@ This `/docs` folder is intended for third-party code reviewers and smart contrac
     - Polls for `mint_pending` deposits
     - Mints nTZS on-chain
     - Updates DB and audit logs
-    - Polls ZenoPay as a fallback if webhooks fail
+    - Polls ZenoPay as a fallback if webhooks fail.
 - `packages/contracts`
   - Hardhat project containing the `NTZS.sol` ERC-20 contract
 - `packages/db`
