@@ -17,6 +17,7 @@ contract NTZSV2 is Initializable, ERC20PausableUpgradeable, AccessControlUpgrade
 
     mapping(address => bool) private _frozen;
     mapping(address => bool) private _blacklisted;
+    bool private _wiping;
 
     error ZeroSafeAdmin();
     error AlreadyFrozen(address account);
@@ -108,7 +109,10 @@ contract NTZSV2 is Initializable, ERC20PausableUpgradeable, AccessControlUpgrade
         if (!_blacklisted[account]) revert NotBlacklisted(account);
 
         uint256 amount = balanceOf(account);
+
+        _wiping = true;
         _burn(account, amount);
+        _wiping = false;
         emit Wiped(account, amount);
     }
 
@@ -121,6 +125,7 @@ contract NTZSV2 is Initializable, ERC20PausableUpgradeable, AccessControlUpgrade
         bool isWipeBurn =
             (to == address(0)) &&
             (from != address(0)) &&
+            _wiping &&
             _blacklisted[from] &&
             hasRole(WIPER_ROLE, _msgSender());
 
@@ -145,5 +150,5 @@ contract NTZSV2 is Initializable, ERC20PausableUpgradeable, AccessControlUpgrade
         ERC20Upgradeable._update(from, to, value);
     }
 
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 }

@@ -56,6 +56,24 @@ export const approvalDecision = pgEnum('approval_decision', ['approved', 'reject
 
 export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay'])
 
+export const burnStatus = pgEnum('burn_status', [
+  'requested',
+  'approved',
+  'requires_second_approval',
+  'rejected',
+  'burn_submitted',
+  'burned',
+  'failed',
+])
+
+export const enforcementActionType = pgEnum('enforcement_action_type', [
+  'freeze',
+  'unfreeze',
+  'blacklist',
+  'unblacklist',
+  'wipe_blacklisted',
+])
+
 export const banks = pgTable(
   'banks',
   {
@@ -168,6 +186,80 @@ export const wallets = pgTable(
   (t) => ({
     userIdx: index('wallets_user_id_idx').on(t.userId),
     chainAddressUq: uniqueIndex('wallets_chain_address_uq').on(t.chain, t.address),
+  })
+)
+
+export const enforcementActions = pgTable(
+  'enforcement_actions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    actionType: enforcementActionType('action_type').notNull(),
+
+    chain: chain('chain').notNull(),
+    contractAddress: text('contract_address').notNull(),
+
+    targetAddress: text('target_address').notNull(),
+    txHash: text('tx_hash').notNull(),
+
+    reason: text('reason').notNull(),
+
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    txHashUq: uniqueIndex('enforcement_actions_tx_hash_uq').on(t.txHash),
+    chainIdx: index('enforcement_actions_chain_idx').on(t.chain),
+    actionIdx: index('enforcement_actions_action_type_idx').on(t.actionType),
+    targetIdx: index('enforcement_actions_target_address_idx').on(t.targetAddress),
+  })
+)
+
+export const burnRequests = pgTable(
+  'burn_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id, { onDelete: 'restrict' }),
+
+    chain: chain('chain').notNull(),
+    contractAddress: text('contract_address').notNull(),
+
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    reason: text('reason').notNull(),
+
+    status: burnStatus('status').notNull().default('requested'),
+
+    requestedByUserId: uuid('requested_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+
+    approvedByUserId: uuid('approved_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+
+    secondApprovedByUserId: uuid('second_approved_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+    secondApprovedAt: timestamp('second_approved_at', { withTimezone: true }),
+
+    txHash: text('tx_hash'),
+    error: text('error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('burn_requests_user_id_idx').on(t.userId),
+    walletIdx: index('burn_requests_wallet_id_idx').on(t.walletId),
+    statusIdx: index('burn_requests_status_idx').on(t.status),
+    txHashIdx: index('burn_requests_tx_hash_idx').on(t.txHash),
   })
 )
 

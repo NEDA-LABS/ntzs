@@ -26,6 +26,8 @@ This `/docs` folder is intended for third-party code reviewers and smart contrac
 - [02 Deposit to Mint Lifecycle](./02-DEPOSIT-TO-MINT-LIFECYCLE.md)
 - [03 Database Model](./03-DATABASE-MODEL.md)
 - [04 Smart Contract](./04-SMART-CONTRACT.md)
+- [07 Audit Response](./07-AUDIT-RESPONSE.md)
+- [08 Burn / Withdraw Workflow](./08-BURN-WITHDRAW-WORKFLOW.md)
 - [05 Security Model and Threats](./05-SECURITY-MODEL.md)
 - [06 Operations Runbook](./06-OPERATIONS-RUNBOOK.md)
 
@@ -34,6 +36,7 @@ This `/docs` folder is intended for third-party code reviewers and smart contrac
 - Verify that **fiat confirmation and approvals** gate minting correctly.
 - Verify **minting idempotency** and handling of failures/retries.
 - Verify contract access control and admin powers (pause, freeze, blacklist, wipe).
+- Verify burn (withdraw) workflow is auditable and tied to a user record (DB-backed), and that on-chain burns match recorded requests.
 - Verify that **on-chain supply** can be reconciled against DB records (and is auditable).
 
 ## Core Concepts
@@ -57,7 +60,7 @@ This `/docs` folder is intended for third-party code reviewers and smart contrac
 
 - `DATABASE_URL`: Neon Postgres connection string.
 - `BASE_SEPOLIA_RPC_URL`: RPC endpoint for Base Sepolia.
-- `NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA`: token contract address.
+- `NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA`: token proxy contract address.
 - `MINTER_PRIVATE_KEY`: private key used by the worker to mint (must have `MINTER_ROLE`).
 - `ZENOPAY_API_KEY`: API key for ZenoPay (used for payment creation and polling).
 - `NEXT_PUBLIC_APP_URL`: used to construct webhook callback URLs.

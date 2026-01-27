@@ -85,6 +85,9 @@ describe('NTZSV2 (UUPS)', function () {
     await expect(token.connect(safeAdmin).blacklist(bobAddr)).to.not.be.reverted
     await expect(token.connect(safeAdmin).pause()).to.not.be.reverted
 
+    // Normal admin burn is still blocked while paused
+    await expect(token.connect(safeAdmin).burn(bobAddr, 1n)).to.be.revertedWithCustomError(token, 'TokenPaused')
+
     // Wipe should work while paused
     await expect(token.connect(safeAdmin).wipeBlacklisted(bobAddr)).to.not.be.reverted
     expect(await token.balanceOf(bobAddr)).to.equal(0n)

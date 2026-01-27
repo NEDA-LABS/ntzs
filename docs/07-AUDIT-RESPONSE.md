@@ -15,6 +15,7 @@ The originally deployed contract (`NTZS.sol`) is not upgradeable. To address the
 - Resolution: Introduced `NTZSV2` as a UUPS-upgradeable contract.
 - Upgrade authorization: `_authorizeUpgrade` is restricted to `DEFAULT_ADMIN_ROLE` (intended to be held by a multisig Safe).
 - Operational note: deployments should use the proxy address as the token address for integrations.
+- Operational note: the implementation contract disables initializers in its constructor (`_disableInitializers()`), and tooling may require explicitly allowing this constructor for proxy validation.
 
 ### #5 State change functions emit events even when no state changes
 
@@ -29,6 +30,7 @@ The originally deployed contract (`NTZS.sol`) is not upgradeable. To address the
 
 - Resolution: `NTZSV2` permits `wipeBlacklisted` to execute while paused by allowing the specific wipe burn path to bypass pause restrictions.
 - Effect: administrative remediation remains possible during emergency pause without re-enabling normal transfers.
+- Note: `burn(from, amount)` remains blocked while paused. Only the explicitly-scoped `wipeBlacklisted` remediation path bypasses pause.
 
 ### #2 Use custom errors instead of strings
 

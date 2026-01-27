@@ -41,6 +41,16 @@ const navItems = [
     ),
   },
   {
+    name: 'Burns',
+    href: '/backstage/burns',
+    icon: (
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.5 2 4 4.5 4 7.5a4 4 0 11-8 0C8 7.5 9.5 5 12 3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 21h12" />
+      </svg>
+    ),
+  },
+  {
     name: 'Token Admin',
     href: '/backstage/token-admin',
     icon: (

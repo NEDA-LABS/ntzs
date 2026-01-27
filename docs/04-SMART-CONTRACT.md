@@ -1,10 +1,12 @@
 # Smart Contract
 
-Contract source: `packages/contracts/contracts/NTZS.sol`
+Contract source: `packages/contracts/contracts/NTZSV2.sol`
 
 ## Summary
 
-`NTZS` is an ERC-20 token contract with additional administrative controls designed for compliance and operational safety.
+`NTZSV2` is an ERC-20 token contract with additional administrative controls designed for compliance and operational safety.
+
+`NTZSV2` is intended to be deployed behind a UUPS proxy. Integrations should use the proxy address as the token address.
 
 - ERC-20 token name/symbol: `nTZS` / `nTZS`
 - Pausable transfers
@@ -27,12 +29,10 @@ The contract uses OpenZeppelin `AccessControl`.
 
 On deployment:
 
-- `safeAdmin` is granted all operational roles above.
-- `msg.sender` (deployer) is also granted `DEFAULT_ADMIN_ROLE`.
+`NTZSV2` is upgradeable and uses an initializer:
 
-The deployer can remove their admin privileges by calling:
-
-- `renounceDeployerAdmin()`
+- `initialize(address safeAdmin)` grants `safeAdmin` all operational roles above.
+- The implementation contract disables initializers in its constructor (`_disableInitializers()`) to prevent misuse.
 
 ## Public Functions
 
@@ -67,6 +67,16 @@ Implications:
 - Blacklisted accounts cannot send.
 - Transfers to blacklisted accounts are blocked.
 - A wipe operation burns the blacklisted account balance.
+
+Pause behavior:
+
+- When paused, normal transfers are blocked.
+- `wipeBlacklisted` remains allowed while paused (admin-only remediation).
+- `burn(from, amount)` is blocked while paused.
+
+Upgrade authorization:
+
+- UUPS upgrades are restricted to `DEFAULT_ADMIN_ROLE`.
 
 ## Events
 

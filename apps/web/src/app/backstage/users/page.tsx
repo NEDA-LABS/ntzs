@@ -1,9 +1,10 @@
 import { desc, eq } from 'drizzle-orm'
+import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 
 import { UserRole, requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { users } from '@ntzs/db'
+import { users, wallets } from '@ntzs/db'
 
 async function updateUserRoleAction(formData: FormData) {
   'use server'
@@ -53,6 +54,7 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 export default async function UsersPage() {
+  await requireRole('super_admin')
   const { db } = getDb()
 
   const allUsers = await db
@@ -64,10 +66,14 @@ export default async function UsersPage() {
       isActive: users.isActive,
       createdAt: users.createdAt,
       neonAuthUserId: users.neonAuthUserId,
+      walletAddress: wallets.address,
     })
     .from(users)
+    .leftJoin(wallets, eq(wallets.userId, users.id))
     .orderBy(desc(users.createdAt))
     .limit(500)
+
+  const tokenAdminBaseSepolia = '/backstage/token-admin?chain=base_sepolia'
 
   return (
     <div className="min-h-screen">
@@ -82,6 +88,26 @@ export default async function UsersPage() {
       </div>
 
       <div className="p-8">
+        <div className="mb-6 flex flex-wrap gap-2">
+          <Link
+            href={`${tokenAdminBaseSepolia}&action=pause`}
+            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+          >
+            Pause Token
+          </Link>
+          <Link
+            href={`${tokenAdminBaseSepolia}&action=unpause`}
+            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+          >
+            Unpause Token
+          </Link>
+          <Link
+            href={tokenAdminBaseSepolia}
+            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+          >
+            Open Token Admin
+          </Link>
+        </div>
         {/* Stats */}
         <div className="mb-6 grid gap-4 sm:grid-cols-4">
           <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
@@ -115,6 +141,7 @@ export default async function UsersPage() {
               <thead className="bg-zinc-900/80">
                 <tr className="text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
                   <th className="px-6 py-4">User</th>
+                  <th className="px-6 py-4">Wallet</th>
                   <th className="px-6 py-4">Role</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Joined</th>
@@ -131,6 +158,43 @@ export default async function UsersPage() {
                       </div>
                       {u.phone && (
                         <div className="mt-0.5 text-xs text-zinc-500">{u.phone}</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {u.walletAddress ? (
+                        <div className="space-y-2">
+                          <div className="truncate font-mono text-xs text-zinc-300" title={u.walletAddress}>
+                            {u.walletAddress}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Link
+                              href={`${tokenAdminBaseSepolia}&action=freeze&account=${encodeURIComponent(String(u.walletAddress))}`}
+                              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15"
+                            >
+                              Freeze
+                            </Link>
+                            <Link
+                              href={`${tokenAdminBaseSepolia}&action=unfreeze&account=${encodeURIComponent(String(u.walletAddress))}`}
+                              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15"
+                            >
+                              Unfreeze
+                            </Link>
+                            <Link
+                              href={`${tokenAdminBaseSepolia}&action=blacklist&account=${encodeURIComponent(String(u.walletAddress))}`}
+                              className="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-500/30"
+                            >
+                              Blacklist
+                            </Link>
+                            <Link
+                              href={`${tokenAdminBaseSepolia}&action=unblacklist&account=${encodeURIComponent(String(u.walletAddress))}`}
+                              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15"
+                            >
+                              Unblacklist
+                            </Link>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-500">—</span>
                       )}
                     </td>
                     <td className="px-6 py-4">

@@ -3,7 +3,7 @@ import Link from 'next/link'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { depositRequests, kycCases, wallets } from '@ntzs/db'
+import { burnRequests, depositRequests, kycCases, wallets } from '@ntzs/db'
 
 import { GlassPanel } from '../../_components/GlassPanel'
 
@@ -35,6 +35,38 @@ export default async function ActivityPage() {
     .where(eq(depositRequests.userId, dbUser.id))
     .orderBy(desc(depositRequests.createdAt))
     .limit(50)
+
+  const burns = await db
+    .select({
+      id: burnRequests.id,
+      amountTzs: burnRequests.amountTzs,
+      status: burnRequests.status,
+      createdAt: burnRequests.createdAt,
+    })
+    .from(burnRequests)
+    .where(eq(burnRequests.userId, dbUser.id))
+    .orderBy(desc(burnRequests.createdAt))
+    .limit(50)
+
+  const txns = [
+    ...deposits.map((d) => ({
+      type: 'deposit' as const,
+      id: d.id,
+      amountTzs: d.amountTzs,
+      status: d.status,
+      createdAt: d.createdAt,
+    })),
+    ...burns.map((b) => ({
+      type: 'burn' as const,
+      id: b.id,
+      amountTzs: b.amountTzs,
+      status: b.status,
+      createdAt: b.createdAt,
+    })),
+  ]
+    .filter((t) => t.createdAt)
+    .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+    .slice(0, 50)
 
   return (
     <main className="flex flex-col gap-6">
@@ -75,23 +107,25 @@ export default async function ActivityPage() {
         </div>
       </GlassPanel>
 
-      <GlassPanel title="Deposit history">
-        {deposits.length ? (
+      <GlassPanel title="Transaction history">
+        {txns.length ? (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left text-white/60">
                   <th className="py-2 pr-4">Created</th>
+                  <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Amount (TZS)</th>
                   <th className="py-2 pr-4">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {deposits.map((d) => (
-                  <tr key={d.id} className="border-b border-white/10">
-                    <td className="py-2 pr-4">{new Date(d.createdAt).toLocaleString()}</td>
-                    <td className="py-2 pr-4">{d.amountTzs}</td>
-                    <td className="py-2 pr-4">{d.status}</td>
+                {txns.map((t) => (
+                  <tr key={t.id} className="border-b border-white/10">
+                    <td className="py-2 pr-4">{new Date(t.createdAt!).toLocaleString()}</td>
+                    <td className="py-2 pr-4">{t.type === 'deposit' ? 'Deposit' : 'Withdraw'}</td>
+                    <td className="py-2 pr-4">{t.type === 'deposit' ? t.amountTzs : -t.amountTzs}</td>
+                    <td className="py-2 pr-4">{String(t.status)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -99,7 +133,7 @@ export default async function ActivityPage() {
           </div>
         ) : (
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-            No deposits yet.
+            No transactions yet.
           </div>
         )}
       </GlassPanel>

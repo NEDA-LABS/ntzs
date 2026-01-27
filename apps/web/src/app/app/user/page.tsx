@@ -3,7 +3,7 @@ import { eq, desc } from 'drizzle-orm'
 
 import { requireAnyRole, requireDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { wallets, depositRequests } from '@ntzs/db'
+import { wallets, depositRequests, burnRequests } from '@ntzs/db'
 
 import {
   IconCheckCircle,
@@ -33,6 +33,38 @@ export default async function UserDashboard() {
     .where(eq(depositRequests.userId, dbUser.id))
     .orderBy(desc(depositRequests.createdAt))
     .limit(5)
+
+  const recentBurns = await db
+    .select({
+      id: burnRequests.id,
+      amountTzs: burnRequests.amountTzs,
+      status: burnRequests.status,
+      createdAt: burnRequests.createdAt,
+    })
+    .from(burnRequests)
+    .where(eq(burnRequests.userId, dbUser.id))
+    .orderBy(desc(burnRequests.createdAt))
+    .limit(5)
+
+  const recentTxns = [
+    ...recentDeposits.map((d) => ({
+      type: 'deposit' as const,
+      id: d.id,
+      amountTzs: d.amountTzs,
+      status: d.status,
+      createdAt: d.createdAt,
+    })),
+    ...recentBurns.map((b) => ({
+      type: 'burn' as const,
+      id: b.id,
+      amountTzs: b.amountTzs,
+      status: b.status,
+      createdAt: b.createdAt,
+    })),
+  ]
+    .filter((t) => t.createdAt)
+    .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+    .slice(0, 5)
 
   const pendingCount = recentDeposits.filter(d => !['minted', 'rejected', 'cancelled'].includes(d.status)).length
 
@@ -113,7 +145,7 @@ export default async function UserDashboard() {
                 </Link>
               </div>
               <div className="p-4">
-                {recentDeposits.length === 0 ? (
+                {recentTxns.length === 0 ? (
                   <div className="py-8 text-center">
                     <IconReceipt className="mx-auto h-12 w-12 text-zinc-700" />
                     <p className="mt-4 text-sm text-zinc-500">No transactions yet</p>
@@ -121,29 +153,49 @@ export default async function UserDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {recentDeposits.map((deposit) => (
-                      <div key={deposit.id} className="flex items-center justify-between rounded-xl bg-white/5 p-4 transition-colors hover:bg-white/[0.07]">
+                    {recentTxns.map((tx) => (
+                      <div key={tx.id} className="flex items-center justify-between rounded-xl bg-white/5 p-4 transition-colors hover:bg-white/[0.07]">
                         <div className="flex items-center gap-4">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10">
-                            <IconPlus className="h-5 w-5 text-emerald-400" />
+                          <div
+                            className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                              tx.type === 'deposit' ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+                            }`}
+                          >
+                            {tx.type === 'deposit' ? (
+                              <IconPlus className="h-5 w-5 text-emerald-400" />
+                            ) : (
+                              <IconWithdraw className="h-5 w-5 text-rose-300" />
+                            )}
                           </div>
                           <div>
-                            <p className="font-medium text-white">Deposit</p>
+                            <p className="font-medium text-white">{tx.type === 'deposit' ? 'Deposit' : 'Withdraw'}</p>
                             <p className="text-xs text-zinc-500">
-                              {deposit.createdAt ? new Date(deposit.createdAt).toLocaleDateString() : ''}
+                              {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : ''}
                             </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono font-medium text-emerald-400">
-                            +{deposit.amountTzs.toLocaleString()} TZS
-                          </p>
-                          <p className={`text-xs capitalize ${
-                            deposit.status === 'minted' ? 'text-emerald-400' :
-                            deposit.status === 'rejected' ? 'text-rose-400' :
-                            'text-amber-400'
-                          }`}>
-                            {deposit.status.replace(/_/g, ' ')}
+                          {tx.type === 'deposit' ? (
+                            <p className="font-mono font-medium text-emerald-400">+{tx.amountTzs.toLocaleString()} TZS</p>
+                          ) : (
+                            <p className="font-mono font-medium text-rose-300">-{tx.amountTzs.toLocaleString()} TZS</p>
+                          )}
+                          <p
+                            className={`text-xs capitalize ${
+                              tx.type === 'deposit'
+                                ? tx.status === 'minted'
+                                  ? 'text-emerald-400'
+                                  : tx.status === 'rejected'
+                                    ? 'text-rose-400'
+                                    : 'text-amber-400'
+                                : tx.status === 'burned'
+                                  ? 'text-rose-300'
+                                  : tx.status === 'failed'
+                                    ? 'text-rose-400'
+                                    : 'text-amber-400'
+                            }`}
+                          >
+                            {String(tx.status).replace(/_/g, ' ')}
                           </p>
                         </div>
                       </div>

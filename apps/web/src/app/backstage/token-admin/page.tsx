@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { ethers } from 'ethers'
+import { useSearchParams } from 'next/navigation'
 
 type Action =
   | 'pause'
@@ -104,6 +105,8 @@ const actions: { value: Action; label: string; icon: React.ReactNode; descriptio
 export default function TokenAdminPage() {
   const safeAdmin = process.env.NEXT_PUBLIC_NTZS_SAFE_ADMIN || ''
 
+  const searchParams = useSearchParams()
+
   const [selectedChain, setSelectedChain] = useState<Chain>('base_sepolia')
   const [selectedAction, setSelectedAction] = useState<Action>('pause')
   const [account, setAccount] = useState('')
@@ -115,6 +118,24 @@ export default function TokenAdminPage() {
   }>({ paused: null, totalSupply: null, loading: false })
 
   const chainConfig = CHAIN_CONFIG[selectedChain]
+
+  // Allow deep-linking from admin tables (e.g., /backstage/token-admin?chain=base_sepolia&action=freeze&account=0x...)
+  useEffect(() => {
+    const qpChain = searchParams.get('chain')
+    const qpAction = searchParams.get('action')
+    const qpAccount = searchParams.get('account')
+
+    if (qpChain && Object.keys(CHAIN_CONFIG).includes(qpChain)) {
+      setSelectedChain(qpChain as Chain)
+    }
+    if (qpAction && actions.some((a) => a.value === qpAction)) {
+      setSelectedAction(qpAction as Action)
+    }
+    if (qpAccount && ethers.isAddress(qpAccount)) {
+      setAccount(qpAccount)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const contractAddress = useMemo(() => {
     if (selectedChain === 'base_sepolia') return process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
