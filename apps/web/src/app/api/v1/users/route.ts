@@ -10,10 +10,20 @@ import { users, wallets, partnerUsers, partners } from '@ntzs/db'
  * POST /api/v1/users — Create a new user and provision an embedded wallet
  */
 export async function POST(request: NextRequest) {
+  try {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // Guard: encryption key must be configured before any HD wallet operations
+  if (!process.env.WAAS_ENCRYPTION_KEY) {
+    console.error('[v1/users] WAAS_ENCRYPTION_KEY is not set')
+    return NextResponse.json(
+      { error: 'Server configuration error: wallet encryption key not set' },
+      { status: 500 }
+    )
+  }
 
   let body: { externalId: string; email: string; phone?: string }
   try {
@@ -101,18 +111,26 @@ export async function POST(request: NextRequest) {
     userEmail = newUser.email
     userPhone = newUser.phone
   } else {
+    // Conflict may be on neonAuthUserId or email — try both
     const [existingUser] = await db
+      .select({ id: users.id, email: users.email, phone: users.phone })
+      .from(users)
+      .where(eq(users.neonAuthUserId, neonAuthUserId))
+      .limit(1)
+
+    const resolved = existingUser ?? await db
       .select({ id: users.id, email: users.email, phone: users.phone })
       .from(users)
       .where(eq(users.email, email))
       .limit(1)
+      .then(rows => rows[0])
 
-    if (!existingUser) {
-      return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
+    if (!resolved) {
+      return NextResponse.json({ error: 'Failed to create or resolve user' }, { status: 500 })
     }
-    userId = existingUser.id
-    userEmail = existingUser.email
-    userPhone = existingUser.phone
+    userId = resolved.id
+    userEmail = resolved.email
+    userPhone = resolved.phone
   }
 
   // Ensure partner has an HD seed (auto-generate on first user creation)
@@ -186,4 +204,9 @@ export async function POST(request: NextRequest) {
     },
     { status: 201 }
   )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[v1/users] Unhandled error:', message)
+    return NextResponse.json({ error: 'Internal server error', detail: message }, { status: 500 })
+  }
 }
