@@ -6,6 +6,7 @@ import { ethers } from 'ethers'
 
 import { createDbClient } from '@ntzs/db'
 import { sleep } from '@ntzs/shared'
+import { processBurnJob } from './burn-worker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..')
@@ -14,8 +15,8 @@ dotenv.config({ path: path.join(repoRoot, '.env') })
 dotenv.config({ path: path.join(repoRoot, '.env.local'), override: true })
 
 // Must be after dotenv.config()
-const ZENOPAY_API_URL = process.env.ZENOPAY_API_URL || 'https://zenoapi.com/api'
-const ZENOPAY_API_KEY = process.env.ZENOPAY_API_KEY || ''
+const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
+const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 
 const SAFE_MINT_THRESHOLD_TZS = 9000
 
@@ -106,19 +107,20 @@ async function logAudit(
 }
 
 /**
- * Poll ZenoPay for completed payments that are still in "submitted" status
+ * Poll Snippe for completed payments that are still in "submitted" status
  * This is a fallback in case webhooks don't fire
  */
-async function pollZenoPayForCompletedPayments(sql: ReturnType<typeof createDbClient>['sql']) {
-  if (!ZENOPAY_API_KEY) {
+async function pollSnippeForCompletedPayments(sql: ReturnType<typeof createDbClient>['sql']) {
+  if (!SNIPPE_API_KEY) {
     return // Skip if no API key configured
   }
 
-  // Find submitted ZenoPay deposits older than 30 seconds
-  const pendingDeposits = await sql<{ id: string; created_at: Date }[]>`
-    select id, created_at from deposit_requests
+  // Find submitted Snippe deposits older than 30 seconds that have a psp_reference
+  const pendingDeposits = await sql<{ id: string; psp_reference: string; amount_tzs: number }[]>`
+    select id, psp_reference, amount_tzs from deposit_requests
     where status = 'submitted'
-      and payment_provider = 'zenopay'
+      and payment_provider = 'snippe'
+      and psp_reference is not null
       and created_at < now() - interval '30 seconds'
     order by created_at asc
     limit 5
@@ -127,42 +129,49 @@ async function pollZenoPayForCompletedPayments(sql: ReturnType<typeof createDbCl
   for (const deposit of pendingDeposits) {
     try {
       const response = await fetch(
-        `${ZENOPAY_API_URL}/payments/order-status?order_id=${encodeURIComponent(deposit.id)}`,
-        { headers: { 'x-api-key': ZENOPAY_API_KEY } }
+        `${SNIPPE_BASE_URL}/v1/payments/${deposit.psp_reference}`,
+        { headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` } }
       )
 
       if (!response.ok) continue
 
-      const data = await response.json() as {
-        result: string
-        data?: Array<{
-          payment_status: string
-          transid: string
-          channel: string
-        }>
+      const result = await response.json() as {
+        status: string
+        data?: {
+          status: string
+          reference: string
+          channel?: { provider: string }
+        }
       }
 
-      if (data.result === 'SUCCESS' && data.data?.[0]?.payment_status === 'COMPLETED') {
-        const payment = data.data[0]
-        
+      if (result.status === 'success' && result.data?.status === 'completed') {
+        const newStatus = deposit.amount_tzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
+
         await sql`
           update deposit_requests
-          set status = case when amount_tzs >= ${SAFE_MINT_THRESHOLD_TZS} then 'mint_requires_safe' else 'mint_pending' end,
-              psp_reference = ${payment.transid},
-              psp_channel = ${payment.channel},
+          set status = ${newStatus},
+              psp_channel = ${result.data.channel?.provider ?? null},
               fiat_confirmed_at = now(),
               updated_at = now()
           where id = ${deposit.id} and status = 'submitted'
         `
 
-        console.log('[worker] polled ZenoPay, found completed payment', {
+        console.log('[worker] polled Snippe, found completed payment', {
           depositId: deposit.id,
-          transid: payment.transid,
+          reference: deposit.psp_reference,
+          newStatus,
         })
+      } else if (result.data?.status === 'failed' || result.data?.status === 'expired' || result.data?.status === 'voided') {
+        await sql`
+          update deposit_requests
+          set status = 'rejected', updated_at = now()
+          where id = ${deposit.id} and status = 'submitted'
+        `
+        console.log('[worker] polled Snippe, payment failed/expired', { depositId: deposit.id })
       }
     } catch (err) {
       // Silently continue on errors - will retry next poll
-      console.warn('[worker] ZenoPay poll error for', deposit.id, err instanceof Error ? err.message : err)
+      console.warn('[worker] Snippe poll error for', deposit.id, err instanceof Error ? err.message : err)
     }
   }
 }
@@ -346,13 +355,13 @@ async function main() {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Poll ZenoPay for completed payments (webhook fallback)
+    // Poll Snippe for completed payments (webhook fallback)
     try {
       const { sql } = createDbClient(databaseUrl)
-      await pollZenoPayForCompletedPayments(sql)
+      await pollSnippeForCompletedPayments(sql)
       await sql.end({ timeout: 5 })
     } catch (err) {
-      console.warn('[worker] ZenoPay poll error:', err instanceof Error ? err.message : err)
+      console.warn('[worker] Snippe poll error:', err instanceof Error ? err.message : err)
     }
 
     // Process mint jobs with error recovery
@@ -362,6 +371,16 @@ async function main() {
       console.error('[worker] processOne error:', err instanceof Error ? err.message : err)
       // Wait a bit longer on errors before retrying
       await sleep(10000)
+    }
+
+    // Process burn jobs (off-ramp: burn on-chain + Snippe payout)
+    try {
+      const rpcUrl = requiredEnv('BASE_SEPOLIA_RPC_URL')
+      const privateKey = requiredEnv('MINTER_PRIVATE_KEY')
+      const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+      await processBurnJob(databaseUrl, rpcUrl, privateKey, SNIPPE_API_KEY, apiBaseUrl)
+    } catch (err) {
+      console.error('[worker] processBurnJob error:', err instanceof Error ? err.message : err)
     }
 
     await sleep(pollMs)

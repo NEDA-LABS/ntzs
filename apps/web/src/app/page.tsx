@@ -101,9 +101,15 @@ export default function Home() {
           <a className="hover:text-white" href="#how-it-works">
             How it works
           </a>
+          <Link className="hover:text-white" href="/smart-wallets">
+            Smart Wallets
+          </Link>
           <a className="hover:text-white" href="#oversight">
             Oversight
           </a>
+          <Link className="hover:text-white" href="/developers">
+            Developers
+          </Link>
         </nav>
 
         <div className="flex items-center gap-3">
@@ -127,16 +133,16 @@ export default function Home() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 backdrop-blur-lg">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Secure digital asset issuance infrastructure
+              Next-generation financial infrastructure
             </div>
 
             <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
-              Tanzania's first Stablecoin digital asset reserve.
+              Tanzania's first digital asset reserve.
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-7 text-white/70 md:text-lg">
-              Convert verified deposits into Digital assets and manage your holdings through a modern
-              payments and settlement layer designed for the digital economy.
+              Transform traditional bank deposits into instant, programmable balances. Build automated
+              payment flows, real-time marketplaces, and modern financial products with zero friction.
             </p>
           </div>
 
@@ -187,11 +193,10 @@ export default function Home() {
           <div className="flex items-end justify-between gap-6">
             <div>
               <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                A streamlined issuance experience
+                A unified engine for moving value
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70 md:text-base">
-                Simple steps for users, strong controls for operators, and clear oversight for
-                regulators.
+                Everything you need to onboard users, program business logic, and settle transactions instantly.
               </p>
             </div>
           </div>
@@ -199,8 +204,8 @@ export default function Home() {
           <div className="mt-10 grid gap-5 md:grid-cols-3">
             <FeatureCard3D
               step="Step 1"
-              title="Deposit"
-              description="Initiate a deposit and receive clear payment instructions with a single reference for tracking."
+              title="Onboard instantly"
+              description="Users convert local currency into digital balances instantly via mobile money or bank transfer, with fully automated reconciliation."
               icon={
                 <svg
                   width="128"
@@ -261,8 +266,8 @@ export default function Home() {
 
             <FeatureCard3D
               step="Step 2"
-              title="Review"
-              description="Payments are reconciled and reviewed with policy checks and an auditable trail."
+              title="Automate workflows"
+              description="Embed custom business logic, enforce compliance rules, and build conditional payment flows directly into your application."
               featured
               icon={
                 <svg
@@ -309,8 +314,8 @@ export default function Home() {
 
             <FeatureCard3D
               step="Step 3"
-              title="Settle"
-              description="Once approved, your position is issued to your account—ready for settlement and transfer."
+              title="Settle in real-time"
+              description="Move value anywhere instantly, 24/7. Finalize transactions across your platform without waiting for traditional banking hours."
               icon={
                 <svg
                   width="128"
@@ -363,16 +368,48 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-16">
+        {/* WaaS Teaser Section */}
+        <section className="mt-24 relative overflow-hidden rounded-[28px] border border-blue-500/20 bg-blue-500/5 p-8 md:p-12 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] backdrop-blur-xl">
+          <div className="absolute -left-24 -top-24 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+          <div className="relative z-10 grid gap-8 md:grid-cols-2 md:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200 backdrop-blur-lg mb-4">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+                For Developers & Startups
+              </div>
+              <h2 className="text-3xl font-semibold tracking-tight md:text-4xl text-white">
+                Power your app with Smart Wallet as a Service
+              </h2>
+              <p className="mt-4 text-base leading-7 text-white/70">
+                Don't just hold digital assets—build with them. Our WaaS infrastructure lets you instantly provision wallets for your users, fully abstracting blockchain complexity.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
+              <Link
+                href="/smart-wallets"
+                className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+              >
+                Explore Smart Wallets
+              </Link>
+              <Link
+                href="/developers"
+                className="inline-flex h-12 items-center justify-center rounded-full border border-white/15 bg-white/5 px-8 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
+              >
+                View Documentation
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section id="oversight" className="mt-16">
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl md:p-10">
             <div className="grid gap-8 md:grid-cols-2 md:items-center">
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                  Oversight and transparency
+                  Built for trust and absolute scale
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-white/70 md:text-base">
-                  Every deposit, approval, and issuance event can be tracked across an end-to-end
-                  audit trail for operational review and regulatory visibility.
+                  Every transaction is cryptographically secured and recorded on an immutable ledger. Provide continuous, real-time auditability to regulators while eliminating manual reconciliation for your finance team.
                 </p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -401,12 +438,18 @@ export default function Home() {
             <div>nTZS</div>
           </div>
           <div className="flex items-center gap-4">
+            <Link className="hover:text-white" href="/smart-wallets">
+              Smart Wallets
+            </Link>
             <a className="hover:text-white" href="/auth/sign-in">
               Log in
             </a>
             <a className="hover:text-white" href="/app">
               Dashboard
             </a>
+            <Link className="hover:text-white" href="/developers">
+              Developers
+            </Link>
           </div>
         </footer>
       </main>

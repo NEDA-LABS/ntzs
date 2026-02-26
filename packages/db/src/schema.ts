@@ -54,7 +54,11 @@ export const approvalType = pgEnum('approval_type', ['bank', 'platform'])
 
 export const approvalDecision = pgEnum('approval_decision', ['approved', 'rejected'])
 
-export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay'])
+export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe'])
+
+export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
+
+export const webhookEventStatus = pgEnum('webhook_event_status', ['pending', 'delivered', 'failed'])
 
 export const burnStatus = pgEnum('burn_status', [
   'requested',
@@ -252,6 +256,12 @@ export const burnRequests = pgTable(
     txHash: text('tx_hash'),
     error: text('error'),
 
+    // Payout fields for off-ramp (added for WaaS)
+    recipientPhone: varchar('recipient_phone', { length: 32 }),
+    payoutReference: text('payout_reference'),
+    payoutStatus: text('payout_status'),
+    payoutError: text('payout_error'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -291,6 +301,9 @@ export const depositRequests = pgTable(
 
     fiatConfirmedByUserId: uuid('fiat_confirmed_by_user_id').references(() => users.id),
     fiatConfirmedAt: timestamp('fiat_confirmed_at', { withTimezone: true }),
+
+    // WaaS partner reference (nullable — only set for deposits via WaaS API)
+    partnerId: uuid('partner_id').references(() => partners.id),
 
     // PSP integration fields
     paymentProvider: pspProvider('payment_provider').default('bank_transfer'),
@@ -433,5 +446,103 @@ export const reconciliationEntries = pgTable(
   (t) => ({
     txHashUq: uniqueIndex('reconciliation_entries_tx_hash_uq').on(t.txHash),
     chainIdx: index('reconciliation_entries_chain_idx').on(t.chain),
+  })
+)
+
+// ─── WaaS Tables ────────────────────────────────────────────────────────────
+
+export const partners = pgTable(
+  'partners',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    email: varchar('email', { length: 320 }),
+    passwordHash: text('password_hash'),
+    apiKeyHash: text('api_key_hash').notNull(),
+    apiKeyPrefix: varchar('api_key_prefix', { length: 20 }),
+    webhookUrl: text('webhook_url'),
+    webhookSecret: text('webhook_secret'),
+    encryptedHdSeed: text('encrypted_hd_seed'),
+    nextWalletIndex: integer('next_wallet_index').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    apiKeyHashUq: uniqueIndex('partners_api_key_hash_uq').on(t.apiKeyHash),
+    emailUq: uniqueIndex('partners_email_uq').on(t.email),
+    nameIdx: index('partners_name_idx').on(t.name),
+  })
+)
+
+export const partnerUsers = pgTable(
+  'partner_users',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    walletIndex: integer('wallet_index'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerExternalUq: uniqueIndex('partner_users_partner_external_uq').on(t.partnerId, t.externalId),
+    userIdx: index('partner_users_user_id_idx').on(t.userId),
+    partnerIdx: index('partner_users_partner_id_idx').on(t.partnerId),
+  })
+)
+
+export const transfers = pgTable(
+  'transfers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id').references(() => partners.id),
+    fromUserId: uuid('from_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    toUserId: uuid('to_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    txHash: text('tx_hash'),
+    status: transferStatus('status').notNull().default('pending'),
+    error: text('error'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    fromUserIdx: index('transfers_from_user_id_idx').on(t.fromUserId),
+    toUserIdx: index('transfers_to_user_id_idx').on(t.toUserId),
+    statusIdx: index('transfers_status_idx').on(t.status),
+    partnerIdx: index('transfers_partner_id_idx').on(t.partnerId),
+    txHashIdx: index('transfers_tx_hash_idx').on(t.txHash),
+  })
+)
+
+export const partnerWebhookEvents = pgTable(
+  'partner_webhook_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    eventType: text('event_type').notNull(),
+    payload: jsonb('payload').notNull(),
+    status: webhookEventStatus('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+    responseStatus: integer('response_status'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerIdx: index('partner_webhook_events_partner_id_idx').on(t.partnerId),
+    statusIdx: index('partner_webhook_events_status_idx').on(t.status),
+    nextRetryIdx: index('partner_webhook_events_next_retry_idx').on(t.nextRetryAt),
   })
 )
