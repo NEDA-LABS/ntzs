@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
         .set({ status: 'failed', error: 'Sender wallet has no ETH for gas', updatedAt: new Date() })
         .where(eq(transfers.id, transfer.id))
       return NextResponse.json(
-        { error: 'Sender wallet has no ETH for gas. Please contact support.' },
+        { error: 'Payment settlement on hold. Please try again later or contact support.' },
         { status: 400 }
       )
     }
@@ -218,8 +218,17 @@ export async function POST(request: NextRequest) {
 
     console.error('[v1/transfers] Transfer failed:', errorMessage)
 
+    const isGasError =
+      errorMessage.includes('INSUFFICIENT_FUNDS') ||
+      errorMessage.includes('insufficient funds') ||
+      errorMessage.includes('intrinsic transaction cost')
+
     return NextResponse.json(
-      { error: 'Transfer failed: ' + errorMessage },
+      {
+        error: isGasError
+          ? 'Payment settlement on hold. Please try again later or contact support.'
+          : 'Transfer failed. Please try again later or contact support.',
+      },
       { status: 500 }
     )
   }
