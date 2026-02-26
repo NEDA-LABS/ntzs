@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { generatePartnerSeed, deriveAddress } from '@/lib/waas/hd-wallets'
+import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { users, wallets, partnerUsers, partners } from '@ntzs/db'
 
 /**
@@ -191,6 +191,14 @@ export async function POST(request: NextRequest) {
       .returning({ id: wallets.id, address: wallets.address })
 
     wallet = newWallet
+
+    // Prefund the new wallet with ETH for gas (fire-and-forget, non-blocking)
+    const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
+    if (rpcUrl && walletAddress) {
+      fundWalletWithGas({ toAddress: walletAddress, rpcUrl }).catch((err) =>
+        console.error('[v1/users] Gas prefund failed for', walletAddress, err?.message)
+      )
+    }
   }
 
   return NextResponse.json(

@@ -152,6 +152,19 @@ export async function POST(request: NextRequest) {
       throw new Error('Sender has no HD wallet index assigned')
     }
 
+    // Check sender has enough ETH for gas
+    const senderEthBalance = await provider.getBalance(fromWallet.address)
+    if (senderEthBalance === BigInt(0)) {
+      await db
+        .update(transfers)
+        .set({ status: 'failed', error: 'Sender wallet has no ETH for gas', updatedAt: new Date() })
+        .where(eq(transfers.id, transfer.id))
+      return NextResponse.json(
+        { error: 'Sender wallet has no ETH for gas. Please contact support.' },
+        { status: 400 }
+      )
+    }
+
     // Sign and send the ERC-20 transfer using the sender's HD-derived key
     const { txHash } = await signAndSendTransfer({
       encryptedSeed: partner.encryptedHdSeed,

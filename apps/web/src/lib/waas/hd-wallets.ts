@@ -95,6 +95,44 @@ export function deriveWallet(encryptedSeed: string, walletIndex: number): ethers
 }
 
 /**
+ * Fund a user wallet with a small amount of ETH for gas from the platform relayer.
+ * Called once at wallet creation. Silently skips if RELAYER_PRIVATE_KEY is not set.
+ * On Base mainnet 0.0005 ETH covers ~500 ERC-20 transfers at current gas prices.
+ */
+export async function fundWalletWithGas(params: {
+  toAddress: string
+  rpcUrl: string
+  amountEth?: string
+}): Promise<{ txHash: string } | null> {
+  const relayerKey = process.env.RELAYER_PRIVATE_KEY
+  if (!relayerKey) {
+    console.warn('[hd-wallets] RELAYER_PRIVATE_KEY not set — skipping gas prefund')
+    return null
+  }
+
+  const { toAddress, rpcUrl, amountEth = '0.0005' } = params
+  const provider = new ethers.JsonRpcProvider(rpcUrl)
+  const relayer = new ethers.Wallet(relayerKey, provider)
+
+  // Check relayer balance before attempting
+  const relayerBalance = await provider.getBalance(relayer.address)
+  const amountWei = ethers.parseEther(amountEth)
+  if (relayerBalance < amountWei) {
+    console.error(
+      `[hd-wallets] Relayer ${relayer.address} has insufficient ETH: ${ethers.formatEther(relayerBalance)} ETH`
+    )
+    return null
+  }
+
+  const tx = await relayer.sendTransaction({ to: toAddress, value: amountWei })
+  const receipt = await tx.wait()
+  if (!receipt) throw new Error('Gas prefund receipt is null')
+
+  console.log(`[hd-wallets] Prefunded ${toAddress} with ${amountEth} ETH, tx: ${receipt.hash}`)
+  return { txHash: receipt.hash }
+}
+
+/**
  * Sign and send an ERC-20 transfer on behalf of a WaaS user.
  * Derives the user's private key on-demand, signs, sends, and discards.
  */
