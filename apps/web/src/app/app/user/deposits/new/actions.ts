@@ -141,14 +141,14 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
   const wallet = await db.query.wallets.findFirst({
     where: and(eq(wallets.userId, dbUser.id), eq(wallets.chain, 'base')),
   })
-  if (!wallet) redirect('/app/user/wallet')
+  if (!wallet) throw new Error('No wallet found. Please set up your wallet first.')
 
   const approvedKyc = await db
     .select({ id: kycCases.id })
     .from(kycCases)
     .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
     .limit(1)
-  if (!approvedKyc.length) redirect('/app/user/kyc')
+  if (!approvedKyc.length) throw new Error('KYC verification required before making a deposit.')
 
   const idempotencyKey = crypto.randomUUID()
 
