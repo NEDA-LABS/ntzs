@@ -7,7 +7,7 @@ import { IconInfo, IconPhone } from '@/app/app/_components/icons'
 
 import { createWithdrawRequestAction } from './actions'
 
-const SAFE_BURN_THRESHOLD_TZS = 9000
+const SAFE_BURN_THRESHOLD_TZS = 100000
 
 function SubmitButton() {
   const { pending } = useFormStatus()

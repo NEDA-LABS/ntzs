@@ -7,7 +7,7 @@ import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone } from '@/lib/psp/snippe'
 import { users, wallets, partnerUsers, burnRequests } from '@ntzs/db'
 
-const SAFE_MINT_THRESHOLD_TZS = 9000
+const SAFE_MINT_THRESHOLD_TZS = 100000
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 

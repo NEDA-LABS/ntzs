@@ -18,7 +18,7 @@ import {
 } from '@ntzs/db'
 import { SafeMintActions } from './_components/SafeMintActions'
 
-const SAFE_MINT_THRESHOLD_TZS = 9000
+const SAFE_MINT_THRESHOLD_TZS = 100000
 const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
 const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''

@@ -6,7 +6,7 @@ import { requireRole, requireDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { burnRequests, users, wallets } from '@ntzs/db'
 
-const SAFE_BURN_THRESHOLD_TZS = 9000
+const SAFE_BURN_THRESHOLD_TZS = 100000
 const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
 const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''

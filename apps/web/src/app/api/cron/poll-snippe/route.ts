@@ -5,7 +5,7 @@ import { eq, and, lt, isNotNull } from 'drizzle-orm'
 import { checkPaymentStatus } from '@/lib/psp/snippe'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
-const SAFE_MINT_THRESHOLD_TZS = 9000
+const SAFE_MINT_THRESHOLD_TZS = 100000
 
 export const maxDuration = 60
 

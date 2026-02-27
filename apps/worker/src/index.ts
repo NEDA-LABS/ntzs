@@ -18,7 +18,7 @@ dotenv.config({ path: path.join(repoRoot, '.env.local'), override: true })
 const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
 const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 
-const SAFE_MINT_THRESHOLD_TZS = 9000
+const SAFE_MINT_THRESHOLD_TZS = 100000
 
 const NTZS_ABI = [
   'function mint(address to, uint256 amount)',

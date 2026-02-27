@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db'
 import { verifyWebhookSignature, type SnippePaymentWebhookPayload } from '@/lib/psp/snippe'
 import { depositRequests } from '@ntzs/db'
 
-const SAFE_MINT_THRESHOLD_TZS = 9000
+const SAFE_MINT_THRESHOLD_TZS = 100000
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()

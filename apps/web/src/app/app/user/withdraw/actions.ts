@@ -8,7 +8,7 @@ import { getDb } from '@/lib/db'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp/snippe'
 
-const SAFE_BURN_THRESHOLD_TZS = 9000
+const SAFE_BURN_THRESHOLD_TZS = 100000
 
 export async function createWithdrawRequestAction(formData: FormData) {
   await requireAnyRole(['end_user', 'super_admin'])

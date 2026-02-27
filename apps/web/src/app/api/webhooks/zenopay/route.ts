@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db'
 import { type ZenoPayWebhookPayload } from '@/lib/psp/zenopay'
 import { depositRequests } from '@ntzs/db'
 
-const SAFE_MINT_THRESHOLD_TZS = 9000
+const SAFE_MINT_THRESHOLD_TZS = 100000
 
 // Known ZenoPay server IPs
 const ZENOPAY_ALLOWED_IPS = ['64.227.9.159']
