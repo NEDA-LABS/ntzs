@@ -5,11 +5,13 @@ import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
 import { IconBank, IconCard, IconInfo, IconPhone } from '@/app/app/_components/icons'
-import { ACTIVE_PSP_NAME, ACTIVE_PSP_METHOD_LABEL } from '@/lib/psp/zenopay'
 
 import { createDepositRequestAction, createCardDepositRequestAction } from './actions'
 
 type PaymentMethod = 'mobile' | 'card'
+
+const ACTIVE_PSP_NAME = 'Snippe'
+const ACTIVE_PSP_METHOD_LABEL = 'Mobile Money'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
