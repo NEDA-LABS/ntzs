@@ -121,13 +121,13 @@ export default async function UserDashboard() {
                     <IconSend className="h-4 w-4" />
                     Send
                   </button>
-                  <button
-                    disabled
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-medium text-white/60 cursor-not-allowed"
+                  <Link
+                    href="/app/user/withdraw"
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-medium text-white transition-transform duration-75 hover:bg-white/10 active:scale-95"
                   >
                     <IconWithdraw className="h-4 w-4" />
                     Withdraw
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>
