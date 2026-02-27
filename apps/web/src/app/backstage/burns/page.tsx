@@ -10,6 +10,9 @@ const SAFE_BURN_THRESHOLD_TZS = 100000
 const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
 const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
+const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
+const SNIPPE_BASE_URL = 'https://api.snippe.sh'
+const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_ABI = ['function burn(address from, uint256 amount)', 'function paused() view returns (bool)'] as const
 
@@ -158,6 +161,7 @@ async function executeBurnAction(formData: FormData) {
       walletAddress: wallets.address,
       chain: burnRequests.chain,
       contractAddress: burnRequests.contractAddress,
+      recipientPhone: burnRequests.recipientPhone,
     })
     .from(burnRequests)
     .innerJoin(wallets, eq(burnRequests.walletId, wallets.id))
@@ -197,6 +201,54 @@ async function executeBurnAction(formData: FormData) {
       .update(burnRequests)
       .set({ status: 'burned', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
+
+    // Trigger Snippe payout if recipient phone is set
+    if (req.recipientPhone && SNIPPE_API_KEY) {
+      let phone = req.recipientPhone.replace(/[\s\-+]/g, '')
+      if (phone.startsWith('0')) phone = '255' + phone.substring(1)
+      if (!phone.startsWith('255')) phone = '255' + phone
+
+      const webhookUrl = `${APP_URL}/api/webhooks/snippe/payout`
+      const payoutBody = JSON.stringify({
+        amount: Number(req.amountTzs),
+        channel: 'mobile',
+        recipient_phone: phone,
+        recipient_name: 'nTZS User',
+        narration: 'nTZS withdrawal',
+        ...(webhookUrl.startsWith('https://') ? { webhook_url: webhookUrl } : {}),
+        metadata: { burn_request_id: burnRequestId },
+      })
+
+      try {
+        const payoutResp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}`, 'Content-Type': 'application/json' },
+          body: payoutBody,
+        })
+        const payoutResult = await payoutResp.json() as { status: string; message?: string; data?: { reference: string } }
+
+        if (payoutResult.status === 'success' && payoutResult.data?.reference) {
+          await db
+            .update(burnRequests)
+            .set({ payoutReference: payoutResult.data.reference, payoutStatus: 'pending', updatedAt: new Date() })
+            .where(eq(burnRequests.id, burnRequestId))
+          console.log('[backstage/burns] payout initiated', { burnRequestId, ref: payoutResult.data.reference })
+        } else {
+          await db
+            .update(burnRequests)
+            .set({ payoutStatus: 'failed', payoutError: payoutResult.message ?? 'Payout initiation failed', updatedAt: new Date() })
+            .where(eq(burnRequests.id, burnRequestId))
+          console.error('[backstage/burns] payout failed', { burnRequestId, error: payoutResult.message })
+        }
+      } catch (payoutErr) {
+        const payoutErrMsg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
+        await db
+          .update(burnRequests)
+          .set({ payoutStatus: 'failed', payoutError: payoutErrMsg, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+        console.error('[backstage/burns] payout error', { burnRequestId, error: payoutErrMsg })
+      }
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     await db
