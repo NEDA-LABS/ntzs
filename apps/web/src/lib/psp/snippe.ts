@@ -134,6 +134,7 @@ export async function initiatePayment(
 
 export interface SnippeCardPaymentRequest {
   amountTzs: number
+  phoneNumber: string
   customerEmail: string
   customerFirstname?: string
   customerLastname?: string
@@ -158,6 +159,7 @@ export async function initiateCardPayment(
   request: SnippeCardPaymentRequest
 ): Promise<SnippeCardPaymentResponse> {
   const apiKey = getApiKey()
+  const phone = normalizePhone(request.phoneNumber)
 
   try {
     const response = await fetch(`${SNIPPE_BASE_URL}/v1/payments`, {
@@ -168,6 +170,7 @@ export async function initiateCardPayment(
       },
       body: JSON.stringify({
         payment_type: 'card',
+        phone_number: phone,
         details: {
           amount: request.amountTzs,
           currency: 'TZS',

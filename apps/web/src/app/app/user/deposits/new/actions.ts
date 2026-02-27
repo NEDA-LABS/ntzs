@@ -168,6 +168,7 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
 
   const response = await initiateCardPayment({
     amountTzs: Math.trunc(amountTzs),
+    phoneNumber: dbUser.phone || '255700000000',
     customerEmail: dbUser.email,
     customerFirstname: dbUser.email.split('@')[0],
     redirectUrl: `${APP_URL}/app/user/deposits/card-return?status=success&deposit=${deposit.id}`,
