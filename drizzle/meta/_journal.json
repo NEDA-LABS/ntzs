@@ -36,6 +36,13 @@
       "when": 1769516474639,
       "tag": "0004_young_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772188760328,
+      "tag": "0005_add_snippe_card_provider",
+      "breakpoints": true
     }
   ]
 }

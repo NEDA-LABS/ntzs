@@ -97,13 +97,18 @@ async function main() {
         break
       }
 
+      process.stdout.write(`SENDING  ${address} ... `)
       const tx = await relayer.sendTransaction({ to: address, value: amountWei })
-      console.log(`FUND  ${address}  tx: ${tx.hash}  (waiting...)`)
+      process.stdout.write(`tx: ${tx.hash}\n`)
+      process.stdout.write(`         waiting for confirmation`)
+      const timer = setInterval(() => process.stdout.write('.'), 1000)
       await tx.wait()
-      console.log(`  ✓ confirmed`)
+      clearInterval(timer)
+      const newBal = await provider.getBalance(address)
+      console.log(` ✓  balance now: ${ethers.formatEther(newBal)} ETH`)
       funded++
     } catch (err) {
-      console.error(`FAIL  ${address}  ${err.message}`)
+      console.error(`\nFAIL  ${address}  ${err.message}`)
       failed++
     }
   }
