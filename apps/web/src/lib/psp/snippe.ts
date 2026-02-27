@@ -130,6 +130,88 @@ export async function initiatePayment(
   }
 }
 
+// ─── Card Payment (Redirect Flow) ───────────────────────────────────────────
+
+export interface SnippeCardPaymentRequest {
+  amountTzs: number
+  customerEmail: string
+  customerFirstname?: string
+  customerLastname?: string
+  redirectUrl: string
+  cancelUrl: string
+  webhookUrl: string
+  metadata: Record<string, unknown>
+}
+
+export interface SnippeCardPaymentResponse {
+  success: boolean
+  reference?: string
+  paymentUrl?: string
+  error?: string
+}
+
+/**
+ * Initiate a card payment via Snippe — returns a payment_url to redirect the user to
+ * POST /v1/payments (payment_type: "card")
+ */
+export async function initiateCardPayment(
+  request: SnippeCardPaymentRequest
+): Promise<SnippeCardPaymentResponse> {
+  const apiKey = getApiKey()
+
+  try {
+    const response = await fetch(`${SNIPPE_BASE_URL}/v1/payments`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        payment_type: 'card',
+        details: {
+          amount: request.amountTzs,
+          currency: 'TZS',
+          redirect_url: request.redirectUrl,
+          cancel_url: request.cancelUrl,
+        },
+        customer: {
+          firstname: request.customerFirstname || 'nTZS',
+          lastname: request.customerLastname || 'User',
+          email: request.customerEmail,
+          address: 'Tanzania',
+          city: 'Dar es Salaam',
+          state: 'DSM',
+          postcode: '14101',
+          country: 'TZ',
+        },
+        ...(request.webhookUrl?.startsWith('https://') ? { webhook_url: request.webhookUrl } : {}),
+        metadata: request.metadata,
+      }),
+    })
+
+    const result = await response.json()
+
+    if (result.status !== 'success' || !result.data?.payment_url) {
+      console.error('[snippe] card payment initiation failed:', result)
+      return { success: false, error: result.message || 'Card payment initiation failed' }
+    }
+
+    console.log('[snippe] card payment initiated:', {
+      reference: result.data.reference,
+      amount: request.amountTzs,
+    })
+
+    return {
+      success: true,
+      reference: result.data.reference,
+      paymentUrl: result.data.payment_url,
+    }
+  } catch (error) {
+    console.error('[snippe] card payment API error:', error)
+    return { success: false, error: 'Failed to connect to payment provider' }
+  }
+}
+
 // ─── Payment Status Check ───────────────────────────────────────────────────
 
 export interface SnippePaymentStatusResponse {
