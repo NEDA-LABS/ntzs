@@ -8,10 +8,10 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { depositRequests, kycCases, wallets, banks } from '@ntzs/db'
 import {
-  createZenoPayPayment,
-  formatTanzanianPhone,
-  isValidTanzanianMobileNumber,
-} from '@/lib/psp/zenopay'
+  initiatePayment,
+  normalizePhone,
+  isValidTanzanianPhone,
+} from '@/lib/psp/snippe'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -36,9 +36,9 @@ export async function createDepositRequestAction(formData: FormData) {
   // Validate phone for M-Pesa
   if (paymentMethod === 'mpesa') {
     if (!buyerPhone) {
-      throw new Error('Phone number required for M-Pesa')
+      throw new Error('Phone number required for mobile money')
     }
-    if (!isValidTanzanianMobileNumber(buyerPhone)) {
+    if (!isValidTanzanianPhone(buyerPhone)) {
       throw new Error('Invalid Tanzanian mobile number')
     }
   }
@@ -76,33 +76,38 @@ export async function createDepositRequestAction(formData: FormData) {
       amountTzs: Math.trunc(amountTzs),
       idempotencyKey,
       status: 'submitted',
-      paymentProvider: paymentMethod === 'mpesa' ? 'zenopay' : 'bank_transfer',
-      buyerPhone: paymentMethod === 'mpesa' ? formatTanzanianPhone(buyerPhone) : null,
+      paymentProvider: paymentMethod === 'mpesa' ? 'snippe' : 'bank_transfer',
+      buyerPhone: paymentMethod === 'mpesa' ? normalizePhone(buyerPhone) : null,
     })
     .returning({ id: depositRequests.id })
 
-  // If M-Pesa, trigger ZenoPay payment
+  // If mobile money, trigger Snippe payment
   if (paymentMethod === 'mpesa') {
     try {
-      const response = await createZenoPayPayment({
-        order_id: deposit.id,
-        buyer_email: dbUser.email,
-        buyer_name: dbUser.email.split('@')[0],
-        buyer_phone: formatTanzanianPhone(buyerPhone),
-        amount: Math.trunc(amountTzs),
-        webhook_url: `${APP_URL}/api/webhooks/zenopay`,
+      const response = await initiatePayment({
+        amountTzs: Math.trunc(amountTzs),
+        phoneNumber: buyerPhone,
+        customerEmail: dbUser.email,
+        customerFirstname: dbUser.email.split('@')[0],
+        webhookUrl: `${APP_URL}/api/webhooks/snippe/payment`,
+        metadata: { deposit_request_id: deposit.id },
       })
 
-      if (response.status !== 'success') {
-        // Mark deposit as failed
+      if (!response.success) {
         await db
           .update(depositRequests)
           .set({ status: 'cancelled', updatedAt: new Date() })
           .where(eq(depositRequests.id, deposit.id))
-        throw new Error(response.message || 'Failed to initiate M-Pesa payment')
+        throw new Error(response.error || 'Failed to initiate mobile money payment')
       }
 
-      console.log(`[ZenoPay] Payment initiated for deposit ${deposit.id}`)
+      // Store Snippe payment reference for status polling
+      await db
+        .update(depositRequests)
+        .set({ pspReference: response.reference, updatedAt: new Date() })
+        .where(eq(depositRequests.id, deposit.id))
+
+      console.log(`[snippe] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
     } catch (error) {
       await db
         .update(depositRequests)

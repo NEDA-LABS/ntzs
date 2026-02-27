@@ -1,7 +1,14 @@
 /**
  * ZenoPay API Client
  * Mobile Money Tanzania integration for nTZS deposits
+ *
+ * PSP ABSTRACTION — the UI references ACTIVE_PSP_NAME, not "ZenoPay" directly.
+ * To swap providers (e.g. Azam, Selcom), update ACTIVE_PSP_NAME and point the
+ * functions below to the new provider's API. The UI and DB schema need no changes.
  */
+
+export const ACTIVE_PSP_NAME = process.env.ACTIVE_PSP_NAME || 'Snippe'
+export const ACTIVE_PSP_METHOD_LABEL = 'Mobile Money'
 
 const ZENOPAY_API_URL = process.env.ZENOPAY_API_URL || 'https://api.zeno.africa'
 const ZENOPAY_API_KEY = process.env.ZENOPAY_API_KEY || ''

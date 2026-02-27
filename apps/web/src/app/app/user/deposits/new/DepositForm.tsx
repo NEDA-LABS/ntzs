@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
 import { IconBank, IconCard, IconInfo, IconPhone } from '@/app/app/_components/icons'
+import { ACTIVE_PSP_NAME, ACTIVE_PSP_METHOD_LABEL } from '@/lib/psp/zenopay'
 
 import { createDepositRequestAction } from './actions'
 
@@ -26,7 +27,7 @@ function SubmitButton() {
           Processing...
         </span>
       ) : (
-        'Make Deposit'
+        'Top up wallet'
       )}
     </button>
   )
@@ -152,8 +153,9 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
         {/* Payment Methods */}
         <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Payment method</p>
           <div className="grid gap-3 sm:grid-cols-3">
-            {/* ZenoPay - Active */}
+            {/* Active PSP - Mobile Money */}
             <button
               type="button"
               className="flex items-center gap-3 rounded-2xl border border-violet-500/40 bg-violet-500/10 px-4 py-4 text-left text-sm text-white"
@@ -162,8 +164,8 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 <IconPhone className="h-5 w-5 text-violet-300" />
               </span>
               <span>
-                <span className="block font-semibold">ZenoPay</span>
-                <span className="block text-xs text-violet-300/70">Mobile Money</span>
+                <span className="block font-semibold">{ACTIVE_PSP_NAME}</span>
+                <span className="block text-xs text-violet-300/70">{ACTIVE_PSP_METHOD_LABEL}</span>
               </span>
             </button>
 
@@ -182,7 +184,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
               </span>
             </button>
 
-            {/* Selcom - Soon */}
+            {/* Card - Soon */}
             <button
               type="button"
               disabled
@@ -192,14 +194,14 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 <IconCard className="h-5 w-5 text-white/70" />
               </span>
               <span>
-                <span className="block font-semibold text-white/80">Selcom</span>
+                <span className="block font-semibold text-white/80">Card</span>
                 <span className="block text-xs text-white/50">Soon</span>
               </span>
             </button>
           </div>
         </div>
 
-        {/* Phone Input for ZenoPay */}
+        {/* Phone Input */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-zinc-400">Mobile Money Number</label>
           <input
@@ -211,7 +213,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             placeholder="07XXXXXXXX"
             className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-violet-500/50"
           />
-          <p className="text-xs text-zinc-500">Enter the number that will receive the M-Pesa prompt</p>
+          <p className="text-xs text-zinc-500">Enter the number that will receive the payment prompt</p>
         </div>
 
         <SubmitButton />
@@ -219,7 +221,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
         <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400" />
           <p className="text-sm text-zinc-400">
-            You'll receive an M-Pesa prompt on your phone. Enter your PIN to confirm. Minting happens automatically after payment.
+            You'll receive a payment prompt on your phone. Enter your PIN to confirm. Your nTZS will be minted automatically after payment.
           </p>
         </div>
       </form>
