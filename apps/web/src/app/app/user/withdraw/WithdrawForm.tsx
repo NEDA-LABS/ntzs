@@ -92,7 +92,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
             <input
               name="amountTzs"
               type="number"
-              min={1000}
+              min={5000}
               step={1}
               required
               placeholder="0"
@@ -108,8 +108,8 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
               <span className="text-sm font-semibold text-white">TZS</span>
             </div>
           </div>
-          {amountNum > 0 && amountNum < 1000 && (
-            <p className="mt-2 text-xs text-rose-400">Minimum withdrawal is 1,000 TZS</p>
+          {amountNum > 0 && amountNum < 5000 && (
+            <p className="mt-2 text-xs text-rose-400">Minimum withdrawal is 5,000 TZS</p>
           )}
         </div>
 
@@ -162,7 +162,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400 shrink-0" />
           <p className="text-sm text-zinc-400">
-            Your nTZS is burned (1:1) and the equivalent TZS is sent to your mobile money account via Snippe. Minimum withdrawal is 1,000 TZS.
+            Your nTZS is burned (1:1) and the equivalent TZS is sent to your mobile money account via Snippe. Minimum withdrawal is 5,000 TZS.
           </p>
         </div>
       </form>

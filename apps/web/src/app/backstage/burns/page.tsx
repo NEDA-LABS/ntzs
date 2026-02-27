@@ -281,6 +281,10 @@ export default async function BurnsPage() {
       status: burnRequests.status,
       txHash: burnRequests.txHash,
       error: burnRequests.error,
+      recipientPhone: burnRequests.recipientPhone,
+      payoutStatus: burnRequests.payoutStatus,
+      payoutReference: burnRequests.payoutReference,
+      payoutError: burnRequests.payoutError,
       createdAt: burnRequests.createdAt,
       updatedAt: burnRequests.updatedAt,
       userEmail: users.email,
@@ -355,6 +359,7 @@ export default async function BurnsPage() {
                   <th className="px-6 py-4">Wallet</th>
                   <th className="px-6 py-4">Amount</th>
                   <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Payout</th>
                   <th className="px-6 py-4">Tx</th>
                   <th className="px-6 py-4">Actions</th>
                 </tr>
@@ -378,6 +383,25 @@ export default async function BurnsPage() {
                       <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-zinc-300">
                         {String(r.status).replace(/_/g, ' ')}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {r.recipientPhone && (
+                        <div className="text-xs text-zinc-400">{r.recipientPhone}</div>
+                      )}
+                      {r.payoutStatus ? (
+                        <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                          r.payoutStatus === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                          r.payoutStatus === 'failed' ? 'bg-rose-500/20 text-rose-400' :
+                          'bg-amber-500/20 text-amber-400'
+                        }`}>
+                          {r.payoutStatus}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-zinc-600">—</span>
+                      )}
+                      {r.payoutError && (
+                        <div className="mt-1 text-xs text-rose-400 max-w-[180px] truncate" title={r.payoutError}>{r.payoutError}</div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       {r.txHash ? (

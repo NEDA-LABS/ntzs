@@ -18,8 +18,8 @@ export async function createWithdrawRequestAction(formData: FormData) {
   const phone = String(formData.get('phone') ?? '').trim()
 
   const amountTzs = Number(amountTzsRaw)
-  if (!Number.isFinite(amountTzs) || amountTzs < 1000) {
-    throw new Error('Minimum withdrawal amount is 1,000 TZS')
+  if (!Number.isFinite(amountTzs) || amountTzs < 5000) {
+    throw new Error('Minimum withdrawal amount is 5,000 TZS')
   }
 
   if (!phone) {
