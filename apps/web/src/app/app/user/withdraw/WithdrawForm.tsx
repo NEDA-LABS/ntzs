@@ -152,7 +152,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
           <div className="flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
             <IconInfo className="mt-0.5 h-4 w-4 text-amber-400 shrink-0" />
             <p className="text-sm text-amber-300">
-              Withdrawals of 9,000 TZS or more require admin approval before processing.
+              Withdrawals of 100,000 TZS or more require admin approval before processing.
             </p>
           </div>
         )}
