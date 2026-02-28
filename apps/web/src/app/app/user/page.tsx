@@ -23,28 +23,28 @@ export default async function UserDashboard() {
   const dbUser = await requireDbUser()
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
-    where: eq(wallets.userId, dbUser.id),
-  })
-
-  const recentDeposits = await db
-    .select()
-    .from(depositRequests)
-    .where(eq(depositRequests.userId, dbUser.id))
-    .orderBy(desc(depositRequests.createdAt))
-    .limit(5)
-
-  const recentBurns = await db
-    .select({
-      id: burnRequests.id,
-      amountTzs: burnRequests.amountTzs,
-      status: burnRequests.status,
-      createdAt: burnRequests.createdAt,
-    })
-    .from(burnRequests)
-    .where(eq(burnRequests.userId, dbUser.id))
-    .orderBy(desc(burnRequests.createdAt))
-    .limit(5)
+  const [wallet, recentDeposits, recentBurns] = await Promise.all([
+    db.query.wallets.findFirst({
+      where: eq(wallets.userId, dbUser.id),
+    }),
+    db
+      .select()
+      .from(depositRequests)
+      .where(eq(depositRequests.userId, dbUser.id))
+      .orderBy(desc(depositRequests.createdAt))
+      .limit(5),
+    db
+      .select({
+        id: burnRequests.id,
+        amountTzs: burnRequests.amountTzs,
+        status: burnRequests.status,
+        createdAt: burnRequests.createdAt,
+      })
+      .from(burnRequests)
+      .where(eq(burnRequests.userId, dbUser.id))
+      .orderBy(desc(burnRequests.createdAt))
+      .limit(5),
+  ])
 
   const recentTxns = [
     ...recentDeposits.map((d) => ({

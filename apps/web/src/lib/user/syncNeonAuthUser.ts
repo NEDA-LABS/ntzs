@@ -1,10 +1,11 @@
+import { cache } from 'react'
 import { eq } from 'drizzle-orm'
 import { neonAuth } from '@neondatabase/neon-js/auth/next'
 
 import { getDb } from '@/lib/db'
 import { users } from '@ntzs/db'
 
-export async function syncNeonAuthUser() {
+export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
   const { user } = await neonAuth()
 
   if (!user) {
@@ -129,4 +130,4 @@ export async function syncNeonAuthUser() {
   }
 
   return null
-}
+})
