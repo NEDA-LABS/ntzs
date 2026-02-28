@@ -1,5 +1,6 @@
 import { desc, eq, count, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import { ethers } from 'ethers'
 
 import { requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
@@ -72,10 +73,42 @@ export default async function PartnersPage() {
       contractSignedAt: partners.contractSignedAt,
       apiKeyPrefix: partners.apiKeyPrefix,
       nextWalletIndex: partners.nextWalletIndex,
+      treasuryWalletAddress: partners.treasuryWalletAddress,
+      feePercent: partners.feePercent,
       createdAt: partners.createdAt,
     })
     .from(partners)
     .orderBy(desc(partners.createdAt))
+
+  // Fetch on-chain treasury balances (best-effort)
+  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const treasuryBalances: Record<string, number> = {}
+
+  if (rpcUrl && contractAddress) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      const token = new ethers.Contract(
+        contractAddress,
+        ['function balanceOf(address) view returns (uint256)'],
+        provider
+      )
+      await Promise.all(
+        allPartners
+          .filter(p => p.treasuryWalletAddress)
+          .map(async (p) => {
+            try {
+              const bal: bigint = await token.balanceOf(p.treasuryWalletAddress!)
+              treasuryBalances[p.id] = Number(bal / BigInt(10) ** BigInt(18))
+            } catch {
+              treasuryBalances[p.id] = 0
+            }
+          })
+      )
+    } catch {
+      // RPC unavailable, all balances stay 0
+    }
+  }
 
   const partnerStats = await db
     .select({
@@ -158,6 +191,8 @@ export default async function PartnersPage() {
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Users</th>
                   <th className="px-6 py-4">Volume Minted</th>
+                  <th className="px-6 py-4">Fee %</th>
+                  <th className="px-6 py-4">Treasury</th>
                   <th className="px-6 py-4">Daily Limit</th>
                   <th className="px-6 py-4">Contract</th>
                   <th className="px-6 py-4">Joined</th>
@@ -167,7 +202,7 @@ export default async function PartnersPage() {
               <tbody className="divide-y divide-white/5">
                 {allPartners.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-zinc-500">
+                    <td colSpan={11} className="px-6 py-12 text-center text-sm text-zinc-500">
                       No partners yet. Partners are created via the WaaS API.
                     </td>
                   </tr>
@@ -175,6 +210,8 @@ export default async function PartnersPage() {
                   allPartners.map((partner) => {
                     const stats = depositMap.get(partner.id)
                     const userCount = statsMap.get(partner.id) ?? 0
+                    const treasuryBalance = treasuryBalances[partner.id] ?? 0
+                    const feePercent = parseFloat(String(partner.feePercent ?? '0'))
                     return (
                       <tr key={partner.id} className="hover:bg-white/[0.02] transition-colors">
                         <td className="px-6 py-4">
@@ -215,6 +252,32 @@ export default async function PartnersPage() {
                           {stats?.depositCount ? (
                             <p className="text-xs text-zinc-600">{stats.depositCount} deposits</p>
                           ) : null}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`font-mono text-sm font-semibold ${
+                            feePercent > 0 ? 'text-violet-400' : 'text-zinc-600'
+                          }`}>
+                            {feePercent > 0 ? `${feePercent}%` : '—'}
+                          </span>
+                          {feePercent > 0 && (
+                            <p className="text-xs text-zinc-600">auto-split</p>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {partner.treasuryWalletAddress ? (
+                            <div>
+                              <span className={`font-mono text-sm font-semibold ${
+                                treasuryBalance > 0 ? 'text-emerald-400' : 'text-zinc-500'
+                              }`}>
+                                {treasuryBalance.toLocaleString()} TZS
+                              </span>
+                              <p className="mt-0.5 font-mono text-xs text-zinc-700" title={partner.treasuryWalletAddress}>
+                                {partner.treasuryWalletAddress.slice(0, 10)}...
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-amber-500/70">Not provisioned</span>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <form action={updateDailyLimitAction} className="flex items-center gap-2">
