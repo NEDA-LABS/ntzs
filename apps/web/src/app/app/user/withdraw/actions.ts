@@ -11,6 +11,7 @@ import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp/sni
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
+const SNIPPE_FLAT_FEE_TZS = 1500
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BURN_ABI = [
@@ -27,9 +28,10 @@ export async function createWithdrawRequestAction(formData: FormData) {
   const amountTzsRaw = String(formData.get('amountTzs') ?? '').trim()
   const phone = String(formData.get('phone') ?? '').trim()
 
-  const amountTzs = Number(amountTzsRaw)
-  if (!Number.isFinite(amountTzs) || amountTzs < 5000) {
-    throw new Error('Minimum withdrawal amount is 5,000 TZS')
+  // amountTzsRaw is the amount the user wants to RECEIVE on mobile money
+  const receiveAmountTzs = Number(amountTzsRaw)
+  if (!Number.isFinite(receiveAmountTzs) || receiveAmountTzs < 5000) {
+    throw new Error('Minimum receive amount is 5,000 TZS')
   }
 
   if (!phone) {
@@ -57,13 +59,15 @@ export async function createWithdrawRequestAction(formData: FormData) {
     process.env.NTZS_CONTRACT_ADDRESS_BASE ?? process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA
   if (!contractAddress) throw new Error('Contract not configured')
 
-  const amountTzsTrunc = Math.trunc(amountTzs)
   const recipientPhone = normalizePhone(phone)
 
-  // Platform fee: 0.5% of withdrawal, minimum 1 TZS, rounded up
-  const platformFeeTzs = Math.max(1, Math.ceil(amountTzsTrunc * (PLATFORM_FEE_PERCENT / 100)))
-  // Amount user actually receives = full amount minus platform fee
-  const payoutAmountTzs = amountTzsTrunc - platformFeeTzs
+  // Gross-up: user specifies receive amount, we calculate how much nTZS to burn
+  // burnAmount = ceil((receiveAmount + snippeFee) / (1 - platformFeeRate))
+  const receiveAmountTrunc = Math.trunc(receiveAmountTzs)
+  const amountTzsTrunc = Math.ceil((receiveAmountTrunc + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
+  const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - SNIPPE_FLAT_FEE_TZS
+  // User receives exactly what they asked for; Snippe deducts their fee from the payout
+  const payoutAmountTzs = receiveAmountTrunc + SNIPPE_FLAT_FEE_TZS
 
   // Large amounts require admin approval — queue and exit
   if (amountTzsTrunc >= SAFE_BURN_THRESHOLD_TZS) {

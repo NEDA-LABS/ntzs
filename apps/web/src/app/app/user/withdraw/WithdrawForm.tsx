@@ -10,6 +10,10 @@ import { createWithdrawRequestAction } from './actions'
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
 const SNIPPE_FLAT_FEE_TZS = 1500
+// Gross-up: nTZS to burn = ceil((receiveAmount + snippeFee) / (1 - platformFeeRate))
+function calcBurnAmount(receiveAmount: number): number {
+  return Math.ceil((receiveAmount + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
+}
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -44,12 +48,11 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
-  const amountNum = Number(amount)
-  const requiresApproval = amountNum >= SAFE_BURN_THRESHOLD_TZS
-  const platformFee = amountNum >= 5000 ? Math.max(1, Math.ceil(amountNum * (PLATFORM_FEE_PERCENT / 100))) : 0
-  const payoutAfterPlatformFee = amountNum - platformFee
-  const userReceives = Math.max(0, payoutAfterPlatformFee - SNIPPE_FLAT_FEE_TZS)
-  const showFees = amountNum >= 5000
+  const receiveNum = Number(amount)
+  const burnAmount = receiveNum >= 5000 ? calcBurnAmount(receiveNum) : 0
+  const platformFee = burnAmount > 0 ? burnAmount - receiveNum - SNIPPE_FLAT_FEE_TZS : 0
+  const requiresApproval = burnAmount >= SAFE_BURN_THRESHOLD_TZS
+  const showFees = receiveNum >= 5000
 
   if (submitted) {
     return (
@@ -88,11 +91,11 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         }}
         className="space-y-5"
       >
-        {/* Amount */}
+        {/* Receive amount */}
         <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Withdraw</span>
-            <span className="text-xs text-zinc-600">nTZS → TZS</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">You receive</span>
+            <span className="text-xs text-zinc-600">on mobile money</span>
           </div>
           <div className="mt-3 flex items-end justify-between gap-4">
             <input
@@ -114,8 +117,8 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
               <span className="text-sm font-semibold text-white">TZS</span>
             </div>
           </div>
-          {amountNum > 0 && amountNum < 5000 && (
-            <p className="mt-2 text-xs text-rose-400">Minimum withdrawal is 5,000 TZS</p>
+          {receiveNum > 0 && receiveNum < 5000 && (
+            <p className="mt-2 text-xs text-rose-400">Minimum receive amount is 5,000 TZS</p>
           )}
         </div>
 
@@ -154,37 +157,35 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
           </div>
         )}
 
-        {requiresApproval && amountNum > 0 && (
+        {requiresApproval && receiveNum > 0 && (
           <div className="flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
             <IconInfo className="mt-0.5 h-4 w-4 text-amber-400 shrink-0" />
             <p className="text-sm text-amber-300">
-              Withdrawals of 100,000 TZS or more require admin approval before processing.
+              This withdrawal requires admin approval before processing (burn amount ≥ 100,000 TZS).
             </p>
           </div>
         )}
 
         {showFees && (
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-2.5">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Fee breakdown</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Cost breakdown</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">nTZS burned</span>
-                <span className="font-mono text-white">{amountNum.toLocaleString()} TZS</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Platform fee ({PLATFORM_FEE_PERCENT}%)</span>
-                <span className="font-mono text-rose-400">−{platformFee.toLocaleString()} TZS</span>
+                <span className="text-zinc-400">You receive</span>
+                <span className="font-mono font-semibold text-emerald-400">{receiveNum.toLocaleString()} TZS</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400">Network fee (Snippe)</span>
-                <span className="font-mono text-rose-400">−{SNIPPE_FLAT_FEE_TZS.toLocaleString()} TZS</span>
+                <span className="font-mono text-zinc-500">+{SNIPPE_FLAT_FEE_TZS.toLocaleString()} TZS</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Platform fee ({PLATFORM_FEE_PERCENT}%)</span>
+                <span className="font-mono text-zinc-500">+{platformFee.toLocaleString()} TZS</span>
               </div>
               <div className="h-px bg-white/10" />
               <div className="flex items-center justify-between">
-                <span className="font-medium text-white">You receive</span>
-                <span className={`font-mono font-semibold ${userReceives > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {userReceives > 0 ? userReceives.toLocaleString() : '0'} TZS
-                </span>
+                <span className="font-medium text-white">nTZS to burn</span>
+                <span className="font-mono font-semibold text-white">{burnAmount.toLocaleString()} TZS</span>
               </div>
             </div>
           </div>
