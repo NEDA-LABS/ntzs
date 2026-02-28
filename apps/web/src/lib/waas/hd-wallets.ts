@@ -15,6 +15,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
 import { ethers } from 'ethers'
 
 const DERIVATION_BASE = "m/44'/8453'/0'/0"
+const TREASURY_DERIVATION_BASE = "m/44'/8453'/1'/0"
 
 // ─── Encryption helpers (AES-256-GCM) ─────────────────────────────────────────
 
@@ -130,6 +131,27 @@ export async function fundWalletWithGas(params: {
 
   console.log(`[hd-wallets] Prefunded ${toAddress} with ${amountEth} ETH, tx: ${receipt.hash}`)
   return { txHash: receipt.hash }
+}
+
+/**
+ * Derive the partner treasury wallet address (m/44'/8453'/1'/0/0).
+ * This is the partner's own revenue wallet — separate from all user wallets.
+ * Does NOT expose the private key.
+ */
+export function deriveTreasuryAddress(encryptedSeed: string): string {
+  const mnemonic = decryptSeed(encryptedSeed)
+  const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, TREASURY_DERIVATION_BASE)
+  return hdNode.deriveChild(0).address
+}
+
+/**
+ * Derive the partner treasury wallet with private key for signing.
+ * The caller MUST discard this object after use — never persist the key.
+ */
+export function deriveTreasuryWallet(encryptedSeed: string): ethers.HDNodeWallet {
+  const mnemonic = decryptSeed(encryptedSeed)
+  const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, TREASURY_DERIVATION_BASE)
+  return hdNode.deriveChild(0)
 }
 
 /**

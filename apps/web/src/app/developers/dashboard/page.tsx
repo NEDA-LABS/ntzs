@@ -10,6 +10,9 @@ interface PartnerInfo {
   apiKeyPrefix: string
   webhookUrl: string | null
   nextWalletIndex: number
+  treasuryWalletAddress: string | null
+  feePercent: number
+  treasuryBalanceTzs: number
   createdAt: string
 }
 
@@ -95,6 +98,17 @@ function SettingsTab({ partner, onKeyRegenerated }: { partner: PartnerInfo; onKe
   const [webhookError, setWebhookError] = useState('')
   const [webhookSuccess, setWebhookSuccess] = useState(false)
 
+  // Fee config state
+  const [feeInput, setFeeInput] = useState(String(partner.feePercent))
+  const [feeSaving, setFeeSaving] = useState(false)
+  const [feeError, setFeeError] = useState('')
+  const [feeSuccess, setFeeSuccess] = useState(false)
+
+  // Withdraw earnings state
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [withdrawError, setWithdrawError] = useState('')
+  const [withdrawSuccess, setWithdrawSuccess] = useState('')
+
   const handleRegenerate = async () => {
     setRegenerating(true)
     setError('')
@@ -150,6 +164,60 @@ function SettingsTab({ partner, onKeyRegenerated }: { partner: PartnerInfo; onKe
       setWebhookError('Failed to connect to server')
     } finally {
       setWebhookSaving(false)
+    }
+  }
+
+  const handleSaveFee = async () => {
+    const val = parseFloat(feeInput)
+    if (isNaN(val) || val < 0 || val > 100) {
+      setFeeError('Fee must be between 0 and 100')
+      return
+    }
+    setFeeSaving(true)
+    setFeeError('')
+    setFeeSuccess(false)
+    try {
+      const res = await fetch('/api/v1/partners/fee', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ feePercent: val }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setFeeError(json.error || 'Failed to update fee')
+        return
+      }
+      setFeeSuccess(true)
+      onKeyRegenerated()
+      setTimeout(() => setFeeSuccess(false), 3000)
+    } catch {
+      setFeeError('Failed to connect to server')
+    } finally {
+      setFeeSaving(false)
+    }
+  }
+
+  const handleWithdrawEarnings = async () => {
+    setWithdrawing(true)
+    setWithdrawError('')
+    setWithdrawSuccess('')
+    try {
+      const res = await fetch('/api/v1/partners/withdraw', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setWithdrawError(json.error || 'Withdrawal failed')
+        return
+      }
+      setWithdrawSuccess(`Withdrawal initiated! Reference: ${json.reference || json.txHash || 'processing'}`)
+      onKeyRegenerated()
+    } catch {
+      setWithdrawError('Failed to connect to server')
+    } finally {
+      setWithdrawing(false)
     }
   }
 
@@ -287,6 +355,78 @@ function SettingsTab({ partner, onKeyRegenerated }: { partner: PartnerInfo; onKe
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <h3 className="text-base font-semibold">Platform Fee</h3>
+        <p className="mt-1 text-sm text-white/50">
+          Set a percentage fee automatically collected into your treasury on every transfer.
+        </p>
+        <div className="mt-4 flex items-end gap-3">
+          <div className="flex-1">
+            <label className="text-xs text-white/40">Fee percentage (0–100)</label>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                value={feeInput}
+                onChange={(e) => setFeeInput(e.target.value)}
+                className="w-28 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+              />
+              <span className="text-sm text-white/40">%</span>
+            </div>
+          </div>
+          <button
+            onClick={handleSaveFee}
+            disabled={feeSaving}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 transition-colors disabled:opacity-50"
+          >
+            {feeSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {feeError && <p className="mt-2 text-xs text-red-400">{feeError}</p>}
+        {feeSuccess && <p className="mt-2 text-xs text-emerald-400">Fee updated successfully!</p>}
+        <p className="mt-3 text-xs text-white/30">
+          Current: <span className="text-white/60">{partner.feePercent}%</span> — users pay the gross amount, recipient receives the net, your treasury receives the fee automatically.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-base font-semibold">Treasury Wallet</h3>
+            <p className="mt-1 text-sm text-white/50">
+              Your earnings wallet. Withdraw to mobile money at any time.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-white/40">Balance</div>
+            <div className="text-xl font-bold text-emerald-400">{partner.treasuryBalanceTzs.toLocaleString()} TZS</div>
+          </div>
+        </div>
+        {partner.treasuryWalletAddress && (
+          <div className="mt-3">
+            <div className="text-xs text-white/40 mb-1">Wallet address</div>
+            <code className="rounded bg-white/10 px-2 py-1.5 text-xs text-white/60 break-all">
+              {partner.treasuryWalletAddress}
+            </code>
+          </div>
+        )}
+        {partner.treasuryBalanceTzs > 0 ? (
+          <button
+            onClick={handleWithdrawEarnings}
+            disabled={withdrawing}
+            className="mt-4 rounded-lg bg-emerald-500/20 px-5 py-2.5 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+          >
+            {withdrawing ? 'Initiating withdrawal...' : `Withdraw ${partner.treasuryBalanceTzs.toLocaleString()} TZS`}
+          </button>
+        ) : (
+          <p className="mt-3 text-xs text-white/30">No earnings yet. Set a fee percentage above to start collecting.</p>
+        )}
+        {withdrawError && <p className="mt-2 text-xs text-red-400">{withdrawError}</p>}
+        {withdrawSuccess && <p className="mt-2 text-xs text-emerald-400">{withdrawSuccess}</p>}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
         <h3 className="text-base font-semibold">Wallet Info</h3>
         <p className="mt-1 text-sm text-white/50">
           HD wallet seed: Active &middot; {partner.nextWalletIndex} wallets derived
@@ -372,12 +512,17 @@ export default function PartnerDashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-5">
         <StatCard label="Total Users" value={String(stats.totalUsers)} />
         <StatCard
-          label="Total Balance"
+          label="User Holdings"
           value={`${stats.totalBalanceTzs.toLocaleString()} TZS`}
-          sub="Across all user wallets"
+          sub="Funds held by your users"
+        />
+        <StatCard
+          label="Your Earnings"
+          value={`${partner.treasuryBalanceTzs.toLocaleString()} TZS`}
+          sub={partner.feePercent > 0 ? `${partner.feePercent}% platform fee` : 'No fee configured'}
         />
         <StatCard label="Transfers" value={String(stats.totalTransfers)} />
         <StatCard label="Deposits" value={String(stats.totalDeposits)} />

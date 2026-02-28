@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { hashApiKey } from '@/lib/waas/auth'
+import { generatePartnerSeed, deriveTreasuryAddress } from '@/lib/waas/hd-wallets'
 import { partners } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 
@@ -66,6 +67,10 @@ export async function POST(request: NextRequest) {
   // Generate webhook secret
   const webhookSecret = `whsec_${crypto.randomBytes(24).toString('hex')}`
 
+  // Generate HD seed and derive treasury wallet
+  const { encryptedSeed } = generatePartnerSeed()
+  const treasuryWalletAddress = deriveTreasuryAddress(encryptedSeed)
+
   const [partner] = await db
     .insert(partners)
     .values({
@@ -76,6 +81,8 @@ export async function POST(request: NextRequest) {
       apiKeyPrefix,
       webhookUrl: webhookUrl || null,
       webhookSecret,
+      encryptedHdSeed: encryptedSeed,
+      treasuryWalletAddress,
       isActive: true,
     })
     .returning({ id: partners.id })

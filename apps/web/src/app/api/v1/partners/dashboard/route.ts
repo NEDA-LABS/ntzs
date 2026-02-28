@@ -57,6 +57,8 @@ export async function GET(request: NextRequest) {
       apiKeyPrefix: partners.apiKeyPrefix,
       webhookUrl: partners.webhookUrl,
       nextWalletIndex: partners.nextWalletIndex,
+      treasuryWalletAddress: partners.treasuryWalletAddress,
+      feePercent: partners.feePercent,
       createdAt: partners.createdAt,
     })
     .from(partners)
@@ -100,6 +102,23 @@ export async function GET(request: NextRequest) {
   const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
   const contractAddress =
     process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+
+  // Get treasury wallet balance
+  let treasuryBalanceTzs = 0
+  if (partner.treasuryWalletAddress && rpcUrl && contractAddress) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      const token = new ethers.Contract(
+        contractAddress,
+        ['function balanceOf(address) view returns (uint256)'],
+        provider
+      )
+      const bal: bigint = await token.balanceOf(partner.treasuryWalletAddress)
+      treasuryBalanceTzs = Number(bal / BigInt(10) ** BigInt(18))
+    } catch {
+      // RPC error, balance stays 0
+    }
+  }
 
   const userBalances: Record<string, number> = {}
   let totalBalanceTzs = 0
@@ -179,6 +198,9 @@ export async function GET(request: NextRequest) {
       apiKeyPrefix: partner.apiKeyPrefix || 'ntzs_test_',
       webhookUrl: partner.webhookUrl,
       nextWalletIndex: partner.nextWalletIndex,
+      treasuryWalletAddress: partner.treasuryWalletAddress,
+      feePercent: parseFloat(String(partner.feePercent ?? '0')),
+      treasuryBalanceTzs,
       createdAt: partner.createdAt,
     },
     users: dashboardUsers,

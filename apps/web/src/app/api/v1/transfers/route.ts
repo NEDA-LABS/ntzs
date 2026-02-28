@@ -4,8 +4,8 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { signAndSendTransfer } from '@/lib/waas/hd-wallets'
-import { wallets, partnerUsers, transfers, auditLogs } from '@ntzs/db'
+import { signAndSendTransfer, deriveTreasuryWallet } from '@/lib/waas/hd-wallets'
+import { wallets, partnerUsers, transfers, auditLogs, partners } from '@ntzs/db'
 
 const NTZS_TRANSFER_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -46,6 +46,20 @@ export async function POST(request: NextRequest) {
   }
 
   const { db } = getDb()
+
+  // Fetch partner fee config and treasury wallet
+  const [partnerRow] = await db
+    .select({
+      feePercent: partners.feePercent,
+      treasuryWalletAddress: partners.treasuryWalletAddress,
+      encryptedHdSeed: partners.encryptedHdSeed,
+    })
+    .from(partners)
+    .where(eq(partners.id, partner.id))
+    .limit(1)
+
+  const feePercent = partnerRow ? parseFloat(String(partnerRow.feePercent ?? '0')) : 0
+  const treasuryWalletAddress = partnerRow?.treasuryWalletAddress ?? null
 
   // Verify both users belong to this partner and get wallet indexes
   const [fromMapping] = await db
@@ -120,12 +134,18 @@ export async function POST(request: NextRequest) {
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
 
+    // Calculate fee split
+    const feeAmountTzs = feePercent > 0 ? Math.floor(amountTzs * feePercent / 100) : 0
+    const recipientAmountTzs = amountTzs - feeAmountTzs
+    const recipientAmountWei = BigInt(recipientAmountTzs) * BigInt(10) ** BigInt(18)
+    const feeAmountWei = BigInt(feeAmountTzs) * BigInt(10) ** BigInt(18)
+    const totalAmountWei = BigInt(String(amountTzs)) * BigInt(10) ** BigInt(18)
+
     // Check sender balance first
     const token = new ethers.Contract(contractAddress, NTZS_TRANSFER_ABI, provider)
     const balanceWei: bigint = await token.balanceOf(fromWallet.address)
-    const amountWei = BigInt(String(amountTzs)) * BigInt(10) ** BigInt(18)
 
-    if (balanceWei < amountWei) {
+    if (balanceWei < totalAmountWei) {
       const balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
       await db
         .update(transfers)
@@ -165,15 +185,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Sign and send the ERC-20 transfer using the sender's HD-derived key
+    // Sign and send the main transfer (recipient amount after fee)
     const { txHash } = await signAndSendTransfer({
       encryptedSeed: partner.encryptedHdSeed,
       walletIndex: fromMapping.walletIndex,
       contractAddress,
       toAddress: toWallet.address,
-      amountWei,
+      amountWei: recipientAmountWei,
       rpcUrl,
     })
+
+    // If partner has a fee and a treasury wallet, send the fee split
+    let feeTxHash: string | null = null
+    if (feeAmountTzs > 0 && treasuryWalletAddress && partnerRow?.encryptedHdSeed) {
+      try {
+        const feeTransfer = await signAndSendTransfer({
+          encryptedSeed: partnerRow.encryptedHdSeed,
+          walletIndex: fromMapping.walletIndex,
+          contractAddress,
+          toAddress: treasuryWalletAddress,
+          amountWei: feeAmountWei,
+          rpcUrl,
+        })
+        feeTxHash = feeTransfer.txHash
+      } catch (feeErr) {
+        console.error('[v1/transfers] Fee split failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
+      }
+    }
 
     await db
       .update(transfers)
@@ -192,9 +230,13 @@ export async function POST(request: NextRequest) {
         fromUserId,
         toUserId,
         amountTzs,
+        recipientAmountTzs,
+        feeAmountTzs,
+        feePercent,
         fromWallet: fromWallet.address,
         toWallet: toWallet.address,
         txHash,
+        feeTxHash,
         partnerId: partner.id,
       },
     })
@@ -205,6 +247,9 @@ export async function POST(request: NextRequest) {
         status: 'completed',
         txHash,
         amountTzs,
+        recipientAmountTzs,
+        feeAmountTzs,
+        feeTxHash,
       },
       { status: 201 }
     )
