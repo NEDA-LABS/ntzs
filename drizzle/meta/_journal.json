@@ -50,6 +50,13 @@
       "when": 1772274000000,
       "tag": "0006_add_platform_fee",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1772360400000,
+      "tag": "0007_add_partner_compliance",
+      "breakpoints": true
     }
   ]
 }

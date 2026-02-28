@@ -8,6 +8,7 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp/snippe'
+import { writeAuditLog } from '@/lib/audit'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
@@ -71,7 +72,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
 
   // Large amounts require admin approval — queue and exit
   if (amountTzsTrunc >= SAFE_BURN_THRESHOLD_TZS) {
-    await db.insert(burnRequests).values({
+    const [queuedBurn] = await db.insert(burnRequests).values({
       userId: dbUser.id,
       walletId: wallet.id,
       chain: wallet.chain,
@@ -82,7 +83,8 @@ export async function createWithdrawRequestAction(formData: FormData) {
       requestedByUserId: dbUser.id,
       recipientPhone,
       platformFeeTzs,
-    })
+    }).returning({ id: burnRequests.id })
+    await writeAuditLog('burn.queued_for_approval', 'burn_request', queuedBurn.id, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs }, dbUser.id)
     redirect('/app/user/activity')
   }
 
@@ -161,6 +163,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
       .update(burnRequests)
       .set({ payoutReference: payoutResult.reference, payoutStatus: 'pending', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
+    await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutReference: payoutResult.reference, recipientPhone }, dbUser.id)
   } else {
     await db
       .update(burnRequests)

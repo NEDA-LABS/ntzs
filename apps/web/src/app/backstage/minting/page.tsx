@@ -16,6 +16,7 @@ import {
   auditLogs,
   reconciliationEntries,
 } from '@ntzs/db'
+import { writeAuditLog } from '@/lib/audit'
 import { SafeMintActions } from './_components/SafeMintActions'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
@@ -117,6 +118,8 @@ async function processPendingMintsAction() {
             target: dailyIssuance.day,
             set: { issuedTzs: sql`${dailyIssuance.issuedTzs} + ${deposit.amountTzs}`, updatedAt: new Date() },
           })
+
+        await writeAuditLog('mint.executed', 'deposit_request', deposit.id, { amountTzs: deposit.amountTzs, walletAddress: deposit.walletAddress, txHash: receipt.hash })
         
         console.log(`[Manual Mint] Minted ${deposit.amountTzs} TZS to ${deposit.walletAddress}, tx: ${receipt.hash}`)
       } else {
@@ -265,6 +268,8 @@ async function approveDepositAction(formData: FormData) {
     .update(depositRequests)
     .set({ status: newStatus, updatedAt: new Date() })
     .where(eq(depositRequests.id, depositId))
+
+  await writeAuditLog(`deposit.${decision}`, 'deposit_request', depositId, { decision, reason: reason || null, newStatus }, currentUser.id)
 
   revalidatePath('/backstage/minting')
 }

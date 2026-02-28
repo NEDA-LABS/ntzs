@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { hashApiKey } from '@/lib/waas/auth'
 import { partners } from '@ntzs/db'
+import { writeAuditLog } from '@/lib/audit'
 
 /**
  * POST /api/v1/partners/signup — Create a new partner account and return an API key
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('[partners/signup] Partner created:', { id: partner.id, name: businessName })
+  await writeAuditLog('partner.created', 'partner', partner.id, { name: businessName, email, apiKeyPrefix })
 
   return NextResponse.json(
     {

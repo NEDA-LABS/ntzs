@@ -2,14 +2,17 @@ import { desc, eq } from 'drizzle-orm'
 import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 
-import { UserRole, requireRole } from '@/lib/auth/rbac'
+import { UserRole, requireRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { users, wallets } from '@ntzs/db'
+import { users, wallets, partnerUsers, partners } from '@ntzs/db'
+import { writeAuditLog } from '@/lib/audit'
+import { formatDateEAT } from '@/lib/format-date'
 
 async function updateUserRoleAction(formData: FormData) {
   'use server'
 
   await requireRole('super_admin')
+  const currentUser = await getCurrentDbUser()
 
   const userId = String(formData.get('userId') ?? '')
   const role = String(formData.get('role') ?? '') as UserRole
@@ -35,6 +38,8 @@ async function updateUserRoleAction(formData: FormData) {
     .update(users)
     .set({ role, updatedAt: new Date() })
     .where(eq(users.id, userId))
+
+  await writeAuditLog('user.role_changed', 'user', userId, { newRole: role }, currentUser?.id)
 
   revalidatePath('/backstage/users')
 }
@@ -67,9 +72,12 @@ export default async function UsersPage() {
       createdAt: users.createdAt,
       neonAuthUserId: users.neonAuthUserId,
       walletAddress: wallets.address,
+      partnerName: partners.name,
     })
     .from(users)
     .leftJoin(wallets, eq(wallets.userId, users.id))
+    .leftJoin(partnerUsers, eq(partnerUsers.userId, users.id))
+    .leftJoin(partners, eq(partners.id, partnerUsers.partnerId))
     .orderBy(desc(users.createdAt))
     .limit(500)
 
@@ -142,6 +150,7 @@ export default async function UsersPage() {
                 <tr className="text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
                   <th className="px-6 py-4">User</th>
                   <th className="px-6 py-4">Wallet</th>
+                  <th className="px-6 py-4">Source</th>
                   <th className="px-6 py-4">Role</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Joined</th>
@@ -198,6 +207,17 @@ export default async function UsersPage() {
                       )}
                     </td>
                     <td className="px-6 py-4">
+                      {u.partnerName ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 text-xs font-medium text-violet-300">
+                          {u.partnerName}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-400">
+                          Direct
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
                       <RoleBadge role={u.role} />
                     </td>
                     <td className="px-6 py-4">
@@ -207,7 +227,7 @@ export default async function UsersPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-zinc-400">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                      {formatDateEAT(u.createdAt)}
                     </td>
                     <td className="px-6 py-4">
                       <form action={updateUserRoleAction} className="flex items-center gap-2">

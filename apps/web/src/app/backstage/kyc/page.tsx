@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { requireAnyRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { users, kycCases } from '@ntzs/db'
+import { writeAuditLog } from '@/lib/audit'
+import { formatDateEAT } from '@/lib/format-date'
 
 async function updateKycStatusAction(formData: FormData) {
   'use server'
@@ -32,6 +34,8 @@ async function updateKycStatusAction(formData: FormData) {
       updatedAt: new Date(),
     })
     .where(eq(kycCases.id, kycCaseId))
+
+  await writeAuditLog(`kyc.${status}`, 'kyc_case', kycCaseId, { reason: reason || null }, currentUser.id)
 
   revalidatePath('/backstage/kyc')
 }
@@ -150,7 +154,7 @@ export default async function KycPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm text-zinc-400">
-                        {kyc.createdAt ? new Date(kyc.createdAt).toLocaleDateString() : '—'}
+                        {formatDateEAT(kyc.createdAt)}
                       </td>
                       <td className="px-6 py-4">
                         {kyc.status === 'pending' ? (
@@ -178,7 +182,7 @@ export default async function KycPage() {
                           </div>
                         ) : (
                           <span className="text-sm text-zinc-600">
-                            {kyc.reviewedAt ? `Reviewed ${new Date(kyc.reviewedAt).toLocaleDateString()}` : '—'}
+                            {kyc.reviewedAt ? `Reviewed ${formatDateEAT(kyc.reviewedAt)}` : '—'}
                           </span>
                         )}
                       </td>

@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db'
 import { burnRequests, depositRequests, kycCases, wallets } from '@ntzs/db'
 
 import { GlassPanel } from '../../_components/GlassPanel'
+import { formatDateTimeEAT } from '@/lib/format-date'
 
 export default async function ActivityPage() {
   await requireAnyRole(['end_user', 'super_admin'])
@@ -122,7 +123,7 @@ export default async function ActivityPage() {
               <tbody>
                 {txns.map((t) => (
                   <tr key={t.id} className="border-b border-white/10">
-                    <td className="py-2 pr-4">{new Date(t.createdAt!).toLocaleString()}</td>
+                    <td className="py-2 pr-4">{formatDateTimeEAT(t.createdAt)}</td>
                     <td className="py-2 pr-4">{t.type === 'deposit' ? 'Deposit' : 'Withdraw'}</td>
                     <td className="py-2 pr-4">{t.type === 'deposit' ? t.amountTzs : -t.amountTzs}</td>
                     <td className="py-2 pr-4">{String(t.status)}</td>

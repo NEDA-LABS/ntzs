@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { formatDateEAT } from '@/lib/format-date'
 
 interface PartnerInfo {
   id: string
@@ -467,7 +468,7 @@ export default function PartnerDashboardPage() {
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
                       <td className="px-4 py-3 text-xs text-white/40">
-                        {new Date(d.createdAt).toLocaleDateString()}
+                        {formatDateEAT(d.createdAt)}
                       </td>
                     </tr>
                   ))

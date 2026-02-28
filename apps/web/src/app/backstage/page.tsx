@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { UserRole, requireAnyRole, requireRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { users, kycCases, depositRequests, depositApprovals, banks, wallets } from '@ntzs/db'
+import { writeAuditLog } from '@/lib/audit'
+import { formatDateEAT } from '@/lib/format-date'
 
 // Icon components
 function UsersIcon({ className }: { className?: string }) {
@@ -77,6 +79,8 @@ async function updateUserRoleAction(formData: FormData) {
     .set({ role, updatedAt: new Date() })
     .where(eq(users.id, userId))
 
+  await writeAuditLog('user.role_changed', 'user', userId, { newRole: role })
+
   revalidatePath('/backstage')
 }
 
@@ -107,6 +111,8 @@ async function updateKycStatusAction(formData: FormData) {
       updatedAt: new Date(),
     })
     .where(eq(kycCases.id, kycCaseId))
+
+  await writeAuditLog(`kyc.${status}`, 'kyc_case', kycCaseId, { reason: reason || null }, currentUser.id)
 
   revalidatePath('/backstage')
 }
@@ -156,6 +162,8 @@ async function approveDepositAction(formData: FormData) {
     .update(depositRequests)
     .set({ status: newStatus, updatedAt: new Date() })
     .where(eq(depositRequests.id, depositId))
+
+  await writeAuditLog(`deposit.${decision}`, 'deposit_request', depositId, { decision, reason: reason || null }, currentUser.id)
 
   revalidatePath('/backstage')
 }
@@ -366,7 +374,7 @@ export default async function BackstagePage() {
                         <RoleBadge role={u.role} />
                       </td>
                       <td className="px-6 py-4 text-sm text-zinc-400">
-                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                        {formatDateEAT(u.createdAt)}
                       </td>
                       <td className="px-6 py-4">
                         <form action={updateUserRoleAction} className="flex items-center gap-2">
@@ -426,7 +434,7 @@ export default async function BackstagePage() {
                             <p className="font-medium text-white text-sm">{kyc.userEmail}</p>
                             <p className="mt-0.5 font-mono text-xs text-zinc-500">{kyc.nationalId}</p>
                             <p className="mt-1 text-xs text-zinc-600">
-                              {kyc.provider} · {kyc.createdAt ? new Date(kyc.createdAt).toLocaleDateString() : ''}
+                              {kyc.provider} · {formatDateEAT(kyc.createdAt)}
                             </p>
                           </div>
                         </div>

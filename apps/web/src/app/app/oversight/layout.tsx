@@ -10,6 +10,7 @@ import {
   IconUsers,
   IconDatabase,
   IconSettings,
+  IconCoins,
 } from '@/app/app/_components/icons'
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { href: '/app/oversight#reserves', label: 'Reserves', icon: IconDatabase },
   { href: '/app/oversight#issuance', label: 'Daily Issuance', icon: IconBarChart },
   { href: '/app/oversight#deposits', label: 'Deposit Activity', icon: IconShieldCheck },
+  { href: '/app/oversight#withdrawals', label: 'Withdrawals', icon: IconCoins },
   { href: '/app/oversight#audit', label: 'Audit Trail', icon: IconFileText },
   { href: '/app/oversight#contract', label: 'Smart Contract', icon: IconSettings },
 ]

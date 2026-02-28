@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db'
 import { kycCases } from '@ntzs/db'
 
 import { GlassPanel } from '../../_components/GlassPanel'
+import { formatDateTimeEAT } from '@/lib/format-date'
 import { submitKycCaseAction } from './actions'
 
 export default async function KycPage() {
@@ -38,7 +39,7 @@ export default async function KycPage() {
             <div className="text-xs text-white/60">Current status</div>
             <div className="mt-2 text-sm font-semibold">{current?.status ?? 'Not started'}</div>
             <div className="mt-2 text-sm text-white/70">
-              {current?.createdAt ? new Date(current.createdAt).toLocaleString() : ''}
+              {current?.createdAt ? formatDateTimeEAT(current.createdAt) : ''}
             </div>
             <div className="mt-2 text-xs text-white/60">{current?.nationalId ? `ID: ${current.nationalId}` : ''}</div>
           </div>

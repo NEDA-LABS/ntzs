@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { requireRole, requireDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { burnRequests, users, wallets } from '@ntzs/db'
+import { writeAuditLog } from '@/lib/audit'
+import { formatDateTimeEAT } from '@/lib/format-date'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
@@ -41,7 +43,7 @@ async function createBurnRequestAction(formData: FormData) {
 
   const status = amountTzs >= SAFE_BURN_THRESHOLD_TZS ? 'requires_second_approval' : 'requested'
 
-  await db.insert(burnRequests).values({
+  const [newBurn] = await db.insert(burnRequests).values({
     userId,
     walletId: wallet.id,
     chain: wallet.chain,
@@ -50,7 +52,9 @@ async function createBurnRequestAction(formData: FormData) {
     reason,
     status,
     requestedByUserId: dbUser.id,
-  })
+  }).returning({ id: burnRequests.id })
+
+  await writeAuditLog('burn.created', 'burn_request', newBurn.id, { userId, amountTzs, reason, status }, dbUser.id)
 
   revalidatePath('/backstage/burns')
 }
@@ -94,6 +98,8 @@ async function approveBurnRequestAction(formData: FormData) {
     })
     .where(eq(burnRequests.id, burnRequestId))
 
+  await writeAuditLog('burn.approved', 'burn_request', burnRequestId, { nextStatus, amountTzs: req.amountTzs }, dbUser.id)
+
   revalidatePath('/backstage/burns')
 }
 
@@ -132,6 +138,8 @@ async function secondApproveBurnRequestAction(formData: FormData) {
       updatedAt: new Date(),
     })
     .where(eq(burnRequests.id, burnRequestId))
+
+  await writeAuditLog('burn.second_approved', 'burn_request', burnRequestId, {}, dbUser.id)
 
   revalidatePath('/backstage/burns')
 }
@@ -201,6 +209,8 @@ async function executeBurnAction(formData: FormData) {
       .update(burnRequests)
       .set({ status: 'burned', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
+
+    await writeAuditLog('burn.executed', 'burn_request', burnRequestId, { amountTzs: req.amountTzs, walletAddress: req.walletAddress, txHash: tx.hash })
 
     // Trigger Snippe payout if recipient phone is set
     if (req.recipientPhone && SNIPPE_API_KEY) {
@@ -369,7 +379,7 @@ export default async function BurnsPage() {
                   <tr key={r.id} className="border-b border-white/10">
                     <td className="px-6 py-4">
                       <div className="text-sm text-white">{r.userEmail}</div>
-                      <div className="text-xs text-zinc-500">{new Date(r.createdAt).toLocaleString()}</div>
+                      <div className="text-xs text-zinc-500">{formatDateTimeEAT(r.createdAt)}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="truncate font-mono text-xs text-zinc-300" title={r.walletAddress}>

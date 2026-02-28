@@ -11,6 +11,7 @@ import {
   dailyIssuance,
   auditLogs,
   wallets,
+  burnRequests,
 } from '@ntzs/db'
 import {
   IconChain,
@@ -19,6 +20,7 @@ import {
   IconUsers,
 } from '@/app/app/_components/icons'
 import { ExportReportButton } from './_components/ExportReportButton'
+import { formatDateTimeEAT } from '@/lib/format-date'
 
 const CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
 const RPC_URL = 'https://sepolia.base.org'
@@ -117,6 +119,34 @@ export default async function OversightDashboard() {
     .from(depositRequests)
     .groupBy(depositRequests.status)
 
+  // Recent burns (withdrawals) with full details
+  const recentBurns = await db
+    .select({
+      id: burnRequests.id,
+      amountTzs: burnRequests.amountTzs,
+      status: burnRequests.status,
+      txHash: burnRequests.txHash,
+      recipientPhone: burnRequests.recipientPhone,
+      payoutStatus: burnRequests.payoutStatus,
+      payoutReference: burnRequests.payoutReference,
+      platformFeeTzs: burnRequests.platformFeeTzs,
+      createdAt: burnRequests.createdAt,
+      userEmail: users.email,
+    })
+    .from(burnRequests)
+    .leftJoin(users, eq(users.id, burnRequests.userId))
+    .orderBy(desc(burnRequests.createdAt))
+    .limit(20)
+
+  // Burn stats
+  const [burnStats] = await db
+    .select({
+      totalBurned: sql<number>`coalesce(sum(case when ${burnRequests.status} = 'burned' then ${burnRequests.amountTzs} else 0 end), 0)`.mapWith(Number),
+      burnCount: sql<number>`count(case when ${burnRequests.status} = 'burned' then 1 end)`.mapWith(Number),
+      totalPlatformFees: sql<number>`coalesce(sum(${burnRequests.platformFeeTzs}), 0)`.mapWith(Number),
+    })
+    .from(burnRequests)
+
   // On-chain total supply
   const onChainSupply = await getOnChainTotalSupply()
 
@@ -131,7 +161,6 @@ export default async function OversightDashboard() {
     .from(wallets)
 
   const formatNumber = (n: number) => n.toLocaleString()
-  const formatDate = (d: Date) => new Date(d).toLocaleString()
 
   const statusColors: Record<string, string> = {
     minted: 'bg-emerald-500/20 text-emerald-300',
@@ -376,9 +405,106 @@ export default async function OversightDashboard() {
                       <span className="text-zinc-600">—</span>
                     )}
                   </td>
-                  <td className="py-3 text-xs text-zinc-500">{formatDate(dep.createdAt)}</td>
+                  <td className="py-3 text-xs text-zinc-500">{formatDateTimeEAT(dep.createdAt)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Withdrawal Activity */}
+      <section id="withdrawals" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Withdrawal Activity</h2>
+            <p className="mt-1 text-sm text-zinc-400">
+              Last 20 burn / off-ramp requests &nbsp;·&nbsp;
+              <span className="text-emerald-400">{formatNumber(burnStats?.totalBurned || 0)} TZS</span> total burned &nbsp;·&nbsp;
+              <span className="text-violet-400">{formatNumber(burnStats?.totalPlatformFees || 0)} TZS</span> platform fees collected
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-white/10 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <th className="pb-3 pr-4">ID</th>
+                <th className="pb-3 pr-4">User</th>
+                <th className="pb-3 pr-4">Burned (TZS)</th>
+                <th className="pb-3 pr-4">Platform Fee</th>
+                <th className="pb-3 pr-4">Recipient</th>
+                <th className="pb-3 pr-4">Burn Status</th>
+                <th className="pb-3 pr-4">Payout</th>
+                <th className="pb-3 pr-4">TX Hash</th>
+                <th className="pb-3">Created</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {recentBurns.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-sm text-zinc-500">No withdrawals yet</td>
+                </tr>
+              ) : (
+                recentBurns.map((burn) => (
+                  <tr key={burn.id} className="text-sm">
+                    <td className="py-3 pr-4">
+                      <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-zinc-400">
+                        {burn.id.slice(0, 8)}
+                      </code>
+                    </td>
+                    <td className="py-3 pr-4 text-zinc-300">{burn.userEmail || '—'}</td>
+                    <td className="py-3 pr-4 font-medium text-white">{formatNumber(burn.amountTzs)}</td>
+                    <td className="py-3 pr-4 text-xs text-violet-400">
+                      {burn.platformFeeTzs ? `+${formatNumber(burn.platformFeeTzs)}` : '—'}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {burn.recipientPhone ? (
+                        <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-zinc-300">
+                          {burn.recipientPhone}
+                        </code>
+                      ) : <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className={`rounded-lg px-2 py-1 text-xs font-medium ${
+                        burn.status === 'burned' ? 'bg-emerald-500/20 text-emerald-300' :
+                        burn.status === 'failed' ? 'bg-red-500/20 text-red-300' :
+                        burn.status === 'requires_second_approval' ? 'bg-amber-500/20 text-amber-300' :
+                        'bg-zinc-500/20 text-zinc-300'
+                      }`}>
+                        {burn.status}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      {burn.payoutStatus ? (
+                        <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                          burn.payoutStatus === 'pending' ? 'bg-blue-500/20 text-blue-300' :
+                          burn.payoutStatus === 'failed' ? 'bg-red-500/20 text-red-300' :
+                          'bg-zinc-500/20 text-zinc-300'
+                        }`}>
+                          {burn.payoutStatus}
+                          {burn.payoutReference && (
+                            <span className="ml-1 opacity-60">#{burn.payoutReference.slice(0, 8)}</span>
+                          )}
+                        </span>
+                      ) : <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {burn.txHash ? (
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${burn.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs text-blue-400 hover:bg-blue-500/20"
+                        >
+                          {burn.txHash.slice(0, 10)}...
+                        </a>
+                      ) : <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="py-3 text-xs text-zinc-500">{formatDateTimeEAT(burn.createdAt)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -429,7 +555,7 @@ export default async function OversightDashboard() {
                     </pre>
                   ) : null}
                 </div>
-                <div className="text-xs text-zinc-600">{formatDate(log.createdAt)}</div>
+                <div className="text-xs text-zinc-600">{formatDateTimeEAT(log.createdAt)}</div>
               </div>
             ))
           )}

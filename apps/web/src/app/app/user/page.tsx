@@ -17,6 +17,7 @@ import {
   IconWithdraw,
 } from '@/app/app/_components/icons'
 import { TokenBalance } from './_components/TokenBalance'
+import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
   await requireAnyRole(['end_user', 'super_admin'])
@@ -170,7 +171,7 @@ export default async function UserDashboard() {
                           <div>
                             <p className="font-medium text-white">{tx.type === 'deposit' ? 'Deposit' : 'Withdraw'}</p>
                             <p className="text-xs text-zinc-500">
-                              {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : ''}
+                              {tx.createdAt ? formatDateEAT(tx.createdAt) : ''}
                             </p>
                           </div>
                         </div>
