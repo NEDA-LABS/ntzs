@@ -10,6 +10,7 @@ import { burnRequests, kycCases, wallets } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp/snippe'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
+const PLATFORM_FEE_PERCENT = 0.5
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BURN_ABI = [
@@ -59,6 +60,11 @@ export async function createWithdrawRequestAction(formData: FormData) {
   const amountTzsTrunc = Math.trunc(amountTzs)
   const recipientPhone = normalizePhone(phone)
 
+  // Platform fee: 0.5% of withdrawal, minimum 1 TZS, rounded up
+  const platformFeeTzs = Math.max(1, Math.ceil(amountTzsTrunc * (PLATFORM_FEE_PERCENT / 100)))
+  // Amount user actually receives = full amount minus platform fee
+  const payoutAmountTzs = amountTzsTrunc - platformFeeTzs
+
   // Large amounts require admin approval — queue and exit
   if (amountTzsTrunc >= SAFE_BURN_THRESHOLD_TZS) {
     await db.insert(burnRequests).values({
@@ -71,6 +77,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
       status: 'requires_second_approval',
       requestedByUserId: dbUser.id,
       recipientPhone,
+      platformFeeTzs,
     })
     redirect('/app/user/activity')
   }
@@ -94,6 +101,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
       status: 'burn_submitted',
       requestedByUserId: dbUser.id,
       recipientPhone,
+      platformFeeTzs,
     })
     .returning({ id: burnRequests.id })
 
@@ -136,7 +144,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
 
   // ── Burn confirmed — now trigger Snippe payout ───────────────────────────
   const payoutResult = await sendPayout({
-    amountTzs: amountTzsTrunc,
+    amountTzs: payoutAmountTzs,
     recipientPhone,
     recipientName: 'nTZS User',
     narration: 'nTZS withdrawal',

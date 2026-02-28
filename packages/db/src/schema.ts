@@ -261,6 +261,7 @@ export const burnRequests = pgTable(
     payoutReference: text('payout_reference'),
     payoutStatus: text('payout_status'),
     payoutError: text('payout_error'),
+    platformFeeTzs: bigint('platform_fee_tzs', { mode: 'number' }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

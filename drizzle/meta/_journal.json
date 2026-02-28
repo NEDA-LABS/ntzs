@@ -43,6 +43,13 @@
       "when": 1772188760328,
       "tag": "0005_add_snippe_card_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1772274000000,
+      "tag": "0006_add_platform_fee",
+      "breakpoints": true
     }
   ]
 }
