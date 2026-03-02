@@ -387,17 +387,11 @@ export default function Home() {
             <div className="flex flex-col gap-4 md:items-end">
               <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-transparent" />
-                <div className="relative aspect-video w-full">
-                  <video
-                    className="h-full w-full object-cover"
-                    src="/Video_For_Wallet_Service.mp4"
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    controls
-                    preload="metadata"
-                  />
+                <div className="relative aspect-video w-full flex items-center justify-center text-white/60 text-sm">
+                  <div className="text-center">
+                    <div className="mb-2">🎬</div>
+                    <div>Video placeholder (deploy test)</div>
+                  </div>
                 </div>
               </div>
 
