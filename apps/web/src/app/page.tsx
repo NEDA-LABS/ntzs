@@ -369,42 +369,49 @@ export default function Home() {
         </section>
 
         {/* WaaS Teaser Section */}
-        <section className="mt-24 relative overflow-hidden rounded-[28px] border border-blue-500/20 bg-blue-500/5 p-8 md:p-12 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] backdrop-blur-xl">
-          <div className="absolute -left-24 -top-24 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
-          <div className="relative z-10 grid gap-8 md:grid-cols-2 md:items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200 backdrop-blur-lg mb-4">
+        <section className="mt-24 relative overflow-hidden rounded-[28px] border border-blue-500/20 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] backdrop-blur-xl min-h-[600px]">
+          {/* Full-screen video background */}
+          <div className="absolute inset-0 overflow-hidden rounded-[28px]">
+            <video
+              className="h-full w-full object-cover scale-105"
+              src="/Video_For_Wallet_Service.mp4"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+            />
+            {/* Dark overlay for text contrast */}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/60 to-transparent" />
+            {/* Blue accent overlay */}
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-transparent to-transparent" />
+          </div>
+
+          {/* Content overlay */}
+          <div className="relative z-10 flex flex-col justify-end h-full min-h-[600px] p-8 md:p-12 pb-16">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 backdrop-blur-lg px-3 py-1 text-xs text-blue-200 mb-6">
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
                 For Developers & Startups
               </div>
-              <h2 className="text-3xl font-semibold tracking-tight md:text-4xl text-white">
-                Power your app with Smart Wallet as a Service
+              <h2 className="text-4xl font-semibold tracking-tight md:text-5xl text-white leading-tight">
+                Power your app with<br />Smart Wallet as a Service
               </h2>
-              <p className="mt-4 text-base leading-7 text-white/70">
-                Don't just hold digital assets—build with them. Our WaaS infrastructure lets you instantly provision wallets for your users, fully abstracting blockchain complexity.
+              <p className="mt-6 text-lg leading-8 text-white/80 max-w-2xl">
+                Our WaaS infrastructure lets you instantly provision wallets for your users, with zero complexity. Start building today and accept payment in our platform with ease.
               </p>
-            </div>
-            <div className="flex flex-col gap-4 md:items-end">
-              <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-transparent" />
-                <div className="relative aspect-video w-full flex items-center justify-center text-white/60 text-sm">
-                  <div className="text-center">
-                    <div className="mb-2">🎬</div>
-                    <div>Video placeholder (deploy test)</div>
-                  </div>
-                </div>
-              </div>
 
-              <div className="flex w-full flex-col gap-3 sm:flex-row md:justify-end">
+              {/* CTA buttons */}
+              <div className="mt-10 flex flex-col gap-4 sm:flex-row">
                 <Link
                   href="/smart-wallets"
-                  className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+                  className="inline-flex h-14 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black transition-all hover:bg-white/90 hover:scale-105"
                 >
                   Explore Smart Wallets
                 </Link>
                 <Link
                   href="/developers"
-                  className="inline-flex h-12 items-center justify-center rounded-full border border-white/15 bg-white/5 px-8 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
+                  className="inline-flex h-14 items-center justify-center rounded-full border border-white/20 bg-white/10 backdrop-blur-lg px-8 text-base text-white/90 transition-all hover:bg-white/20 hover:scale-105"
                 >
                   View Documentation
                 </Link>
