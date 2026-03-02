@@ -384,19 +384,37 @@ export default function Home() {
                 Don't just hold digital assets—build with them. Our WaaS infrastructure lets you instantly provision wallets for your users, fully abstracting blockchain complexity.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
-              <Link
-                href="/smart-wallets"
-                className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-sm font-semibold text-black transition-colors hover:bg-white/90"
-              >
-                Explore Smart Wallets
-              </Link>
-              <Link
-                href="/developers"
-                className="inline-flex h-12 items-center justify-center rounded-full border border-white/15 bg-white/5 px-8 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
-              >
-                View Documentation
-              </Link>
+            <div className="flex flex-col gap-4 md:items-end">
+              <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-transparent" />
+                <div className="relative aspect-video w-full">
+                  <video
+                    className="h-full w-full object-cover"
+                    src="/Video_For_Wallet_Service.mp4"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
+                    preload="metadata"
+                  />
+                </div>
+              </div>
+
+              <div className="flex w-full flex-col gap-3 sm:flex-row md:justify-end">
+                <Link
+                  href="/smart-wallets"
+                  className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+                >
+                  Explore Smart Wallets
+                </Link>
+                <Link
+                  href="/developers"
+                  className="inline-flex h-12 items-center justify-center rounded-full border border-white/15 bg-white/5 px-8 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
+                >
+                  View Documentation
+                </Link>
+              </div>
             </div>
           </div>
         </section>
