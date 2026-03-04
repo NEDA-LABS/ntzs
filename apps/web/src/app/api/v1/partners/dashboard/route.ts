@@ -61,6 +61,8 @@ export async function GET(request: NextRequest) {
       feePercent: partners.feePercent,
       payoutPhone: partners.payoutPhone,
       payoutType: partners.payoutType,
+      payoutBankAccount: partners.payoutBankAccount,
+      payoutBankName: partners.payoutBankName,
       createdAt: partners.createdAt,
     })
     .from(partners)
@@ -283,6 +285,8 @@ export async function GET(request: NextRequest) {
       treasuryBalanceTzs,
       payoutPhone: partner.payoutPhone ?? null,
       payoutType: partner.payoutType ?? 'mobile',
+      payoutBankAccount: partner.payoutBankAccount ?? null,
+      payoutBankName: partner.payoutBankName ?? null,
       createdAt: partner.createdAt,
     },
     users: dashboardUsers,

@@ -30,6 +30,8 @@ interface PartnerInfo {
   treasuryBalanceTzs: number
   payoutPhone: string | null
   payoutType: string
+  payoutBankAccount: string | null
+  payoutBankName: string | null
   createdAt: string
 }
 
@@ -712,7 +714,10 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
 
   // Payout destination configuration
   const [showConfigurePane, setShowConfigurePane] = useState(false)
+  const [configureTab, setConfigureTab] = useState<'mobile' | 'bank'>('mobile')
   const [payoutPhone, setPayoutPhone] = useState('')
+  const [bankAccount, setBankAccount] = useState('')
+  const [bankName, setBankName] = useState('')
   const [configureSaving, setConfigureSaving] = useState(false)
   const [configureError, setConfigureError] = useState('')
 
@@ -754,16 +759,21 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
     setConfigureSaving(true)
     setConfigureError('')
     try {
+      const body = configureTab === 'mobile'
+        ? { type: 'mobile', phone: payoutPhone }
+        : { type: 'bank', bankAccount, bankName }
       const res = await fetch('/api/v1/partners/treasury/payout-destination', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ type: 'mobile', phone: payoutPhone }),
+        body: JSON.stringify(body),
       })
       const json = await res.json()
       if (!res.ok) { setConfigureError(json.error || 'Failed to save'); return }
       setShowConfigurePane(false)
       setPayoutPhone('')
+      setBankAccount('')
+      setBankName('')
       onRefresh()
     } catch {
       setConfigureError('Failed to connect to server')
@@ -827,7 +837,13 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <div className="text-xs font-medium text-white/40">Payout Destination</div>
-          {partner.payoutPhone ? (
+          {partner.payoutType === 'bank' && partner.payoutBankAccount ? (
+            <>
+              <div className="mt-2 text-sm font-bold text-white">{partner.payoutBankName}</div>
+              <div className="mt-0.5 font-mono text-xs text-white/60">****{partner.payoutBankAccount.slice(-4)}</div>
+              <div className="mt-1 text-xs text-white/40">Bank Account</div>
+            </>
+          ) : partner.payoutPhone ? (
             <>
               <div className="mt-2 font-mono text-sm font-bold text-white">{partner.payoutPhone}</div>
               <div className="mt-1 text-xs text-white/40">M-Pesa / Mobile Money</div>
@@ -848,9 +864,15 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
             <h3 className="text-base font-semibold">Treasury Wallet</h3>
             <p className="mt-1 text-sm text-white/50">Your platform earnings wallet. Withdraw to mobile money at any time.</p>
           </div>
-          {partner.payoutPhone && (
+          {(partner.payoutPhone || partner.payoutBankAccount) && (
             <button
-              onClick={() => { setShowConfigurePane(true); setPayoutPhone(partner.payoutPhone ?? '') }}
+              onClick={() => {
+                setShowConfigurePane(true)
+                setConfigureTab(partner.payoutType === 'bank' ? 'bank' : 'mobile')
+                setPayoutPhone(partner.payoutPhone ?? '')
+                setBankAccount(partner.payoutBankAccount ?? '')
+                setBankName(partner.payoutBankName ?? '')
+              }}
               className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/50 hover:bg-white/10 hover:text-white transition-colors"
             >
               Change destination
@@ -870,7 +892,7 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
         )}
 
         {/* No destination configured */}
-        {!partner.payoutPhone && !showConfigurePane && (
+        {!partner.payoutPhone && !partner.payoutBankAccount && !showConfigurePane && (
           <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
             <div className="text-sm font-semibold text-amber-300">Configure payout destination first</div>
             <p className="mt-1 text-xs text-amber-200/60">
@@ -890,24 +912,71 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
           <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
             <div>
               <h4 className="text-sm font-semibold">Payout Destination</h4>
-              <p className="mt-0.5 text-xs text-white/40">Your treasury balance will be sent to this mobile money number (M-Pesa / Airtel).</p>
+              <p className="mt-0.5 text-xs text-white/40">Where should treasury funds be sent when you withdraw?</p>
             </div>
-            <div>
-              <label className="text-xs font-medium text-white/50">Mobile Money Number</label>
-              <input
-                type="tel"
-                placeholder="07XXXXXXXX or 255XXXXXXXXX"
-                value={payoutPhone}
-                onChange={(e) => setPayoutPhone(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/25"
-              />
-              <p className="mt-1 text-[11px] text-white/30">Supported: Vodacom M-Pesa, Airtel Money, Tigo Pesa, Halo Pesa</p>
+
+            {/* Tab selector */}
+            <div className="flex gap-1 rounded-xl border border-white/10 bg-black/20 p-1">
+              <button
+                onClick={() => setConfigureTab('mobile')}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors ${
+                  configureTab === 'mobile' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
+                }`}
+              >
+                Mobile Money
+              </button>
+              <button
+                onClick={() => setConfigureTab('bank')}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors ${
+                  configureTab === 'bank' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
+                }`}
+              >
+                Bank Account
+              </button>
             </div>
+
+            {configureTab === 'mobile' ? (
+              <div>
+                <label className="text-xs font-medium text-white/50">Mobile Money Number</label>
+                <input
+                  type="tel"
+                  placeholder="07XXXXXXXX or 255XXXXXXXXX"
+                  value={payoutPhone}
+                  onChange={(e) => setPayoutPhone(e.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/25"
+                />
+                <p className="mt-1 text-[11px] text-white/30">Supported: Vodacom M-Pesa, Airtel Money, Tigo Pesa, Halo Pesa</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-white/50">Bank Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. CRDB, NMB, Equity, Stanbic"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/25"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-white/50">Account Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 0150123456789"
+                    value={bankAccount}
+                    onChange={(e) => setBankAccount(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/25"
+                  />
+                </div>
+              </div>
+            )}
+
             {configureError && <p className="text-xs text-red-400">{configureError}</p>}
             <div className="flex gap-2">
               <button
                 onClick={handleSaveDestination}
-                disabled={configureSaving || !payoutPhone.trim()}
+                disabled={configureSaving || (configureTab === 'mobile' ? !payoutPhone.trim() : (!bankAccount.trim() || !bankName.trim()))}
                 className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-white/90 disabled:opacity-50 transition-colors"
               >
                 {configureSaving ? 'Saving...' : 'Save destination'}
@@ -923,21 +992,35 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
         )}
 
         {/* Withdraw form — only if destination is configured */}
-        {partner.payoutPhone && !showConfigurePane && (
+        {(partner.payoutPhone || (partner.payoutType === 'bank' && partner.payoutBankAccount)) && !showConfigurePane && (
           <div className="mt-5 space-y-3">
             <div className="rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="text-xs font-medium text-white/40 mb-2">Withdraw to</div>
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
-                  <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
+              {partner.payoutType === 'bank' && partner.payoutBankAccount ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/15">
+                    <svg className="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 6l9-3 9 3M3 6v14l9 3 9-3V6M3 6l9 3 9-3" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">{partner.payoutBankName}</div>
+                    <div className="text-[11px] text-white/40">Account ****{partner.payoutBankAccount.slice(-4)} — Bank Transfer</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-sm font-mono font-semibold text-white">{partner.payoutPhone}</div>
-                  <div className="text-[11px] text-white/40">Mobile Money (M-Pesa / Airtel)</div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
+                    <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-mono font-semibold text-white">{partner.payoutPhone}</div>
+                    <div className="text-[11px] text-white/40">Mobile Money (M-Pesa / Airtel)</div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div>

@@ -335,6 +335,72 @@ export async function sendPayout(
   }
 }
 
+// ─── Bank Payout (Disbursement to Bank Account) ─────────────────────────────
+
+export interface SnippeBankPayoutRequest {
+  amountTzs: number
+  recipientName: string
+  bankAccount: string
+  bankName: string
+  narration?: string
+  webhookUrl: string
+  metadata: Record<string, unknown>
+}
+
+/**
+ * Send a payout to a bank account via Snippe
+ * POST /v1/payouts/send  (channel: "bank")
+ */
+export async function sendBankPayout(
+  request: SnippeBankPayoutRequest
+): Promise<SnippePayoutResponse> {
+  const apiKey = getApiKey()
+
+  try {
+    const response = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: request.amountTzs,
+        channel: 'bank',
+        recipient_name: request.recipientName,
+        bank_account: request.bankAccount,
+        bank_name: request.bankName,
+        narration: request.narration || 'nTZS treasury withdrawal',
+        ...(request.webhookUrl?.startsWith('https://') ? { webhook_url: request.webhookUrl } : {}),
+        metadata: request.metadata,
+      }),
+    })
+
+    const result = await response.json()
+
+    if (result.status !== 'success' || !result.data?.reference) {
+      console.error('[snippe] bank payout failed:', result)
+      return { success: false, error: result.message || 'Bank payout initiation failed' }
+    }
+
+    console.log('[snippe] bank payout initiated:', {
+      reference: result.data.reference,
+      amount: request.amountTzs,
+      bank: request.bankName,
+    })
+
+    return {
+      success: true,
+      reference: result.data.reference,
+      externalReference: result.data.external_reference,
+      fees: result.data.fees?.value,
+      total: result.data.total?.value,
+    }
+  } catch (error) {
+    console.error('[snippe] bank payout API error:', error)
+    return { success: false, error: 'Failed to connect to payout provider' }
+  }
+}
+
 // ─── Payout Fee Calculation ─────────────────────────────────────────────────
 
 export interface SnippePayoutFeeResponse {

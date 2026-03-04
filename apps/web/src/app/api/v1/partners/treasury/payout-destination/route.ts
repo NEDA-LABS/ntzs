@@ -39,37 +39,49 @@ export async function POST(request: NextRequest) {
   const partnerId = verifySessionToken(token)
   if (!partnerId) return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 })
 
-  let body: { type: string; phone: string }
+  let body: { type: string; phone?: string; bankAccount?: string; bankName?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { type, phone } = body
+  const { type, phone, bankAccount, bankName } = body
 
-  if (!type || !phone) {
-    return NextResponse.json({ error: 'type and phone are required' }, { status: 400 })
+  if (!type || !['mobile', 'bank'].includes(type)) {
+    return NextResponse.json({ error: 'type must be "mobile" or "bank"' }, { status: 400 })
   }
 
-  if (type !== 'mobile') {
-    return NextResponse.json({ error: 'Only mobile money is supported at this time' }, { status: 400 })
-  }
-
-  if (!isValidTanzanianPhone(phone)) {
-    return NextResponse.json(
-      { error: 'Invalid Tanzanian mobile money number. Use format: 07XXXXXXXX or 255XXXXXXXXX' },
-      { status: 400 }
-    )
-  }
-
-  const normalized = normalizePhone(phone)
   const { db } = getDb()
+
+  if (type === 'mobile') {
+    if (!phone) return NextResponse.json({ error: 'phone is required for mobile type' }, { status: 400 })
+    if (!isValidTanzanianPhone(phone)) {
+      return NextResponse.json(
+        { error: 'Invalid Tanzanian mobile money number. Use format: 07XXXXXXXX or 255XXXXXXXXX' },
+        { status: 400 }
+      )
+    }
+    const normalized = normalizePhone(phone)
+    await db
+      .update(partners)
+      .set({ payoutPhone: normalized, payoutType: 'mobile', payoutBankAccount: null, payoutBankName: null, updatedAt: new Date() })
+      .where(eq(partners.id, partnerId))
+    return NextResponse.json({ payoutPhone: normalized, payoutType: 'mobile' })
+  }
+
+  // Bank account
+  if (!bankAccount || !bankName) {
+    return NextResponse.json({ error: 'bankAccount and bankName are required for bank type' }, { status: 400 })
+  }
+  if (bankAccount.trim().length < 6) {
+    return NextResponse.json({ error: 'Invalid bank account number' }, { status: 400 })
+  }
 
   await db
     .update(partners)
-    .set({ payoutPhone: normalized, payoutType: type, updatedAt: new Date() })
+    .set({ payoutPhone: null, payoutType: 'bank', payoutBankAccount: bankAccount.trim(), payoutBankName: bankName.trim(), updatedAt: new Date() })
     .where(eq(partners.id, partnerId))
 
-  return NextResponse.json({ payoutPhone: normalized, payoutType: type })
+  return NextResponse.json({ payoutBankAccount: bankAccount.trim(), payoutBankName: bankName.trim(), payoutType: 'bank' })
 }

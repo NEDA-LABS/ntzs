@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { sendPayout } from '@/lib/psp/snippe'
+import { sendPayout, sendBankPayout } from '@/lib/psp/snippe'
 import { deriveTreasuryWallet } from '@/lib/waas/hd-wallets'
 import { partners } from '@ntzs/db'
 
@@ -73,6 +73,8 @@ export async function POST(request: NextRequest) {
       email: partners.email,
       payoutPhone: partners.payoutPhone,
       payoutType: partners.payoutType,
+      payoutBankAccount: partners.payoutBankAccount,
+      payoutBankName: partners.payoutBankName,
       encryptedHdSeed: partners.encryptedHdSeed,
       treasuryWalletAddress: partners.treasuryWalletAddress,
       webhookUrl: partners.webhookUrl,
@@ -85,9 +87,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Partner not found' }, { status: 404 })
   }
 
-  if (!partner.payoutPhone) {
+  const isMobile = partner.payoutType === 'mobile' || !partner.payoutType
+  const isBank = partner.payoutType === 'bank'
+
+  if (isMobile && !partner.payoutPhone) {
     return NextResponse.json(
-      { error: 'No payout destination configured. Please set your mobile money number first.' },
+      { error: 'No payout destination configured. Please set your mobile money number or bank account first.' },
+      { status: 400 }
+    )
+  }
+  if (isBank && (!partner.payoutBankAccount || !partner.payoutBankName)) {
+    return NextResponse.json(
+      { error: 'Bank account details are incomplete. Please reconfigure your payout destination.' },
+      { status: 400 }
+    )
+  }
+  if (!isMobile && !isBank) {
+    return NextResponse.json(
+      { error: 'No payout destination configured. Please set your mobile money number or bank account first.' },
       { status: 400 }
     )
   }
@@ -126,22 +143,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to verify treasury balance' }, { status: 500 })
   }
 
-  // Send payout via Snippe
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
   const webhookUrl = partner.webhookUrl || `${baseUrl}/api/v1/webhooks/snippe`
+  const sharedMeta = { partnerId: partner.id, partnerName: partner.name, type: 'treasury_withdrawal' }
 
-  const result = await sendPayout({
-    amountTzs,
-    recipientPhone: partner.payoutPhone,
-    recipientName: partner.name,
-    narration: `nTZS treasury withdrawal - ${partner.name}`,
-    webhookUrl,
-    metadata: {
-      partnerId: partner.id,
-      partnerName: partner.name,
-      type: 'treasury_withdrawal',
-    },
-  })
+  let result
+  let successMessage: string
+
+  if (isBank) {
+    result = await sendBankPayout({
+      amountTzs,
+      recipientName: partner.name,
+      bankAccount: partner.payoutBankAccount!,
+      bankName: partner.payoutBankName!,
+      narration: `nTZS treasury withdrawal - ${partner.name}`,
+      webhookUrl,
+      metadata: sharedMeta,
+    })
+    successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutBankName} account ending ${partner.payoutBankAccount!.slice(-4)}. Funds will arrive within 1-2 business days.`
+  } else {
+    result = await sendPayout({
+      amountTzs,
+      recipientPhone: partner.payoutPhone!,
+      recipientName: partner.name,
+      narration: `nTZS treasury withdrawal - ${partner.name}`,
+      webhookUrl,
+      metadata: sharedMeta,
+    })
+    successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutPhone}. You will receive an M-Pesa prompt shortly.`
+  }
 
   if (!result.success) {
     return NextResponse.json(
@@ -154,9 +184,8 @@ export async function POST(request: NextRequest) {
     reference: result.reference,
     externalReference: result.externalReference,
     amountTzs,
-    recipientPhone: partner.payoutPhone,
     fees: result.fees,
     total: result.total,
-    message: `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutPhone}. You will receive an M-Pesa prompt shortly.`,
+    message: successMessage,
   })
 }

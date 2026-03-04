@@ -479,6 +479,8 @@ export const partners = pgTable(
     feePercent: numeric('fee_percent').notNull().default('0'),
     payoutPhone: text('payout_phone'),
     payoutType: text('payout_type').default('mobile'),
+    payoutBankAccount: text('payout_bank_account'),
+    payoutBankName: text('payout_bank_name'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
