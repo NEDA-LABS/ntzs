@@ -64,6 +64,13 @@
       "when": 1772446800000,
       "tag": "0008_add_partner_treasury",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1772533200000,
+      "tag": "0009_add_user_name",
+      "breakpoints": true
     }
   ]
 }

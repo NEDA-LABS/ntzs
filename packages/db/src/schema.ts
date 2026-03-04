@@ -102,6 +102,7 @@ export const users = pgTable(
     neonAuthUserId: text('neon_auth_user_id').notNull(),
 
     email: varchar('email', { length: 320 }).notNull(),
+    name: text('name'),
     phone: varchar('phone', { length: 32 }),
 
     role: userRole('role').notNull().default('end_user'),

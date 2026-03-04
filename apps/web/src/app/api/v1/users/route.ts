@@ -25,14 +25,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  let body: { externalId: string; email: string; phone?: string }
+  let body: { externalId: string; email: string; name?: string; phone?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { externalId, email, phone } = body
+  const { externalId, email, name, phone } = body
 
   if (!externalId || !email) {
     return NextResponse.json(
@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       .select({
         id: users.id,
         email: users.email,
+        name: users.name,
         phone: users.phone,
       })
       .from(users)
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
       id: existing.userId,
       externalId: existing.externalId,
       email: user?.email,
+      name: user?.name || null,
       phone: user?.phone,
       walletAddress: wallet?.address || null,
       balance: 0,
@@ -95,31 +97,34 @@ export async function POST(request: NextRequest) {
     .values({
       neonAuthUserId,
       email,
+      name: name || null,
       phone: phone || null,
       role: 'end_user',
     })
     .onConflictDoNothing()
-    .returning({ id: users.id, email: users.email, phone: users.phone })
+    .returning({ id: users.id, email: users.email, name: users.name, phone: users.phone })
 
   // If user already exists by email, find them
   let userId: string
   let userEmail: string
+  let userName: string | null
   let userPhone: string | null
 
   if (newUser) {
     userId = newUser.id
     userEmail = newUser.email
+    userName = newUser.name
     userPhone = newUser.phone
   } else {
     // Conflict may be on neonAuthUserId or email — try both
     const [existingUser] = await db
-      .select({ id: users.id, email: users.email, phone: users.phone })
+      .select({ id: users.id, email: users.email, name: users.name, phone: users.phone })
       .from(users)
       .where(eq(users.neonAuthUserId, neonAuthUserId))
       .limit(1)
 
     const resolved = existingUser ?? await db
-      .select({ id: users.id, email: users.email, phone: users.phone })
+      .select({ id: users.id, email: users.email, name: users.name, phone: users.phone })
       .from(users)
       .where(eq(users.email, email))
       .limit(1)
@@ -130,6 +135,7 @@ export async function POST(request: NextRequest) {
     }
     userId = resolved.id
     userEmail = resolved.email
+    userName = resolved.name
     userPhone = resolved.phone
   }
 
@@ -206,6 +212,7 @@ export async function POST(request: NextRequest) {
       id: userId,
       externalId,
       email: userEmail,
+      name: userName,
       phone: userPhone,
       walletAddress: wallet?.address || null,
       balance: 0,

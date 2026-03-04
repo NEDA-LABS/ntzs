@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
       id: users.id,
       externalId: partnerUsers.externalId,
       email: users.email,
+      name: users.name,
       phone: users.phone,
       createdAt: users.createdAt,
     })
@@ -155,14 +156,21 @@ export async function GET(request: NextRequest) {
     id: u.id,
     externalId: u.externalId,
     email: u.email,
+    name: u.name || null,
     phone: u.phone,
     walletAddress: userWallets[u.id] || null,
     balanceTzs: userBalances[u.id] || 0,
     createdAt: u.createdAt,
   }))
 
-  // Get transfers for this partner
-  const transferRows = await db
+  // Build email/name lookup for transfer resolution
+  const userLookup: Record<string, { email: string; name: string | null }> = {}
+  for (const u of partnerUserRows) {
+    userLookup[u.id] = { email: u.email, name: u.name || null }
+  }
+
+  // Get transfers for this partner with resolved names/emails
+  const rawTransfers = await db
     .select({
       id: transfers.id,
       fromUserId: transfers.fromUserId,
@@ -175,6 +183,31 @@ export async function GET(request: NextRequest) {
     .from(transfers)
     .where(eq(transfers.partnerId, partnerId))
     .limit(50)
+
+  // Resolve any user IDs not already in lookup (edge case: users from other queries)
+  const missingIds = new Set<string>()
+  for (const t of rawTransfers) {
+    if (!userLookup[t.fromUserId]) missingIds.add(t.fromUserId)
+    if (!userLookup[t.toUserId]) missingIds.add(t.toUserId)
+  }
+  if (missingIds.size > 0) {
+    for (const uid of missingIds) {
+      const [u] = await db
+        .select({ email: users.email, name: users.name })
+        .from(users)
+        .where(eq(users.id, uid))
+        .limit(1)
+      if (u) userLookup[uid] = { email: u.email, name: u.name || null }
+    }
+  }
+
+  const transferRows = rawTransfers.map((t) => ({
+    ...t,
+    fromEmail: userLookup[t.fromUserId]?.email || null,
+    fromName: userLookup[t.fromUserId]?.name || null,
+    toEmail: userLookup[t.toUserId]?.email || null,
+    toName: userLookup[t.toUserId]?.name || null,
+  }))
 
   // Get deposits for this partner
   const depositRows = await db
@@ -208,6 +241,7 @@ export async function GET(request: NextRequest) {
     deposits: depositRows,
     stats: {
       totalUsers: dashboardUsers.length,
+      totalWallets: dashboardUsers.length + (partner.treasuryWalletAddress ? 1 : 0),
       totalBalanceTzs,
       totalTransfers: transferRows.length,
       totalDeposits: depositRows.length,
