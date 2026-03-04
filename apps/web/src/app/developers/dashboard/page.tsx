@@ -1,8 +1,21 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type ComponentType } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatDateEAT } from '@/lib/format-date'
+import {
+  IconActivity,
+  IconArrowDown,
+  IconBank,
+  IconChevronRight,
+  IconCoins,
+  IconDashboard,
+  IconLink,
+  IconPlus,
+  IconSend,
+  IconShield,
+  IconWallet,
+} from '@/app/app/_components/icons'
 
 interface PartnerInfo {
   id: string
@@ -94,7 +107,17 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 /* ── Sidebar Nav Item ── */
-function NavItem({ label, icon, active, onClick }: { label: string; icon: string; active: boolean; onClick: () => void }) {
+function NavItem({
+  label,
+  icon: Icon,
+  active,
+  onClick,
+}: {
+  label: string
+  icon: ComponentType<{ className?: string }>
+  active: boolean
+  onClick: () => void
+}) {
   return (
     <button
       onClick={onClick}
@@ -102,52 +125,56 @@ function NavItem({ label, icon, active, onClick }: { label: string; icon: string
         active ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white/70'
       }`}
     >
-      <span className="text-base">{icon}</span>
+      <Icon className="h-4 w-4" />
       {label}
     </button>
   )
 }
 
-/* ── Send TZS Modal ── */
-function SendModal({ users, onClose, onSuccess }: { users: DashboardUser[]; onClose: () => void; onSuccess: () => void }) {
-  const [fromId, setFromId] = useState('')
+/* ── Disburse Modal (treasury → user) ── */
+function DisburseModal({
+  users,
+  partner,
+  onClose,
+  onSuccess,
+}: {
+  users: DashboardUser[]
+  partner: PartnerInfo
+  onClose: () => void
+  onSuccess: () => void
+}) {
   const [toId, setToId] = useState('')
   const [amount, setAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
-  const handleSend = async () => {
-    if (!fromId || !toId || !amount) {
+  const handleDisburse = async () => {
+    if (!toId || !amount) {
       setError('All fields are required')
       return
     }
-    if (fromId === toId) {
-      setError('Sender and recipient must be different')
+    const amountNum = Number(amount)
+    if (!amountNum || amountNum <= 0) {
+      setError('Enter a valid amount')
       return
     }
-    const fromUser = users.find((u) => u.id === fromId)
-    const toUser = users.find((u) => u.id === toId)
-    if (!fromUser || !toUser) {
-      setError('Invalid sender or recipient')
+    if (amountNum > partner.treasuryBalanceTzs) {
+      setError(`Exceeds treasury balance (${partner.treasuryBalanceTzs.toLocaleString()} TZS)`)
       return
     }
     setSending(true)
     setError('')
     try {
-      const res = await fetch('/api/v1/transfers', {
+      const res = await fetch('/api/v1/partners/disburse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          fromExternalId: fromUser.externalId,
-          toExternalId: toUser.externalId,
-          amountTzs: Number(amount),
-        }),
+        body: JSON.stringify({ toUserId: toId, amountTzs: amountNum }),
       })
       const json = await res.json()
       if (!res.ok) {
-        setError(json.error || 'Transfer failed')
+        setError(json.error || 'Disbursement failed')
         return
       }
       setSuccess(true)
@@ -165,28 +192,34 @@ function SendModal({ users, onClose, onSuccess }: { users: DashboardUser[]; onCl
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold">Send TZS</h3>
-        <p className="mt-1 text-sm text-white/50">Transfer funds between wallets</p>
+        <h3 className="text-lg font-semibold">Disburse TZS</h3>
+        <p className="mt-1 text-sm text-white/50">Send funds from your treasury to a user wallet</p>
 
-        <div className="mt-6 space-y-4">
+        <div className="mt-5 space-y-4">
+          {/* From: treasury (fixed, not selectable) */}
           <div>
-            <label className="text-xs font-medium text-white/40">From</label>
-            <select
-              value={fromId}
-              onChange={(e) => setFromId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white focus:border-white/30 focus:outline-none"
-            >
-              <option value="">Select sender</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name || u.email} ({u.balanceTzs.toLocaleString()} TZS)
-                </option>
-              ))}
-            </select>
+            <label className="text-xs font-medium text-white/40">From (Treasury)</label>
+            <div className="mt-1 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+              <div>
+                <div className="text-sm font-medium text-emerald-400">{partner.name} Treasury</div>
+                {partner.treasuryWalletAddress && (
+                  <div className="mt-0.5 font-mono text-[11px] text-white/30">
+                    {partner.treasuryWalletAddress.slice(0, 10)}...{partner.treasuryWalletAddress.slice(-6)}
+                  </div>
+                )}
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-white/40">Available</div>
+                <div className="text-sm font-semibold text-emerald-400">
+                  {partner.treasuryBalanceTzs.toLocaleString()} TZS
+                </div>
+              </div>
+            </div>
           </div>
 
+          {/* To: user picker */}
           <div>
-            <label className="text-xs font-medium text-white/40">To</label>
+            <label className="text-xs font-medium text-white/40">To (User Wallet)</label>
             <select
               value={toId}
               onChange={(e) => setToId(e.target.value)}
@@ -201,11 +234,13 @@ function SendModal({ users, onClose, onSuccess }: { users: DashboardUser[]; onCl
             </select>
           </div>
 
+          {/* Amount */}
           <div>
             <label className="text-xs font-medium text-white/40">Amount (TZS)</label>
             <input
               type="number"
               min={1}
+              max={partner.treasuryBalanceTzs}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0"
@@ -215,15 +250,15 @@ function SendModal({ users, onClose, onSuccess }: { users: DashboardUser[]; onCl
         </div>
 
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
-        {success && <p className="mt-3 text-xs text-emerald-400">Transfer sent successfully!</p>}
+        {success && <p className="mt-3 text-xs text-emerald-400">Disbursement sent successfully!</p>}
 
         <div className="mt-6 flex gap-3">
           <button
-            onClick={handleSend}
+            onClick={handleDisburse}
             disabled={sending || success}
             className="flex-1 rounded-xl bg-white py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors disabled:opacity-50"
           >
-            {sending ? 'Sending...' : success ? 'Sent!' : 'Send TZS'}
+            {sending ? 'Disbursing...' : success ? 'Done!' : 'Disburse TZS'}
           </button>
           <button
             onClick={onClose}
@@ -616,7 +651,7 @@ export default function PartnerDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [section, setSection] = useState<Section>('overview')
-  const [showSendModal, setShowSendModal] = useState(false)
+  const [showDisburseModal, setShowDisburseModal] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const fetchDashboard = useCallback(async () => {
@@ -673,13 +708,13 @@ export default function PartnerDashboardPage() {
 
   const { partner, users, transfers, deposits, stats } = data
 
-  const navItems: { key: Section; label: string; icon: string }[] = [
-    { key: 'overview', label: 'Overview', icon: '📊' },
-    { key: 'wallets', label: 'Wallets', icon: '💳' },
-    { key: 'transfers', label: 'Transfers', icon: '🔄' },
-    { key: 'deposits', label: 'Deposits', icon: '💰' },
-    { key: 'treasury', label: 'Treasury', icon: '🏦' },
-    { key: 'settings', label: 'Settings', icon: '⚙️' },
+  const navItems: { key: Section; label: string; icon: ComponentType<{ className?: string }> }[] = [
+    { key: 'overview', label: 'Overview', icon: IconDashboard },
+    { key: 'wallets', label: 'Wallets', icon: IconWallet },
+    { key: 'transfers', label: 'Transfers', icon: IconActivity },
+    { key: 'deposits', label: 'Deposits', icon: IconCoins },
+    { key: 'treasury', label: 'Treasury', icon: IconBank },
+    { key: 'settings', label: 'Settings', icon: IconShield },
   ]
 
   const handleLogout = async () => {
@@ -738,15 +773,15 @@ export default function PartnerDashboardPage() {
             rel="noopener noreferrer"
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/50 hover:bg-white/5 hover:text-white/70 transition-colors"
           >
-            <span className="text-base">📖</span>
+            <IconLink className="h-4 w-4" />
             Docs
-            <span className="ml-auto text-xs text-white/30">↗</span>
+            <IconChevronRight className="ml-auto h-3.5 w-3.5 text-white/30" />
           </a>
           <button
             onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/50 hover:bg-red-500/10 hover:text-red-400 transition-colors"
           >
-            <span className="text-base">🚪</span>
+            <IconShield className="h-4 w-4" />
             Logout
           </button>
         </div>
@@ -783,19 +818,22 @@ export default function PartnerDashboardPage() {
               href="/developers"
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors"
             >
-              <span>+</span> Create Wallet
+              <IconPlus className="h-4 w-4" />
+              Create Wallet
             </a>
             <button
-              onClick={() => setShowSendModal(true)}
+              onClick={() => setShowDisburseModal(true)}
               className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors"
             >
-              <span>↗</span> Send TZS
+              <IconSend className="h-4 w-4" />
+              Disburse TZS
             </button>
             <a
               href="/developers"
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors"
             >
-              <span>↓</span> Fund Wallet
+              <IconArrowDown className="h-4 w-4" />
+              Fund Wallet
             </a>
           </div>
 
@@ -810,7 +848,10 @@ export default function PartnerDashboardPage() {
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-medium text-white/60">Recent Transfers</h3>
-                    <button onClick={() => setSection('transfers')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+                    <button onClick={() => setSection('transfers')} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+                      View all
+                      <IconChevronRight className="h-3 w-3" />
+                    </button>
                   </div>
                   {transfers.length === 0 ? (
                     <p className="text-sm text-white/30">No transfers yet.</p>
@@ -836,7 +877,10 @@ export default function PartnerDashboardPage() {
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-medium text-white/60">Recent Deposits</h3>
-                    <button onClick={() => setSection('deposits')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+                    <button onClick={() => setSection('deposits')} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+                      View all
+                      <IconChevronRight className="h-3 w-3" />
+                    </button>
                   </div>
                   {deposits.length === 0 ? (
                     <p className="text-sm text-white/30">No deposits yet.</p>
@@ -1032,11 +1076,12 @@ export default function PartnerDashboardPage() {
         </div>
       </main>
 
-      {/* Send Modal */}
-      {showSendModal && (
-        <SendModal
+      {/* Disburse Modal */}
+      {showDisburseModal && (
+        <DisburseModal
           users={users}
-          onClose={() => setShowSendModal(false)}
+          partner={partner}
+          onClose={() => setShowDisburseModal(false)}
           onSuccess={fetchDashboard}
         />
       )}
