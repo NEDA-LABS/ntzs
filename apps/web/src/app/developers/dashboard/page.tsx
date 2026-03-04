@@ -28,6 +28,8 @@ interface PartnerInfo {
   treasuryWalletAddress: string | null
   feePercent: number
   treasuryBalanceTzs: number
+  payoutPhone: string | null
+  payoutType: string
   createdAt: string
 }
 
@@ -706,10 +708,19 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
   const [feeSaving, setFeeSaving] = useState(false)
   const [feeError, setFeeError] = useState('')
   const [feeSuccess, setFeeSuccess] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Payout destination configuration
+  const [showConfigurePane, setShowConfigurePane] = useState(false)
+  const [payoutPhone, setPayoutPhone] = useState('')
+  const [configureSaving, setConfigureSaving] = useState(false)
+  const [configureError, setConfigureError] = useState('')
+
+  // Withdraw
+  const [amountInput, setAmountInput] = useState('')
   const [withdrawing, setWithdrawing] = useState(false)
   const [withdrawError, setWithdrawError] = useState('')
   const [withdrawSuccess, setWithdrawSuccess] = useState('')
-  const [copied, setCopied] = useState(false)
 
   const handleSaveFee = async () => {
     const val = parseFloat(feeInput)
@@ -728,10 +739,7 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
         body: JSON.stringify({ feePercent: val }),
       })
       const json = await res.json()
-      if (!res.ok) {
-        setFeeError(json.error || 'Failed to update fee')
-        return
-      }
+      if (!res.ok) { setFeeError(json.error || 'Failed to update fee'); return }
       setFeeSuccess(true)
       onRefresh()
       setTimeout(() => setFeeSuccess(false), 3000)
@@ -742,21 +750,52 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
     }
   }
 
+  const handleSaveDestination = async () => {
+    setConfigureSaving(true)
+    setConfigureError('')
+    try {
+      const res = await fetch('/api/v1/partners/treasury/payout-destination', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ type: 'mobile', phone: payoutPhone }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setConfigureError(json.error || 'Failed to save'); return }
+      setShowConfigurePane(false)
+      setPayoutPhone('')
+      onRefresh()
+    } catch {
+      setConfigureError('Failed to connect to server')
+    } finally {
+      setConfigureSaving(false)
+    }
+  }
+
   const handleWithdraw = async () => {
+    const amount = parseFloat(amountInput)
+    if (isNaN(amount) || amount < 5000) {
+      setWithdrawError('Minimum withdrawal is 5,000 TZS')
+      return
+    }
+    if (amount > partner.treasuryBalanceTzs) {
+      setWithdrawError(`Amount exceeds treasury balance (${partner.treasuryBalanceTzs.toLocaleString()} TZS)`)
+      return
+    }
     setWithdrawing(true)
     setWithdrawError('')
     setWithdrawSuccess('')
     try {
-      const res = await fetch('/api/v1/partners/withdraw', {
+      const res = await fetch('/api/v1/partners/treasury/withdraw', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({ amountTzs: amount }),
       })
       const json = await res.json()
-      if (!res.ok) {
-        setWithdrawError(json.error || 'Withdrawal failed')
-        return
-      }
-      setWithdrawSuccess(`Withdrawal initiated! Reference: ${json.reference || json.txHash || 'processing'}`)
+      if (!res.ok) { setWithdrawError(json.error || 'Withdrawal failed'); return }
+      setWithdrawSuccess(json.message || `Withdrawal of ${amount.toLocaleString()} TZS initiated. Ref: ${json.reference}`)
+      setAmountInput('')
       onRefresh()
     } catch {
       setWithdrawError('Failed to connect to server')
@@ -787,42 +826,161 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
           <div className="mt-1 text-xs text-white/40">on every transfer</div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-xs font-medium text-white/40">Wallet Info</div>
-          <div className="mt-2 text-lg font-bold">{partner.nextWalletIndex} wallets</div>
-          <div className="mt-1 text-xs text-white/40">HD seed active</div>
+          <div className="text-xs font-medium text-white/40">Payout Destination</div>
+          {partner.payoutPhone ? (
+            <>
+              <div className="mt-2 font-mono text-sm font-bold text-white">{partner.payoutPhone}</div>
+              <div className="mt-1 text-xs text-white/40">M-Pesa / Mobile Money</div>
+            </>
+          ) : (
+            <>
+              <div className="mt-2 text-sm font-semibold text-amber-400">Not configured</div>
+              <div className="mt-1 text-xs text-white/40">Set before withdrawing</div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Treasury wallet address */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-        <h3 className="text-base font-semibold">Treasury Wallet</h3>
-        <p className="mt-1 text-sm text-white/50">Your earnings wallet. Withdraw to mobile money at any time.</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold">Treasury Wallet</h3>
+            <p className="mt-1 text-sm text-white/50">Your platform earnings wallet. Withdraw to mobile money at any time.</p>
+          </div>
+          {partner.payoutPhone && (
+            <button
+              onClick={() => { setShowConfigurePane(true); setPayoutPhone(partner.payoutPhone ?? '') }}
+              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              Change destination
+            </button>
+          )}
+        </div>
+
         {partner.treasuryWalletAddress && (
           <div className="mt-4 flex items-center gap-2">
             <code className="flex-1 rounded-lg bg-black/30 px-3 py-2 text-xs text-white/60 break-all">
               {partner.treasuryWalletAddress}
             </code>
-            <button
-              onClick={copyAddress}
-              className="shrink-0 rounded-lg bg-white/10 px-3 py-2 text-xs font-medium text-white/70 hover:bg-white/20 transition-colors"
-            >
+            <button onClick={copyAddress} className="shrink-0 rounded-lg bg-white/10 px-3 py-2 text-xs font-medium text-white/70 hover:bg-white/20 transition-colors">
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
         )}
-        {partner.treasuryBalanceTzs > 0 ? (
-          <button
-            onClick={handleWithdraw}
-            disabled={withdrawing}
-            className="mt-4 rounded-xl bg-emerald-500/20 px-6 py-2.5 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
-          >
-            {withdrawing ? 'Initiating withdrawal...' : `Withdraw ${partner.treasuryBalanceTzs.toLocaleString()} TZS`}
-          </button>
-        ) : (
-          <p className="mt-3 text-xs text-white/30">No earnings yet. Configure a platform fee to start collecting.</p>
+
+        {/* No destination configured */}
+        {!partner.payoutPhone && !showConfigurePane && (
+          <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <div className="text-sm font-semibold text-amber-300">Configure payout destination first</div>
+            <p className="mt-1 text-xs text-amber-200/60">
+              Before withdrawing, set the mobile money number where funds will be sent.
+            </p>
+            <button
+              onClick={() => setShowConfigurePane(true)}
+              className="mt-3 rounded-xl bg-amber-500/20 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
+            >
+              Set payout destination
+            </button>
+          </div>
         )}
-        {withdrawError && <p className="mt-2 text-xs text-red-400">{withdrawError}</p>}
-        {withdrawSuccess && <p className="mt-2 text-xs text-emerald-400">{withdrawSuccess}</p>}
+
+        {/* Configure payout destination form */}
+        {showConfigurePane && (
+          <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+            <div>
+              <h4 className="text-sm font-semibold">Payout Destination</h4>
+              <p className="mt-0.5 text-xs text-white/40">Your treasury balance will be sent to this mobile money number (M-Pesa / Airtel).</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-white/50">Mobile Money Number</label>
+              <input
+                type="tel"
+                placeholder="07XXXXXXXX or 255XXXXXXXXX"
+                value={payoutPhone}
+                onChange={(e) => setPayoutPhone(e.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/25"
+              />
+              <p className="mt-1 text-[11px] text-white/30">Supported: Vodacom M-Pesa, Airtel Money, Tigo Pesa, Halo Pesa</p>
+            </div>
+            {configureError && <p className="text-xs text-red-400">{configureError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveDestination}
+                disabled={configureSaving || !payoutPhone.trim()}
+                className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-white/90 disabled:opacity-50 transition-colors"
+              >
+                {configureSaving ? 'Saving...' : 'Save destination'}
+              </button>
+              <button
+                onClick={() => { setShowConfigurePane(false); setConfigureError('') }}
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs text-white/50 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Withdraw form — only if destination is configured */}
+        {partner.payoutPhone && !showConfigurePane && (
+          <div className="mt-5 space-y-3">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+              <div className="text-xs font-medium text-white/40 mb-2">Withdraw to</div>
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
+                  <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-sm font-mono font-semibold text-white">{partner.payoutPhone}</div>
+                  <div className="text-[11px] text-white/40">Mobile Money (M-Pesa / Airtel)</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-white/50">Amount (min. 5,000 TZS)</label>
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={5000}
+                  max={partner.treasuryBalanceTzs}
+                  step={100}
+                  placeholder="5000"
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value)}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/25"
+                />
+                <button
+                  onClick={() => setAmountInput(String(partner.treasuryBalanceTzs))}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  Max
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-white/30">
+                Available: {partner.treasuryBalanceTzs.toLocaleString()} TZS
+              </p>
+            </div>
+
+            {withdrawError && <p className="text-xs text-red-400">{withdrawError}</p>}
+            {withdrawSuccess && (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-300">
+                {withdrawSuccess}
+              </div>
+            )}
+
+            <button
+              onClick={handleWithdraw}
+              disabled={withdrawing || !amountInput || parseFloat(amountInput) < 5000}
+              className="w-full rounded-xl bg-emerald-500/20 py-2.5 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+            >
+              {withdrawing ? 'Initiating withdrawal...' : `Withdraw${amountInput ? ` ${parseFloat(amountInput).toLocaleString()} TZS` : ''}`}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Fee configuration */}

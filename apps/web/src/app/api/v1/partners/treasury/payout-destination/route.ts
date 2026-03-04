@@ -1,0 +1,75 @@
+import crypto from 'crypto'
+import { NextRequest, NextResponse } from 'next/server'
+import { eq } from 'drizzle-orm'
+
+import { getDb } from '@/lib/db'
+import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp/snippe'
+import { partners } from '@ntzs/db'
+
+function verifySessionToken(token: string): string | null {
+  const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
+  const parts = token.split('.')
+  if (parts.length !== 2) return null
+  const [encoded, sig] = parts
+  const expectedSig = crypto.createHmac('sha256', secret).update(encoded!).digest('base64url')
+  if (sig!.length !== expectedSig.length) return null
+  if (!crypto.timingSafeEqual(Buffer.from(sig!, 'utf8'), Buffer.from(expectedSig, 'utf8'))) return null
+  try {
+    const payload = JSON.parse(Buffer.from(encoded!, 'base64url').toString('utf8'))
+    if (payload.exp && payload.exp < Date.now()) return null
+    return payload.pid || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * POST /api/v1/partners/treasury/payout-destination
+ * Save or update the partner's withdrawal payout destination.
+ * Body: { type: 'mobile', phone: string }
+ */
+export async function POST(request: NextRequest) {
+  const cookieToken = request.cookies.get('partner_session')?.value
+  const authHeader = request.headers.get('authorization')
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const token = cookieToken || bearerToken
+
+  if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  const partnerId = verifySessionToken(token)
+  if (!partnerId) return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 })
+
+  let body: { type: string; phone: string }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const { type, phone } = body
+
+  if (!type || !phone) {
+    return NextResponse.json({ error: 'type and phone are required' }, { status: 400 })
+  }
+
+  if (type !== 'mobile') {
+    return NextResponse.json({ error: 'Only mobile money is supported at this time' }, { status: 400 })
+  }
+
+  if (!isValidTanzanianPhone(phone)) {
+    return NextResponse.json(
+      { error: 'Invalid Tanzanian mobile money number. Use format: 07XXXXXXXX or 255XXXXXXXXX' },
+      { status: 400 }
+    )
+  }
+
+  const normalized = normalizePhone(phone)
+  const { db } = getDb()
+
+  await db
+    .update(partners)
+    .set({ payoutPhone: normalized, payoutType: type, updatedAt: new Date() })
+    .where(eq(partners.id, partnerId))
+
+  return NextResponse.json({ payoutPhone: normalized, payoutType: type })
+}

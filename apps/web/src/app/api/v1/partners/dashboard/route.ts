@@ -59,6 +59,8 @@ export async function GET(request: NextRequest) {
       nextWalletIndex: partners.nextWalletIndex,
       treasuryWalletAddress: partners.treasuryWalletAddress,
       feePercent: partners.feePercent,
+      payoutPhone: partners.payoutPhone,
+      payoutType: partners.payoutType,
       createdAt: partners.createdAt,
     })
     .from(partners)
@@ -279,6 +281,8 @@ export async function GET(request: NextRequest) {
       treasuryWalletAddress: partner.treasuryWalletAddress,
       feePercent: parseFloat(String(partner.feePercent ?? '0')),
       treasuryBalanceTzs,
+      payoutPhone: partner.payoutPhone ?? null,
+      payoutType: partner.payoutType ?? 'mobile',
       createdAt: partner.createdAt,
     },
     users: dashboardUsers,

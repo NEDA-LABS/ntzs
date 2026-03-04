@@ -477,6 +477,8 @@ export const partners = pgTable(
     contractSignedAt: timestamp('contract_signed_at', { withTimezone: true }),
     treasuryWalletAddress: text('treasury_wallet_address'),
     feePercent: numeric('fee_percent').notNull().default('0'),
+    payoutPhone: text('payout_phone'),
+    payoutType: text('payout_type').default('mobile'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
