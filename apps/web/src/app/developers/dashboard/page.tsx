@@ -1338,7 +1338,7 @@ export default function PartnerDashboardPage() {
       </button>
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-white/10 bg-[#0a0a0f] transition-transform lg:static lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-white/10 bg-[#0a0a0f] transition-transform lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Brand */}
         <div className="flex h-16 items-center gap-2 border-b border-white/10 px-5">
           <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-xs font-bold">N</div>
@@ -1349,7 +1349,7 @@ export default function PartnerDashboardPage() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex-1 overflow-y-auto space-y-1 p-3">
           {navItems.map((item) => (
             <NavItem
               key={item.key}
@@ -1392,7 +1392,7 @@ export default function PartnerDashboardPage() {
       )}
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto lg:ml-60">
         <div className="mx-auto max-w-6xl px-6 py-8">
           {/* Stats row (always visible) */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
