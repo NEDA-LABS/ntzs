@@ -155,6 +155,27 @@ export function deriveTreasuryWallet(encryptedSeed: string): ethers.HDNodeWallet
 }
 
 /**
+ * Derive a partner sub-wallet address at the given index on the treasury path.
+ * Index 0 is the main treasury; sub-wallets start at index 1.
+ * Does NOT expose the private key.
+ */
+export function deriveSubWalletAddress(encryptedSeed: string, walletIndex: number): string {
+  const mnemonic = decryptSeed(encryptedSeed)
+  const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, TREASURY_DERIVATION_BASE)
+  return hdNode.deriveChild(walletIndex).address
+}
+
+/**
+ * Derive a partner sub-wallet with private key for signing.
+ * The caller MUST discard this object after use — never persist the key.
+ */
+export function deriveSubWallet(encryptedSeed: string, walletIndex: number): ethers.HDNodeWallet {
+  const mnemonic = decryptSeed(encryptedSeed)
+  const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, TREASURY_DERIVATION_BASE)
+  return hdNode.deriveChild(walletIndex)
+}
+
+/**
  * Sign and send an ERC-20 transfer on behalf of a WaaS user.
  * Derives the user's private key on-demand, signs, sends, and discards.
  */

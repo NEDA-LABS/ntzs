@@ -4,7 +4,7 @@ import { eq, and } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { partners, partnerUsers, users, wallets, transfers, depositRequests } from '@ntzs/db'
+import { partners, partnerUsers, partnerSubWallets, users, wallets, transfers, depositRequests } from '@ntzs/db'
 
 function verifySessionToken(token: string): string | null {
   const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
@@ -163,6 +163,47 @@ export async function GET(request: NextRequest) {
     createdAt: u.createdAt,
   }))
 
+  // Fetch partner sub-wallets
+  const subWalletRows = await db
+    .select({
+      id: partnerSubWallets.id,
+      label: partnerSubWallets.label,
+      address: partnerSubWallets.address,
+      walletIndex: partnerSubWallets.walletIndex,
+      createdAt: partnerSubWallets.createdAt,
+    })
+    .from(partnerSubWallets)
+    .where(eq(partnerSubWallets.partnerId, partnerId))
+    .orderBy(partnerSubWallets.walletIndex)
+
+  // Get on-chain balances for sub-wallets
+  const subWalletBalances: Record<string, number> = {}
+  if (rpcUrl && contractAddress && subWalletRows.length > 0) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      const token = new ethers.Contract(
+        contractAddress,
+        ['function balanceOf(address) view returns (uint256)'],
+        provider
+      )
+      for (const sw of subWalletRows) {
+        try {
+          const bal: bigint = await token.balanceOf(sw.address)
+          subWalletBalances[sw.id] = Number(bal / BigInt(10) ** BigInt(18))
+        } catch {
+          subWalletBalances[sw.id] = 0
+        }
+      }
+    } catch {
+      // RPC error — balances stay 0
+    }
+  }
+
+  const subWallets = subWalletRows.map((sw) => ({
+    ...sw,
+    balanceTzs: subWalletBalances[sw.id] ?? 0,
+  }))
+
   // Build email/name lookup for transfer resolution
   const userLookup: Record<string, { email: string; name: string | null }> = {}
   for (const u of partnerUserRows) {
@@ -237,11 +278,12 @@ export async function GET(request: NextRequest) {
       createdAt: partner.createdAt,
     },
     users: dashboardUsers,
+    subWallets,
     transfers: transferRows,
     deposits: depositRows,
     stats: {
       totalUsers: dashboardUsers.length,
-      totalWallets: dashboardUsers.length + (partner.treasuryWalletAddress ? 1 : 0),
+      totalWallets: dashboardUsers.length + (partner.treasuryWalletAddress ? 1 : 0) + subWallets.length,
       totalBalanceTzs,
       totalTransfers: transferRows.length,
       totalDeposits: depositRows.length,

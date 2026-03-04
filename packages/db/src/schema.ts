@@ -467,6 +467,7 @@ export const partners = pgTable(
     webhookSecret: text('webhook_secret'),
     encryptedHdSeed: text('encrypted_hd_seed'),
     nextWalletIndex: integer('next_wallet_index').notNull().default(0),
+    nextSubWalletIndex: integer('next_sub_wallet_index').notNull().default(1),
     isActive: boolean('is_active').notNull().default(true),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     suspendReason: text('suspend_reason'),
@@ -481,6 +482,23 @@ export const partners = pgTable(
     apiKeyHashUq: uniqueIndex('partners_api_key_hash_uq').on(t.apiKeyHash),
     emailUq: uniqueIndex('partners_email_uq').on(t.email),
     nameIdx: index('partners_name_idx').on(t.name),
+  })
+)
+
+export const partnerSubWallets = pgTable(
+  'partner_sub_wallets',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    address: text('address').notNull(),
+    walletIndex: integer('wallet_index').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerIdx: index('partner_sub_wallets_partner_id_idx').on(t.partnerId),
   })
 )
 

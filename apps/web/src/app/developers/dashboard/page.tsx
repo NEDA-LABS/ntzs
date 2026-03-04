@@ -64,9 +64,19 @@ interface DashboardDeposit {
   createdAt: string
 }
 
+interface DashboardSubWallet {
+  id: string
+  label: string
+  address: string
+  walletIndex: number
+  balanceTzs: number
+  createdAt: string
+}
+
 interface DashboardData {
   partner: PartnerInfo
   users: DashboardUser[]
+  subWallets: DashboardSubWallet[]
   transfers: DashboardTransfer[]
   deposits: DashboardDeposit[]
   stats: {
@@ -272,33 +282,32 @@ function DisburseModal({
   )
 }
 
-/* ── Create Wallet Modal ── */
+/* ── Create Sub-Wallet Modal ── */
+const SUB_WALLET_PRESETS = ['Escrow', 'Reserves', 'Settlement', 'Disbursement', 'Fees', 'Custom']
+
 function CreateWalletModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [externalId, setExternalId] = useState('')
-  const [email, setEmail] = useState('')
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [label, setLabel] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<{ walletAddress: string; email: string; alreadyExists?: boolean } | null>(null)
+  const [result, setResult] = useState<{ label: string; address: string; derivationPath: string } | null>(null)
 
   const handleCreate = async () => {
-    if (!externalId || !email) {
-      setError('External ID and email are required')
+    if (!label.trim()) {
+      setError('Wallet label is required')
       return
     }
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/v1/partners/users', {
+      const res = await fetch('/api/v1/partners/sub-wallets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ externalId, email, name: name || undefined, phone: phone || undefined }),
+        body: JSON.stringify({ label: label.trim() }),
       })
       const json = await res.json()
       if (!res.ok) {
-        setError(json.error || 'Failed to create wallet')
+        setError(json.error || 'Failed to create sub-wallet')
         return
       }
       setResult(json)
@@ -315,69 +324,67 @@ function CreateWalletModal({ onClose, onSuccess }: { onClose: () => void; onSucc
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {result ? (
           <>
-            <h3 className="text-lg font-semibold">Wallet Created</h3>
+            <h3 className="text-lg font-semibold">Sub-wallet Created</h3>
             <p className="mt-1 text-sm text-white/50">
-              {result.alreadyExists ? 'This user already has a wallet.' : 'New wallet provisioned and prefunded with gas.'}
+              Your <span className="text-white font-medium">{result.label}</span> wallet is ready
             </p>
-            <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-1">
-              <div className="text-xs text-white/40">User</div>
-              <div className="text-sm">{result.email}</div>
-              <div className="mt-2 text-xs text-white/40">Wallet Address</div>
-              <div className="font-mono text-xs text-emerald-400 break-all">{result.walletAddress}</div>
+            <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+              <div>
+                <div className="text-xs text-white/40">Label</div>
+                <div className="text-sm font-medium">{result.label}</div>
+              </div>
+              <div>
+                <div className="text-xs text-white/40">Address</div>
+                <div className="font-mono text-xs text-emerald-400 break-all mt-0.5">{result.address}</div>
+              </div>
+              <div>
+                <div className="text-xs text-white/40">Derivation Path</div>
+                <div className="font-mono text-xs text-white/40 mt-0.5">{result.derivationPath}</div>
+              </div>
             </div>
             <button
               onClick={onClose}
               className="mt-5 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-white/70 hover:bg-white/10 transition-colors"
             >
-              Close
+              Done
             </button>
           </>
         ) : (
           <>
-            <h3 className="text-lg font-semibold">Create Wallet</h3>
-            <p className="mt-1 text-sm text-white/50">Provision a new user wallet on your platform</p>
+            <h3 className="text-lg font-semibold">Create Sub-wallet</h3>
+            <p className="mt-1 text-sm text-white/50">
+              Add a partner-controlled wallet for internal fund separation
+            </p>
 
-            <div className="mt-5 space-y-3">
-              <div>
-                <label className="text-xs font-medium text-white/40">External ID <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  value={externalId}
-                  onChange={(e) => setExternalId(e.target.value)}
-                  placeholder="Your internal user ID"
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
-                />
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-white/50">
+              Sub-wallets are derived from your treasury HD seed — fully controlled by your platform, separate from user wallets. Use them to segregate funds by purpose.
+            </div>
+
+            <div className="mt-4">
+              <label className="text-xs font-medium text-white/40">Wallet Label</label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {SUB_WALLET_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => setLabel(preset === 'Custom' ? '' : preset)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      label === preset
+                        ? 'border-white/40 bg-white/10 text-white'
+                        : 'border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/[0.07] hover:text-white/70'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="text-xs font-medium text-white/40">Email <span className="text-red-400">*</span></label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@example.com"
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-white/40">Full Name <span className="text-white/20">(optional)</span></label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Jane Doe"
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-white/40">Phone <span className="text-white/20">(optional)</span></label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+255 700 000 000"
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
-                />
-              </div>
+              <input
+                type="text"
+                maxLength={50}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="or type a custom label"
+                className="mt-3 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
+              />
             </div>
 
             {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
@@ -385,10 +392,10 @@ function CreateWalletModal({ onClose, onSuccess }: { onClose: () => void; onSucc
             <div className="mt-5 flex gap-3">
               <button
                 onClick={handleCreate}
-                disabled={loading}
+                disabled={loading || !label.trim()}
                 className="flex-1 rounded-xl bg-white py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors disabled:opacity-50"
               >
-                {loading ? 'Creating...' : 'Create Wallet'}
+                {loading ? 'Creating...' : 'Create Sub-wallet'}
               </button>
               <button
                 onClick={onClose}
@@ -968,7 +975,7 @@ export default function PartnerDashboardPage() {
 
   if (!data) return null
 
-  const { partner, users, transfers, deposits, stats } = data
+  const { partner, users, subWallets, transfers, deposits, stats } = data
 
   const navItems: { key: Section; label: string; icon: ComponentType<{ className?: string }> }[] = [
     { key: 'overview', label: 'Overview', icon: IconDashboard },
@@ -1202,11 +1209,30 @@ export default function PartnerDashboardPage() {
                           </td>
                         </tr>
                       )}
+                      {/* Sub-wallet rows */}
+                      {subWallets.map((sw) => (
+                        <tr key={sw.id} className="border-b border-white/5 bg-violet-500/[0.02] hover:bg-violet-500/[0.04]">
+                          <td className="px-4 py-3 font-medium text-white/80">{sw.label}</td>
+                          <td className="px-4 py-3 text-white/40">—</td>
+                          <td className="px-4 py-3 font-mono text-xs text-white/40">—</td>
+                          <td className="px-4 py-3 font-mono text-xs text-white/50">
+                            {sw.address.slice(0, 6)}...{sw.address.slice(-4)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300">
+                              Sub-wallet
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-white/80">
+                            {sw.balanceTzs.toLocaleString()} TZS
+                          </td>
+                        </tr>
+                      ))}
                       {/* User wallets */}
-                      {users.length === 0 && !partner.treasuryWalletAddress ? (
+                      {users.length === 0 && !partner.treasuryWalletAddress && subWallets.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-8 text-center text-white/40">
-                            No wallets yet. Create your first wallet via the API.
+                            No wallets yet.
                           </td>
                         </tr>
                       ) : (

@@ -71,6 +71,13 @@
       "when": 1772533200000,
       "tag": "0009_add_user_name",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772619600000,
+      "tag": "0010_add_partner_sub_wallets",
+      "breakpoints": true
     }
   ]
 }
