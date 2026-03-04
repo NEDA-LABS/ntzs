@@ -1653,7 +1653,7 @@ export default function PartnerDashboardPage() {
                       <Image src="/ntzs-logo.png" alt="nTZS" width={22} height={22} className="rounded-full" />
                       <span className="text-xs font-semibold tracking-widest text-white/40 uppercase">nTZS Partner Console</span>
                     </div>
-                    <h3 className="text-xl font-bold">Your financial rails, your rules.</h3>
+                    <h3 className="text-xl font-bold">Here is what is happening across your platform today.</h3>
                     <p className="mt-2 text-sm text-white/50 max-w-sm">
                       Issue wallets, move TZS, and monitor every transaction — all from one dashboard.
                     </p>
