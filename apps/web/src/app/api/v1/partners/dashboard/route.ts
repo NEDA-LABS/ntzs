@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
@@ -223,6 +223,7 @@ export async function GET(request: NextRequest) {
     })
     .from(transfers)
     .where(eq(transfers.partnerId, partnerId))
+    .orderBy(desc(transfers.createdAt))
     .limit(50)
 
   // Resolve any user IDs not already in lookup (edge case: users from other queries)
@@ -262,6 +263,7 @@ export async function GET(request: NextRequest) {
     })
     .from(depositRequests)
     .where(eq(depositRequests.partnerId, partnerId))
+    .orderBy(desc(depositRequests.createdAt))
     .limit(50)
 
   return NextResponse.json({
