@@ -42,9 +42,27 @@ export default function PartnerSignupPage() {
     }
   }
 
+  const VideoBg = () => (
+    <>
+      <video
+        autoPlay
+        muted
+        loop
+        playsInline
+        className="fixed inset-0 h-full w-full object-cover"
+        style={{ zIndex: -1 }}
+      >
+        <source src="/BG.mp4" type="video/mp4" />
+      </video>
+      <div className="fixed inset-0 bg-black/55" style={{ zIndex: -1 }} />
+    </>
+  )
+
   if (result) {
     return (
-      <div className="mx-auto max-w-lg px-6 py-20">
+      <div className="relative flex min-h-screen items-center justify-center px-6 py-20">
+        <VideoBg />
+        <div className="w-full max-w-lg">
         <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
           <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10">
             <svg className="h-6 w-6 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -92,12 +110,15 @@ export default function PartnerSignupPage() {
             </button>
           </div>
         </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-20">
+    <div className="relative flex min-h-screen items-center justify-center px-6 py-20">
+      <VideoBg />
+      <div className="w-full max-w-lg">
       <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
         <h1 className="text-2xl font-bold tracking-tight">Create a partner account</h1>
         <p className="mt-2 text-sm text-white/60">
@@ -186,6 +207,7 @@ export default function PartnerSignupPage() {
             </a>
           </p>
         </form>
+      </div>
       </div>
     </div>
   )

@@ -39,7 +39,22 @@ export default function PartnerLoginPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-20">
+    <div className="relative flex min-h-screen items-center justify-center px-6 py-20">
+      {/* Background video */}
+      <video
+        autoPlay
+        muted
+        loop
+        playsInline
+        className="fixed inset-0 h-full w-full object-cover"
+        style={{ zIndex: -1 }}
+      >
+        <source src="/BG.mp4" type="video/mp4" />
+      </video>
+      {/* Dark overlay */}
+      <div className="fixed inset-0 bg-black/55" style={{ zIndex: -1 }} />
+
+      <div className="w-full max-w-lg">
       <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
         <h1 className="text-2xl font-bold tracking-tight">Partner Login</h1>
         <p className="mt-2 text-sm text-white/60">
@@ -98,6 +113,7 @@ export default function PartnerLoginPage() {
             </a>
           </p>
         </form>
+      </div>
       </div>
     </div>
   )
