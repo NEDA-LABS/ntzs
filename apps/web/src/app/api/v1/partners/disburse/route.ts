@@ -36,9 +36,10 @@ function verifySessionToken(token: string): string | null {
 
 /**
  * POST /api/v1/partners/disburse
- * Disburse TZS from the partner's treasury (or a sub-wallet) to a user's wallet.
+ * Transfer TZS from a partner wallet (treasury or sub-wallet) to a user wallet OR another sub-wallet.
  * Auth: partner session cookie (dashboard only — not partner API key).
- * Body: { toUserId: string; amountTzs: number; fromSubWalletId?: string }
+ * Body: { amountTzs: number; fromSubWalletId?: string; toUserId?: string; toSubWalletId?: string }
+ * One of toUserId or toSubWalletId is required.
  */
 export async function POST(request: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -57,17 +58,20 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────
-  let body: { toUserId: string; amountTzs: number; fromSubWalletId?: string }
+  let body: { amountTzs: number; fromSubWalletId?: string; toUserId?: string; toSubWalletId?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { toUserId, amountTzs, fromSubWalletId } = body
+  const { toUserId, toSubWalletId, amountTzs, fromSubWalletId } = body
 
-  if (!toUserId || !amountTzs) {
-    return NextResponse.json({ error: 'toUserId and amountTzs are required' }, { status: 400 })
+  if (!toUserId && !toSubWalletId) {
+    return NextResponse.json({ error: 'Either toUserId or toSubWalletId is required' }, { status: 400 })
+  }
+  if (!amountTzs) {
+    return NextResponse.json({ error: 'amountTzs is required' }, { status: 400 })
   }
   if (amountTzs <= 0) {
     return NextResponse.json({ error: 'amountTzs must be positive' }, { status: 400 })
@@ -121,26 +125,48 @@ export async function POST(request: NextRequest) {
     fromLabel = subWallet.label
   }
 
-  // ── Verify recipient belongs to this partner ────────────────────────────────
-  const [toMapping] = await db
-    .select({ userId: partnerUsers.userId })
-    .from(partnerUsers)
-    .where(and(eq(partnerUsers.partnerId, partnerId), eq(partnerUsers.userId, toUserId)))
-    .limit(1)
+  // ── Resolve recipient address ───────────────────────────────────────────────
+  let toAddress: string
+  let toLabel: string
 
-  if (!toMapping) {
-    return NextResponse.json({ error: 'Recipient user not found for this partner' }, { status: 404 })
-  }
+  if (toSubWalletId) {
+    const [destSubWallet] = await db
+      .select({ address: partnerSubWallets.address, label: partnerSubWallets.label })
+      .from(partnerSubWallets)
+      .where(and(eq(partnerSubWallets.id, toSubWalletId), eq(partnerSubWallets.partnerId, partnerId)))
+      .limit(1)
 
-  // ── Get recipient wallet ────────────────────────────────────────────────────
-  const [toWallet] = await db
-    .select({ address: wallets.address })
-    .from(wallets)
-    .where(and(eq(wallets.userId, toUserId), eq(wallets.chain, 'base')))
-    .limit(1)
+    if (!destSubWallet) {
+      return NextResponse.json({ error: 'Destination sub-wallet not found' }, { status: 404 })
+    }
+    if (fromSubWalletId && toSubWalletId === fromSubWalletId) {
+      return NextResponse.json({ error: 'Source and destination cannot be the same wallet' }, { status: 400 })
+    }
+    toAddress = destSubWallet.address
+    toLabel = destSubWallet.label
+  } else {
+    const recipientId = toUserId as string
+    const [toMapping] = await db
+      .select({ userId: partnerUsers.userId })
+      .from(partnerUsers)
+      .where(and(eq(partnerUsers.partnerId, partnerId), eq(partnerUsers.userId, recipientId)))
+      .limit(1)
 
-  if (!toWallet || toWallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json({ error: 'Recipient wallet is not provisioned' }, { status: 400 })
+    if (!toMapping) {
+      return NextResponse.json({ error: 'Recipient user not found for this partner' }, { status: 404 })
+    }
+
+    const [toWallet] = await db
+      .select({ address: wallets.address })
+      .from(wallets)
+      .where(and(eq(wallets.userId, recipientId), eq(wallets.chain, 'base')))
+      .limit(1)
+
+    if (!toWallet || toWallet.address.startsWith('0x_pending_')) {
+      return NextResponse.json({ error: 'Recipient wallet is not provisioned' }, { status: 400 })
+    }
+    toAddress = toWallet.address
+    toLabel = `user:${recipientId}`
   }
 
   // ── On-chain disbursal ──────────────────────────────────────────────────────
@@ -192,7 +218,7 @@ export async function POST(request: NextRequest) {
 
     const tx = await signingWallet.sendTransaction({
       to: contractAddress,
-      data: iface.encodeFunctionData('transfer', [toWallet.address, amountWei]),
+      data: iface.encodeFunctionData('transfer', [toAddress, amountWei]),
     })
 
     const receipt = await tx.wait()
@@ -204,8 +230,10 @@ export async function POST(request: NextRequest) {
       entityType: 'partner',
       entityId: partnerId,
       metadata: {
-        toUserId,
-        toWallet: toWallet.address,
+        toUserId: toUserId || null,
+        toSubWalletId: toSubWalletId || null,
+        toAddress,
+        toLabel,
         amountTzs,
         txHash: receipt.hash,
         fromWallet: fromAddress,
@@ -219,9 +247,10 @@ export async function POST(request: NextRequest) {
       {
         txHash: receipt.hash,
         amountTzs,
-        toUserId,
-        fromWallet: partner.treasuryWalletAddress,
-        toWallet: toWallet.address,
+        toUserId: toUserId || null,
+        toSubWalletId: toSubWalletId || null,
+        fromWallet: fromAddress,
+        toWallet: toAddress,
       },
       { status: 201 }
     )

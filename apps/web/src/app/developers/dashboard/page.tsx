@@ -156,6 +156,7 @@ function DisburseModal({
   onSuccess: () => void
 }) {
   const [fromSubWalletId, setFromSubWalletId] = useState<string>('')
+  const [toType, setToType] = useState<'user' | 'subwallet'>('user')
   const [toId, setToId] = useState('')
   const [amount, setAmount] = useState('')
   const [sending, setSending] = useState(false)
@@ -193,9 +194,9 @@ function DisburseModal({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          toUserId: toId,
           amountTzs: amountNum,
           ...(fromSubWalletId ? { fromSubWalletId } : {}),
+          ...(toType === 'subwallet' ? { toSubWalletId: toId } : { toUserId: toId }),
         }),
       })
       const json = await res.json()
@@ -244,20 +245,44 @@ function DisburseModal({
             )}
           </div>
 
-          {/* To: user picker */}
+          {/* To: user or sub-wallet picker */}
           <div>
-            <label className="text-xs font-medium text-white/40">To (User Wallet)</label>
+            <label className="text-xs font-medium text-white/40">To</label>
             <select
-              value={toId}
-              onChange={(e) => setToId(e.target.value)}
+              value={toType === 'subwallet' ? `sw:${toId}` : `user:${toId}`}
+              onChange={(e) => {
+                const val = e.target.value
+                if (val.startsWith('sw:')) {
+                  setToType('subwallet')
+                  setToId(val.slice(3))
+                } else {
+                  setToType('user')
+                  setToId(val.slice(5))
+                }
+              }}
               className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white focus:border-white/30 focus:outline-none"
             >
-              <option value="">Select recipient</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name || u.email}
-                </option>
-              ))}
+              <option value="user:">Select destination</option>
+              {users.length > 0 && (
+                <optgroup label="User Wallets">
+                  {users.map((u) => (
+                    <option key={u.id} value={`user:${u.id}`}>
+                      {u.name || u.email}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {subWallets.filter((sw) => sw.id !== fromSubWalletId).length > 0 && (
+                <optgroup label="Sub-wallets">
+                  {subWallets
+                    .filter((sw) => sw.id !== fromSubWalletId)
+                    .map((sw) => (
+                      <option key={sw.id} value={`sw:${sw.id}`}>
+                        {sw.label} ({sw.balanceTzs.toLocaleString()} TZS)
+                      </option>
+                    ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
