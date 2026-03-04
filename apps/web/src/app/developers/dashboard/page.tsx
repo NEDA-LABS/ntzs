@@ -1397,6 +1397,50 @@ export default function PartnerDashboardPage() {
       {/* Main content */}
       <main className="flex-1 overflow-y-auto lg:ml-60">
         <div className="mx-auto max-w-6xl px-6 py-8">
+          {/* Welcome header + hero — overview only, always at top */}
+          {section === 'overview' && (
+            <div className="mb-8 space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold">Welcome back, {partner.name}</h2>
+                <p className="mt-1 text-sm text-white/40">Here is what is happening across your platform today.</p>
+              </div>
+              <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-blue-900/40 via-[#0a0a1a] to-violet-900/30 p-6">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,rgba(99,102,241,0.12),transparent_60%)]" />
+                <div className="relative flex items-center justify-between gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Image src="/ntzs-logo.png" alt="nTZS" width={22} height={22} className="rounded-full" />
+                      <span className="text-xs font-semibold tracking-widest text-white/40 uppercase">nTZS Partner Console</span>
+                    </div>
+                    <h3 className="text-xl font-bold">Your financial rails, your rules.</h3>
+                    <p className="mt-2 text-sm text-white/50 max-w-sm">
+                      Issue wallets, move TZS, and monitor every transaction — all from one dashboard.
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setShowCreateWalletModal(true)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-white/90 transition-colors"
+                      >
+                        <IconPlus className="h-3.5 w-3.5" />
+                        Create Wallet
+                      </button>
+                      <button
+                        onClick={() => setShowDisburseModal(true)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/10 transition-colors"
+                      >
+                        <IconSend className="h-3.5 w-3.5" />
+                        Disburse TZS
+                      </button>
+                    </div>
+                  </div>
+                  <div className="hidden shrink-0 sm:flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <Image src="/ntzs-logo.png" alt="nTZS" width={56} height={56} className="opacity-80" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Stats row (always visible) */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
             <StatCard label="Total Wallets" value={String(stats.totalWallets)} />
@@ -1444,48 +1488,6 @@ export default function PartnerDashboardPage() {
             {/* ── Overview ── */}
             {section === 'overview' && (
               <div className="space-y-6">
-                {/* Welcome header */}
-                <div>
-                  <h2 className="text-2xl font-bold">Welcome back, {partner.name}</h2>
-                  <p className="mt-1 text-sm text-white/40">Here is what is happening across your platform today.</p>
-                </div>
-
-                {/* Hero card */}
-                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-blue-900/40 via-[#0a0a1a] to-violet-900/30 p-6">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,rgba(99,102,241,0.12),transparent_60%)]" />
-                  <div className="relative flex items-center justify-between gap-6">
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Image src="/ntzs-logo.png" alt="nTZS" width={22} height={22} className="rounded-full" />
-                        <span className="text-xs font-semibold tracking-widest text-white/40 uppercase">nTZS Partner Console</span>
-                      </div>
-                      <h3 className="text-xl font-bold">Your financial rails, your rules.</h3>
-                      <p className="mt-2 text-sm text-white/50 max-w-sm">
-                        Issue wallets, move TZS, and monitor every transaction — all from one dashboard.
-                      </p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => setShowCreateWalletModal(true)}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-white/90 transition-colors"
-                        >
-                          <IconPlus className="h-3.5 w-3.5" />
-                          Create Wallet
-                        </button>
-                        <button
-                          onClick={() => setShowDisburseModal(true)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/10 transition-colors"
-                        >
-                          <IconSend className="h-3.5 w-3.5" />
-                          Disburse TZS
-                        </button>
-                      </div>
-                    </div>
-                    <div className="hidden shrink-0 sm:flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-5">
-                      <Image src="/ntzs-logo.png" alt="nTZS" width={56} height={56} className="opacity-80" />
-                    </div>
-                  </div>
-                </div>
-
                 <h3 className="text-sm font-semibold text-white/60 uppercase tracking-widest">Recent Activity</h3>
 
                 {/* Recent transfers */}
