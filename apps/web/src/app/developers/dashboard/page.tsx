@@ -272,6 +272,209 @@ function DisburseModal({
   )
 }
 
+/* ── Create Wallet Modal ── */
+function CreateWalletModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [externalId, setExternalId] = useState('')
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ walletAddress: string; email: string; alreadyExists?: boolean } | null>(null)
+
+  const handleCreate = async () => {
+    if (!externalId || !email) {
+      setError('External ID and email are required')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/v1/partners/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ externalId, email, name: name || undefined, phone: phone || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setError(json.error || 'Failed to create wallet')
+        return
+      }
+      setResult(json)
+      onSuccess()
+    } catch {
+      setError('Failed to connect to server')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {result ? (
+          <>
+            <h3 className="text-lg font-semibold">Wallet Created</h3>
+            <p className="mt-1 text-sm text-white/50">
+              {result.alreadyExists ? 'This user already has a wallet.' : 'New wallet provisioned and prefunded with gas.'}
+            </p>
+            <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-1">
+              <div className="text-xs text-white/40">User</div>
+              <div className="text-sm">{result.email}</div>
+              <div className="mt-2 text-xs text-white/40">Wallet Address</div>
+              <div className="font-mono text-xs text-emerald-400 break-all">{result.walletAddress}</div>
+            </div>
+            <button
+              onClick={onClose}
+              className="mt-5 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-white/70 hover:bg-white/10 transition-colors"
+            >
+              Close
+            </button>
+          </>
+        ) : (
+          <>
+            <h3 className="text-lg font-semibold">Create Wallet</h3>
+            <p className="mt-1 text-sm text-white/50">Provision a new user wallet on your platform</p>
+
+            <div className="mt-5 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-white/40">External ID <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={externalId}
+                  onChange={(e) => setExternalId(e.target.value)}
+                  placeholder="Your internal user ID"
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40">Email <span className="text-red-400">*</span></label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40">Full Name <span className="text-white/20">(optional)</span></label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Jane Doe"
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40">Phone <span className="text-white/20">(optional)</span></label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+255 700 000 000"
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={handleCreate}
+                disabled={loading}
+                className="flex-1 rounded-xl bg-white py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Creating...' : 'Create Wallet'}
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm text-white/70 hover:bg-white/10 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── Fund Wallet Modal ── */
+function FundWalletModal({ partner, onClose }: { partner: PartnerInfo; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    if (!partner.treasuryWalletAddress) return
+    navigator.clipboard.writeText(partner.treasuryWalletAddress)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold">Fund Treasury Wallet</h3>
+        <p className="mt-1 text-sm text-white/50">
+          Deposit TZS to your treasury to fund user wallets and run disbursements
+        </p>
+
+        <div className="mt-5 space-y-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-medium text-white/40">Current Treasury Balance</div>
+              <div className="text-sm font-semibold text-emerald-400">
+                {partner.treasuryBalanceTzs.toLocaleString()} TZS
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs font-medium text-white/40">Treasury Wallet Address (Base Network)</div>
+            {partner.treasuryWalletAddress ? (
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                <span className="flex-1 font-mono text-xs text-white/70 break-all">
+                  {partner.treasuryWalletAddress}
+                </span>
+                <button
+                  onClick={handleCopy}
+                  className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/60 hover:bg-white/10 transition-colors"
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-400">
+                Treasury wallet not yet provisioned. Create your first user wallet to generate it.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-blue-500/10 bg-blue-500/5 p-4 space-y-2">
+            <div className="text-xs font-semibold text-blue-400">How to fund</div>
+            <ol className="space-y-1 text-xs text-white/50 list-decimal list-inside">
+              <li>Copy your treasury wallet address above</li>
+              <li>Transfer TZS to this address on the Base network</li>
+              <li>Once received, use Disburse TZS to push funds to user wallets</li>
+            </ol>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-5 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-white/70 hover:bg-white/10 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /* ── Treasury Section ── */
 function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefresh: () => void }) {
   const [feeInput, setFeeInput] = useState(String(partner.feePercent))
@@ -652,6 +855,8 @@ export default function PartnerDashboardPage() {
   const [error, setError] = useState('')
   const [section, setSection] = useState<Section>('overview')
   const [showDisburseModal, setShowDisburseModal] = useState(false)
+  const [showCreateWalletModal, setShowCreateWalletModal] = useState(false)
+  const [showFundWalletModal, setShowFundWalletModal] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const fetchDashboard = useCallback(async () => {
@@ -814,13 +1019,13 @@ export default function PartnerDashboardPage() {
 
           {/* Quick Actions */}
           <div className="mt-6 flex flex-wrap gap-3">
-            <a
-              href="/developers"
+            <button
+              onClick={() => setShowCreateWalletModal(true)}
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors"
             >
               <IconPlus className="h-4 w-4" />
               Create Wallet
-            </a>
+            </button>
             <button
               onClick={() => setShowDisburseModal(true)}
               className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors"
@@ -828,13 +1033,13 @@ export default function PartnerDashboardPage() {
               <IconSend className="h-4 w-4" />
               Disburse TZS
             </button>
-            <a
-              href="/developers"
+            <button
+              onClick={() => setShowFundWalletModal(true)}
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors"
             >
               <IconArrowDown className="h-4 w-4" />
               Fund Wallet
-            </a>
+            </button>
           </div>
 
           {/* Section content */}
@@ -1083,6 +1288,22 @@ export default function PartnerDashboardPage() {
           partner={partner}
           onClose={() => setShowDisburseModal(false)}
           onSuccess={fetchDashboard}
+        />
+      )}
+
+      {/* Create Wallet Modal */}
+      {showCreateWalletModal && (
+        <CreateWalletModal
+          onClose={() => setShowCreateWalletModal(false)}
+          onSuccess={fetchDashboard}
+        />
+      )}
+
+      {/* Fund Wallet Modal */}
+      {showFundWalletModal && (
+        <FundWalletModal
+          partner={partner}
+          onClose={() => setShowFundWalletModal(false)}
         />
       )}
     </div>
