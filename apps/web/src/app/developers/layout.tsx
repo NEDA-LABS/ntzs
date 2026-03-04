@@ -56,6 +56,9 @@ function AuthButtons() {
 }
 
 export default function DevelopersLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const isDashboard = pathname.startsWith('/developers/dashboard')
+
   return (
     <div className="relative min-h-screen bg-black text-white">
       <div className="pointer-events-none absolute inset-0 opacity-50">
@@ -63,35 +66,37 @@ export default function DevelopersLayout({ children }: { children: React.ReactNo
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px]" />
       </div>
 
-      <header className="relative z-10 border-b border-white/10">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="overflow-hidden rounded-full">
-                <Image src="/ntzs-logo.png" alt="nTZS" width={30} height={30} />
+      {!isDashboard && (
+        <header className="relative z-10 border-b border-white/10">
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
+            <div className="flex items-center gap-6">
+              <Link href="/" className="flex items-center gap-3">
+                <div className="overflow-hidden rounded-full">
+                  <Image src="/ntzs-logo.png" alt="nTZS" width={30} height={30} />
+                </div>
+                <div className="text-sm font-semibold tracking-wide">nTZS</div>
+              </Link>
+              <div className="hidden items-center gap-1 text-sm md:flex">
+                <span className="text-white/30">/</span>
+                <span className="ml-1 text-white/70">Developers</span>
               </div>
-              <div className="text-sm font-semibold tracking-wide">nTZS</div>
-            </Link>
-            <div className="hidden items-center gap-1 text-sm md:flex">
-              <span className="text-white/30">/</span>
-              <span className="ml-1 text-white/70">Developers</span>
+            </div>
+
+            <nav className="hidden items-center gap-5 text-sm text-white/60 md:flex">
+              <Link className="hover:text-white" href="/developers">
+                Docs
+              </Link>
+              <Link className="hover:text-white" href="/developers/dashboard">
+                Dashboard
+              </Link>
+            </nav>
+
+            <div className="flex items-center gap-3">
+              <AuthButtons />
             </div>
           </div>
-
-          <nav className="hidden items-center gap-5 text-sm text-white/60 md:flex">
-            <Link className="hover:text-white" href="/developers">
-              Docs
-            </Link>
-            <Link className="hover:text-white" href="/developers/dashboard">
-              Dashboard
-            </Link>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <AuthButtons />
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <div className="relative z-10">{children}</div>
     </div>
