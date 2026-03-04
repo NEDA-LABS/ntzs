@@ -1643,7 +1643,7 @@ export default function PartnerDashboardPage() {
             <div className="mb-8 space-y-6">
               <div>
                 <h2 className="text-2xl font-bold">Welcome back, {partner.name}</h2>
-                <p className="mt-1 text-sm text-white/40">Here is what is happening across your platform today.</p>
+                <p className="mt-1 text-sm text-white/40">Your financial rails, your rules.</p>
               </div>
               <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-blue-900/40 via-[#0a0a1a] to-violet-900/30 p-6">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,rgba(99,102,241,0.12),transparent_60%)]" />
