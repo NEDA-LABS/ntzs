@@ -5,6 +5,7 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { UserTopBar } from '@/app/app/_components/UserTopBar'
 import { getDb } from '@/lib/db'
 import { wallets } from '@ntzs/db'
+import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
 
 import { MobileSidebar } from './_components/MobileSidebar'
 
@@ -13,9 +14,19 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
   const dbUser = await requireDbUser()
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
+  let wallet = await db.query.wallets.findFirst({
     where: eq(wallets.userId, dbUser.id),
   })
+
+  // Auto-provision an HD wallet for new direct users who have none yet
+  if (!wallet) {
+    const address = await provisionPlatformWallet(dbUser.id)
+    if (address) {
+      wallet = await db.query.wallets.findFirst({
+        where: eq(wallets.userId, dbUser.id),
+      })
+    }
+  }
 
   return (
     <div className="flex min-h-screen">

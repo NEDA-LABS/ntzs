@@ -25,7 +25,7 @@ export const kycStatus = pgEnum('kyc_status', ['pending', 'approved', 'rejected'
 
 export const chain = pgEnum('chain', ['base', 'bnb', 'eth'])
 
-export const walletProvider = pgEnum('wallet_provider', ['external', 'coinbase_embedded'])
+export const walletProvider = pgEnum('wallet_provider', ['external', 'coinbase_embedded', 'platform_hd'])
 
 export const walletVerificationMethod = pgEnum('wallet_verification_method', [
   'message_signature',

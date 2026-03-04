@@ -212,27 +212,18 @@ export default async function UserDashboard() {
             {/* Wallet Card */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
               <div className="flex items-center gap-3">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${wallet ? 'bg-emerald-500/10' : 'bg-amber-500/10'}`}>
-                  <IconWallet className={`h-6 w-6 ${wallet ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <IconWallet className="h-6 w-6 text-emerald-400" />
                 </div>
                 <div>
-                  <p className="font-semibold text-white">{wallet ? 'Wallet Ready' : 'Setup Wallet'}</p>
-                  <p className="text-xs text-zinc-500">
-                    {wallet ? 'Secure & recoverable' : 'Required for deposits'}
-                  </p>
+                  <p className="font-semibold text-white">Wallet</p>
+                  <p className="text-xs text-zinc-500">Base network</p>
                 </div>
               </div>
-              {wallet ? (
-                <div className="mt-4 rounded-xl bg-white/5 p-3">
+              {wallet && (
+                <Link href="/app/user/wallet" className="mt-4 block rounded-xl bg-white/5 p-3 hover:bg-white/[0.07] transition-colors">
                   <p className="text-xs text-zinc-500">Address</p>
                   <p className="mt-1 truncate font-mono text-sm text-white">{wallet.address}</p>
-                </div>
-              ) : (
-                <Link
-                  href="/app/user/wallet"
-                  className="mt-4 block w-full rounded-xl bg-violet-500 py-3 text-center text-sm font-semibold text-white transition-transform duration-75 hover:bg-violet-600 active:scale-[0.98]"
-                >
-                  Create Wallet
                 </Link>
               )}
             </div>
@@ -274,20 +265,14 @@ export default async function UserDashboard() {
               <h3 className="font-semibold text-white">Account Status</h3>
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-400">KYC Verified</span>
-                  <span className="flex items-center gap-1 text-sm text-emerald-400">
-                    <IconCheckCircle className="h-4 w-4" />
-                    Complete
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
                   <span className="text-sm text-zinc-400">Pending Deposits</span>
                   <span className="text-sm text-white">{pendingCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-400">Wallet Status</span>
-                  <span className={`text-sm ${wallet ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {wallet ? 'Active' : 'Not Setup'}
+                  <span className="text-sm text-zinc-400">Wallet</span>
+                  <span className="flex items-center gap-1 text-sm text-emerald-400">
+                    <IconCheckCircle className="h-4 w-4" />
+                    Active
                   </span>
                 </div>
               </div>
