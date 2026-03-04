@@ -4,8 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { partners, partnerUsers, wallets, auditLogs } from '@ntzs/db'
-import { deriveTreasuryWallet } from '@/lib/waas/hd-wallets'
+import { partners, partnerUsers, partnerSubWallets, wallets, auditLogs } from '@ntzs/db'
+import { deriveTreasuryWallet, deriveSubWallet } from '@/lib/waas/hd-wallets'
 
 const NTZS_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -36,9 +36,9 @@ function verifySessionToken(token: string): string | null {
 
 /**
  * POST /api/v1/partners/disburse
- * Disburse TZS from the partner's treasury wallet to a user's wallet.
+ * Disburse TZS from the partner's treasury (or a sub-wallet) to a user's wallet.
  * Auth: partner session cookie (dashboard only — not partner API key).
- * Body: { toUserId: string; amountTzs: number }
+ * Body: { toUserId: string; amountTzs: number; fromSubWalletId?: string }
  */
 export async function POST(request: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -57,14 +57,14 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────
-  let body: { toUserId: string; amountTzs: number }
+  let body: { toUserId: string; amountTzs: number; fromSubWalletId?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { toUserId, amountTzs } = body
+  const { toUserId, amountTzs, fromSubWalletId } = body
 
   if (!toUserId || !amountTzs) {
     return NextResponse.json({ error: 'toUserId and amountTzs are required' }, { status: 400 })
@@ -94,6 +94,31 @@ export async function POST(request: NextRequest) {
   }
   if (!partner.treasuryWalletAddress) {
     return NextResponse.json({ error: 'Partner treasury wallet not provisioned' }, { status: 400 })
+  }
+
+  // ── Resolve source wallet (treasury or sub-wallet) ──────────────────────────
+  let fromAddress: string = partner.treasuryWalletAddress
+  let fromWalletIndex: number | null = null
+  let fromLabel = 'Treasury'
+
+  if (fromSubWalletId) {
+    const [subWallet] = await db
+      .select({
+        id: partnerSubWallets.id,
+        label: partnerSubWallets.label,
+        address: partnerSubWallets.address,
+        walletIndex: partnerSubWallets.walletIndex,
+      })
+      .from(partnerSubWallets)
+      .where(and(eq(partnerSubWallets.id, fromSubWalletId), eq(partnerSubWallets.partnerId, partnerId)))
+      .limit(1)
+
+    if (!subWallet) {
+      return NextResponse.json({ error: 'Sub-wallet not found' }, { status: 404 })
+    }
+    fromAddress = subWallet.address
+    fromWalletIndex = subWallet.walletIndex
+    fromLabel = subWallet.label
   }
 
   // ── Verify recipient belongs to this partner ────────────────────────────────
@@ -131,37 +156,41 @@ export async function POST(request: NextRequest) {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
     const token = new ethers.Contract(contractAddress, NTZS_ABI, provider)
 
-    // Check treasury TZS balance
+    // Check source TZS balance
     const amountWei = BigInt(amountTzs) * BigInt(10) ** BigInt(18)
-    const treasuryBalance: bigint = await token.balanceOf(partner.treasuryWalletAddress)
+    const sourceBalance: bigint = await token.balanceOf(fromAddress)
 
-    if (treasuryBalance < amountWei) {
-      const balanceTzs = Number(treasuryBalance / (BigInt(10) ** BigInt(18)))
+    if (sourceBalance < amountWei) {
+      const balanceTzs = Number(sourceBalance / (BigInt(10) ** BigInt(18)))
       return NextResponse.json(
         {
-          error: `Insufficient treasury balance. Available: ${balanceTzs} TZS, requested: ${amountTzs} TZS`,
+          error: `Insufficient ${fromLabel} balance. Available: ${balanceTzs} TZS, requested: ${amountTzs} TZS`,
         },
         { status: 400 }
       )
     }
 
-    // Check treasury has ETH for gas
-    const treasuryEthBalance = await provider.getBalance(partner.treasuryWalletAddress)
-    if (treasuryEthBalance === BigInt(0)) {
+    // Check source has ETH for gas
+    const sourceEthBalance = await provider.getBalance(fromAddress)
+    if (sourceEthBalance === BigInt(0)) {
       return NextResponse.json(
-        { error: 'Treasury wallet has no ETH for gas. Please contact support.' },
+        { error: `${fromLabel} wallet has no ETH for gas. Please contact support.` },
         { status: 400 }
       )
     }
 
-    // Derive treasury wallet and sign the transfer
-    const treasuryWallet = deriveTreasuryWallet(partner.encryptedHdSeed).connect(provider)
+    // Derive signing wallet (treasury index 0, or sub-wallet at its index)
+    const signingWallet = (
+      fromWalletIndex !== null
+        ? deriveSubWallet(partner.encryptedHdSeed, fromWalletIndex)
+        : deriveTreasuryWallet(partner.encryptedHdSeed)
+    ).connect(provider)
 
     const iface = new ethers.Interface([
       'function transfer(address to, uint256 amount) returns (bool)',
     ])
 
-    const tx = await treasuryWallet.sendTransaction({
+    const tx = await signingWallet.sendTransaction({
       to: contractAddress,
       data: iface.encodeFunctionData('transfer', [toWallet.address, amountWei]),
     })
@@ -179,7 +208,9 @@ export async function POST(request: NextRequest) {
         toWallet: toWallet.address,
         amountTzs,
         txHash: receipt.hash,
-        fromWallet: partner.treasuryWalletAddress,
+        fromWallet: fromAddress,
+        fromLabel,
+        fromSubWalletId: fromSubWalletId || null,
         partnerId,
       },
     })

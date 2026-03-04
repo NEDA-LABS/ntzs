@@ -141,23 +141,35 @@ function NavItem({
   )
 }
 
-/* ── Disburse Modal (treasury → user) ── */
+/* ── Disburse Modal (treasury or sub-wallet → user) ── */
 function DisburseModal({
   users,
+  subWallets,
   partner,
   onClose,
   onSuccess,
 }: {
   users: DashboardUser[]
+  subWallets: DashboardSubWallet[]
   partner: PartnerInfo
   onClose: () => void
   onSuccess: () => void
 }) {
+  const [fromSubWalletId, setFromSubWalletId] = useState<string>('')
   const [toId, setToId] = useState('')
   const [amount, setAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+
+  const selectedSubWallet = subWallets.find((sw) => sw.id === fromSubWalletId) ?? null
+  const availableBalance = selectedSubWallet
+    ? selectedSubWallet.balanceTzs
+    : partner.treasuryBalanceTzs
+  const sourceAddress = selectedSubWallet
+    ? selectedSubWallet.address
+    : partner.treasuryWalletAddress
+  const sourceLabel = selectedSubWallet ? selectedSubWallet.label : `${partner.name} Treasury`
 
   const handleDisburse = async () => {
     if (!toId || !amount) {
@@ -169,8 +181,8 @@ function DisburseModal({
       setError('Enter a valid amount')
       return
     }
-    if (amountNum > partner.treasuryBalanceTzs) {
-      setError(`Exceeds treasury balance (${partner.treasuryBalanceTzs.toLocaleString()} TZS)`)
+    if (amountNum > availableBalance) {
+      setError(`Exceeds ${sourceLabel} balance (${availableBalance.toLocaleString()} TZS)`)
       return
     }
     setSending(true)
@@ -180,7 +192,11 @@ function DisburseModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ toUserId: toId, amountTzs: amountNum }),
+        body: JSON.stringify({
+          toUserId: toId,
+          amountTzs: amountNum,
+          ...(fromSubWalletId ? { fromSubWalletId } : {}),
+        }),
       })
       const json = await res.json()
       if (!res.ok) {
@@ -203,28 +219,29 @@ function DisburseModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold">Disburse TZS</h3>
-        <p className="mt-1 text-sm text-white/50">Send funds from your treasury to a user wallet</p>
+        <p className="mt-1 text-sm text-white/50">Send funds from a partner wallet to a user wallet</p>
 
         <div className="mt-5 space-y-4">
-          {/* From: treasury (fixed, not selectable) */}
+          {/* From: treasury or sub-wallet picker */}
           <div>
-            <label className="text-xs font-medium text-white/40">From (Treasury)</label>
-            <div className="mt-1 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
-              <div>
-                <div className="text-sm font-medium text-emerald-400">{partner.name} Treasury</div>
-                {partner.treasuryWalletAddress && (
-                  <div className="mt-0.5 font-mono text-[11px] text-white/30">
-                    {partner.treasuryWalletAddress.slice(0, 10)}...{partner.treasuryWalletAddress.slice(-6)}
-                  </div>
-                )}
+            <label className="text-xs font-medium text-white/40">From</label>
+            <select
+              value={fromSubWalletId}
+              onChange={(e) => setFromSubWalletId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white focus:border-white/30 focus:outline-none"
+            >
+              <option value="">Treasury ({partner.treasuryBalanceTzs.toLocaleString()} TZS)</option>
+              {subWallets.map((sw) => (
+                <option key={sw.id} value={sw.id}>
+                  {sw.label} ({sw.balanceTzs.toLocaleString()} TZS)
+                </option>
+              ))}
+            </select>
+            {sourceAddress && (
+              <div className="mt-1 font-mono text-[11px] text-white/30">
+                {sourceAddress.slice(0, 10)}...{sourceAddress.slice(-6)}
               </div>
-              <div className="text-right">
-                <div className="text-xs text-white/40">Available</div>
-                <div className="text-sm font-semibold text-emerald-400">
-                  {partner.treasuryBalanceTzs.toLocaleString()} TZS
-                </div>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* To: user picker */}
@@ -250,12 +267,15 @@ function DisburseModal({
             <input
               type="number"
               min={1}
-              max={partner.treasuryBalanceTzs}
+              max={availableBalance}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0"
               className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-white/30 focus:outline-none"
             />
+            <div className="mt-1 text-[11px] text-white/30">
+              Available: {availableBalance.toLocaleString()} TZS
+            </div>
           </div>
         </div>
 
@@ -1368,6 +1388,7 @@ export default function PartnerDashboardPage() {
       {showDisburseModal && (
         <DisburseModal
           users={users}
+          subWallets={subWallets}
           partner={partner}
           onClose={() => setShowDisburseModal(false)}
           onSuccess={fetchDashboard}
