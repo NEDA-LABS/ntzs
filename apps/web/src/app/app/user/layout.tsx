@@ -23,9 +23,9 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
       <MobileSidebar wallet={wallet ?? null} />
 
       {/* Main Content - responsive padding */}
-      <main className="flex-1 pl-0 lg:pl-64">
+      <main className="flex-1 min-w-0 pl-0 lg:pl-64">
         <UserTopBar />
-        <div className="pt-14 lg:pt-0">
+        <div className="pt-14 pb-20 lg:pt-0 lg:pb-0">
           {children}
         </div>
       </main>

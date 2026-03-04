@@ -70,8 +70,8 @@ export default async function UserDashboard() {
   const pendingCount = recentDeposits.filter(d => !['minted', 'rejected', 'cancelled'].includes(d.status)).length
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
+    <div className="px-4 py-5 lg:p-8">
+      <div className="mb-5">
         <p className="text-sm text-zinc-400">Welcome back</p>
         <h1 className="mt-1 text-xl font-semibold text-white">{dbUser.email}</h1>
       </div>
@@ -79,7 +79,7 @@ export default async function UserDashboard() {
       <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Balance Card */}
           <div className="lg:col-span-2">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-5 lg:p-8 backdrop-blur-xl">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(121,40,202,0.18),transparent_45%),radial-gradient(circle_at_80%_100%,rgba(0,112,243,0.12),transparent_45%)]" />
 
               <div className="relative">
@@ -207,8 +207,8 @@ export default async function UserDashboard() {
             </div>
           </div>
 
-          {/* Right Sidebar */}
-          <div className="space-y-6">
+          {/* Right Sidebar - hidden on mobile (accessible via bottom nav) */}
+          <div className="hidden lg:block space-y-6">
             {/* Wallet Card */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
               <div className="flex items-center gap-3">
