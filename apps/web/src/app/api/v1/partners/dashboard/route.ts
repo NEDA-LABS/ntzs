@@ -87,15 +87,15 @@ export async function GET(request: NextRequest) {
   // Get wallets for all partner users
   const userIds = partnerUserRows.map((u) => u.id)
 
-  const userWallets: Record<string, string> = {}
+  const userWallets: Record<string, { id: string; address: string; frozen: boolean }> = {}
   if (userIds.length > 0) {
     for (const uid of userIds) {
       const [w] = await db
-        .select({ address: wallets.address })
+        .select({ id: wallets.id, address: wallets.address, frozen: wallets.frozen })
         .from(wallets)
         .where(and(eq(wallets.userId, uid), eq(wallets.chain, 'base')))
         .limit(1)
-      if (w) userWallets[uid] = w.address
+      if (w) userWallets[uid] = w
     }
   }
 
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       )
 
       for (const uid of userIds) {
-        const addr = userWallets[uid]
+        const addr = userWallets[uid]?.address
         if (addr && !addr.startsWith('0x_pending_')) {
           try {
             const bal: bigint = await token.balanceOf(addr)
@@ -158,7 +158,9 @@ export async function GET(request: NextRequest) {
     email: u.email,
     name: u.name || null,
     phone: u.phone,
-    walletAddress: userWallets[u.id] || null,
+    walletId: userWallets[u.id]?.id || null,
+    walletAddress: userWallets[u.id]?.address || null,
+    walletFrozen: userWallets[u.id]?.frozen ?? false,
     balanceTzs: userBalances[u.id] || 0,
     createdAt: u.createdAt,
   }))

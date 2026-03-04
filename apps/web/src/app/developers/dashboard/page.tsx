@@ -36,7 +36,9 @@ interface DashboardUser {
   email: string
   name: string | null
   phone: string | null
+  walletId: string | null
   walletAddress: string | null
+  walletFrozen: boolean
   balanceTzs: number
   createdAt: string
 }
@@ -1067,6 +1069,159 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
   )
 }
 
+/* ── Wallet Detail Panel ── */
+function WalletDetailPanel({
+  user,
+  transfers,
+  onClose,
+  onFreezeToggle,
+}: {
+  user: DashboardUser
+  transfers: DashboardTransfer[]
+  onClose: () => void
+  onFreezeToggle: (walletId: string, frozen: boolean) => void
+}) {
+  const [toggling, setToggling] = useState(false)
+  const [err, setErr] = useState('')
+
+  const userTransfers = transfers.filter(
+    (t) => t.fromUserId === user.id || t.toUserId === user.id
+  )
+
+  const handleToggleFreeze = async () => {
+    if (!user.walletId) return
+    setToggling(true)
+    setErr('')
+    try {
+      const res = await fetch('/api/v1/partners/wallets/freeze', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ walletId: user.walletId, frozen: !user.walletFrozen }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setErr(json.error || 'Failed'); return }
+      onFreezeToggle(user.walletId, json.frozen)
+    } catch {
+      setErr('Failed to connect to server')
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div
+        className="relative flex h-full w-full max-w-md flex-col border-l border-white/10 bg-[#0a0a0f] shadow-2xl overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div>
+            <h3 className="text-base font-semibold">{user.name || user.email}</h3>
+            <p className="text-xs text-white/40">User Wallet</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-white/40 hover:bg-white/10 hover:text-white transition-colors">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-5 px-6 py-5">
+          {/* Owner details */}
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] divide-y divide-white/5">
+            {[
+              { label: 'Name', value: user.name || '—' },
+              { label: 'Email', value: user.email },
+              { label: 'Phone', value: user.phone || '—' },
+              { label: 'External ID', value: user.externalId || '—' },
+              { label: 'Wallet Address', value: user.walletAddress || '—', mono: true },
+              { label: 'Balance', value: `${user.balanceTzs.toLocaleString()} TZS` },
+              { label: 'Created', value: formatDateEAT(user.createdAt) },
+            ].map(({ label, value, mono }) => (
+              <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5">
+                <span className="text-xs text-white/40 shrink-0">{label}</span>
+                <span className={`text-right text-xs text-white/80 break-all ${mono ? 'font-mono' : ''}`}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Freeze / Unfreeze control */}
+          {user.walletId && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium">Wallet Status</div>
+                  <div className="mt-0.5 text-xs text-white/40">
+                    {user.walletFrozen
+                      ? 'Frozen — all transactions blocked'
+                      : 'Active — transactions allowed'}
+                  </div>
+                </div>
+                <button
+                  onClick={handleToggleFreeze}
+                  disabled={toggling}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                    user.walletFrozen
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                      : 'border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20'
+                  }`}
+                >
+                  {toggling ? '...' : user.walletFrozen ? 'Unfreeze' : 'Freeze'}
+                </button>
+              </div>
+              {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
+            </div>
+          )}
+
+          {/* Transaction history */}
+          <div>
+            <h4 className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/30">
+              Transaction History
+            </h4>
+            {userTransfers.length === 0 ? (
+              <p className="text-sm text-white/30">No transactions yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {userTransfers.map((t) => {
+                  const isSender = t.fromUserId === user.id
+                  return (
+                    <div key={t.id} className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-semibold uppercase ${isSender ? 'text-red-400' : 'text-emerald-400'}`}>
+                            {isSender ? '↑ Sent' : '↓ Received'}
+                          </span>
+                          <StatusBadge status={t.status} />
+                        </div>
+                        <span className={`text-sm font-mono font-medium ${isSender ? 'text-red-300' : 'text-emerald-300'}`}>
+                          {isSender ? '−' : '+'}{t.amountTzs.toLocaleString()} TZS
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between">
+                        <span className="text-xs text-white/40">
+                          {isSender
+                            ? `To: ${t.toName || t.toEmail || t.toUserId.slice(0, 8)}`
+                            : `From: ${t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)}`}
+                        </span>
+                        <span className="text-[11px] text-white/30">{formatDateEAT(t.createdAt)}</span>
+                      </div>
+                      {t.txHash && (
+                        <div className="mt-1 font-mono text-[10px] text-white/20 truncate">{t.txHash}</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    Main Dashboard Page
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -1080,6 +1235,8 @@ export default function PartnerDashboardPage() {
   const [showCreateWalletModal, setShowCreateWalletModal] = useState(false)
   const [showFundWalletModal, setShowFundWalletModal] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [selectedWalletUser, setSelectedWalletUser] = useState<DashboardUser | null>(null)
+  const [frozenOverrides, setFrozenOverrides] = useState<Record<string, boolean>>({})
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -1133,7 +1290,22 @@ export default function PartnerDashboardPage() {
 
   if (!data) return null
 
-  const { partner, users, subWallets, transfers, deposits, stats } = data
+  const { partner, subWallets, transfers, deposits, stats } = data
+
+  // Merge optimistic freeze overrides into the users array
+  const users = data.users.map((u) =>
+    u.walletId && frozenOverrides[u.walletId] !== undefined
+      ? { ...u, walletFrozen: frozenOverrides[u.walletId] }
+      : u
+  )
+
+  const handleFreezeToggle = (walletId: string, frozen: boolean) => {
+    setFrozenOverrides((prev) => ({ ...prev, [walletId]: frozen }))
+    // Reflect in the panel's user too
+    setSelectedWalletUser((prev) =>
+      prev && prev.walletId === walletId ? { ...prev, walletFrozen: frozen } : prev
+    )
+  }
 
   const navItems: { key: Section; label: string; icon: ComponentType<{ className?: string }> }[] = [
     { key: 'overview', label: 'Overview', icon: IconDashboard },
@@ -1345,6 +1517,7 @@ export default function PartnerDashboardPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Wallet Address</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Label</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Balance</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1365,6 +1538,7 @@ export default function PartnerDashboardPage() {
                           <td className="px-4 py-3 text-right font-mono text-emerald-400">
                             {partner.treasuryBalanceTzs.toLocaleString()} TZS
                           </td>
+                          <td className="px-4 py-3" />
                         </tr>
                       )}
                       {/* Sub-wallet rows */}
@@ -1384,18 +1558,23 @@ export default function PartnerDashboardPage() {
                           <td className="px-4 py-3 text-right font-mono text-white/80">
                             {sw.balanceTzs.toLocaleString()} TZS
                           </td>
+                          <td className="px-4 py-3" />
                         </tr>
                       ))}
                       {/* User wallets */}
                       {users.length === 0 && !partner.treasuryWalletAddress && subWallets.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-white/40">
+                          <td colSpan={7} className="px-4 py-8 text-center text-white/40">
                             No wallets yet.
                           </td>
                         </tr>
                       ) : (
                         users.map((u) => (
-                          <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                          <tr
+                            key={u.id}
+                            onClick={() => setSelectedWalletUser(u)}
+                            className={`cursor-pointer border-b border-white/5 transition-colors hover:bg-white/[0.04] ${u.walletFrozen ? 'bg-red-500/[0.03]' : ''}`}
+                          >
                             <td className="px-4 py-3 text-white/80">{u.name || '—'}</td>
                             <td className="px-4 py-3 text-white/60">{u.email}</td>
                             <td className="px-4 py-3 font-mono text-xs text-white/50">{u.externalId}</td>
@@ -1405,12 +1584,32 @@ export default function PartnerDashboardPage() {
                                 : '—'}
                             </td>
                             <td className="px-4 py-3">
-                              <span className="inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-300">
-                                User
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-300">
+                                  User
+                                </span>
+                                {u.walletFrozen && (
+                                  <span className="inline-flex rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-300">
+                                    Frozen
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-white/80">
                               {u.balanceTzs.toLocaleString()} TZS
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {u.walletId && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedWalletUser(u)
+                                  }}
+                                  className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                                >
+                                  Manage
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))
@@ -1547,6 +1746,16 @@ export default function PartnerDashboardPage() {
           partner={partner}
           onClose={() => setShowFundWalletModal(false)}
           onSuccess={fetchDashboard}
+        />
+      )}
+
+      {/* Wallet Detail Panel */}
+      {selectedWalletUser && (
+        <WalletDetailPanel
+          user={selectedWalletUser}
+          transfers={transfers}
+          onClose={() => setSelectedWalletUser(null)}
+          onFreezeToggle={handleFreezeToggle}
         />
       )}
     </div>

@@ -183,6 +183,8 @@ export const wallets = pgTable(
     providerUserRef: text('provider_user_ref'),
     providerWalletRef: text('provider_wallet_ref'),
 
+    frozen: boolean('frozen').notNull().default(false),
+
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
     verificationMethod: walletVerificationMethod('verification_method'),
 

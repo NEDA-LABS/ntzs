@@ -78,6 +78,13 @@
       "when": 1772619600000,
       "tag": "0010_add_partner_sub_wallets",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1772706000000,
+      "tag": "0011_add_wallet_frozen",
+      "breakpoints": true
     }
   ]
 }

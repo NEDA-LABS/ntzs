@@ -1,0 +1,1 @@
+ALTER TABLE wallets ADD COLUMN IF NOT EXISTS frozen boolean NOT NULL DEFAULT false;
