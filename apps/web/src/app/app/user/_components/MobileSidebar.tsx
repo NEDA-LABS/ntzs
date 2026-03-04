@@ -24,12 +24,13 @@ const rewardItems = [
   { href: '/app/user/invite', label: 'Invite & Earn', icon: IconUsers },
 ]
 
-// Bottom tab bar items for mobile (most reachable actions)
+// Bottom tab bar items for mobile — Deposit stays in the centre
 const bottomTabs = [
   { href: '/app/user', label: 'Home', icon: IconDashboard, exact: true },
-  { href: '/app/user/deposits/new', label: 'Deposit', icon: IconPlus, exact: false },
   { href: '/app/user/wallet', label: 'Wallet', icon: IconWallet, exact: false },
+  { href: '/app/user/deposits/new', label: 'Deposit', icon: IconPlus, exact: false },
   { href: '/app/user/activity', label: 'Activity', icon: IconActivity, exact: false },
+  { href: '/app/user/stake', label: 'Stake', icon: IconSparkles, exact: false },
 ]
 
 interface MobileSidebarProps {
