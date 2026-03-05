@@ -91,29 +91,29 @@ export default async function UserDashboard() {
                 </div>
 
                 {/* Quick Actions */}
-                <div className="mt-8 flex flex-wrap gap-3">
+                <div className="mt-8 grid grid-cols-3 gap-3">
                   <Link
                     href="/app/user/deposits/new"
                     prefetch
-                    className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition-transform duration-75 hover:bg-white/90 active:scale-95 active:bg-white/80"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-black transition-transform duration-75 hover:bg-white/90 active:scale-95 active:bg-white/80"
                   >
                     <IconPlus className="h-4 w-4" />
                     Deposit
                   </Link>
                   <button
                     disabled
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-medium text-white/60 cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-3 text-sm font-medium text-white/60 cursor-not-allowed"
                   >
                     <IconSend className="h-4 w-4" />
                     Send
                   </button>
                   <Link
-                    href="/app/user/withdraw"
+                    href="/app/user/wallet"
                     prefetch
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-medium text-white transition-transform duration-75 hover:bg-white/10 active:scale-95"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-blue-600 px-3 py-3 text-sm font-semibold text-white transition-transform duration-75 hover:bg-blue-500 active:scale-95"
                   >
-                    <IconWithdraw className="h-4 w-4" />
-                    Withdraw
+                    <IconWallet className="h-4 w-4" />
+                    Pay Me
                   </Link>
                 </div>
               </div>
