@@ -16,8 +16,8 @@ export default function MasterLandingPage() {
       </video>
 
       {/* Gradient overlay for readability */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/90" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center_top,rgba(59,130,246,0.15),transparent_60%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/80 via-black/70 to-black/95" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center_top,rgba(59,130,246,0.2),transparent_55%)]" />
 
       {/* ── Content ── */}
       <div className="relative z-10 flex min-h-screen flex-col">
@@ -95,26 +95,16 @@ export default function MasterLandingPage() {
           </div>
         </main>
 
-        {/* ── Video Showcase Section ── */}
-        <section className="relative px-6 pb-12 lg:px-12">
-          <div className="mx-auto max-w-4xl overflow-hidden rounded-3xl border border-white/10">
-            <div className="relative aspect-video">
-              <video
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="h-full w-full object-cover"
-              >
-                <source src="/Fintech_Video_With_NTZS_Logo.mp4" type="video/mp4" />
-              </video>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-6 text-center sm:p-8">
-                <h2 className="text-xl font-bold sm:text-2xl">nTZS Smart Wallet</h2>
-                <p className="mt-1 text-sm text-blue-400">Coming Soon</p>
-                <p className="mt-0.5 text-xs text-zinc-500">ntzs.co.tz</p>
-              </div>
-            </div>
+        {/* ── Tagline Strip ── */}
+        <section className="px-6 pb-16 lg:px-12">
+          <div className="mx-auto max-w-4xl text-right">
+            <p className="text-2xl font-light tracking-tight text-white/40 sm:text-3xl lg:text-4xl">
+              nTZS Smart Wallet
+            </p>
+            <p className="mt-2 text-sm font-medium tracking-widest uppercase text-blue-400/70">
+              Coming Soon
+            </p>
+            <p className="mt-1 text-xs tracking-wider text-zinc-600">ntzs.co.tz</p>
           </div>
         </section>
 
