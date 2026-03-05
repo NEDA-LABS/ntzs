@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { UserTopBar } from '@/app/app/_components/UserTopBar'
+import { DepositSuccessToast } from '@/app/app/_components/DepositSuccessToast'
 import { getDb } from '@/lib/db'
 import { wallets } from '@ntzs/db'
 import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
@@ -40,6 +41,7 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
           {children}
         </div>
       </main>
+      <DepositSuccessToast />
     </div>
   )
 }

@@ -21,7 +21,7 @@ function SubmitButton({ label, disabled }: { label?: string; disabled?: boolean 
     <button
       type="submit"
       disabled={isDisabled}
-      className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-75 active:scale-[0.97] active:shadow-violet-500/15 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-violet-500/40"
+      className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] active:shadow-blue-500/15 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-blue-500/40"
     >
       {pending ? (
         <span className="flex items-center justify-center gap-2">
@@ -59,6 +59,8 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   const [cardLoading, setCardLoading] = useState(false)
   const [cardError, setCardError] = useState('')
   const [amount, setAmount] = useState<string>('')
+  const [showPhoneModal, setShowPhoneModal] = useState(false)
+  const [modalPhone, setModalPhone] = useState(userPhone || '')
 
   const quickAdd = (delta: number) => {
     const base = Number(amount || '0')
@@ -199,44 +201,25 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
         </div>
       </div>
 
-      {/* Mobile money form */}
+      {/* Mobile money: two-step flow (amount first, then phone in modal) */}
       {method === 'mobile' && (
-        <form
-          action={async (formData: FormData) => {
-            formData.set('amountTzs', amount)
-            setSubmittedAmount(amount)
-            await createDepositRequestAction(formData)
-            setSubmitted(true)
-          }}
-          className="space-y-4"
-        >
-          <input type="hidden" name="bankId" value={defaultBankId} />
-          <input type="hidden" name="paymentMethod" value="mpesa" />
-          <input type="hidden" name="amountTzs" value={amount} />
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-400">Mobile Money Number</label>
-            <input
-              name="buyerPhone"
-              type="tel"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="07XXXXXXXX"
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-violet-500/50"
-            />
-            <p className="text-xs text-zinc-500">Enter the number that will receive the payment prompt</p>
-          </div>
-
-          <SubmitButton label={amount ? `Deposit ${Number(amount).toLocaleString()} TZS` : 'Deposit'} disabled={!amount || Number(amount) <= 0} />
+        <div className="space-y-4">
+          <button
+            type="button"
+            disabled={!amount || Number(amount) <= 0}
+            onClick={() => setShowPhoneModal(true)}
+            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-blue-500/40"
+          >
+            {amount ? `Deposit ${Number(amount).toLocaleString()} TZS` : 'Deposit'}
+          </button>
 
           <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400" />
             <p className="text-sm text-zinc-400">
-              You'll receive a payment prompt on your phone. Enter your PIN to confirm. Your nTZS will be minted automatically after payment.
+              Next step: confirm and enter the phone number to receive the payment prompt.
             </p>
           </div>
-        </form>
+        </div>
       )}
 
       {/* Card payment form */}
@@ -259,6 +242,11 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
               setCardError('')
               setCardLoading(true)
               try {
+                // Stash toast message for when user returns from checkout
+                try {
+                  const amt = Number(amount)
+                  if (amt > 0) sessionStorage.setItem('deposit_success', JSON.stringify({ amount: amt, method: 'card' }))
+                } catch {}
                 const fd = new FormData()
                 fd.set('bankId', defaultBankId ?? '')
                 fd.set('amountTzs', amount)
@@ -269,7 +257,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 setCardLoading(false)
               }
             }}
-            className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-violet-500/40"
+            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-blue-500/40"
           >
             {cardLoading ? (
               <span className="flex items-center justify-center gap-2">
@@ -289,6 +277,66 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             <p className="text-sm text-zinc-400">
               You'll be redirected to a secure card checkout. Accepted: Visa, Mastercard. Your nTZS will be minted automatically after payment.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Phone modal */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPhoneModal(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-t-3xl border border-white/10 bg-[#0b0b10] p-5 sm:rounded-2xl sm:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-white">Confirm deposit</h3>
+                <p className="text-xs text-zinc-500">Mobile Money • {amount ? `${Number(amount).toLocaleString()} TZS` : ''}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPhoneModal(false)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form
+              onSubmit={() => {
+                try {
+                  const amt = Number(amount)
+                  if (amt > 0) sessionStorage.setItem('deposit_success', JSON.stringify({ amount: amt }))
+                } catch {}
+              }}
+              action={async (formData: FormData) => {
+                formData.set('amountTzs', amount)
+                setSubmittedAmount(amount)
+                await createDepositRequestAction(formData)
+              }}
+              className="space-y-4"
+            >
+              <input type="hidden" name="bankId" value={defaultBankId} />
+              <input type="hidden" name="paymentMethod" value="mpesa" />
+              <input type="hidden" name="amountTzs" value={amount} />
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-400">Mobile Money Number</label>
+                <input
+                  name="buyerPhone"
+                  type="tel"
+                  required
+                  value={modalPhone}
+                  onChange={(e) => setModalPhone(e.target.value)}
+                  placeholder="07XXXXXXXX"
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-blue-500/50"
+                />
+                <p className="text-xs text-zinc-500">Enter the number that will receive the payment prompt</p>
+              </div>
+
+              <SubmitButton label={amount ? `Confirm & Pay ${Number(amount).toLocaleString()} TZS` : 'Confirm & Pay'} disabled={!amount || Number(amount) <= 0} />
+            </form>
           </div>
         </div>
       )}
