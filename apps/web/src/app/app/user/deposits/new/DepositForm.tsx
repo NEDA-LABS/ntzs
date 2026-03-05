@@ -4,22 +4,23 @@ import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
-import { IconBank, IconCard, IconInfo, IconPhone } from '@/app/app/_components/icons'
+import { IconCard, IconInfo, IconPhone } from '@/app/app/_components/icons'
 
 import { createDepositRequestAction, createCardDepositRequestAction } from './actions'
 
 type PaymentMethod = 'mobile' | 'card'
 
-const ACTIVE_PSP_NAME = 'Snippe'
-const ACTIVE_PSP_METHOD_LABEL = 'Mobile Money'
+const ACTIVE_PSP_NAME = 'Mobile Money'
+const ACTIVE_PSP_METHOD_LABEL = 'Snippe'
 
-function SubmitButton() {
+function SubmitButton({ label, disabled }: { label?: string; disabled?: boolean }) {
   const { pending } = useFormStatus()
-  
+  const isDisabled = Boolean(disabled) || pending
+
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={isDisabled}
       className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-75 active:scale-[0.97] active:shadow-violet-500/15 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-violet-500/40"
     >
       {pending ? (
@@ -31,7 +32,7 @@ function SubmitButton() {
           Processing...
         </span>
       ) : (
-        'Top up wallet'
+        label ?? 'Top up wallet'
       )}
     </button>
   )
@@ -57,6 +58,13 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   const [method, setMethod] = useState<PaymentMethod>('mobile')
   const [cardLoading, setCardLoading] = useState(false)
   const [cardError, setCardError] = useState('')
+  const [amount, setAmount] = useState<string>('')
+
+  const quickAdd = (delta: number) => {
+    const base = Number(amount || '0')
+    const next = Math.max(0, base + delta)
+    setAmount(String(next))
+  }
 
   if (submitted) {
     return (
@@ -124,33 +132,33 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
       {/* Amount input — shared between methods */}
       <div className="mb-5 rounded-2xl border border-white/10 bg-black/30 p-5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pay</span>
-          <span className="text-xs text-zinc-600">TZS</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">TZS</span>
         </div>
-        <div className="mt-3 flex items-end justify-between gap-4">
+        <div className="mt-2">
           <input
             id="shared-amount"
             type="number"
             min={1}
             step={1}
             required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
             placeholder="0"
             inputMode="numeric"
-            className="w-full bg-transparent text-4xl font-semibold tracking-tight text-white outline-none placeholder:text-zinc-700"
+            className="w-full bg-transparent text-5xl font-bold tracking-tight text-white outline-none placeholder:text-zinc-700"
           />
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20">
-              <span className="text-sm font-semibold">T</span>
-            </div>
-            <span className="text-sm font-semibold text-white">TZS</span>
-          </div>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button type="button" onClick={() => quickAdd(10000)} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white hover:bg-white/[0.08]">+10k</button>
+          <button type="button" onClick={() => quickAdd(20000)} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white hover:bg-white/[0.08]">+20k</button>
+          <button type="button" onClick={() => quickAdd(50000)} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white hover:bg-white/[0.08]">+50k</button>
         </div>
       </div>
 
       {/* Payment method selector */}
       <div className="mb-5">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Payment method</p>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Pay with</p>
+        <div className="grid gap-3 sm:grid-cols-2">
           {/* Mobile Money */}
           <button
             type="button"
@@ -167,21 +175,6 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             <span>
               <span className="block font-semibold">{ACTIVE_PSP_NAME}</span>
               <span className={`block text-xs ${method === 'mobile' ? 'text-violet-300/70' : 'text-white/40'}`}>{ACTIVE_PSP_METHOD_LABEL}</span>
-            </span>
-          </button>
-
-          {/* Bank — Soon */}
-          <button
-            type="button"
-            disabled
-            className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-left text-sm opacity-40"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
-              <IconBank className="h-5 w-5 text-white/70" />
-            </span>
-            <span>
-              <span className="block font-semibold text-white/80">Bank</span>
-              <span className="block text-xs text-white/50">Soon</span>
             </span>
           </button>
 
@@ -210,7 +203,6 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
       {method === 'mobile' && (
         <form
           action={async (formData: FormData) => {
-            const amount = (document.getElementById('shared-amount') as HTMLInputElement)?.value
             formData.set('amountTzs', amount)
             setSubmittedAmount(amount)
             await createDepositRequestAction(formData)
@@ -220,6 +212,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
         >
           <input type="hidden" name="bankId" value={defaultBankId} />
           <input type="hidden" name="paymentMethod" value="mpesa" />
+          <input type="hidden" name="amountTzs" value={amount} />
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-400">Mobile Money Number</label>
@@ -235,7 +228,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             <p className="text-xs text-zinc-500">Enter the number that will receive the payment prompt</p>
           </div>
 
-          <SubmitButton />
+          <SubmitButton label={amount ? `Deposit ${Number(amount).toLocaleString()} TZS` : 'Deposit'} disabled={!amount || Number(amount) <= 0} />
 
           <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400" />
@@ -257,9 +250,8 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
           <button
             type="button"
-            disabled={cardLoading}
+            disabled={cardLoading || !amount || Number(amount) <= 0}
             onClick={async () => {
-              const amount = (document.getElementById('shared-amount') as HTMLInputElement)?.value
               if (!amount || Number(amount) <= 0) {
                 setCardError('Please enter an amount above')
                 return
@@ -288,7 +280,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 Redirecting to checkout...
               </span>
             ) : (
-              'Pay with Card'
+              amount ? `Deposit ${Number(amount).toLocaleString()} TZS` : 'Deposit'
             )}
           </button>
 
