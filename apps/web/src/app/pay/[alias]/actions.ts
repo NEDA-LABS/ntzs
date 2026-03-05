@@ -14,7 +14,7 @@ import {
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 export type PayResult =
-  | { success: true }
+  | { success: true; depositId: string }
   | { success: false; error: string }
 
 export async function createPayLinkDeposit(
@@ -116,7 +116,7 @@ export async function createPayLinkDeposit(
     revalidatePath('/app/user')
     revalidatePath('/app/user/activity')
 
-    return { success: true }
+    return { success: true, depositId: deposit.id }
   } catch (err) {
     await db
       .update(depositRequests)
