@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { eq } from 'drizzle-orm'
 
-import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
+import { requireAnyRole } from '@/lib/auth/rbac'
 import { UserTopBar } from '@/app/app/_components/UserTopBar'
 import { DepositSuccessToast } from '@/app/app/_components/DepositSuccessToast'
 import { getDb } from '@/lib/db'
@@ -11,8 +11,7 @@ import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
 import { MobileSidebar } from './_components/MobileSidebar'
 
 export default async function UserLayout({ children }: { children: ReactNode }) {
-  await requireAnyRole(['end_user', 'super_admin'])
-  const dbUser = await requireDbUser()
+  const dbUser = await requireAnyRole(['end_user', 'super_admin'])
   const { db } = getDb()
 
   let wallet = await db.query.wallets.findFirst({
