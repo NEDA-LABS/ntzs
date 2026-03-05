@@ -30,6 +30,8 @@ export default async function UserDashboard() {
   const recentTxns = [
     ...recentDeposits.map((d) => ({
       type: 'deposit' as const,
+      source: (d as Record<string, unknown>).source as string | undefined,
+      payerName: (d as Record<string, unknown>).payerName as string | undefined,
       id: d.id,
       amountTzs: d.amountTzs,
       status: d.status,
@@ -37,6 +39,8 @@ export default async function UserDashboard() {
     })),
     ...recentBurns.map((b) => ({
       type: 'burn' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
       id: b.id,
       amountTzs: b.amountTzs,
       status: b.status,
@@ -152,7 +156,13 @@ export default async function UserDashboard() {
                             )}
                           </div>
                           <div>
-                            <p className="font-medium text-white">{tx.type === 'deposit' ? 'Deposit' : 'Withdraw'}</p>
+                            <p className="font-medium text-white">
+                              {tx.type === 'deposit'
+                                ? tx.source === 'pay_link'
+                                  ? tx.payerName ? `Collection · ${tx.payerName}` : 'Collection'
+                                  : 'Deposit'
+                                : 'Withdraw'}
+                            </p>
                             <p className="text-xs text-zinc-500">
                               {tx.createdAt ? formatDateEAT(tx.createdAt) : ''}
                             </p>

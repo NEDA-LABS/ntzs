@@ -4,6 +4,7 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 
 import { WalletInfoClient } from './WalletInfoClient'
+import { PayMeSection } from './PayMeSection'
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -15,14 +16,30 @@ export default async function WalletPage() {
     redirect('/app/user')
   }
 
+  // Suggest an alias from the email prefix (e.g. "victor" from "victor@email.com")
+  const suggestedAlias = dbUser.email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 30) || 'user'
+
   return (
     <div className="px-4 py-5 lg:p-8">
-      <div className="mx-auto max-w-lg">
-        <div className="mb-6">
+      <div className="mx-auto max-w-lg space-y-6">
+        <div>
           <h1 className="text-xl font-semibold text-white">Your Wallet</h1>
           <p className="mt-1 text-sm text-zinc-400">Receive nTZS on Base network</p>
         </div>
 
+        {/* Pay Me -- collection QR + link */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+          <PayMeSection
+            currentAlias={dbUser.payAlias ?? null}
+            suggestedAlias={suggestedAlias}
+          />
+        </div>
+
+        {/* Wallet address + QR */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
           <WalletInfoClient address={wallet.address} />
         </div>

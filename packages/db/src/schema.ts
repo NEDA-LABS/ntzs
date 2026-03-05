@@ -104,6 +104,7 @@ export const users = pgTable(
     email: varchar('email', { length: 320 }).notNull(),
     name: text('name'),
     phone: varchar('phone', { length: 32 }),
+    payAlias: varchar('pay_alias', { length: 40 }),
 
     role: userRole('role').notNull().default('end_user'),
     bankId: uuid('bank_id').references(() => banks.id),
@@ -116,6 +117,7 @@ export const users = pgTable(
   (t) => ({
     neonAuthUserIdUq: uniqueIndex('users_neon_auth_user_id_uq').on(t.neonAuthUserId),
     emailUq: uniqueIndex('users_email_uq').on(t.email),
+    payAliasUq: uniqueIndex('users_pay_alias_uq').on(t.payAlias),
     bankIdx: index('users_bank_id_idx').on(t.bankId),
     roleIdx: index('users_role_idx').on(t.role),
   })
@@ -315,6 +317,10 @@ export const depositRequests = pgTable(
     pspReference: text('psp_reference'), // ZenoPay transid or bank reference
     pspChannel: text('psp_channel'), // e.g., 'MPESA-TZ', 'TIGOPESA-TZ'
     buyerPhone: varchar('buyer_phone', { length: 32 }), // Phone used for M-Pesa payment
+
+    // 'self' = user's own deposit, 'pay_link' = collection via Pay Me link
+    source: text('source').notNull().default('self'),
+    payerName: text('payer_name'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

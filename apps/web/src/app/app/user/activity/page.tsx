@@ -20,6 +20,8 @@ export default async function ActivityPage() {
   const txns = [
     ...deposits.map((d) => ({
       type: 'deposit' as const,
+      source: (d as Record<string, unknown>).source as string | undefined,
+      payerName: (d as Record<string, unknown>).payerName as string | undefined,
       id: d.id,
       amountTzs: d.amountTzs,
       status: d.status,
@@ -27,6 +29,8 @@ export default async function ActivityPage() {
     })),
     ...burns.map((b) => ({
       type: 'burn' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
       id: b.id,
       amountTzs: b.amountTzs,
       status: b.status,
@@ -92,7 +96,13 @@ export default async function ActivityPage() {
                 {txns.map((t) => (
                   <tr key={t.id} className="border-b border-white/10">
                     <td className="py-2 pr-4">{formatDateTimeEAT(t.createdAt)}</td>
-                    <td className="py-2 pr-4">{t.type === 'deposit' ? 'Deposit' : 'Withdraw'}</td>
+                    <td className="py-2 pr-4">
+                      {t.type === 'deposit'
+                        ? t.source === 'pay_link'
+                          ? <span className="text-blue-400">{t.payerName ? `Collection · ${t.payerName}` : 'Collection'}</span>
+                          : 'Deposit'
+                        : 'Withdraw'}
+                    </td>
                     <td className="py-2 pr-4">{t.type === 'deposit' ? t.amountTzs : -t.amountTzs}</td>
                     <td className="py-2 pr-4">{String(t.status)}</td>
                   </tr>
