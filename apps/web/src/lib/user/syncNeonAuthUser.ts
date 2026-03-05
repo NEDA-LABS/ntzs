@@ -4,6 +4,10 @@ import { neonAuth } from '@neondatabase/neon-js/auth/next'
 
 import { getDb } from '@/lib/db'
 import { users } from '@ntzs/db'
+import { MemCache } from '@/lib/cache'
+
+// Cross-request cache: avoids DB lookup for returning users (60s TTL)
+const userCache = new MemCache<typeof users.$inferSelect>(60_000)
 
 export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
   const { user } = await neonAuth()
@@ -11,6 +15,10 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
   if (!user) {
     return null
   }
+
+  // Fast path: return cached DB user for this neonAuth id
+  const cached = userCache.get(user.id)
+  if (cached) return cached
 
   const userEmailNormalized = user.email?.trim().toLowerCase() ?? null
   const userEmailToStore = userEmailNormalized ?? `${user.id}@unknown.local`
@@ -37,9 +45,12 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
         .where(eq(users.id, existing.id))
         .returning()
 
-      return updated[0] ?? existing
+      const result = updated[0] ?? existing
+      userCache.set(user.id, result)
+      return result
     }
 
+    userCache.set(user.id, existing)
     return existing
   }
 
@@ -66,7 +77,9 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
         .where(eq(users.id, byEmail.id))
         .returning()
 
-      return updated[0] ?? byEmail
+      const result = updated[0] ?? byEmail
+      userCache.set(user.id, result)
+      return result
     }
   }
 
@@ -81,6 +94,7 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
     .returning()
 
   if (inserted[0]) {
+    userCache.set(user.id, inserted[0])
     return inserted[0]
   }
 
@@ -98,9 +112,12 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
         .where(eq(users.id, existingAfter.id))
         .returning()
 
-      return updated[0] ?? existingAfter
+      const result = updated[0] ?? existingAfter
+      userCache.set(user.id, result)
+      return result
     }
 
+    userCache.set(user.id, existingAfter)
     return existingAfter
   }
 
@@ -125,7 +142,9 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
         .where(eq(users.id, byEmailAfter.id))
         .returning()
 
-      return updated[0] ?? byEmailAfter
+      const result = updated[0] ?? byEmailAfter
+      userCache.set(user.id, result)
+      return result
     }
   }
 

@@ -1,20 +1,14 @@
-import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 
-import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
-import { getDb } from '@/lib/db'
-import { wallets } from '@ntzs/db'
+import { requireAnyRole } from '@/lib/auth/rbac'
+import { getCachedWallet } from '@/lib/user/cachedWallet'
 
 import { WalletInfoClient } from './WalletInfoClient'
 
 export default async function WalletPage() {
-  await requireAnyRole(['end_user', 'super_admin'])
-  const dbUser = await requireDbUser()
-  const { db } = getDb()
+  const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const wallet = await db.query.wallets.findFirst({
-    where: eq(wallets.userId, dbUser.id),
-  })
+  const wallet = await getCachedWallet(dbUser.id)
 
   // Layout auto-provisions the wallet — redirect back if still missing
   if (!wallet) {

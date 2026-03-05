@@ -1,53 +1,50 @@
 import { desc, eq } from 'drizzle-orm'
 import Link from 'next/link'
 
-import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
+import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { burnRequests, depositRequests, kycCases, wallets } from '@ntzs/db'
+import { burnRequests, depositRequests, kycCases } from '@ntzs/db'
+import { getCachedWallet } from '@/lib/user/cachedWallet'
 
 import { GlassPanel } from '../../_components/GlassPanel'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 export default async function ActivityPage() {
-  await requireAnyRole(['end_user', 'super_admin'])
-  const dbUser = await requireDbUser()
-
+  const dbUser = await requireAnyRole(['end_user', 'super_admin'])
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
-    where: eq(wallets.userId, dbUser.id),
-  })
-
-  const latestKyc = await db
-    .select({ status: kycCases.status, createdAt: kycCases.createdAt })
-    .from(kycCases)
-    .where(eq(kycCases.userId, dbUser.id))
-    .orderBy(desc(kycCases.createdAt))
-    .limit(1)
-
-  const deposits = await db
-    .select({
-      id: depositRequests.id,
-      amountTzs: depositRequests.amountTzs,
-      status: depositRequests.status,
-      createdAt: depositRequests.createdAt,
-    })
-    .from(depositRequests)
-    .where(eq(depositRequests.userId, dbUser.id))
-    .orderBy(desc(depositRequests.createdAt))
-    .limit(50)
-
-  const burns = await db
-    .select({
-      id: burnRequests.id,
-      amountTzs: burnRequests.amountTzs,
-      status: burnRequests.status,
-      createdAt: burnRequests.createdAt,
-    })
-    .from(burnRequests)
-    .where(eq(burnRequests.userId, dbUser.id))
-    .orderBy(desc(burnRequests.createdAt))
-    .limit(50)
+  // Run all queries in parallel instead of sequentially
+  const [wallet, latestKyc, deposits, burns] = await Promise.all([
+    getCachedWallet(dbUser.id),
+    db
+      .select({ status: kycCases.status, createdAt: kycCases.createdAt })
+      .from(kycCases)
+      .where(eq(kycCases.userId, dbUser.id))
+      .orderBy(desc(kycCases.createdAt))
+      .limit(1),
+    db
+      .select({
+        id: depositRequests.id,
+        amountTzs: depositRequests.amountTzs,
+        status: depositRequests.status,
+        createdAt: depositRequests.createdAt,
+      })
+      .from(depositRequests)
+      .where(eq(depositRequests.userId, dbUser.id))
+      .orderBy(desc(depositRequests.createdAt))
+      .limit(50),
+    db
+      .select({
+        id: burnRequests.id,
+        amountTzs: burnRequests.amountTzs,
+        status: burnRequests.status,
+        createdAt: burnRequests.createdAt,
+      })
+      .from(burnRequests)
+      .where(eq(burnRequests.userId, dbUser.id))
+      .orderBy(desc(burnRequests.createdAt))
+      .limit(50),
+  ])
 
   const txns = [
     ...deposits.map((d) => ({

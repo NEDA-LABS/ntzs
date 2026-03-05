@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { eq, desc } from 'drizzle-orm'
 
-import { requireAnyRole, requireDbUser } from '@/lib/auth/rbac'
+import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { wallets, depositRequests, burnRequests } from '@ntzs/db'
+import { depositRequests, burnRequests } from '@ntzs/db'
+import { getCachedWallet } from '@/lib/user/cachedWallet'
 
 import {
   IconCheckCircle,
@@ -20,14 +21,11 @@ import { TokenBalance } from './_components/TokenBalance'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
-  await requireAnyRole(['end_user', 'super_admin'])
-  const dbUser = await requireDbUser()
+  const dbUser = await requireAnyRole(['end_user', 'super_admin'])
   const { db } = getDb()
 
   const [wallet, recentDeposits, recentBurns] = await Promise.all([
-    db.query.wallets.findFirst({
-      where: eq(wallets.userId, dbUser.id),
-    }),
+    getCachedWallet(dbUser.id),
     db
       .select()
       .from(depositRequests)

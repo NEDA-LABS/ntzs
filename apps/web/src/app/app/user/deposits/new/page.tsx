@@ -1,40 +1,37 @@
 import { and, eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 
-import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
+import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { banks, kycCases, wallets } from '@ntzs/db'
+import { banks, kycCases } from '@ntzs/db'
+import { getCachedWallet } from '@/lib/user/cachedWallet'
 
 import { DepositForm } from './DepositForm'
 
 export default async function NewDepositPage() {
-  await requireAnyRole(['end_user', 'super_admin'])
-  const dbUser = await requireDbUser()
-
+  const dbUser = await requireAnyRole(['end_user', 'super_admin'])
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
-    where: eq(wallets.userId, dbUser.id),
-  })
+  // Run all three queries in parallel instead of sequentially
+  const [wallet, approvedKyc, defaultBank] = await Promise.all([
+    getCachedWallet(dbUser.id),
+    db
+      .select({ id: kycCases.id })
+      .from(kycCases)
+      .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
+      .limit(1),
+    db.query.banks.findFirst({
+      where: eq(banks.status, 'active'),
+    }),
+  ])
 
   if (!wallet) {
     redirect('/app/user/wallet')
   }
 
-  const approvedKyc = await db
-    .select({ id: kycCases.id })
-    .from(kycCases)
-    .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
-    .limit(1)
-
   if (!approvedKyc.length) {
     redirect('/app/user/kyc')
   }
-
-  // Get a default bank for mobile money deposits
-  const defaultBank = await db.query.banks.findFirst({
-    where: eq(banks.status, 'active'),
-  })
 
   return (
     <div className="p-8">
