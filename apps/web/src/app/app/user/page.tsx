@@ -95,24 +95,30 @@ export default async function UserDashboard() {
                   <Link
                     href="/app/user/deposits/new"
                     prefetch
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-black transition-transform duration-75 hover:bg-white/90 active:scale-95 active:bg-white/80"
+                    className="flex flex-col items-center gap-2 rounded-2xl bg-white px-2 py-4 text-xs font-semibold text-black transition-transform duration-75 hover:bg-white/90 active:scale-95"
                   >
-                    <IconPlus className="h-4 w-4" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/10">
+                      <IconPlus className="h-5 w-5" />
+                    </div>
                     Deposit
                   </Link>
                   <button
                     disabled
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-3 text-sm font-medium text-white/60 cursor-not-allowed"
+                    className="flex flex-col items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-2 py-4 text-xs font-medium text-white/60 cursor-not-allowed"
                   >
-                    <IconSend className="h-4 w-4" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
+                      <IconSend className="h-5 w-5" />
+                    </div>
                     Send
                   </button>
                   <Link
                     href="/app/user/wallet"
                     prefetch
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-blue-600 px-3 py-3 text-sm font-semibold text-white transition-transform duration-75 hover:bg-blue-500 active:scale-95"
+                    className="flex flex-col items-center gap-2 rounded-2xl bg-blue-600 px-2 py-4 text-xs font-semibold text-white transition-transform duration-75 hover:bg-blue-500 active:scale-95"
                   >
-                    <IconWallet className="h-4 w-4" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
+                      <IconWallet className="h-5 w-5" />
+                    </div>
                     Pay Me
                   </Link>
                 </div>
