@@ -1,6 +1,7 @@
 'use server'
 
 import { and, eq } from 'drizzle-orm'
+import { revalidatePath } from 'next/cache'
 
 import { getDb } from '@/lib/db'
 import { depositRequests, users, wallets, banks } from '@ntzs/db'
@@ -110,6 +111,10 @@ export async function createPayLinkDeposit(
       .update(depositRequests)
       .set({ pspReference: response.reference, updatedAt: new Date() })
       .where(eq(depositRequests.id, deposit.id))
+
+    // Revalidate recipient's pages so the collection shows up immediately
+    revalidatePath('/app/user')
+    revalidatePath('/app/user/activity')
 
     return { success: true }
   } catch (err) {

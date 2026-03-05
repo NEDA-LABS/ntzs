@@ -1,4 +1,5 @@
 import { eq, and } from 'drizzle-orm'
+import { revalidatePath } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
@@ -71,6 +72,10 @@ export async function POST(request: NextRequest) {
       .where(eq(depositRequests.id, depositRequestId))
 
     console.log(`[snippe/payment webhook] Deposit ${depositRequestId} -> ${newStatus}`)
+
+    revalidatePath('/app/user')
+    revalidatePath('/app/user/activity')
+
     return NextResponse.json({ status: 'success', depositId: depositRequestId, newStatus })
   }
 
@@ -87,6 +92,10 @@ export async function POST(request: NextRequest) {
     console.log(`[snippe/payment webhook] Deposit ${depositRequestId} -> rejected`, {
       reason: data.failure_reason,
     })
+
+    revalidatePath('/app/user')
+    revalidatePath('/app/user/activity')
+
     return NextResponse.json({ status: 'success', depositId: depositRequestId, newStatus: 'rejected' })
   }
 
