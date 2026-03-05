@@ -1,477 +1,157 @@
-import type { ReactNode } from 'react'
-
 import Image from 'next/image'
 import Link from 'next/link'
 
-function GlassCard({
-  title,
-  description,
-}: {
-  title: string
-  description: string
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.05)] backdrop-blur-xl">
-      <div className="absolute -left-24 -top-24 h-56 w-56 rounded-full bg-white/5 blur-3xl transition-opacity group-hover:opacity-80" />
-      <div className="relative">
-        <div className="text-sm font-medium text-white/70">{title}</div>
-        <div className="mt-2 text-base leading-6 text-white/90">{description}</div>
-      </div>
-    </div>
-  )
-}
-
-function FeatureCard3D({
-  step,
-  title,
-  description,
-  icon,
-  featured,
-}: {
-  step: string
-  title: string
-  description: string
-  icon: ReactNode
-  featured?: boolean
-}) {
-  return (
-    <article
-      className={`group relative overflow-hidden rounded-[28px] border bg-white/5 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-transform duration-300 will-change-transform hover:-translate-y-1 hover:scale-[1.01] md:p-7 ${
-        featured
-          ? 'border-white/20 ring-1 ring-white/10 md:-translate-y-2 md:scale-[1.03]'
-          : 'border-white/10'
-      }`}
-    >
-      <div className="pointer-events-none absolute inset-0 opacity-90">
-        <div className="absolute -left-24 -top-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -right-32 -bottom-32 h-72 w-72 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(99,102,241,0.18),transparent_40%),radial-gradient(circle_at_70%_25%,rgba(236,72,153,0.16),transparent_45%),radial-gradient(circle_at_50%_85%,rgba(16,185,129,0.12),transparent_45%)]" />
-      </div>
-
-      <div className="relative">
-        <div className="text-xs font-medium text-white/55">{step}</div>
-
-        <div className="mt-5 ntzs-tilt-3d rounded-2xl border border-white/10 bg-black/20 p-5">
-          <div className="ntzs-float-3d mx-auto flex h-28 w-full items-center justify-center">
-            <div className="relative">
-              <div className="pointer-events-none absolute -inset-8 rounded-full bg-white/10 blur-2xl" />
-              <div className="relative">{icon}</div>
-            </div>
-          </div>
-        </div>
-
-        <h3 className="mt-5 text-lg font-semibold tracking-tight md:text-xl">{title}</h3>
-        <p className="mt-2 text-sm leading-6 text-white/70">{description}</p>
-      </div>
-    </article>
-  )
-}
-
-export default function Home() {
+export default function MasterLandingPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-white">
-      <div className="pointer-events-none absolute inset-0 opacity-70">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(121,40,202,0.25),transparent_40%),radial-gradient(circle_at_80%_30%,rgba(0,112,243,0.25),transparent_45%),radial-gradient(circle_at_45%_90%,rgba(16,185,129,0.18),transparent_45%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:48px_48px]" />
-      </div>
+      {/* ── Video Background ── */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+      >
+        <source src="/HERO.mp4" type="video/mp4" />
+      </video>
 
-      <div className="pointer-events-none absolute inset-0">
-        <video
-          className="h-full w-full object-cover opacity-35"
-          autoPlay
-          muted
-          playsInline
-          loop
-          preload="auto"
-        >
-          <source src="/Fintech_Video_With_NTZS_Logo.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/70 to-black" />
-      </div>
+      {/* Gradient overlay for readability */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/90" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center_top,rgba(59,130,246,0.15),transparent_60%)]" />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-6">
-        <div className="flex items-center gap-3">
-          <div className="overflow-hidden rounded-full">
-            <Image src="/ntzs-logo.png" alt="nTZS" width={34} height={34} />
+      {/* ── Content ── */}
+      <div className="relative z-10 flex min-h-screen flex-col">
+        {/* Top bar */}
+        <header className="flex items-center justify-between px-6 py-6 lg:px-12">
+          <div className="flex items-center gap-3">
+            <Image src="/ntzs-logo.png" alt="nTZS" width={40} height={40} className="rounded-xl" />
+            <span className="text-lg font-bold tracking-tight">nTZS</span>
           </div>
-          <div className="text-sm font-semibold tracking-wide">nTZS</div>
-        </div>
-
-        <nav className="hidden items-center gap-6 text-sm text-white/70 md:flex">
-          <a className="hover:text-white" href="#how-it-works">
-            How it works
-          </a>
-          <Link className="hover:text-white" href="/smart-wallets">
-            Smart Wallets
-          </Link>
-          <a className="hover:text-white" href="#oversight">
-            Oversight
-          </a>
-          <Link className="hover:text-white" href="/developers">
-            Developers
-          </Link>
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <a
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
-            href="/auth/sign-in"
+          <Link
+            href="/app"
+            className="rounded-full border border-white/20 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur-xl transition-colors hover:bg-white/20"
           >
-            Log in
-          </a>
-          <a
-            className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-white/90"
-            href="/auth/sign-up"
-          >
-            Get started
-          </a>
-        </div>
-      </header>
+            Launch App
+          </Link>
+        </header>
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-24 pt-8">
-        <section className="grid items-center gap-10 md:grid-cols-2 md:gap-12">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 backdrop-blur-lg">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Next-generation financial infrastructure
-            </div>
-
-            <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
-              Tanzania's first digital asset reserve.
-            </h1>
-
-            <p className="mt-5 max-w-xl text-base leading-7 text-white/70 md:text-lg">
-              Transform traditional bank deposits into instant, programmable balances. Build automated
-              payment flows, real-time marketplaces, and modern financial products with zero friction.
-            </p>
+        {/* Hero */}
+        <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-500/10 px-4 py-1.5 text-xs font-medium text-blue-300 backdrop-blur-xl">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+            Coming Soon
           </div>
 
-          <div className="relative">
-            <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-tr from-white/10 via-white/0 to-white/10 blur-2xl" />
-            <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl">
-              <div className="aspect-[4/3]">
-                <video
-                  className="h-full w-full object-cover"
-                  autoPlay
-                  muted
-                  playsInline
-                  loop
-                  preload="auto"
-                >
-                  <source src="/Stablecoin_Image_To_Video_Generation.mp4" type="video/mp4" />
-                </video>
-              </div>
+          <h1 className="max-w-3xl text-5xl font-bold leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl">
+            nTZS Smart
+            <br />
+            <span className="bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
+              Wallet
+            </span>
+          </h1>
 
-              <div className="grid gap-4 p-6">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">Start Here</div>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                    Get started
-                  </div>
-                </div>
+          <p className="mt-6 max-w-lg text-base leading-relaxed text-zinc-400 sm:text-lg">
+            Connect all your digital payments. One wallet for mobile money, stablecoins, and instant transfers.
+          </p>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Link
-                    href="/auth/sign-up"
-                    className="inline-flex h-14 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
-                  >
-                    Create account
-                  </Link>
-                  <a
-                    href="/app"
-                    className="inline-flex h-14 items-center justify-center rounded-full border border-white/15 bg-white/5 px-8 text-base text-white/85 backdrop-blur-lg transition-colors hover:bg-white/10"
-                  >
-                    Go to dashboard
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="how-it-works" className="mt-20">
-          <div className="flex items-end justify-between gap-6">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                A unified engine for moving value
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70 md:text-base">
-                Everything you need to onboard users, program business logic, and settle transactions instantly.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
-            <FeatureCard3D
-              step="Step 1"
-              title="Onboard instantly"
-              description="Users convert local currency into digital balances instantly via mobile money or bank transfer, with fully automated reconciliation."
+          {/* ── Glass Navigation Buttons ── */}
+          <div className="mt-12 grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5">
+            <GlassNavButton
+              href="/landing"
               icon={
-                <svg
-                  width="128"
-                  height="96"
-                  viewBox="0 0 128 96"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <defs>
-                    <linearGradient id="d1" x1="20" y1="18" x2="108" y2="86" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#A78BFA" />
-                      <stop offset="0.55" stopColor="#60A5FA" />
-                      <stop offset="1" stopColor="#34D399" />
-                    </linearGradient>
-                    <linearGradient id="d2" x1="34" y1="26" x2="98" y2="78" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="white" stopOpacity="0.9" />
-                      <stop offset="1" stopColor="white" stopOpacity="0.25" />
-                    </linearGradient>
-                  </defs>
-                  <g opacity="0.95">
-                    <path
-                      d="M33 58c0-6.6 13.9-12 31-12s31 5.4 31 12-13.9 12-31 12-31-5.4-31-12Z"
-                      fill="url(#d1)"
-                      fillOpacity="0.35"
-                    />
-                    <path
-                      d="M38 56c0-4.6 11.6-8.5 26-8.5S90 51.4 90 56s-11.6 8.5-26 8.5S38 60.6 38 56Z"
-                      fill="url(#d2)"
-                    />
-                    <path
-                      d="M42 42c0-4.6 9.8-8.5 22-8.5S86 37.4 86 42s-9.8 8.5-22 8.5S42 46.6 42 42Z"
-                      fill="url(#d1)"
-                      fillOpacity="0.35"
-                    />
-                    <path
-                      d="M46 40c0-3 8-5.5 18-5.5s18 2.5 18 5.5-8 5.5-18 5.5-18-2.5-18-5.5Z"
-                      fill="url(#d2)"
-                    />
-                    <path
-                      d="M64 18v18"
-                      stroke="white"
-                      strokeOpacity="0.85"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M56 28l8 8 8-8"
-                      stroke="white"
-                      strokeOpacity="0.85"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </g>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5a17.92 17.92 0 01-8.716-2.247m0 0A9.015 9.015 0 003 12c0-1.605.42-3.113 1.157-4.418" />
                 </svg>
               }
+              label="About"
             />
-
-            <FeatureCard3D
-              step="Step 2"
-              title="Automate workflows"
-              description="Embed custom business logic, enforce compliance rules, and build conditional payment flows directly into your application."
-              featured
+            <GlassNavButton
+              href="/app/user/wallet"
               icon={
-                <svg
-                  width="128"
-                  height="96"
-                  viewBox="0 0 128 96"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <defs>
-                    <linearGradient id="r1" x1="28" y1="12" x2="100" y2="88" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#60A5FA" />
-                      <stop offset="0.55" stopColor="#A78BFA" />
-                      <stop offset="1" stopColor="#F472B6" />
-                    </linearGradient>
-                    <linearGradient id="r2" x1="40" y1="22" x2="92" y2="80" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="white" stopOpacity="0.95" />
-                      <stop offset="1" stopColor="white" stopOpacity="0.22" />
-                    </linearGradient>
-                  </defs>
-                  <g opacity="0.95">
-                    <path
-                      d="M64 14c12 8 24 8 36 8v26c0 20-14.5 33.5-36 40-21.5-6.5-36-20-36-40V22c12 0 24 0 36-8Z"
-                      fill="url(#r1)"
-                      fillOpacity="0.28"
-                      stroke="rgba(255,255,255,0.55)"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="M64 22c9 6 18 6 27 6v18c0 14.5-10.2 24.6-27 29-16.8-4.4-27-14.5-27-29V28c9 0 18 0 27-6Z"
-                      fill="url(#r2)"
-                    />
-                    <path
-                      d="M52 49.5l8 8 18-18"
-                      stroke="rgba(255,255,255,0.9)"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </g>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 110-6h5.25A2.25 2.25 0 0121 6v6zm0 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6m-7.5 6a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
                 </svg>
               }
+              label="Wallet"
             />
-
-            <FeatureCard3D
-              step="Step 3"
-              title="Settle in real-time"
-              description="Move value anywhere instantly, 24/7. Finalize transactions across your platform without waiting for traditional banking hours."
+            <GlassNavButton
+              href="/developers"
               icon={
-                <svg
-                  width="128"
-                  height="96"
-                  viewBox="0 0 128 96"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <defs>
-                    <linearGradient id="s1" x1="24" y1="14" x2="108" y2="86" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#34D399" />
-                      <stop offset="0.55" stopColor="#60A5FA" />
-                      <stop offset="1" stopColor="#A78BFA" />
-                    </linearGradient>
-                    <linearGradient id="s2" x1="40" y1="22" x2="94" y2="80" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="white" stopOpacity="0.92" />
-                      <stop offset="1" stopColor="white" stopOpacity="0.2" />
-                    </linearGradient>
-                  </defs>
-                  <g opacity="0.95">
-                    <path
-                      d="M42 20h44c4.4 0 8 3.6 8 8v40c0 4.4-3.6 8-8 8H42c-4.4 0-8-3.6-8-8V28c0-4.4 3.6-8 8-8Z"
-                      fill="url(#s1)"
-                      fillOpacity="0.22"
-                      stroke="rgba(255,255,255,0.55)"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="M46 28h36c4.4 0 8 3.6 8 8v24c0 4.4-3.6 8-8 8H46c-4.4 0-8-3.6-8-8V36c0-4.4 3.6-8 8-8Z"
-                      fill="url(#s2)"
-                    />
-                    <path
-                      d="M78 18v18"
-                      stroke="rgba(255,255,255,0.85)"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M72 28l6 6 6-6"
-                      stroke="rgba(255,255,255,0.85)"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx="86" cy="20" r="6" fill="rgba(255,255,255,0.12)" />
-                  </g>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                 </svg>
               }
+              label="Docs"
+            />
+            <GlassNavButton
+              href="/app"
+              icon={
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V17.25zm-6.75 0h.008v.008h-.008V17.25zm6.75-3h.008v.008H15V14.25z" />
+                </svg>
+              }
+              label="App"
             />
           </div>
-        </section>
+        </main>
 
-        {/* WaaS Teaser Section */}
-        <section className="mt-24 relative overflow-hidden rounded-[28px] border border-blue-500/20 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] backdrop-blur-xl min-h-[600px]">
-          {/* Full-screen video background */}
-          <div className="absolute inset-0 overflow-hidden rounded-[28px]">
-            <video
-              className="h-full w-full object-cover scale-105"
-              src="/Video_For_Wallet_Service.mp4"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-            />
-            {/* Dark overlay for text contrast */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/60 to-transparent" />
-            {/* Blue accent overlay */}
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-transparent to-transparent" />
-          </div>
-
-          {/* Content overlay */}
-          <div className="relative z-10 flex flex-col justify-end h-full min-h-[600px] p-8 md:p-12 pb-16">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 backdrop-blur-lg px-3 py-1 text-xs text-blue-200 mb-6">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-                For Developers & Startups
-              </div>
-              <h2 className="text-4xl font-semibold tracking-tight md:text-5xl text-white leading-tight">
-                Power your app with<br />Smart Wallet as a Service
-              </h2>
-              <p className="mt-6 text-lg leading-8 text-white/80 max-w-2xl">
-                Our WaaS infrastructure lets you instantly provision wallets for your users, with zero complexity. Start building today and accept payment in our platform with ease.
-              </p>
-
-              {/* CTA buttons */}
-              <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-                <Link
-                  href="/smart-wallets"
-                  className="inline-flex h-14 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black transition-all hover:bg-white/90 hover:scale-105"
-                >
-                  Explore Smart Wallets
-                </Link>
-                <Link
-                  href="/developers"
-                  className="inline-flex h-14 items-center justify-center rounded-full border border-white/20 bg-white/10 backdrop-blur-lg px-8 text-base text-white/90 transition-all hover:bg-white/20 hover:scale-105"
-                >
-                  View Documentation
-                </Link>
+        {/* ── Video Showcase Section ── */}
+        <section className="relative px-6 pb-12 lg:px-12">
+          <div className="mx-auto max-w-4xl overflow-hidden rounded-3xl border border-white/10">
+            <div className="relative aspect-video">
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="h-full w-full object-cover"
+              >
+                <source src="/Fintech_Video_With_NTZS_Logo.mp4" type="video/mp4" />
+              </video>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+              <div className="absolute bottom-0 left-0 right-0 p-6 text-center sm:p-8">
+                <h2 className="text-xl font-bold sm:text-2xl">nTZS Smart Wallet</h2>
+                <p className="mt-1 text-sm text-blue-400">Coming Soon</p>
+                <p className="mt-0.5 text-xs text-zinc-500">ntzs.co.tz</p>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="oversight" className="mt-16">
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl md:p-10">
-            <div className="grid gap-8 md:grid-cols-2 md:items-center">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                  Built for trust and absolute scale
-                </h2>
-                <p className="mt-3 text-sm leading-6 text-white/70 md:text-base">
-                  Every transaction is cryptographically secured and recorded on an immutable ledger. Provide continuous, real-time auditability to regulators while eliminating manual reconciliation for your finance team.
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <a
-                  className="inline-flex h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
-                  href="/auth/sign-in"
-                >
-                  Sign in
-                </a>
-                <a
-                  className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90"
-                  href="/auth/sign-up"
-                >
-                  Start now
-                </a>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <footer className="mt-20 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-8 text-xs text-white/60 md:flex-row md:items-center">
-          <div className="flex items-center gap-2">
-            <div className="overflow-hidden rounded-full">
-              <Image src="/ntzs-logo.png" alt="nTZS" width={18} height={18} />
-            </div>
-            <div>nTZS</div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link className="hover:text-white" href="/smart-wallets">
-              Smart Wallets
-            </Link>
-            <a className="hover:text-white" href="/auth/sign-in">
-              Log in
-            </a>
-            <a className="hover:text-white" href="/app">
-              Dashboard
-            </a>
-            <Link className="hover:text-white" href="/developers">
-              Developers
-            </Link>
-          </div>
+        {/* Footer */}
+        <footer className="border-t border-white/5 px-6 py-6 text-center text-xs text-zinc-600 lg:px-12">
+          <p>&copy; {new Date().getFullYear()} nTZS &mdash; Secure digital payments for Tanzania</p>
         </footer>
-      </main>
+      </div>
     </div>
   )
 }
+
+function GlassNavButton({
+  href,
+  icon,
+  label,
+}: {
+  href: string
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <Link
+      href={href}
+      className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/[0.12] bg-white/[0.06] px-6 py-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_4px_24px_rgba(0,0,0,0.3)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:bg-white/[0.1] hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.4)] active:scale-95 sm:px-8"
+    >
+      {/* Glass shine */}
+      <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/10 to-transparent opacity-50" />
+      <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-br from-white/10 via-transparent to-white/5 opacity-0 transition-opacity group-hover:opacity-100" />
+
+      <div className="relative text-white/80 transition-colors group-hover:text-white">
+        {icon}
+      </div>
+      <span className="relative text-xs font-semibold tracking-wide text-white/70 transition-colors group-hover:text-white">
+        {label}
+      </span>
+    </Link>
+  )
+}
+
