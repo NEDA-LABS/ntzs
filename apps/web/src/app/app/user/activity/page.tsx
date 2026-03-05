@@ -1,49 +1,20 @@
-import { desc, eq } from 'drizzle-orm'
 import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getDb } from '@/lib/db'
-import { burnRequests, depositRequests, kycCases } from '@ntzs/db'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
+import { getCachedLatestKyc, getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
 
 import { GlassPanel } from '../../_components/GlassPanel'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 export default async function ActivityPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
-  const { db } = getDb()
 
-  // Run all queries in parallel instead of sequentially
   const [wallet, latestKyc, deposits, burns] = await Promise.all([
     getCachedWallet(dbUser.id),
-    db
-      .select({ status: kycCases.status, createdAt: kycCases.createdAt })
-      .from(kycCases)
-      .where(eq(kycCases.userId, dbUser.id))
-      .orderBy(desc(kycCases.createdAt))
-      .limit(1),
-    db
-      .select({
-        id: depositRequests.id,
-        amountTzs: depositRequests.amountTzs,
-        status: depositRequests.status,
-        createdAt: depositRequests.createdAt,
-      })
-      .from(depositRequests)
-      .where(eq(depositRequests.userId, dbUser.id))
-      .orderBy(desc(depositRequests.createdAt))
-      .limit(50),
-    db
-      .select({
-        id: burnRequests.id,
-        amountTzs: burnRequests.amountTzs,
-        status: burnRequests.status,
-        createdAt: burnRequests.createdAt,
-      })
-      .from(burnRequests)
-      .where(eq(burnRequests.userId, dbUser.id))
-      .orderBy(desc(burnRequests.createdAt))
-      .limit(50),
+    getCachedLatestKyc(dbUser.id),
+    getCachedRecentDeposits(dbUser.id, 50),
+    getCachedRecentBurns(dbUser.id, 50),
   ])
 
   const txns = [

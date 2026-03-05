@@ -1,28 +1,18 @@
-import { and, eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getDb } from '@/lib/db'
-import { banks, kycCases } from '@ntzs/db'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
+import { getCachedApprovedKyc, getCachedDefaultBank } from '@/lib/user/cachedQueries'
 
 import { DepositForm } from './DepositForm'
 
 export default async function NewDepositPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
-  const { db } = getDb()
 
-  // Run all three queries in parallel instead of sequentially
   const [wallet, approvedKyc, defaultBank] = await Promise.all([
     getCachedWallet(dbUser.id),
-    db
-      .select({ id: kycCases.id })
-      .from(kycCases)
-      .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
-      .limit(1),
-    db.query.banks.findFirst({
-      where: eq(banks.status, 'active'),
-    }),
+    getCachedApprovedKyc(dbUser.id),
+    getCachedDefaultBank(),
   ])
 
   if (!wallet) {

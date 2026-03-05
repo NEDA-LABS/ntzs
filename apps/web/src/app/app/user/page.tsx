@@ -1,10 +1,8 @@
 import Link from 'next/link'
-import { eq, desc } from 'drizzle-orm'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getDb } from '@/lib/db'
-import { depositRequests, burnRequests } from '@ntzs/db'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
+import { getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
 
 import {
   IconCheckCircle,
@@ -22,27 +20,11 @@ import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
-  const { db } = getDb()
 
   const [wallet, recentDeposits, recentBurns] = await Promise.all([
     getCachedWallet(dbUser.id),
-    db
-      .select()
-      .from(depositRequests)
-      .where(eq(depositRequests.userId, dbUser.id))
-      .orderBy(desc(depositRequests.createdAt))
-      .limit(5),
-    db
-      .select({
-        id: burnRequests.id,
-        amountTzs: burnRequests.amountTzs,
-        status: burnRequests.status,
-        createdAt: burnRequests.createdAt,
-      })
-      .from(burnRequests)
-      .where(eq(burnRequests.userId, dbUser.id))
-      .orderBy(desc(burnRequests.createdAt))
-      .limit(5),
+    getCachedRecentDeposits(dbUser.id, 5),
+    getCachedRecentBurns(dbUser.id, 5),
   ])
 
   const recentTxns = [
@@ -108,6 +90,7 @@ export default async function UserDashboard() {
                 <div className="mt-8 flex flex-wrap gap-3">
                   <Link
                     href="/app/user/deposits/new"
+                    prefetch
                     className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition-transform duration-75 hover:bg-white/90 active:scale-95 active:bg-white/80"
                   >
                     <IconPlus className="h-4 w-4" />
@@ -122,6 +105,7 @@ export default async function UserDashboard() {
                   </button>
                   <Link
                     href="/app/user/withdraw"
+                    prefetch
                     className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-medium text-white transition-transform duration-75 hover:bg-white/10 active:scale-95"
                   >
                     <IconWithdraw className="h-4 w-4" />
@@ -137,6 +121,7 @@ export default async function UserDashboard() {
                 <h2 className="font-semibold text-white">Recent Transactions</h2>
                 <Link
                   href="/app/user/activity"
+                  prefetch
                   className="inline-flex items-center gap-1.5 text-sm text-violet-400 hover:text-violet-300"
                 >
                   View all
@@ -219,7 +204,7 @@ export default async function UserDashboard() {
                 </div>
               </div>
               {wallet && (
-                <Link href="/app/user/wallet" className="mt-4 block rounded-xl bg-white/5 p-3 hover:bg-white/[0.07] transition-colors">
+                <Link href="/app/user/wallet" prefetch className="mt-4 block rounded-xl bg-white/5 p-3 hover:bg-white/[0.07] transition-colors">
                   <p className="text-xs text-zinc-500">Address</p>
                   <p className="mt-1 truncate font-mono text-sm text-white">{wallet.address}</p>
                 </Link>
@@ -232,7 +217,7 @@ export default async function UserDashboard() {
               <p className="mt-1 text-xs text-zinc-500">Earn more with nTZS</p>
 
               <div className="mt-4 space-y-3">
-                <Link href="/app/user/invite" className="flex items-center gap-3 rounded-xl bg-white/5 p-3 transition-all duration-75 hover:bg-white/10 active:scale-[0.98] active:bg-white/[0.07]">
+                <Link href="/app/user/invite" prefetch className="flex items-center gap-3 rounded-xl bg-white/5 p-3 transition-all duration-75 hover:bg-white/10 active:scale-[0.98] active:bg-white/[0.07]">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20">
                     <IconUsers className="h-4 w-4 text-emerald-400" />
                   </div>
@@ -243,7 +228,7 @@ export default async function UserDashboard() {
                   <IconChevronRight className="h-4 w-4 text-zinc-600" />
                 </Link>
 
-                <Link href="/app/user/stake" className="flex items-center gap-3 rounded-xl bg-white/5 p-3 transition-all duration-75 hover:bg-white/10 active:scale-[0.98] active:bg-white/[0.07]">
+                <Link href="/app/user/stake" prefetch className="flex items-center gap-3 rounded-xl bg-white/5 p-3 transition-all duration-75 hover:bg-white/10 active:scale-[0.98] active:bg-white/[0.07]">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20">
                     <IconSparkles className="h-4 w-4 text-violet-400" />
                   </div>

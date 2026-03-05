@@ -51,7 +51,7 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
       <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-64 lg:flex-col border-r border-white/10 bg-black/70 backdrop-blur-xl">
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 border-b border-white/10 px-6">
-          <Link href="/app/user" className="flex items-center gap-3">
+          <Link href="/app/user" prefetch className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
               <img src="/ntzs-logo.png" alt="nTZS" className="h-6 w-6 object-contain" />
             </div>
@@ -70,6 +70,7 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-75 active:scale-[0.98] ${
                   isActive(item.href, item.href === '/app/user')
                     ? 'bg-white/10 text-white'
@@ -88,6 +89,7 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-75 active:scale-[0.98] ${
                   isActive(item.href)
                     ? 'bg-white/10 text-white'
@@ -132,6 +134,7 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
               <Link
                 key={tab.href}
                 href={tab.href}
+                prefetch
                 className={`flex flex-1 flex-col items-center justify-center gap-1 transition-colors active:scale-95 ${
                   isDeposit
                     ? 'relative'
