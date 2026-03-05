@@ -42,11 +42,9 @@ export default function MasterLandingPage() {
             Coming Soon
           </div>
 
-          <h1 className="max-w-3xl text-5xl font-bold leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl">
-            nTZS Smart
-            <br />
+          <h1 className="max-w-4xl font-mono text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">
             <span className="bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
-              Wallet
+              nTZS Smart Wallet
             </span>
           </h1>
 
