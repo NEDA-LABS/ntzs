@@ -8,13 +8,23 @@ TypeScript SDK for the nTZS Wallet-as-a-Service API.
 
 While we prepare the official npm package, you can use the REST API directly with `fetch` (see below).
 
+## Production URL
+
+**Base URL**: `https://www.ntzs.co.tz`
+
+For testing, you can also use:
+- **Testnet**: Same production URL (uses Base Sepolia testnet)
+- **Local Development**: `http://localhost:3000`
+
+Get your API key from the [nTZS Developer Portal](https://ntzs.co/developers).
+
 ## Quick Start (Direct API)
 
 Until the SDK is published, use the REST API directly:
 
 ```typescript
 const NTZS_API_KEY = 'your-api-key'
-const NTZS_BASE_URL = 'https://api.ntzs.co'
+const NTZS_BASE_URL = 'https://www.ntzs.co.tz'
 
 // Create a user
 const createUser = async (email: string) => {
@@ -75,8 +85,105 @@ const createTransfer = async (fromUserId: string, toUserId: string, amountTzs: n
     },
     body: JSON.stringify({ fromUserId, toUserId, amountTzs })
   })
+  
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(`Transfer failed: ${error.message} (${error.error})`)
+  }
+  
   return response.json()
 }
+```
+
+## Transfer API Details
+
+### Request Schema
+```typescript
+{
+  fromUserId: string    // Sender's user ID
+  toUserId: string      // Recipient's user ID
+  amountTzs: number     // Amount in TZS (will be converted to nTZS)
+  metadata?: object     // Optional metadata
+}
+```
+
+### Success Response (201)
+```typescript
+{
+  id: string                 // Transfer ID
+  status: "completed"        // Transfer status
+  txHash: string            // Blockchain transaction hash
+  amountTzs: number         // Total amount transferred
+  recipientAmountTzs: number // Amount received (after fees)
+  feeAmountTzs: number      // Platform fee amount
+  feeTxHash: string | null  // Fee transaction hash (if applicable)
+}
+```
+
+### Error Responses
+
+All errors follow this structure:
+```typescript
+{
+  error: string      // Error code (see below)
+  message: string    // Human-readable message
+  details?: object   // Additional context
+}
+```
+
+**Error Codes:**
+
+| Code | Status | Description | Solution |
+|------|--------|-------------|----------|
+| `missing_required_fields` | 400 | Missing fromUserId, toUserId, or amountTzs | Provide all required fields |
+| `invalid_amount` | 400 | Amount is zero or negative | Use positive amount |
+| `invalid_transfer` | 400 | Attempting to transfer to self | Use different recipient |
+| `user_not_found` | 404 | Sender or recipient not found | Verify user IDs |
+| `wallet_not_provisioned` | 400 | User wallet not yet created | Wait for wallet provisioning to complete |
+| `insufficient_balance` | 400 | Sender has insufficient nTZS | Check balance before transfer |
+| `insufficient_gas` | 400 | Sender wallet has no ETH for gas | Contact support for gas funding |
+| `configuration_error` | 500 | Blockchain config missing | Contact support |
+| `network_error` | 500 | Blockchain network issue | Retry in a few moments |
+| `contract_error` | 500 | Smart contract rejected transaction | Contact support |
+| `blockchain_error` | 500 | Other blockchain error | Contact support |
+
+### Requirements
+
+Before making a transfer, ensure:
+
+1. **Both users exist** - Created via `POST /api/v1/users`
+2. **Wallets are provisioned** - Check that wallet addresses don't start with `0x_pending_`
+3. **Sender has sufficient balance** - Check via `GET /api/v1/users/:userId`
+4. **Sender has ETH for gas** - Wallets need ~0.001 ETH for gas fees (contact support for funding)
+
+### Example: Complete Transfer Flow
+
+```typescript
+// 1. Check sender balance
+const sender = await fetch(`${NTZS_BASE_URL}/api/v1/users/${fromUserId}`, {
+  headers: { 'Authorization': `Bearer ${NTZS_API_KEY}` }
+}).then(r => r.json())
+
+if (sender.balanceTzs < amountTzs) {
+  throw new Error('Insufficient balance')
+}
+
+// 2. Verify wallet is provisioned
+if (!sender.walletAddress || sender.walletAddress.startsWith('0x_pending_')) {
+  throw new Error('Wallet not provisioned yet')
+}
+
+// 3. Execute transfer
+const transfer = await fetch(`${NTZS_BASE_URL}/api/v1/transfers`, {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${NTZS_API_KEY}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ fromUserId, toUserId, amountTzs })
+}).then(r => r.json())
+
+console.log(`Transfer completed: ${transfer.txHash}`)
 ```
 
 ## API Endpoints
@@ -114,7 +221,7 @@ import { NtzsClient } from '@ntzs/sdk'
 
 const client = new NtzsClient({
   apiKey: 'your-api-key',
-  baseUrl: 'https://api.ntzs.co'
+  baseUrl: 'https://www.ntzs.co.tz'
 })
 
 const user = await client.users.create({ email: 'user@example.com' })

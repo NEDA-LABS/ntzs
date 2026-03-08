@@ -176,7 +176,7 @@ export default function DevelopersPage() {
 
 const ntzs = new NtzsClient({
   apiKey: process.env.NTZS_API_KEY!,
-  baseUrl: 'https://api.ntzs.co'
+  baseUrl: 'https://www.ntzs.co.tz'
 })`}
             />
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200/80">
@@ -373,7 +373,7 @@ try {
           >
             <CodeBlock
               title="curl"
-              code={`curl -X POST https://api.ntzs.co/api/v1/users \\
+              code={`curl -X POST https://www.ntzs.co.tz/api/v1/users \\
   -H "Authorization: Bearer ntzs_live_your_api_key" \\
   -H "Content-Type: application/json" \\
   -d '{"externalId": "user_1", "email": "user@example.com"}'`}

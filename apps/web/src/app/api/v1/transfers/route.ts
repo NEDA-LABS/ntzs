@@ -32,17 +32,35 @@ export async function POST(request: NextRequest) {
 
   if (!fromUserId || !toUserId || !amountTzs) {
     return NextResponse.json(
-      { error: 'fromUserId, toUserId, and amountTzs are required' },
+      {
+        error: 'missing_required_fields',
+        message: 'fromUserId, toUserId, and amountTzs are required',
+        details: { fromUserId: !!fromUserId, toUserId: !!toUserId, amountTzs: !!amountTzs }
+      },
       { status: 400 }
     )
   }
 
   if (amountTzs <= 0) {
-    return NextResponse.json({ error: 'amountTzs must be positive' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'invalid_amount',
+        message: 'amountTzs must be positive',
+        details: { amountTzs }
+      },
+      { status: 400 }
+    )
   }
 
   if (fromUserId === toUserId) {
-    return NextResponse.json({ error: 'Cannot transfer to self' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'invalid_transfer',
+        message: 'Cannot transfer to self',
+        details: { fromUserId, toUserId }
+      },
+      { status: 400 }
+    )
   }
 
   const { db } = getDb()
@@ -75,10 +93,24 @@ export async function POST(request: NextRequest) {
     .limit(1)
 
   if (!fromMapping) {
-    return NextResponse.json({ error: 'Sender user not found' }, { status: 404 })
+    return NextResponse.json(
+      {
+        error: 'user_not_found',
+        message: 'Sender user not found',
+        details: { userId: fromUserId, role: 'sender' }
+      },
+      { status: 404 }
+    )
   }
   if (!toMapping) {
-    return NextResponse.json({ error: 'Recipient user not found' }, { status: 404 })
+    return NextResponse.json(
+      {
+        error: 'user_not_found',
+        message: 'Recipient user not found',
+        details: { userId: toUserId, role: 'recipient' }
+      },
+      { status: 404 }
+    )
   }
 
   // Get wallets
@@ -95,10 +127,24 @@ export async function POST(request: NextRequest) {
     .limit(1)
 
   if (!fromWallet || fromWallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json({ error: 'Sender wallet is not provisioned' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'wallet_not_provisioned',
+        message: 'Sender wallet is not provisioned yet',
+        details: { userId: fromUserId, role: 'sender' }
+      },
+      { status: 400 }
+    )
   }
   if (!toWallet || toWallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json({ error: 'Recipient wallet is not provisioned' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'wallet_not_provisioned',
+        message: 'Recipient wallet is not provisioned yet',
+        details: { userId: toUserId, role: 'recipient' }
+      },
+      { status: 400 }
+    )
   }
 
   // Create transfer record
@@ -115,7 +161,13 @@ export async function POST(request: NextRequest) {
     .returning({ id: transfers.id })
 
   if (!transfer) {
-    return NextResponse.json({ error: 'Failed to create transfer record' }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: 'database_error',
+        message: 'Failed to create transfer record'
+      },
+      { status: 500 }
+    )
   }
 
   // Execute on-chain transfer
@@ -128,7 +180,13 @@ export async function POST(request: NextRequest) {
       .update(transfers)
       .set({ status: 'failed', error: 'Blockchain configuration missing', updatedAt: new Date() })
       .where(eq(transfers.id, transfer.id))
-    return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: 'configuration_error',
+        message: 'Blockchain configuration missing. Contact support.'
+      },
+      { status: 500 }
+    )
   }
 
   try {
@@ -153,7 +211,15 @@ export async function POST(request: NextRequest) {
         .where(eq(transfers.id, transfer.id))
 
       return NextResponse.json(
-        { error: `Insufficient balance. Available: ${balanceTzs} TZS, requested: ${amountTzs} TZS` },
+        {
+          error: 'insufficient_balance',
+          message: 'Sender has insufficient nTZS balance',
+          details: {
+            available: balanceTzs,
+            requested: amountTzs,
+            shortfall: amountTzs - balanceTzs
+          }
+        },
         { status: 400 }
       )
     }
@@ -180,7 +246,15 @@ export async function POST(request: NextRequest) {
         .set({ status: 'failed', error: 'Sender wallet has no ETH for gas', updatedAt: new Date() })
         .where(eq(transfers.id, transfer.id))
       return NextResponse.json(
-        { error: 'Payment settlement on hold. Please try again later or contact support.' },
+        {
+          error: 'insufficient_gas',
+          message: 'Sender wallet has no ETH for gas fees',
+          details: {
+            walletAddress: fromWallet.address,
+            ethBalance: '0',
+            solution: 'Wallet needs to be funded with ETH for gas. Contact support for gas funding.'
+          }
+        },
         { status: 400 }
       )
     }
@@ -263,16 +337,48 @@ export async function POST(request: NextRequest) {
 
     console.error('[v1/transfers] Transfer failed:', errorMessage)
 
+    // Categorize blockchain errors
     const isGasError =
       errorMessage.includes('INSUFFICIENT_FUNDS') ||
       errorMessage.includes('insufficient funds') ||
       errorMessage.includes('intrinsic transaction cost')
 
+    const isNetworkError =
+      errorMessage.includes('network') ||
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('connection')
+
+    const isContractError =
+      errorMessage.includes('revert') ||
+      errorMessage.includes('execution reverted')
+
+    let errorCode = 'blockchain_error'
+    let userMessage = 'Transfer failed due to blockchain error'
+    let solution = 'Please try again or contact support'
+
+    if (isGasError) {
+      errorCode = 'insufficient_gas'
+      userMessage = 'Insufficient ETH for gas fees'
+      solution = 'Wallet needs ETH funding. Contact support for gas funding.'
+    } else if (isNetworkError) {
+      errorCode = 'network_error'
+      userMessage = 'Blockchain network connection failed'
+      solution = 'Please try again in a few moments'
+    } else if (isContractError) {
+      errorCode = 'contract_error'
+      userMessage = 'Smart contract execution failed'
+      solution = 'Transaction was rejected by the contract. Contact support.'
+    }
+
     return NextResponse.json(
       {
-        error: isGasError
-          ? 'Payment settlement on hold. Please try again later or contact support.'
-          : 'Transfer failed. Please try again later or contact support.',
+        error: errorCode,
+        message: userMessage,
+        details: {
+          transferId: transfer.id,
+          technicalError: errorMessage,
+          solution
+        }
       },
       { status: 500 }
     )
