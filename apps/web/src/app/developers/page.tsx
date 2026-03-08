@@ -250,19 +250,84 @@ console.log(status.status) // → 'minted'`}
             id="transfers"
             step="Step 5"
             title="Transfer between users"
-            description="Move nTZS between any two users on your platform. Executed as a real ERC-20 transfer on Base."
+            description="Move nTZS between any two users on your platform. Supports peer-to-peer transfers, platform fees, and real-time settlement."
           >
             <CodeBlock
               title="transfer.ts"
-              code={`const transfer = await ntzs.transfers.create({
+              code={`// Basic transfer between users
+const transfer = await ntzs.transfers.create({
   fromUserId: senderUser.id,
   toUserId: recipientUser.id,
   amountTzs: 5000,
 })
 
-console.log(transfer.txHash)
-// → 0x3a7b...real on-chain tx hash`}
+console.log(transfer.txHash)        // On-chain transaction hash
+console.log(transfer.status)        // "completed"
+console.log(transfer.recipientAmountTzs)  // Amount after fees
+console.log(transfer.feeAmountTzs)  // Platform fee collected`}
             />
+            
+            <div className="mt-6 space-y-4">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <h4 className="text-sm font-semibold text-white mb-2">Common Use Cases</h4>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-400 mt-0.5">•</span>
+                    <span><strong className="text-white">Peer-to-peer payments:</strong> Users send money to each other</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-400 mt-0.5">•</span>
+                    <span><strong className="text-white">Marketplace payouts:</strong> Platform pays sellers after sales</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-400 mt-0.5">•</span>
+                    <span><strong className="text-white">Escrow release:</strong> Transfer from escrow wallet to recipient</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-400 mt-0.5">•</span>
+                    <span><strong className="text-white">Rewards distribution:</strong> Send bonuses or cashback to users</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <h4 className="text-sm font-semibold text-amber-300 mb-2">Requirements</h4>
+                <ul className="space-y-1.5 text-sm text-amber-200/80">
+                  <li>• Both users must exist and belong to your platform</li>
+                  <li>• Both wallets must be provisioned (not pending)</li>
+                  <li>• Sender must have sufficient nTZS balance</li>
+                  <li>• Sender wallet needs ETH for gas (contact support for funding)</li>
+                </ul>
+              </div>
+
+              <CodeBlock
+                title="error-handling.ts"
+                code={`try {
+  const transfer = await ntzs.transfers.create({
+    fromUserId: sender.id,
+    toUserId: recipient.id,
+    amountTzs: 1000,
+  })
+  console.log('Transfer successful:', transfer.txHash)
+} catch (err) {
+  if (err instanceof NtzsApiError) {
+    switch (err.body.error) {
+      case 'insufficient_balance':
+        console.log('Sender needs more funds')
+        break
+      case 'wallet_not_provisioned':
+        console.log('Wallet still being created')
+        break
+      case 'insufficient_gas':
+        console.log('Contact support for gas funding')
+        break
+      default:
+        console.error('Transfer failed:', err.body.message)
+    }
+  }
+}`}
+              />
+            </div>
           </DocSection>
 
           {/* Withdrawals */}
