@@ -105,9 +105,20 @@ export async function initiatePayment(
 
     if (result.status !== 'success' || !result.data?.reference) {
       console.error('[snippe] payment initiation failed:', result)
+      
+      // Detect provider outages
+      const errorMsg = result.message || ''
+      const isProviderOutage = 
+        errorMsg.toLowerCase().includes('vodacom') ||
+        errorMsg.toLowerCase().includes('provider') ||
+        errorMsg.toLowerCase().includes('unavailable') ||
+        errorMsg.toLowerCase().includes('temporarily')
+      
       return {
         success: false,
-        error: result.message || 'Payment initiation failed',
+        error: isProviderOutage 
+          ? 'Mobile money service temporarily unavailable. Please try again later or use a different payment method.'
+          : result.message || 'Payment initiation failed',
       }
     }
 

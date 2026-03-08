@@ -58,6 +58,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   const [method, setMethod] = useState<PaymentMethod>('mobile')
   const [cardLoading, setCardLoading] = useState(false)
   const [cardError, setCardError] = useState('')
+  const [mobileError, setMobileError] = useState('')
   const [amount, setAmount] = useState<string>('')
   const [showPhoneModal, setShowPhoneModal] = useState(false)
   const [modalPhone, setModalPhone] = useState(userPhone || '')
@@ -204,10 +205,19 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
       {/* Mobile money: two-step flow (amount first, then phone in modal) */}
       {method === 'mobile' && (
         <div className="space-y-4">
+          {mobileError && (
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+              {mobileError}
+            </div>
+          )}
+
           <button
             type="button"
             disabled={!amount || Number(amount) <= 0}
-            onClick={() => setShowPhoneModal(true)}
+            onClick={() => {
+              setMobileError('')
+              setShowPhoneModal(true)
+            }}
             className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-blue-500/40"
           >
             {amount ? `Deposit ${Number(amount).toLocaleString()} TZS` : 'Deposit'}
@@ -311,9 +321,16 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 } catch {}
               }}
               action={async (formData: FormData) => {
-                formData.set('amountTzs', amount)
-                setSubmittedAmount(amount)
-                await createDepositRequestAction(formData)
+                try {
+                  formData.set('amountTzs', amount)
+                  setSubmittedAmount(amount)
+                  await createDepositRequestAction(formData)
+                } catch (error) {
+                  setShowPhoneModal(false)
+                  const errorMessage = error instanceof Error ? error.message : 'Payment failed. Please try again.'
+                  setMobileError(errorMessage)
+                  console.error('Deposit failed:', error)
+                }
               }}
               className="space-y-4"
             >
