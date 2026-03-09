@@ -4,8 +4,9 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { signAndSendTransfer, deriveTreasuryWallet } from '@/lib/waas/hd-wallets'
-import { wallets, partnerUsers, transfers, auditLogs, partners } from '@ntzs/db'
+import { signAndSendTransfer } from '@/lib/waas/hd-wallets'
+import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
+import { wallets, partnerUsers, transfers, auditLogs, partners, users } from '@ntzs/db'
 
 const NTZS_TRANSFER_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -115,13 +116,13 @@ export async function POST(request: NextRequest) {
 
   // Get wallets
   const [fromWallet] = await db
-    .select({ id: wallets.id, address: wallets.address })
+    .select({ id: wallets.id, address: wallets.address, provider: wallets.provider })
     .from(wallets)
     .where(and(eq(wallets.userId, fromUserId), eq(wallets.chain, 'base')))
     .limit(1)
 
   const [toWallet] = await db
-    .select({ id: wallets.id, address: wallets.address })
+    .select({ id: wallets.id, address: wallets.address, provider: wallets.provider })
     .from(wallets)
     .where(and(eq(wallets.userId, toUserId), eq(wallets.chain, 'base')))
     .limit(1)
@@ -230,58 +231,114 @@ export async function POST(request: NextRequest) {
       .set({ status: 'submitted', updatedAt: new Date() })
       .where(eq(transfers.id, transfer.id))
 
-    // Verify partner has HD seed and sender has a wallet index
-    if (!partner.encryptedHdSeed) {
-      throw new Error('Partner HD wallet seed not configured')
-    }
-    if (fromMapping.walletIndex == null) {
-      throw new Error('Sender has no HD wallet index assigned')
-    }
+    // Determine if sender wallet is CDP or HD-derived
+    const isCdpWallet = fromWallet.provider === 'coinbase_embedded'
+    let txHash: string
 
-    // Check sender has enough ETH for gas
-    const senderEthBalance = await provider.getBalance(fromWallet.address)
-    if (senderEthBalance === BigInt(0)) {
-      await db
-        .update(transfers)
-        .set({ status: 'failed', error: 'Sender wallet has no ETH for gas', updatedAt: new Date() })
-        .where(eq(transfers.id, transfer.id))
-      return NextResponse.json(
-        {
-          error: 'insufficient_gas',
-          message: 'Sender wallet has no ETH for gas fees',
-          details: {
-            walletAddress: fromWallet.address,
-            ethBalance: '0',
-            solution: 'Wallet needs to be funded with ETH for gas. Contact support for gas funding.'
-          }
-        },
-        { status: 400 }
-      )
-    }
+    if (isCdpWallet) {
+      // Use CDP signing for coinbase_embedded wallets
+      console.log('[v1/transfers] Using CDP signing for wallet:', fromWallet.address)
+      
+      // Get sender user email for CDP auth
+      const [senderUser] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, fromUserId))
+        .limit(1)
+      
+      if (!senderUser) {
+        throw new Error('Sender user not found')
+      }
 
-    // Sign and send the main transfer (recipient amount after fee)
-    const { txHash } = await signAndSendTransfer({
-      encryptedSeed: partner.encryptedHdSeed,
-      walletIndex: fromMapping.walletIndex,
-      contractAddress,
-      toAddress: toWallet.address,
-      amountWei: recipientAmountWei,
-      rpcUrl,
-    })
+      const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)'])
+      const cdpResult = await sendCdpTransaction(fromUserId, senderUser.email, {
+        destination: contractAddress,
+        data: iface.encodeFunctionData('transfer', [toWallet.address, recipientAmountWei]),
+      } as any)
+
+      if ('error' in cdpResult) {
+        throw new Error(cdpResult.error)
+      }
+      
+      txHash = cdpResult.txHash
+    } else {
+      // Use HD wallet signing for external wallets
+      if (!partner.encryptedHdSeed) {
+        throw new Error('Partner HD wallet seed not configured')
+      }
+      if (fromMapping.walletIndex == null) {
+        throw new Error('Sender has no HD wallet index assigned')
+      }
+
+      // Check sender has enough ETH for gas
+      const senderEthBalance = await provider.getBalance(fromWallet.address)
+      if (senderEthBalance === BigInt(0)) {
+        await db
+          .update(transfers)
+          .set({ status: 'failed', error: 'Sender wallet has no ETH for gas', updatedAt: new Date() })
+          .where(eq(transfers.id, transfer.id))
+        return NextResponse.json(
+          {
+            error: 'insufficient_gas',
+            message: 'Sender wallet has no ETH for gas fees',
+            details: {
+              walletAddress: fromWallet.address,
+              ethBalance: '0',
+              solution: 'Wallet needs to be funded with ETH for gas. Contact support for gas funding.'
+            }
+          },
+          { status: 400 }
+        )
+      }
+
+      // Sign and send the main transfer (recipient amount after fee)
+      const hdResult = await signAndSendTransfer({
+        encryptedSeed: partner.encryptedHdSeed,
+        walletIndex: fromMapping.walletIndex,
+        contractAddress,
+        toAddress: toWallet.address,
+        amountWei: recipientAmountWei,
+        rpcUrl,
+      })
+      
+      txHash = hdResult.txHash
+    }
 
     // If partner has a fee and a treasury wallet, send the fee split
     let feeTxHash: string | null = null
-    if (feeAmountTzs > 0 && treasuryWalletAddress && partnerRow?.encryptedHdSeed) {
+    if (feeAmountTzs > 0 && treasuryWalletAddress) {
       try {
-        const feeTransfer = await signAndSendTransfer({
-          encryptedSeed: partnerRow.encryptedHdSeed,
-          walletIndex: fromMapping.walletIndex,
-          contractAddress,
-          toAddress: treasuryWalletAddress,
-          amountWei: feeAmountWei,
-          rpcUrl,
-        })
-        feeTxHash = feeTransfer.txHash
+        if (isCdpWallet) {
+          // Use CDP for fee transfer
+          const [senderUser] = await db
+            .select({ email: users.email })
+            .from(users)
+            .where(eq(users.id, fromUserId))
+            .limit(1)
+          
+          if (senderUser) {
+            const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)'])
+            const cdpFeeResult = await sendCdpTransaction(fromUserId, senderUser.email, {
+              destination: contractAddress,
+              data: iface.encodeFunctionData('transfer', [treasuryWalletAddress, feeAmountWei]),
+            } as any)
+            
+            if ('txHash' in cdpFeeResult) {
+              feeTxHash = cdpFeeResult.txHash
+            }
+          }
+        } else if (partnerRow?.encryptedHdSeed && fromMapping.walletIndex != null) {
+          // Use HD wallet for fee transfer
+          const feeTransfer = await signAndSendTransfer({
+            encryptedSeed: partnerRow.encryptedHdSeed,
+            walletIndex: fromMapping.walletIndex,
+            contractAddress,
+            toAddress: treasuryWalletAddress,
+            amountWei: feeAmountWei,
+            rpcUrl,
+          })
+          feeTxHash = feeTransfer.txHash
+        }
       } catch (feeErr) {
         console.error('[v1/transfers] Fee split failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
       }
