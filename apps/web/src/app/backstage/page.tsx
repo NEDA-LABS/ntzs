@@ -382,7 +382,7 @@ export default async function BackstagePage() {
                           <select
                             name="role"
                             defaultValue={u.role}
-                            className="rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-sm text-white focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10"
+                            className="rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white hover:border-white/20 focus:border-white/20 focus:outline-none"
                           >
                             <option value="end_user">end_user</option>
                             <option value="bank_admin">bank_admin</option>

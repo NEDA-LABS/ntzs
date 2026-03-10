@@ -1,7 +1,10 @@
+'use client'
+
 import Image from 'next/image'
 import Link from 'next/link'
 
 import LandingSections from './LandingSections'
+import { CodeRevealText } from '@/components/CodeRevealText'
 
 export default function MasterLandingPage() {
   return (
@@ -22,20 +25,57 @@ export default function MasterLandingPage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center_top,rgba(59,130,246,0.2),transparent_55%)]" />
 
         <div className="relative z-10 flex min-h-screen flex-col">
-          <header className="flex items-center justify-between px-6 py-6 lg:px-12">
+          <header className="pointer-events-auto relative z-50 flex items-center justify-between px-6 py-6 lg:px-12">
             <div className="flex items-center gap-3">
               <Image src="/ntzs-logo.png" alt="nTZS" width={40} height={40} className="rounded-xl" />
               <span className="text-lg font-bold tracking-tight">nTZS</span>
             </div>
+            
+            <nav className="hidden md:flex items-center gap-6 text-sm text-white/70">
+              <button
+                onClick={() => {
+                  const section = document.getElementById('about-section')
+                  section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                className="hover:text-white transition-colors"
+              >
+                About
+              </button>
+              <button
+                onClick={() => {
+                  const section = document.getElementById('wallet-section')
+                  section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                className="hover:text-white transition-colors"
+              >
+                Wallet
+              </button>
+              <button
+                onClick={() => {
+                  const section = document.getElementById('developers-section')
+                  section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                className="hover:text-white transition-colors"
+              >
+                Developers
+              </button>
+              <Link
+                href="/app"
+                className="rounded-full border border-white/20 bg-white/10 px-5 py-2 font-medium backdrop-blur-xl transition-colors hover:bg-white/20"
+              >
+                Launch App
+              </Link>
+            </nav>
+            
             <Link
               href="/app"
-              className="rounded-full border border-white/20 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur-xl transition-colors hover:bg-white/20"
+              className="md:hidden rounded-full border border-white/20 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur-xl transition-colors hover:bg-white/20"
             >
               Launch App
             </Link>
           </header>
 
-          <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <main className="pointer-events-auto flex flex-1 flex-col items-center justify-center px-6 text-center">
             <h1 className="max-w-4xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
               The Smart Payment Infrastructure
             </h1>
@@ -43,10 +83,10 @@ export default function MasterLandingPage() {
               for Africa&apos;s Digital Economy
             </h2>
 
-            <p className="mt-8 max-w-xl text-base leading-relaxed text-zinc-300 sm:text-lg">
-              Issue wallets. Move money, Build financial products.
+            <p className="mt-8 max-w-xl text-base leading-relaxed text-zinc-300 sm:text-lg font-mono">
+              <CodeRevealText text="Issue wallets. Move money, Build financial products." />
               <br />
-              Powered by nTZS.
+              <CodeRevealText text="Powered by nTZS." />
             </p>
 
             {/* CTA Buttons */}

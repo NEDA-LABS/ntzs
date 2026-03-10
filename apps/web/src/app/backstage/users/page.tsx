@@ -235,7 +235,7 @@ export default async function UsersPage() {
                         <select
                           name="role"
                           defaultValue={u.role}
-                          className="rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/20"
+                          className="rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white hover:border-white/20 focus:border-white/20 focus:outline-none"
                         >
                           <option value="end_user">End User</option>
                           <option value="bank_admin">Bank Admin</option>

@@ -16,14 +16,20 @@ function FadeIn({
   delay?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const isInView = useInView(ref, { once: true, margin: '-60px' })
+  const isInView = useInView(ref, { once: true, margin: '-100px', amount: 0.2 })
 
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 40 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-      transition={{ duration: 0.7, delay, ease: [0.25, 0.4, 0.25, 1] }}
+      initial={{ opacity: 0, y: 30, scale: 0.97 }}
+      animate={isInView ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 30, scale: 0.97 }}
+      transition={{ 
+        duration: 0.9, 
+        delay, 
+        ease: [0.25, 0.1, 0.25, 1],
+        opacity: { duration: 0.6 },
+        scale: { duration: 0.9, ease: [0.34, 1.56, 0.64, 1] }
+      }}
       className={className}
     >
       {children}
@@ -37,10 +43,11 @@ export default function LandingSections() {
       {/* ─────────────────────────────────────────────────── */}
       {/* SECTION 1: ABOUT                                    */}
       {/* ─────────────────────────────────────────────────── */}
-      <ScrollExpandSection
-        videoSrc="/ntzs_demo.mp4"
-        overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
-      >
+      <div id="about-section">
+        <ScrollExpandSection
+          videoSrc="/ntzs_demo.mp4"
+          overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
+        >
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div>
@@ -73,16 +80,18 @@ export default function LandingSections() {
             <div className="hidden md:block" />
           </div>
         </div>
-      </ScrollExpandSection>
+        </ScrollExpandSection>
+      </div>
 
       {/* ─────────────────────────────────────────────────── */}
       {/* SECTION 2: WALLET                                   */}
       {/* ─────────────────────────────────────────────────── */}
-      <ScrollExpandSection
-        videoSrc="/Video_For_Wallet_Service.mp4"
-        videoEndTime={6}
-        overlayClassName="bg-gradient-to-t from-black/90 via-black/50 to-black/70"
-      >
+      <div id="wallet-section">
+        <ScrollExpandSection
+          videoSrc="/Video_For_Wallet_Service.mp4"
+          videoEndTime={6}
+          overlayClassName="bg-gradient-to-t from-black/90 via-black/50 to-black/70"
+        >
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <FadeIn className="order-2 md:order-1">
@@ -124,7 +133,7 @@ export default function LandingSections() {
               </div>
               <div className="mt-8">
                 <Link
-                  href="/app/user/wallet"
+                  href="/smart-wallets"
                   className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm font-medium text-white transition-all hover:bg-blue-700"
                 >
                   Open your wallet
@@ -136,15 +145,17 @@ export default function LandingSections() {
             </FadeIn>
           </div>
         </div>
-      </ScrollExpandSection>
+        </ScrollExpandSection>
+      </div>
 
       {/* ─────────────────────────────────────────────────── */}
       {/* SECTION 3: DEVELOPERS / DOCS                        */}
       {/* ─────────────────────────────────────────────────── */}
-      <ScrollExpandSection
-        videoSrc="/Stablecoin_Image_To_Video_Generation.mp4"
-        overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
-      >
+      <div id="developers-section">
+        <ScrollExpandSection
+          videoSrc="/Stablecoin_Image_To_Video_Generation.mp4"
+          overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
+        >
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <FadeIn>
@@ -227,15 +238,17 @@ export default function LandingSections() {
             </FadeIn>
           </div>
         </div>
-      </ScrollExpandSection>
+        </ScrollExpandSection>
+      </div>
 
       {/* ─────────────────────────────────────────────────── */}
       {/* SECTION 4: APP / DASHBOARD                          */}
       {/* ─────────────────────────────────────────────────── */}
-      <ScrollExpandSection
-        videoSrc="/BG.mp4"
-        overlayClassName="bg-gradient-to-t from-black/90 via-black/40 to-black/60"
-      >
+      <div id="app-section">
+        <ScrollExpandSection
+          videoSrc="/BG.mp4"
+          overlayClassName="bg-gradient-to-t from-black/90 via-black/40 to-black/60"
+        >
         <div className="mx-auto w-full max-w-4xl px-6 text-center lg:px-12">
           <FadeIn>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-zinc-400 backdrop-blur-xl">
@@ -271,7 +284,8 @@ export default function LandingSections() {
             </div>
           </FadeIn>
         </div>
-      </ScrollExpandSection>
+        </ScrollExpandSection>
+      </div>
     </div>
   )
 }

@@ -23,7 +23,7 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[#0a0a0f]">
       {/* Collapsible Sidebar */}
       <MobileSidebar wallet={wallet ?? null} />
 

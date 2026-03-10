@@ -48,75 +48,82 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
   return (
     <>
       {/* ── Desktop sidebar (lg+) ─────────────────────────────────────── */}
-      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-64 lg:flex-col border-r border-white/10 bg-black/70 backdrop-blur-xl">
+      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-64 lg:flex-col border-r border-white/[0.06] bg-[#0c0c12]">
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-6">
+        <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-5">
           <Link href="/app/user" prefetch className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
-              <img src="/ntzs-logo.png" alt="nTZS" className="h-6 w-6 object-contain" />
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white/[0.06] ring-1 ring-white/10">
+              <img src="/ntzs-logo.png" alt="nTZS" className="h-5 w-5 object-contain" />
             </div>
             <div>
-              <p className="font-semibold text-white">nTZS</p>
-              <p className="text-xs text-zinc-500">Digital Wallet</p>
+              <p className="text-sm font-semibold text-white">nTZS</p>
+              <p className="text-[11px] text-zinc-600">Digital Wallet</p>
             </div>
           </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto p-4 pb-28">
-          <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">Menu</p>
-          <div className="space-y-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-75 active:scale-[0.98] ${
-                  isActive(item.href, item.href === '/app/user')
-                    ? 'bg-white/10 text-white'
-                    : 'text-zinc-300 hover:bg-white/[0.06] hover:text-white'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                {item.label}
-              </Link>
-            ))}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 pb-28">
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Menu</p>
+          <div className="space-y-0.5">
+            {navItems.map((item) => {
+              const active = isActive(item.href, item.href === '/app/user')
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  prefetch
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-100 active:scale-[0.98] ${
+                    active
+                      ? 'bg-white/[0.08] text-white'
+                      : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`}
+                >
+                  <item.icon className={`h-4.5 w-4.5 ${active ? 'text-white' : 'text-zinc-500'}`} />
+                  {item.label}
+                  {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
+                </Link>
+              )
+            })}
           </div>
 
-          <p className="mb-3 mt-6 px-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">Rewards</p>
-          <div className="space-y-1">
-            {rewardItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-75 active:scale-[0.98] ${
-                  isActive(item.href)
-                    ? 'bg-white/10 text-white'
-                    : 'text-zinc-300 hover:bg-white/[0.06] hover:text-white'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                {item.label}
-                {item.badge && (
-                  <span className="ml-auto rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/20">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            ))}
+          <p className="mb-2 mt-6 px-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Rewards</p>
+          <div className="space-y-0.5">
+            {rewardItems.map((item) => {
+              const active = isActive(item.href)
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  prefetch
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-100 active:scale-[0.98] ${
+                    active
+                      ? 'bg-white/[0.08] text-white'
+                      : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`}
+                >
+                  <item.icon className={`h-4.5 w-4.5 ${active ? 'text-white' : 'text-zinc-500'}`} />
+                  {item.label}
+                  {item.badge && (
+                    <span className="ml-auto rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
           </div>
         </nav>
 
         {/* Wallet Status */}
-        <div className="border-t border-white/10 p-4">
-          <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
+        <div className="border-t border-white/[0.06] p-3">
+          <div className="rounded-xl bg-white/[0.04] px-4 py-3 ring-1 ring-white/[0.06]">
             <div className="flex items-center gap-3">
-              <div className={`h-2.5 w-2.5 rounded-full ${wallet ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              <div>
-                <p className="text-sm font-medium text-white">{wallet ? 'Wallet Active' : 'Setup Required'}</p>
-                <p className="text-xs text-zinc-500">
-                  {wallet ? `${wallet.address.slice(0, 8)}...${wallet.address.slice(-6)}` : 'Create your wallet'}
+              <div className={`h-2 w-2 rounded-full ${wallet ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-amber-400'}`} />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-white">{wallet ? 'Wallet Active' : 'Setup Required'}</p>
+                <p className="truncate text-[10px] text-zinc-600 font-mono">
+                  {wallet ? `${wallet.address.slice(0, 10)}...${wallet.address.slice(-6)}` : 'Create your wallet'}
                 </p>
               </div>
             </div>

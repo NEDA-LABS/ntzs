@@ -321,7 +321,7 @@ export default async function BurnsPage() {
           <form action={createBurnRequestAction} className="mt-4 grid gap-4 md:grid-cols-4">
             <div className="md:col-span-2">
               <label className="text-sm font-medium text-zinc-300">User</label>
-              <select name="userId" className="mt-2 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white">
+              <select name="userId" className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white hover:border-white/20 focus:border-white/20 focus:outline-none">
                 <option value="">Select user…</option>
                 {allUsers.map((u) => (
                   <option key={u.id} value={u.id}>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { ethers } from 'ethers'
+import { CustomSelect } from '@/components/CustomSelect'
 
 type Action =
   | 'pause'
@@ -172,19 +173,20 @@ export function NtzsAdminPanel({
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-zinc-300">Select Action</label>
-              <select
+              <CustomSelect
                 value={action}
-                onChange={(e) => setAction(e.target.value as Action)}
-                className="mt-2 w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10"
-              >
-                <option value="pause">⏸ Pause Contract</option>
-                <option value="unpause">▶ Unpause Contract</option>
-                <option value="freeze">❄️ Freeze Account</option>
-                <option value="unfreeze">🔓 Unfreeze Account</option>
-                <option value="blacklist">⛔ Blacklist Account</option>
-                <option value="unblacklist">✅ Remove from Blacklist</option>
-                <option value="wipeBlacklisted">🗑 Wipe Blacklisted Balance</option>
-              </select>
+                onChange={(val) => setAction(val as Action)}
+                className="mt-2"
+                items={[
+                  { value: 'pause', label: 'Pause Contract' },
+                  { value: 'unpause', label: 'Unpause Contract' },
+                  { value: 'freeze', label: 'Freeze Account' },
+                  { value: 'unfreeze', label: 'Unfreeze Account' },
+                  { value: 'blacklist', label: 'Blacklist Account' },
+                  { value: 'unblacklist', label: 'Remove from Blacklist' },
+                  { value: 'wipeBlacklisted', label: 'Wipe Blacklisted Balance' },
+                ]}
+              />
             </div>
 
             {(action === 'freeze' ||

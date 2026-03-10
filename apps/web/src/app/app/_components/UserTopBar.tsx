@@ -22,13 +22,13 @@ export function UserTopBar() {
   const showBack = pathname !== '/app/user'
 
   return (
-    <div className="sticky top-0 z-30 border-b border-white/10 bg-black/40 backdrop-blur-xl">
-      <div className="flex h-14 items-center justify-between px-6">
+    <div className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#0a0a0f]/90 backdrop-blur-xl">
+      <div className="flex h-14 items-center justify-between px-5">
         <div className="flex items-center gap-3">
           {showBack ? (
             <Link
               href="/app/user"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08] hover:text-white"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-white"
             >
               <IconChevronLeft className="h-4 w-4" />
             </Link>
@@ -36,10 +36,10 @@ export function UserTopBar() {
           <div className="text-sm font-semibold text-white">{title}</div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Link
             href="/account/settings"
-            className="hidden rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/80 hover:bg-white/[0.08] md:inline-flex"
+            className="hidden rounded-lg border border-white/[0.08] bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-white md:inline-flex"
           >
             Account
           </Link>

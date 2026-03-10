@@ -36,13 +36,13 @@ export default function ScrollExpandSection({
     offset: ['start start', 'end end'],
   })
 
-  // Card starts small (40%) with heavy rounding, expands to full screen
-  const width = useTransform(scrollYProgress, [0, 0.5], ['40%', '100%'])
-  const height = useTransform(scrollYProgress, [0, 0.5], ['50vh', '100vh'])
-  const borderRadius = useTransform(scrollYProgress, [0, 0.5], ['28px', '0px'])
-  const scale = useTransform(scrollYProgress, [0, 0.5], [0.9, 1])
-  // Content fades in after the card has expanded
-  const contentOpacity = useTransform(scrollYProgress, [0.4, 0.7], [0, 1])
+  // Card starts small (40%) with heavy rounding, expands to full screen with smooth easing
+  const width = useTransform(scrollYProgress, [0, 0.6], ['40%', '100%'])
+  const height = useTransform(scrollYProgress, [0, 0.6], ['50vh', '100vh'])
+  const borderRadius = useTransform(scrollYProgress, [0, 0.55], ['28px', '0px'])
+  const scale = useTransform(scrollYProgress, [0, 0.6], [0.92, 1])
+  // Content fades in smoothly after the card has expanded
+  const contentOpacity = useTransform(scrollYProgress, [0.5, 0.85], [0, 1])
 
   return (
     <div ref={containerRef} className="relative" style={{ height: '250vh' }}>
@@ -50,6 +50,12 @@ export default function ScrollExpandSection({
         <motion.div
           style={{ width, height, borderRadius, scale }}
           className="relative overflow-hidden"
+          transition={{
+            type: 'spring',
+            stiffness: 80,
+            damping: 20,
+            mass: 0.8
+          }}
         >
           {/* Video background */}
           <video
@@ -70,6 +76,12 @@ export default function ScrollExpandSection({
           <motion.div
             style={{ opacity: contentOpacity }}
             className="relative z-10 flex h-full items-center"
+            transition={{
+              type: 'spring',
+              stiffness: 60,
+              damping: 25,
+              mass: 0.5
+            }}
           >
             {children}
           </motion.div>

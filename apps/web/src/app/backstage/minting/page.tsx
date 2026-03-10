@@ -876,7 +876,7 @@ export default async function MintingPage() {
                     <select
                       name="entryType"
                       required
-                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white border border-zinc-700 focus:border-amber-500/50 outline-none"
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white hover:border-white/20 focus:border-white/20 focus:outline-none"
                     >
                       <option value="double_mint">Double Mint</option>
                       <option value="test_mint">Test Mint</option>
