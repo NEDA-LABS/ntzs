@@ -44,9 +44,9 @@ export default async function WalletPage() {
         <Link
           href="/app/user/withdraw"
           prefetch
-          className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white backdrop-blur-xl transition-all duration-75 hover:bg-white/[0.08] active:scale-[0.98]"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-rose-500/20 p-4 text-sm font-semibold text-amber-50 backdrop-blur-xl transition-all duration-75 hover:from-amber-500/30 hover:via-orange-500/20 hover:to-rose-500/25 active:scale-[0.98]"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-4 w-4 text-amber-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
           Withdraw
