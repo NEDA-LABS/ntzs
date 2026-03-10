@@ -141,20 +141,13 @@ export async function POST(request: NextRequest) {
       .where(eq(users.neonAuthUserId, neonAuthUserId))
       .limit(1)
 
-    const resolved = byAuthId ?? await db
-      .select({ id: users.id, email: users.email, name: users.name, phone: users.phone })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1)
-      .then(rows => rows[0])
-
-    if (!resolved) {
-      return NextResponse.json({ error: 'Failed to create or resolve user' }, { status: 500 })
+    if (!byAuthId) {
+      return NextResponse.json({ error: 'Failed to create or resolve partner-scoped user' }, { status: 500 })
     }
-    userId = resolved.id
-    userEmail = resolved.email
-    userName = resolved.name
-    userPhone = resolved.phone
+    userId = byAuthId.id
+    userEmail = byAuthId.email
+    userName = byAuthId.name
+    userPhone = byAuthId.phone
   }
 
   // ── Ensure partner has HD seed ──────────────────────────────────────────────

@@ -116,7 +116,6 @@ export const users = pgTable(
   },
   (t) => ({
     neonAuthUserIdUq: uniqueIndex('users_neon_auth_user_id_uq').on(t.neonAuthUserId),
-    emailUq: uniqueIndex('users_email_uq').on(t.email),
     payAliasUq: uniqueIndex('users_pay_alias_uq').on(t.payAlias),
     bankIdx: index('users_bank_id_idx').on(t.bankId),
     roleIdx: index('users_role_idx').on(t.role),

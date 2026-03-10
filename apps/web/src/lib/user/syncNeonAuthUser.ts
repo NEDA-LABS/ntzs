@@ -57,9 +57,12 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
   // Fallback: if the user already exists by email, attach neon auth id.
   // (This handles edge cases where you imported users before enabling Neon Auth.)
   if (userEmailNormalized) {
-    const byEmail = await db.query.users.findFirst({
+    const byEmailMatches = await db.query.users.findMany({
       where: eq(users.email, userEmailNormalized),
+      limit: 2,
     })
+
+    const byEmail = byEmailMatches.length === 1 ? byEmailMatches[0] : null
 
     if (byEmail) {
       const setData: Partial<typeof users.$inferInsert> = {
@@ -122,9 +125,12 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
   }
 
   if (userEmailNormalized) {
-    const byEmailAfter = await db.query.users.findFirst({
+    const byEmailAfterMatches = await db.query.users.findMany({
       where: eq(users.email, userEmailNormalized),
+      limit: 2,
     })
+
+    const byEmailAfter = byEmailAfterMatches.length === 1 ? byEmailAfterMatches[0] : null
 
     if (byEmailAfter) {
       const setData: Partial<typeof users.$inferInsert> = {

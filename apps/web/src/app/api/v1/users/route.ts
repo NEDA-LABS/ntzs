@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
   // Create new user
   // Use a generated neonAuthUserId placeholder for WaaS-created users
   const neonAuthUserId = `waas_${partner.id}_${externalId}`
-
+  
   const [newUser] = await db
     .insert(users)
     .values({
@@ -104,7 +104,6 @@ export async function POST(request: NextRequest) {
     .onConflictDoNothing()
     .returning({ id: users.id, email: users.email, name: users.name, phone: users.phone })
 
-  // If user already exists by email, find them
   let userId: string
   let userEmail: string
   let userName: string | null
@@ -116,27 +115,19 @@ export async function POST(request: NextRequest) {
     userName = newUser.name
     userPhone = newUser.phone
   } else {
-    // Conflict may be on neonAuthUserId or email — try both
     const [existingUser] = await db
       .select({ id: users.id, email: users.email, name: users.name, phone: users.phone })
       .from(users)
       .where(eq(users.neonAuthUserId, neonAuthUserId))
       .limit(1)
 
-    const resolved = existingUser ?? await db
-      .select({ id: users.id, email: users.email, name: users.name, phone: users.phone })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1)
-      .then(rows => rows[0])
-
-    if (!resolved) {
-      return NextResponse.json({ error: 'Failed to create or resolve user' }, { status: 500 })
+    if (!existingUser) {
+      return NextResponse.json({ error: 'Failed to create or resolve partner-scoped user' }, { status: 500 })
     }
-    userId = resolved.id
-    userEmail = resolved.email
-    userName = resolved.name
-    userPhone = resolved.phone
+    userId = existingUser.id
+    userEmail = existingUser.email
+    userName = existingUser.name
+    userPhone = existingUser.phone
   }
 
   // Ensure partner has an HD seed (auto-generate on first user creation)
