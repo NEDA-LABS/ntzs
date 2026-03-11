@@ -17,9 +17,8 @@ import {
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
-import { OfferCarousel } from '@/components/ui/offer-carousel'
+import { NewsCard } from '@/components/ui/news-card'
 import { getNews } from '@/lib/news/getNews'
-import { newsToOffers } from '@/lib/news/newsToOffers'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
@@ -133,17 +132,26 @@ export default async function UserDashboard() {
           )}
 
           {/* Market & News */}
-          <div className="mt-5">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-600">Market &amp; News</p>
-              <div className="flex items-center gap-2">
-                <a href="https://www.thecitizen.co.tz/tanzania/news/national" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">The Citizen</a>
-                <span className="text-zinc-700">·</span>
-                <a href="https://dse.co.tz/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">DSE</a>
+          {newsArticles.length > 0 && (
+            <div className="mt-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-widest text-zinc-600">Market &amp; News</p>
+                <div className="flex items-center gap-2">
+                  <a href="https://www.thecitizen.co.tz/tanzania/news/national" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">The Citizen</a>
+                  <span className="text-zinc-700">·</span>
+                  <a href="https://dse.co.tz/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">DSE</a>
+                </div>
+              </div>
+              <div
+                className="flex gap-3 overflow-x-auto pb-3"
+                style={{ scrollbarWidth: 'none' as const, WebkitOverflowScrolling: 'touch' }}
+              >
+                {newsArticles.map((article, i) => (
+                  <NewsCard key={`${article.source}-${i}`} article={article} />
+                ))}
               </div>
             </div>
-            <OfferCarousel offers={newsToOffers(newsArticles)} />
-          </div>
+          )}
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
