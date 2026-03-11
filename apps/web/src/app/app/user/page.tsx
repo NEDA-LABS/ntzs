@@ -9,13 +9,13 @@ import {
   IconChevronRight,
   IconPlus,
   IconReceipt,
-  IconSend,
   IconSparkles,
   IconUsers,
   IconWallet,
   IconWithdraw,
 } from '@/app/app/_components/icons'
 import { TokenBalance } from './_components/TokenBalance'
+import { DashboardActions } from './_components/DashboardActions'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
@@ -59,7 +59,7 @@ export default async function UserDashboard() {
       {/* ── Hero: Greeting + Balance ── */}
       <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-6 ring-1 ring-white/[0.06]">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
-        <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-orange-500/[0.06] blur-3xl" />
+        <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-blue-600/[0.07] blur-3xl" />
 
         <div className="relative flex items-start justify-between">
           <div>
@@ -69,10 +69,10 @@ export default async function UserDashboard() {
             </h1>
             <p className="mt-0.5 text-xs text-zinc-500">Here is a summary of your account</p>
           </div>
-          <div className="flex items-center gap-2 rounded-xl bg-orange-500/15 px-3 py-2 ring-1 ring-orange-500/20">
-            <IconWallet className="h-4 w-4 text-orange-400" />
+          <div className="flex items-center gap-2 rounded-xl bg-blue-600/15 px-3 py-2 ring-1 ring-blue-600/20">
+            <IconWallet className="h-4 w-4 text-blue-400" />
             <div className="text-right">
-              <p className="text-[10px] font-medium text-orange-400 uppercase tracking-wide">Balance</p>
+              <p className="text-[10px] font-medium text-blue-400 uppercase tracking-wide">Balance</p>
               {wallet ? (
                 <TokenBalance walletAddress={wallet.address} compact />
               ) : (
@@ -83,32 +83,8 @@ export default async function UserDashboard() {
         </div>
       </div>
 
-      {/* ── Action Buttons (WashikaDAU pill style) ── */}
-      <div className="mb-6 flex items-center gap-3">
-        <Link
-          href="/app/user/deposits/new"
-          prefetch
-          className="inline-flex items-center gap-2 rounded-full bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white transition-all duration-150 hover:bg-orange-400 active:scale-95"
-        >
-          <IconPlus className="h-4 w-4" />
-          Deposit
-        </Link>
-        <button
-          disabled
-          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-transparent px-5 py-2.5 text-sm font-medium text-white/40 cursor-not-allowed"
-        >
-          <IconSend className="h-4 w-4" />
-          Send
-        </button>
-        <Link
-          href="/app/user/wallet"
-          prefetch
-          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-transparent px-5 py-2.5 text-sm font-medium text-zinc-300 transition-all duration-150 hover:border-white/30 hover:text-white active:scale-95"
-        >
-          <IconWallet className="h-4 w-4" />
-          Pay Me
-        </Link>
-      </div>
+      {/* ── Action Buttons ── */}
+      <DashboardActions />
 
       {/* ── Main Two-Column Grid ── */}
       <div className="grid gap-5 lg:grid-cols-5">
@@ -121,7 +97,7 @@ export default async function UserDashboard() {
               <Link
                 href="/app/user/activity"
                 prefetch
-                className="inline-flex items-center gap-1 text-xs font-medium text-orange-400 hover:text-orange-300 transition-colors"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors"
               >
                 View all
                 <IconChevronRight className="h-3.5 w-3.5" />
@@ -259,7 +235,7 @@ export default async function UserDashboard() {
           {wallet && (
             <div className="rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
               <div className="flex items-center gap-2 mb-3">
-                <IconWallet className="h-4 w-4 text-orange-400" />
+                <IconWallet className="h-4 w-4 text-blue-400" />
                 <p className="text-xs font-semibold text-white">Wallet</p>
                 <span className="ml-auto text-[10px] text-zinc-600">Base network</span>
               </div>
