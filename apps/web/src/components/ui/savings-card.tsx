@@ -198,7 +198,7 @@ export function SavingsCard({ product, position, className }: SavingsCardProps) 
                 <a
                   href="/app/user/savings/deposit"
                   onClick={(e) => e.stopPropagation()}
-                  className="block w-full rounded-2xl bg-violet-600 py-3.5 text-center text-sm font-semibold text-white transition-colors hover:bg-violet-500 active:bg-violet-700"
+                  className="block w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-3.5 text-center text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 hover:shadow-blue-500/40 active:scale-[0.98]"
                 >
                   {hasFunds ? "Add Funds" : "Start Saving"}
                 </a>
