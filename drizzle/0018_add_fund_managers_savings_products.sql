@@ -40,13 +40,13 @@ CREATE TABLE "savings_products" (
 CREATE INDEX "savings_products_fund_manager_id_idx" ON "savings_products" ("fund_manager_id");
 CREATE INDEX "savings_products_status_idx"           ON "savings_products" ("status");
 
--- 4. Seed: Justin's fund manager + first product (Flexible Savings 10% p.a.)
+-- 4. Seed: primary fund manager + first product (Flexible Savings 10% p.a.)
 DO $$
 DECLARE
   v_manager_id uuid;
 BEGIN
   INSERT INTO "fund_managers" ("name", "notes")
-  VALUES ('Justin — Licensed Fund Manager', 'Investment/fund management agreement. 100B+ TZS AUM. Open-ended structure per legal advice.')
+  VALUES ('Primary Fund Manager', 'Investment/fund management agreement. Open-ended structure. Details held in legal agreement.')
   RETURNING id INTO v_manager_id;
 
   INSERT INTO "savings_products" ("fund_manager_id", "name", "description", "annual_rate_bps", "lock_days", "min_deposit_tzs")
