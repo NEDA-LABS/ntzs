@@ -82,8 +82,8 @@ export default async function StakePage() {
             </p>
           </div>
 
-          {/* Animated savings card — hero */}
-          <div className="flex justify-center pb-10">
+          {/* Animated savings card — hero, sticky on scroll */}
+          <div className="sticky top-14 z-20 bg-[#0d0d14] pb-4 pt-1 lg:top-0">
             <SavingsCard
               product={product}
               position={serialisedPosition}
