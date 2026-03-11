@@ -17,8 +17,9 @@ import {
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
-import { NewsFeed } from '@/components/ui/news-feed'
+import { OfferCarousel } from '@/components/ui/offer-carousel'
 import { getNews } from '@/lib/news/getNews'
+import { newsToOffers } from '@/lib/news/newsToOffers'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
@@ -131,8 +132,18 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* News Feed */}
-          <NewsFeed articles={newsArticles} />
+          {/* Market & News */}
+          <div className="mt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-600">Market &amp; News</p>
+              <div className="flex items-center gap-2">
+                <a href="https://www.thecitizen.co.tz/tanzania/news/national" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">The Citizen</a>
+                <span className="text-zinc-700">·</span>
+                <a href="https://dse.co.tz/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">DSE</a>
+              </div>
+            </div>
+            <OfferCarousel offers={newsToOffers(newsArticles)} />
+          </div>
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
