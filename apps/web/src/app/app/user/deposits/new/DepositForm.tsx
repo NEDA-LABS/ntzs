@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
@@ -62,6 +62,18 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   const [amount, setAmount] = useState<string>('')
   const [showPhoneModal, setShowPhoneModal] = useState(false)
   const [modalPhone, setModalPhone] = useState(userPhone || '')
+  const [rememberPhone, setRememberPhone] = useState(true)
+  const [isSavedNumber, setIsSavedNumber] = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ntzs_saved_phone')
+      if (saved) {
+        if (!userPhone) setModalPhone(saved)
+        setIsSavedNumber(true)
+      }
+    } catch {}
+  }, [userPhone])
 
   const quickAdd = (delta: number) => {
     const base = Number(amount || '0')
@@ -71,7 +83,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
   if (submitted) {
     return (
-      <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+      <div className="overflow-hidden rounded-2xl bg-[#12121e] p-8 ring-1 ring-white/[0.06]">
         <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.15),transparent_50%)]" />
         
         <div className="text-center">
@@ -98,7 +110,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
           <div className="mt-8 flex flex-col gap-3">
             <Link
               href="/app/user"
-              className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-violet-500/40"
+              className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
             >
               Go to Dashboard
             </Link>
@@ -119,7 +131,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
   if (!defaultBankId) {
     return (
-      <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
+      <div className="overflow-hidden rounded-2xl bg-[#12121e] p-6 ring-1 ring-white/[0.06]">
         <div className="py-12 text-center">
           <p className="text-sm text-zinc-400">System not configured yet.</p>
           <p className="mt-1 text-xs text-zinc-600">Please contact support.</p>
@@ -129,11 +141,10 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   }
 
   return (
-    <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
-      <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_20%_0%,rgba(121,40,202,0.16),transparent_55%),radial-gradient(circle_at_80%_100%,rgba(0,112,243,0.10),transparent_55%)]" />
+    <div className="overflow-hidden rounded-2xl bg-[#12121e] p-6 ring-1 ring-white/[0.06]">
 
       {/* Amount input — shared between methods */}
-      <div className="mb-5 rounded-2xl border border-white/10 bg-black/30 p-5">
+      <div className="mb-5 rounded-2xl border border-white/[0.06] bg-black/40 p-5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">TZS</span>
         </div>
@@ -168,16 +179,16 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             onClick={() => setMethod('mobile')}
             className={`flex items-center gap-3 rounded-2xl border px-4 py-4 text-left text-sm transition-colors ${
               method === 'mobile'
-                ? 'border-violet-500/40 bg-violet-500/10 text-white'
-                : 'border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.06]'
+                ? 'border-blue-500/40 bg-blue-600/10 text-white'
+                : 'border-white/[0.06] bg-white/[0.03] text-white/70 hover:bg-white/[0.06]'
             }`}
           >
-            <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${method === 'mobile' ? 'bg-violet-500/20' : 'bg-white/[0.06]'}`}>
-              <IconPhone className={`h-5 w-5 ${method === 'mobile' ? 'text-violet-300' : 'text-white/50'}`} />
+            <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${method === 'mobile' ? 'bg-blue-600/20' : 'bg-white/[0.06]'}`}>
+              <IconPhone className={`h-5 w-5 ${method === 'mobile' ? 'text-blue-300' : 'text-white/50'}`} />
             </span>
             <span>
               <span className="block font-semibold">{ACTIVE_PSP_NAME}</span>
-              <span className={`block text-xs ${method === 'mobile' ? 'text-violet-300/70' : 'text-white/40'}`}>{ACTIVE_PSP_METHOD_LABEL}</span>
+              <span className={`block text-xs ${method === 'mobile' ? 'text-blue-300/70' : 'text-white/40'}`}>{ACTIVE_PSP_METHOD_LABEL}</span>
             </span>
           </button>
 
@@ -187,16 +198,16 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             onClick={() => setMethod('card')}
             className={`flex items-center gap-3 rounded-2xl border px-4 py-4 text-left text-sm transition-colors ${
               method === 'card'
-                ? 'border-violet-500/40 bg-violet-500/10 text-white'
-                : 'border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.06]'
+                ? 'border-blue-500/40 bg-blue-600/10 text-white'
+                : 'border-white/[0.06] bg-white/[0.03] text-white/70 hover:bg-white/[0.06]'
             }`}
           >
-            <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${method === 'card' ? 'bg-violet-500/20' : 'bg-white/[0.06]'}`}>
-              <IconCard className={`h-5 w-5 ${method === 'card' ? 'text-violet-300' : 'text-white/50'}`} />
+            <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${method === 'card' ? 'bg-blue-600/20' : 'bg-white/[0.06]'}`}>
+              <IconCard className={`h-5 w-5 ${method === 'card' ? 'text-blue-300' : 'text-white/50'}`} />
             </span>
             <span>
               <span className="block font-semibold">Card</span>
-              <span className={`block text-xs ${method === 'card' ? 'text-violet-300/70' : 'text-white/40'}`}>Visa / Mastercard</span>
+              <span className={`block text-xs ${method === 'card' ? 'text-blue-300/70' : 'text-white/40'}`}>Visa / Mastercard</span>
             </span>
           </button>
         </div>
@@ -223,9 +234,9 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             {amount ? `Deposit ${Number(amount).toLocaleString()} TZS` : 'Deposit'}
           </button>
 
-          <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400" />
-            <p className="text-sm text-zinc-400">
+          <div className="flex items-start gap-2 rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4">
+            <IconInfo className="mt-0.5 h-4 w-4 text-zinc-500" />
+            <p className="text-sm text-zinc-500">
               Next step: confirm and enter the phone number to receive the payment prompt.
             </p>
           </div>
@@ -282,9 +293,9 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             )}
           </button>
 
-          <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400" />
-            <p className="text-sm text-zinc-400">
+          <div className="flex items-start gap-2 rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4">
+            <IconInfo className="mt-0.5 h-4 w-4 text-zinc-500" />
+            <p className="text-sm text-zinc-500">
               You'll be redirected to a secure card checkout. Accepted: Visa, Mastercard. Your nTZS will be minted automatically after payment.
             </p>
           </div>
@@ -293,13 +304,13 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
       {/* Phone modal */}
       {showPhoneModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPhoneModal(false)} />
-          <div className="relative z-10 w-full max-w-md rounded-t-3xl border border-white/10 bg-[#0b0b10] p-5 sm:rounded-2xl sm:p-6">
-            <div className="mb-4 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPhoneModal(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl bg-[#12121e] p-6 ring-1 ring-white/[0.08]">
+            <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-semibold text-white">Confirm deposit</h3>
-                <p className="text-xs text-zinc-500">Mobile Money • {amount ? `${Number(amount).toLocaleString()} TZS` : ''}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">Mobile Money · {amount ? `${Number(amount).toLocaleString()} TZS` : ''}</p>
               </div>
               <button
                 type="button"
@@ -318,6 +329,11 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 try {
                   const amt = Number(amount)
                   if (amt > 0) sessionStorage.setItem('deposit_success', JSON.stringify({ amount: amt }))
+                  if (rememberPhone && modalPhone) {
+                    localStorage.setItem('ntzs_saved_phone', modalPhone)
+                  } else if (!rememberPhone) {
+                    localStorage.removeItem('ntzs_saved_phone')
+                  }
                 } catch {}
               }}
               action={async (formData: FormData) => {
@@ -338,18 +354,48 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
               <input type="hidden" name="paymentMethod" value="mpesa" />
               <input type="hidden" name="amountTzs" value={amount} />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-400">Mobile Money Number</label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-zinc-300">Mobile Money Number</label>
+                  {isSavedNumber && (
+                    <span className="flex items-center gap-1 rounded-full bg-blue-600/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400 ring-1 ring-blue-600/20">
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Saved
+                    </span>
+                  )}
+                </div>
                 <input
                   name="buyerPhone"
                   type="tel"
                   required
                   value={modalPhone}
-                  onChange={(e) => setModalPhone(e.target.value)}
+                  onChange={(e) => {
+                    setModalPhone(e.target.value)
+                    setIsSavedNumber(false)
+                  }}
                   placeholder="07XXXXXXXX"
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-blue-500/50"
+                  inputMode="tel"
+                  autoFocus
+                  className="w-full rounded-xl border border-white/[0.08] bg-black/50 px-4 py-3.5 text-base text-white outline-none placeholder:text-zinc-600 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
                 />
-                <p className="text-xs text-zinc-500">Enter the number that will receive the payment prompt</p>
+                <p className="text-xs text-zinc-600">The number that will receive the M-Pesa prompt</p>
+
+                {/* Remember toggle */}
+                <label className="flex cursor-pointer items-center gap-2.5">
+                  <div
+                    onClick={() => setRememberPhone(p => !p)}
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${
+                      rememberPhone ? 'bg-blue-600' : 'bg-white/10'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
+                      rememberPhone ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </div>
+                  <span className="text-xs text-zinc-400">Remember this number for next time</span>
+                </label>
               </div>
 
               <SubmitButton label={amount ? `Confirm & Pay ${Number(amount).toLocaleString()} TZS` : 'Confirm & Pay'} disabled={!amount || Number(amount) <= 0} />

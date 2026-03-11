@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
+import { TokenBalance } from '../_components/TokenBalance'
 
 import { WalletInfoClient } from './WalletInfoClient'
 import { PayMeSection } from './PayMeSection'
@@ -25,37 +26,59 @@ export default async function WalletPage() {
     .slice(0, 30) || 'user'
 
   return (
-    <div className="px-4 py-5 lg:p-8">
-      <div className="mx-auto max-w-lg space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Your Wallet</h1>
-          <p className="mt-1 text-sm text-zinc-400">Receive nTZS on Base network</p>
+    <div className="min-h-screen bg-[#0d0d14] px-4 py-6 lg:p-8">
+      <div className="mx-auto max-w-lg space-y-5">
+
+        {/* Hero: identity + balance */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-6 ring-1 ring-white/[0.06]">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
+          <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-blue-600/[0.07] blur-3xl" />
+          <div className="relative flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Your wallet</p>
+              <h1 className="mt-1 text-xl font-bold text-white">
+                {dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email}
+              </h1>
+              <p className="mt-0.5 text-xs text-zinc-500">Base network · nTZS</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-xl bg-blue-600/15 px-3 py-2 ring-1 ring-blue-600/20">
+              <svg className="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18-3a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3m18 0V6" />
+              </svg>
+              <div className="text-right">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-blue-400">Balance</p>
+                <TokenBalance walletAddress={wallet.address} compact />
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Pay Me -- collection QR + link */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+        {/* Pay Me — QR + link */}
+        <div className="overflow-hidden rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
           <PayMeSection
             currentAlias={dbUser.payAlias ?? null}
             suggestedAlias={suggestedAlias}
           />
         </div>
 
+        {/* Wallet address */}
+        <div className="overflow-hidden rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-zinc-600">Wallet Details</p>
+          <WalletInfoClient address={wallet.address} />
+        </div>
+
         {/* Withdraw */}
         <Link
           href="/app/user/withdraw"
           prefetch
-          className="flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-rose-500/20 p-4 text-sm font-semibold text-amber-50 backdrop-blur-xl transition-all duration-75 hover:from-amber-500/30 hover:via-orange-500/20 hover:to-rose-500/25 active:scale-[0.98]"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-[#12121e] px-5 py-4 text-sm font-semibold text-white ring-1 ring-white/[0.06] transition-all duration-75 hover:bg-white/[0.04] active:scale-[0.98]"
         >
-          <svg className="h-4 w-4 text-amber-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
-          Withdraw
+          Withdraw TZS
         </Link>
 
-        {/* Wallet address + QR */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-          <WalletInfoClient address={wallet.address} />
-        </div>
       </div>
     </div>
   )
