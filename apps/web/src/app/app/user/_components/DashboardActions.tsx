@@ -11,9 +11,9 @@ export function DashboardActions() {
       <button
         type="button"
         onClick={() => router.push('/app/user/deposits/new')}
-        className="group flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-zinc-900 shadow-lg shadow-white/5 transition-all duration-150 hover:shadow-white/10 active:scale-[0.97]"
+        className="group flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 hover:shadow-blue-500/40 active:scale-[0.97]"
       >
-        <svg className="h-4 w-4 text-blue-600 transition-transform duration-150 group-hover:-translate-y-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <svg className="h-4 w-4 text-white/90 transition-transform duration-150 group-hover:-translate-y-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
         </svg>
         Deposit
