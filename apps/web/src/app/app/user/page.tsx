@@ -54,90 +54,74 @@ export default async function UserDashboard() {
   const pendingCount = recentDeposits.filter(d => !['minted', 'rejected', 'cancelled'].includes(d.status)).length
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] px-4 py-6 lg:p-8">
+    <div className="min-h-screen bg-[#0d0d14] px-4 py-6 lg:p-8">
 
-      {/* ── Balance Hero Card ── */}
-      <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-[#111827] via-[#0f172a] to-[#111827] p-6 ring-1 ring-white/[0.07]">
-        {/* subtle grid overlay */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:40px_40px]" />
-        {/* glow */}
-        <div className="pointer-events-none absolute -top-20 left-1/2 h-40 w-80 -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
+      {/* ── Hero: Greeting + Balance ── */}
+      <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-6 ring-1 ring-white/[0.06]">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
+        <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-orange-500/[0.06] blur-3xl" />
 
-        <div className="relative">
-          <p className="text-xs font-medium tracking-widest text-zinc-500 uppercase">Welcome back</p>
-          <h1 className="mt-1 text-lg font-semibold text-white">
-            {dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email}
-          </h1>
-
-          <div className="mt-5">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium text-zinc-500">Total Balance</span>
-              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-400 ring-1 ring-emerald-500/20">
-                nTZS
-              </span>
+        <div className="relative flex items-start justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Welcome back</p>
+            <h1 className="mt-1 text-xl font-bold text-white">
+              {dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email}
+            </h1>
+            <p className="mt-0.5 text-xs text-zinc-500">Here is a summary of your account</p>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl bg-orange-500/15 px-3 py-2 ring-1 ring-orange-500/20">
+            <IconWallet className="h-4 w-4 text-orange-400" />
+            <div className="text-right">
+              <p className="text-[10px] font-medium text-orange-400 uppercase tracking-wide">Balance</p>
+              {wallet ? (
+                <TokenBalance walletAddress={wallet.address} compact />
+              ) : (
+                <p className="text-sm font-bold text-white">0 TZS</p>
+              )}
             </div>
-            {wallet ? (
-              <TokenBalance walletAddress={wallet.address} />
-            ) : (
-              <>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-5xl font-bold tracking-tight text-white">0.00</span>
-                  <span className="text-xl font-light text-zinc-500">TZS</span>
-                </div>
-                <p className="mt-2 text-sm text-zinc-600">≈ $0.00 USD</p>
-              </>
-            )}
           </div>
         </div>
       </div>
 
-      {/* ── Quick Actions ── */}
-      <div className="mb-6 grid grid-cols-3 gap-3">
+      {/* ── Action Buttons (WashikaDAU pill style) ── */}
+      <div className="mb-6 flex items-center gap-3">
         <Link
           href="/app/user/deposits/new"
           prefetch
-          className="group flex flex-col items-center gap-2 rounded-2xl bg-white px-3 py-4 text-xs font-semibold text-black transition-all duration-150 hover:bg-zinc-100 active:scale-95"
+          className="inline-flex items-center gap-2 rounded-full bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white transition-all duration-150 hover:bg-orange-400 active:scale-95"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/8 transition-colors group-hover:bg-black/12">
-            <IconPlus className="h-5 w-5" />
-          </div>
+          <IconPlus className="h-4 w-4" />
           Deposit
         </Link>
-
         <button
           disabled
-          className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-4 text-xs font-medium text-white/40 cursor-not-allowed"
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-transparent px-5 py-2.5 text-sm font-medium text-white/40 cursor-not-allowed"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8">
-            <IconSend className="h-5 w-5" />
-          </div>
+          <IconSend className="h-4 w-4" />
           Send
         </button>
-
         <Link
           href="/app/user/wallet"
           prefetch
-          className="group flex flex-col items-center gap-2 rounded-2xl bg-blue-600 px-3 py-4 text-xs font-semibold text-white transition-all duration-150 hover:bg-blue-500 active:scale-95"
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-transparent px-5 py-2.5 text-sm font-medium text-zinc-300 transition-all duration-150 hover:border-white/30 hover:text-white active:scale-95"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 transition-colors group-hover:bg-white/25">
-            <IconWallet className="h-5 w-5" />
-          </div>
+          <IconWallet className="h-4 w-4" />
           Pay Me
         </Link>
       </div>
 
-      {/* ── Main Grid ── */}
-      <div className="grid gap-5 lg:grid-cols-3">
+      {/* ── Main Two-Column Grid ── */}
+      <div className="grid gap-5 lg:grid-cols-5">
 
-        {/* Left: Transactions */}
-        <div className="lg:col-span-2">
-          <div className="overflow-hidden rounded-2xl bg-[#111218] ring-1 ring-white/[0.07]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+        {/* Left col: Recent Transactions (3/5 width) */}
+        <div className="lg:col-span-3">
+          <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
               <h2 className="text-sm font-semibold text-white">Recent Transactions</h2>
               <Link
                 href="/app/user/activity"
                 prefetch
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors"
+                className="inline-flex items-center gap-1 text-xs font-medium text-orange-400 hover:text-orange-300 transition-colors"
               >
                 View all
                 <IconChevronRight className="h-3.5 w-3.5" />
@@ -177,15 +161,13 @@ export default async function UserDashboard() {
                       className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-white/[0.03]"
                     >
                       <div className="flex items-center gap-3.5">
-                        <div
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                            tx.type === 'deposit' ? 'bg-emerald-500/10' : 'bg-rose-500/10'
-                          }`}
-                        >
+                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                          tx.type === 'deposit' ? 'bg-emerald-500/12' : 'bg-rose-500/12'
+                        }`}>
                           {tx.type === 'deposit' ? (
-                            <IconPlus className="h-4.5 w-4.5 text-emerald-400" />
+                            <IconPlus className="h-4 w-4 text-emerald-400" />
                           ) : (
-                            <IconWithdraw className="h-4.5 w-4.5 text-rose-300" />
+                            <IconWithdraw className="h-4 w-4 text-rose-300" />
                           )}
                         </div>
                         <div>
@@ -211,92 +193,95 @@ export default async function UserDashboard() {
           </div>
         </div>
 
-        {/* Right: Cards */}
-        <div className="hidden lg:flex lg:flex-col lg:gap-4">
+        {/* Right col: Quick Links (2/5 width) */}
+        <div className="hidden lg:flex lg:col-span-2 lg:flex-col lg:gap-4">
 
-          {/* Wallet Card */}
-          <div className="rounded-2xl bg-[#111218] p-5 ring-1 ring-white/[0.07]">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/15">
-                <IconWallet className="h-5 w-5 text-blue-400" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-white">Wallet</p>
-                <p className="text-xs text-zinc-500">Base network</p>
-              </div>
+          {/* Quick Links card */}
+          <div className="rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06] overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/[0.05]">
+              <p className="text-sm font-semibold text-white">Quick Links</p>
             </div>
-            {wallet ? (
-              <Link
-                href="/app/user/wallet"
-                prefetch
-                className="mt-4 block rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.07]"
-              >
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">Address</p>
-                <p className="mt-1 truncate font-mono text-xs text-zinc-300">{wallet.address}</p>
-              </Link>
-            ) : null}
-          </div>
-
-          {/* Rewards Card */}
-          <div className="rounded-2xl bg-[#111218] p-5 ring-1 ring-white/[0.07]">
-            <p className="text-sm font-semibold text-white">Rewards</p>
-            <p className="mt-0.5 text-xs text-zinc-500">Earn more with nTZS</p>
-
-            <div className="mt-4 space-y-2">
-              <Link
-                href="/app/user/invite"
-                prefetch
-                className="flex items-center gap-3 rounded-xl bg-white/[0.04] p-3 transition-all hover:bg-white/[0.08] active:scale-[0.98]"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
-                  <IconUsers className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-white">Invite a friend</p>
-                  <p className="text-[11px] text-zinc-500">Earn 5,000 TZS bonus</p>
-                </div>
-                <IconChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-              </Link>
-
-              <Link
-                href="/app/user/stake"
-                prefetch
-                className="flex items-center gap-3 rounded-xl bg-white/[0.04] p-3 transition-all hover:bg-white/[0.08] active:scale-[0.98]"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15">
-                  <IconSparkles className="h-4 w-4 text-violet-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-white">Stake to Earn</p>
-                  <p className="text-[11px] text-zinc-500">Up to 8% APY</p>
-                </div>
-                <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
-                  NEW
-                </span>
-              </Link>
+            <div className="divide-y divide-white/[0.04]">
+              {[
+                {
+                  href: '/app/user/wallet',
+                  icon: IconWallet,
+                  label: 'My Wallet',
+                  sub: 'Balance and transaction history',
+                },
+                {
+                  href: '/app/user/deposits/new',
+                  icon: IconPlus,
+                  label: 'Deposit',
+                  sub: 'Add funds to your wallet',
+                },
+                {
+                  href: '/app/user/activity',
+                  icon: IconReceipt,
+                  label: 'Activity',
+                  sub: 'View all transactions',
+                },
+                {
+                  href: '/app/user/invite',
+                  icon: IconUsers,
+                  label: 'Invite a Friend',
+                  sub: 'Earn 5,000 TZS bonus',
+                },
+                {
+                  href: '/app/user/stake',
+                  icon: IconSparkles,
+                  label: 'Stake to Earn',
+                  sub: 'Up to 8% APY',
+                },
+              ].map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  prefetch
+                  className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-white/[0.04] group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.05]">
+                      <item.icon className="h-4 w-4 text-zinc-400 group-hover:text-orange-400 transition-colors" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-white">{item.label}</p>
+                      <p className="text-[11px] text-zinc-600">{item.sub}</p>
+                    </div>
+                  </div>
+                  <IconChevronRight className="h-3.5 w-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
+                </Link>
+              ))}
             </div>
           </div>
 
-          {/* Account Status Card */}
-          <div className="rounded-2xl bg-[#111218] p-5 ring-1 ring-white/[0.07]">
-            <p className="text-sm font-semibold text-white">Account Status</p>
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-500">Pending Deposits</span>
-                <span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-xs font-medium text-white">
-                  {pendingCount}
-                </span>
+          {/* Wallet address card */}
+          {wallet && (
+            <div className="rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
+              <div className="flex items-center gap-2 mb-3">
+                <IconWallet className="h-4 w-4 text-orange-400" />
+                <p className="text-xs font-semibold text-white">Wallet</p>
+                <span className="ml-auto text-[10px] text-zinc-600">Base network</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-500">Wallet</span>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">Address</p>
+              <p className="truncate font-mono text-xs text-zinc-400">{wallet.address}</p>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-xs text-zinc-600">Status</span>
                 <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
-                  <IconCheckCircle className="h-3.5 w-3.5" />
+                  <IconCheckCircle className="h-3 w-3" />
                   Active
                 </span>
               </div>
+              {pendingCount > 0 && (
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs text-zinc-600">Pending deposits</span>
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                    {pendingCount}
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-
+          )}
         </div>
       </div>
     </div>

@@ -48,7 +48,7 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
   return (
     <>
       {/* ── Desktop sidebar (lg+) ─────────────────────────────────────── */}
-      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-64 lg:flex-col border-r border-white/[0.06] bg-[#0c0c12]">
+      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-64 lg:flex-col border-r border-white/[0.05] bg-[#0c0c13]">
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-5">
           <Link href="/app/user" prefetch className="flex items-center gap-3">
@@ -73,15 +73,18 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
                   key={item.href}
                   href={item.href}
                   prefetch
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-100 active:scale-[0.98] ${
+                  className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-100 active:scale-[0.98] ${
                     active
-                      ? 'bg-white/[0.08] text-white'
+                      ? 'bg-orange-500/[0.12] text-white'
                       : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                   }`}
                 >
-                  <item.icon className={`h-4.5 w-4.5 ${active ? 'text-white' : 'text-zinc-500'}`} />
+                  {active && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-orange-500" />
+                  )}
+                  <item.icon className={`h-4 w-4 ${active ? 'text-orange-400' : 'text-zinc-500'}`} />
                   {item.label}
-                  {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
+                  {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-400" />}
                 </Link>
               )
             })}
@@ -96,16 +99,19 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
                   key={item.href}
                   href={item.href}
                   prefetch
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-100 active:scale-[0.98] ${
+                  className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-100 active:scale-[0.98] ${
                     active
-                      ? 'bg-white/[0.08] text-white'
+                      ? 'bg-orange-500/[0.12] text-white'
                       : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                   }`}
                 >
-                  <item.icon className={`h-4.5 w-4.5 ${active ? 'text-white' : 'text-zinc-500'}`} />
+                  {active && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-orange-500" />
+                  )}
+                  <item.icon className={`h-4 w-4 ${active ? 'text-orange-400' : 'text-zinc-500'}`} />
                   {item.label}
                   {item.badge && (
-                    <span className="ml-auto rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
+                    <span className="ml-auto rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-semibold text-orange-400 ring-1 ring-orange-500/20">
                       {item.badge}
                     </span>
                   )}
@@ -146,13 +152,13 @@ export function MobileSidebar({ wallet }: MobileSidebarProps) {
                   isDeposit
                     ? 'relative'
                     : active
-                    ? 'text-white'
+                    ? 'text-orange-400'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
                 {isDeposit ? (
                   <span className={`flex h-11 w-11 items-center justify-center rounded-2xl shadow-lg transition-colors ${
-                    active ? 'bg-white' : 'bg-violet-600 hover:bg-violet-500'
+                    active ? 'bg-orange-500' : 'bg-orange-600 hover:bg-orange-500'
                   }`}>
                     <tab.icon className={`h-5 w-5 ${active ? 'text-black' : 'text-white'}`} />
                   </span>

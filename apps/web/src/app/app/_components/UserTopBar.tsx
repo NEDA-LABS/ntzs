@@ -22,7 +22,7 @@ export function UserTopBar() {
   const showBack = pathname !== '/app/user'
 
   return (
-    <div className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#0a0a0f]/90 backdrop-blur-xl">
+    <div className="sticky top-0 z-30 border-b border-white/[0.05] bg-[#0d0d14]/95 backdrop-blur-xl">
       <div className="flex h-14 items-center justify-between px-5">
         <div className="flex items-center gap-3">
           {showBack ? (
