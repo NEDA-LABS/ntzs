@@ -17,15 +17,18 @@ import {
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
+import { NewsFeed } from '@/components/ui/news-feed'
+import { getNews } from '@/lib/news/getNews'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, recentDeposits, recentBurns] = await Promise.all([
+  const [wallet, recentDeposits, recentBurns, newsArticles] = await Promise.all([
     getCachedWallet(dbUser.id),
     getCachedRecentDeposits(dbUser.id, 5),
     getCachedRecentBurns(dbUser.id, 5),
+    getNews(),
   ])
 
   const recentTxns = [
@@ -127,6 +130,9 @@ export default async function UserDashboard() {
               })}
             />
           )}
+
+          {/* News Feed */}
+          <NewsFeed articles={newsArticles} />
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
