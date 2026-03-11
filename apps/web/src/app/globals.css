@@ -248,3 +248,12 @@ a:active {
     transform: translateY(0px);
   }
 }
+
+@keyframes shimmer2 {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: -200% 0%;
+  }
+}
