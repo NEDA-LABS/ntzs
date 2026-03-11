@@ -12,7 +12,7 @@ export function DashboardActions() {
       {/* Deposit */}
       <ShimmerButton
         onClick={() => router.push('/app/user/deposits/new')}
-        className="h-12 gap-2 rounded-3xl border-blue-600/20 bg-[linear-gradient(110deg,#2563eb,45%,#3b82f6,55%,#2563eb)] text-white hover:shadow-lg hover:shadow-blue-500/25"
+        className="h-12 gap-2 border-blue-600/20 bg-[linear-gradient(110deg,#2563eb,45%,#3b82f6,55%,#2563eb)] text-white hover:shadow-lg hover:shadow-blue-500/25"
       >
         <ArrowUp className="h-4 w-4" />
         Deposit
@@ -21,7 +21,7 @@ export function DashboardActions() {
       {/* Save */}
       <ShimmerButton
         onClick={() => router.push('/app/user/stake')}
-        className="h-12 gap-2 rounded-3xl"
+        className="h-12 gap-2"
       >
         <Wallet className="h-4 w-4 text-emerald-500" />
         Save
@@ -30,7 +30,7 @@ export function DashboardActions() {
       {/* Pay Me */}
       <ShimmerButton
         onClick={() => router.push('/app/user/wallet')}
-        className="h-12 gap-2 rounded-3xl border-blue-600/20 bg-[linear-gradient(110deg,#2563eb,45%,#3b82f6,55%,#2563eb)] text-white hover:shadow-lg hover:shadow-blue-500/25"
+        className="h-12 gap-2 border-blue-600/20 bg-[linear-gradient(110deg,#2563eb,45%,#3b82f6,55%,#2563eb)] text-white hover:shadow-lg hover:shadow-blue-500/25"
       >
         <Link2 className="h-4 w-4" />
         Pay Me
