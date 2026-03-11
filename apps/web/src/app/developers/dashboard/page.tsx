@@ -68,6 +68,9 @@ interface DashboardDeposit {
   amountTzs: number
   status: string
   pspReference: string | null
+  pspChannel: string | null
+  fiatConfirmedAt: string | null
+  mintedAt: string | null
   createdAt: string
 }
 
@@ -1777,7 +1780,8 @@ export default function PartnerDashboardPage() {
                         <div key={d.id} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3">
                           <div>
                             <div className="text-sm">{userMap[d.userId]?.name || userMap[d.userId]?.email || d.userId.slice(0, 8)}</div>
-                            <div className="text-xs text-white/40">{formatDateEAT(d.createdAt)}</div>
+                            <div className="text-xs text-white/40">Submitted {formatDateEAT(d.createdAt)}</div>
+                            {d.mintedAt && <div className="text-xs text-emerald-400/70">Minted {formatDateEAT(d.mintedAt)}</div>}
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-medium">{d.amountTzs.toLocaleString()} TZS</span>
@@ -1966,13 +1970,15 @@ export default function PartnerDashboardPage() {
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Amount</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Reference</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Submitted (EAT)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Payment Confirmed (EAT)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Minted (EAT)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {deposits.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-white/40">
+                          <td colSpan={8} className="px-4 py-8 text-center text-white/40">
                             No deposits yet.
                           </td>
                         </tr>
@@ -1987,6 +1993,8 @@ export default function PartnerDashboardPage() {
                             <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
                             <td className="px-4 py-3 font-mono text-xs text-white/40">{d.pspReference || '—'}</td>
                             <td className="px-4 py-3 text-xs text-white/40">{formatDateEAT(d.createdAt)}</td>
+                            <td className="px-4 py-3 text-xs text-white/40">{d.fiatConfirmedAt ? formatDateEAT(d.fiatConfirmedAt) : '—'}</td>
+                            <td className="px-4 py-3 text-xs">{d.mintedAt ? <span className="text-emerald-400">{formatDateEAT(d.mintedAt)}</span> : <span className="text-white/30">—</span>}</td>
                           </tr>
                         ))
                       )}

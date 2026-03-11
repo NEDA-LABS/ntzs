@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/process-mints",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/accrue-yield",
+      "schedule": "5 21 * * *"
     }
   ]
 }

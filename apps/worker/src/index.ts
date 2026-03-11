@@ -107,9 +107,72 @@ async function logAudit(
 }
 
 /**
- * Poll Snippe for completed payments that are still in "submitted" status
- * This is a fallback in case webhooks don't fire
+ * Poll Snippe for payout completion on burn requests still in 'pending' payout status.
+ * This is a fallback in case the payout webhook doesn't fire.
  */
+async function pollSnippeForCompletedPayouts(sql: ReturnType<typeof createDbClient>['sql']) {
+  if (!SNIPPE_API_KEY) {
+    return
+  }
+
+  const pendingPayouts = await sql<{ id: string; payout_reference: string; amount_tzs: number }[]>`
+    select id, payout_reference, amount_tzs from burn_requests
+    where status = 'burned'
+      and payout_status = 'pending'
+      and payout_reference is not null
+      and updated_at < now() - interval '30 seconds'
+    order by updated_at asc
+    limit 5
+  `
+
+  for (const row of pendingPayouts) {
+    try {
+      const response = await fetch(
+        `${SNIPPE_BASE_URL}/v1/payouts/${row.payout_reference}`,
+        { headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` } }
+      )
+
+      if (!response.ok) continue
+
+      const result = await response.json() as {
+        status: string
+        data?: {
+          status: string
+          failure_reason?: string
+        }
+      }
+
+      if (result.status === 'success' && result.data?.status === 'completed') {
+        await sql`
+          update burn_requests
+          set payout_status = 'completed', updated_at = now()
+          where id = ${row.id} and payout_status = 'pending'
+        `
+
+        console.log('[worker] polled Snippe, payout completed', {
+          burnRequestId: row.id,
+          reference: row.payout_reference,
+        })
+      } else if (result.data?.status === 'failed' || result.data?.status === 'reversed') {
+        await sql`
+          update burn_requests
+          set payout_status = 'failed',
+              payout_error = ${result.data.failure_reason ?? 'Payout failed (polled)'},
+              updated_at = now()
+          where id = ${row.id} and payout_status = 'pending'
+        `
+
+        console.log('[worker] polled Snippe, payout failed', {
+          burnRequestId: row.id,
+          reason: result.data.failure_reason,
+        })
+      }
+    } catch (err) {
+      console.warn('[worker] Snippe payout poll error for', row.id, err instanceof Error ? err.message : err)
+    }
+  }
+}
+
 async function pollSnippeForCompletedPayments(sql: ReturnType<typeof createDbClient>['sql']) {
   if (!SNIPPE_API_KEY) {
     return // Skip if no API key configured
@@ -355,13 +418,22 @@ async function main() {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Poll Snippe for completed payments (webhook fallback)
+    // Poll Snippe for completed deposit payments (webhook fallback)
     try {
       const { sql } = createDbClient(databaseUrl)
       await pollSnippeForCompletedPayments(sql)
       await sql.end({ timeout: 5 })
     } catch (err) {
-      console.warn('[worker] Snippe poll error:', err instanceof Error ? err.message : err)
+      console.warn('[worker] Snippe deposit poll error:', err instanceof Error ? err.message : err)
+    }
+
+    // Poll Snippe for completed payouts on burned requests (webhook fallback)
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await pollSnippeForCompletedPayouts(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] Snippe payout poll error:', err instanceof Error ? err.message : err)
     }
 
     // Process mint jobs with error recovery

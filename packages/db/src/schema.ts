@@ -307,6 +307,7 @@ export const depositRequests = pgTable(
 
     fiatConfirmedByUserId: uuid('fiat_confirmed_by_user_id').references(() => users.id),
     fiatConfirmedAt: timestamp('fiat_confirmed_at', { withTimezone: true }),
+    mintedAt: timestamp('minted_at', { withTimezone: true }),
 
     // WaaS partner reference (nullable — only set for deposits via WaaS API)
     partnerId: uuid('partner_id').references(() => partners.id),
@@ -559,6 +560,151 @@ export const transfers = pgTable(
     statusIdx: index('transfers_status_idx').on(t.status),
     partnerIdx: index('transfers_partner_id_idx').on(t.partnerId),
     txHashIdx: index('transfers_tx_hash_idx').on(t.txHash),
+  })
+)
+
+// ─── Savings / Yield Tables ─────────────────────────────────────────────────
+
+export const savingsPositionStatus = pgEnum('savings_position_status', [
+  'active',
+  'closed',
+])
+
+export const savingsTxType = pgEnum('savings_tx_type', [
+  'deposit',
+  'withdrawal',
+  'yield_credit',
+])
+
+export const savingsTxStatus = pgEnum('savings_tx_status', [
+  'pending',
+  'completed',
+  'failed',
+])
+
+/**
+ * Platform-wide APY rate config. Admins insert a new row to change the rate.
+ * The most recent effective_from row is the current rate.
+ */
+export const savingsRateConfig = pgTable(
+  'savings_rate_config',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    annualRateBps: integer('annual_rate_bps').notNull(),
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
+    setByUserId: uuid('set_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    effectiveFromIdx: index('savings_rate_config_effective_from_idx').on(t.effectiveFrom),
+  })
+)
+
+/**
+ * One savings position per user. Tracks running principal + unclaimed yield.
+ * annualRateBps is snapshotted from savings_rate_config at open time.
+ */
+export const savingsPositions = pgTable(
+  'savings_positions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id, { onDelete: 'restrict' }),
+
+    principalTzs: bigint('principal_tzs', { mode: 'number' }).notNull().default(0),
+    accruedYieldTzs: bigint('accrued_yield_tzs', { mode: 'number' }).notNull().default(0),
+
+    totalDepositedTzs: bigint('total_deposited_tzs', { mode: 'number' }).notNull().default(0),
+    totalWithdrawnTzs: bigint('total_withdrawn_tzs', { mode: 'number' }).notNull().default(0),
+    totalYieldClaimedTzs: bigint('total_yield_claimed_tzs', { mode: 'number' }).notNull().default(0),
+
+    annualRateBps: integer('annual_rate_bps').notNull(),
+
+    status: savingsPositionStatus('status').notNull().default('active'),
+
+    lastAccrualAt: timestamp('last_accrual_at', { withTimezone: true }),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userUq: uniqueIndex('savings_positions_user_uq').on(t.userId),
+    statusIdx: index('savings_positions_status_idx').on(t.status),
+    lastAccrualIdx: index('savings_positions_last_accrual_idx').on(t.lastAccrualAt),
+  })
+)
+
+/**
+ * Every fiat/yield movement in or out of a savings position.
+ */
+export const savingsTransactions = pgTable(
+  'savings_transactions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    positionId: uuid('position_id')
+      .notNull()
+      .references(() => savingsPositions.id, { onDelete: 'restrict' }),
+
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+
+    type: savingsTxType('type').notNull(),
+    status: savingsTxStatus('status').notNull().default('pending'),
+
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+
+    pspReference: text('psp_reference'),
+    mintTxHash: text('mint_tx_hash'),
+
+    notes: text('notes'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    positionIdx: index('savings_transactions_position_id_idx').on(t.positionId),
+    userIdx: index('savings_transactions_user_id_idx').on(t.userId),
+    typeIdx: index('savings_transactions_type_idx').on(t.type),
+    statusIdx: index('savings_transactions_status_idx').on(t.status),
+  })
+)
+
+/**
+ * Daily yield accrual log — one row per position per day.
+ * Provides full audit trail for Justin and compliance.
+ */
+export const yieldAccruals = pgTable(
+  'yield_accruals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    positionId: uuid('position_id')
+      .notNull()
+      .references(() => savingsPositions.id, { onDelete: 'restrict' }),
+
+    date: text('date').notNull(),
+
+    principalTzs: bigint('principal_tzs', { mode: 'number' }).notNull(),
+    rateBps: integer('rate_bps').notNull(),
+    accruedTzs: bigint('accrued_tzs', { mode: 'number' }).notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    positionDateUq: uniqueIndex('yield_accruals_position_date_uq').on(t.positionId, t.date),
+    positionIdx: index('yield_accruals_position_id_idx').on(t.positionId),
+    dateIdx: index('yield_accruals_date_idx').on(t.date),
   })
 )
 

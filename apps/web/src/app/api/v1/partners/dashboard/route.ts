@@ -265,6 +265,9 @@ export async function GET(request: NextRequest) {
       amountTzs: depositRequests.amountTzs,
       status: depositRequests.status,
       pspReference: depositRequests.pspReference,
+      pspChannel: depositRequests.pspChannel,
+      fiatConfirmedAt: depositRequests.fiatConfirmedAt,
+      mintedAt: depositRequests.mintedAt,
       createdAt: depositRequests.createdAt,
     })
     .from(depositRequests)

@@ -56,7 +56,7 @@ export async function GET(
     status: burn.status,
     amountTzs: burn.amountTzs,
     txHash: burn.txHash,
-    payoutStatus: burn.payoutStatus || 'pending',
+    payoutStatus: burn.payoutStatus ?? null,
     payoutError: burn.payoutError,
     createdAt: burn.createdAt,
   })

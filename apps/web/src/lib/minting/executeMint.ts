@@ -139,7 +139,7 @@ export async function executeMint(depositId: string): Promise<MintResult> {
       .where(eq(dailyIssuance.day, today))
 
     await db.update(mintTransactions).set({ status: 'minted', updatedAt: new Date() }).where(eq(mintTransactions.depositRequestId, job.id))
-    await db.update(depositRequests).set({ status: 'minted', updatedAt: new Date() }).where(eq(depositRequests.id, job.id))
+    await db.update(depositRequests).set({ status: 'minted', mintedAt: new Date(), updatedAt: new Date() }).where(eq(depositRequests.id, job.id))
 
     await db.insert(auditLogs).values({
       action: 'mint_completed',
