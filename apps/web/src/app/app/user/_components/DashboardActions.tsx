@@ -19,16 +19,17 @@ export function DashboardActions() {
         Deposit
       </button>
 
-      {/* Send (disabled) */}
+      {/* Save */}
       <button
         type="button"
-        disabled
-        className="flex items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/20 cursor-not-allowed"
+        onClick={() => router.push('/app/user/stake')}
+        className="group flex items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/60 transition-all duration-150 hover:bg-white/[0.06] hover:text-white/80 hover:shadow-lg hover:shadow-white/5 active:scale-[0.97]"
       >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+        <svg className="h-4 w-4 text-emerald-400 transition-transform duration-150 group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a9 9 0 019-9h.75c.831 0 1.5.669 1.5 1.5v.75H18a.75.75 0 00.75-.75V18.75a3 3 0 01-3 3h-15a3 3 0 01-3-3V9.75a.75.75 0 01.75-.75h9.75" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75v3m0 0l3-3m-3 3l-3-3" />
         </svg>
-        Send
+        Save
       </button>
 
       {/* Pay Me */}
