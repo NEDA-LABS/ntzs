@@ -14,6 +14,7 @@
     "@coinbase/cdp-react": "^0.0.74",
     "@neondatabase/neon-js": "^0.1.0-beta.19",
     "@ntzs/db": "*",
+    "@radix-ui/react-slot": "^1.2.3",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.44.4",
