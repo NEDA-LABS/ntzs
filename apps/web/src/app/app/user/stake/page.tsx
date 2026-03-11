@@ -1,92 +1,187 @@
-import Link from 'next/link'
-import { requireAnyRole } from '@/lib/auth/rbac'
+import { and, eq } from 'drizzle-orm'
 
-import { IconSparkles } from '@/app/app/_components/icons'
+import { requireAnyRole, requireDbUser } from '@/lib/auth/rbac'
+import { getDb } from '@/lib/db'
+import { savingsPositions, savingsProducts } from '@ntzs/db'
+
+import { SavingsCard } from '@/components/ui/savings-card'
 
 export default async function StakePage() {
   await requireAnyRole(['end_user', 'super_admin'])
+  const dbUser = await requireDbUser()
+  const { db } = getDb()
+
+  const [product] = await db
+    .select({
+      id: savingsProducts.id,
+      name: savingsProducts.name,
+      description: savingsProducts.description,
+      annualRateBps: savingsProducts.annualRateBps,
+      lockDays: savingsProducts.lockDays,
+      minDepositTzs: savingsProducts.minDepositTzs,
+    })
+    .from(savingsProducts)
+    .where(eq(savingsProducts.status, 'active'))
+    .limit(1)
+
+  if (!product) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <p className="text-sm text-white/30">Savings products are temporarily unavailable.</p>
+      </div>
+    )
+  }
+
+  const [position] = await db
+    .select({
+      principalTzs: savingsPositions.principalTzs,
+      accruedYieldTzs: savingsPositions.accruedYieldTzs,
+      totalDepositedTzs: savingsPositions.totalDepositedTzs,
+      openedAt: savingsPositions.openedAt,
+    })
+    .from(savingsPositions)
+    .where(
+      and(
+        eq(savingsPositions.userId, dbUser.id),
+        eq(savingsPositions.productId, product.id),
+        eq(savingsPositions.status, 'active'),
+      )
+    )
+    .limit(1)
+
+  const ratePercent = product.annualRateBps / 100
+  const hasFunds = !!position && position.principalTzs > 0
+
+  const dailyYield = hasFunds
+    ? Math.floor((position!.principalTzs * product.annualRateBps) / 10_000 / 365)
+    : null
+
+  const annualProjection = hasFunds
+    ? Math.floor((position!.principalTzs * product.annualRateBps) / 10_000)
+    : null
+
+  const serialisedPosition = position
+    ? {
+        principalTzs: position.principalTzs,
+        accruedYieldTzs: position.accruedYieldTzs,
+        totalDepositedTzs: position.totalDepositedTzs,
+        openedAt: position.openedAt?.toISOString() ?? new Date().toISOString(),
+      }
+    : null
 
   return (
     <div className="min-h-screen">
-      <div className="p-8">
-        <div className="mx-auto max-w-2xl">
-          {/* Coming Soon Card */}
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center backdrop-blur-xl">
-            <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_0%,rgba(121,40,202,0.18),transparent_55%),radial-gradient(circle_at_80%_100%,rgba(0,112,243,0.10),transparent_55%)]" />
-            <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-violet-500/20">
-              <IconSparkles className="h-10 w-10 text-violet-300" />
-            </div>
+      <div className="px-4 py-8 sm:px-8">
+        <div className="mx-auto max-w-lg">
 
-            <h2 className="relative mt-6 text-2xl font-bold text-white">Coming Soon</h2>
-            <p className="relative mt-3 text-zinc-400">
-              Stake your nTZS and earn up to 8% APY. Your stablecoin will work for you while maintaining full liquidity.
+          {/* Page header */}
+          <div className="mb-10">
+            <h1 className="text-2xl font-bold tracking-tight text-white">Savings</h1>
+            <p className="mt-1.5 text-sm text-white/40">
+              Your TZS working for you — {ratePercent}% per annum, accrued daily
             </p>
+          </div>
 
-            {/* Features Preview */}
-            <div className="relative mt-8 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                <div className="text-2xl font-bold text-emerald-400">8%</div>
-                <div className="mt-1 text-xs text-zinc-500">Maximum APY</div>
+          {/* Animated savings card — hero */}
+          <div className="flex justify-center pb-10">
+            <SavingsCard
+              product={product}
+              position={serialisedPosition}
+              className="w-full"
+            />
+          </div>
+
+          {/* Stats — only when user has an active position */}
+          {hasFunds && position && (
+            <div className="mb-8 grid grid-cols-3 gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center">
+                <div className="text-xl font-bold text-emerald-400">
+                  +{dailyYield?.toLocaleString()}
+                </div>
+                <div className="mt-1 text-[11px] text-white/35">Daily TZS</div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                <div className="text-2xl font-bold text-violet-400">Flexible</div>
-                <div className="mt-1 text-xs text-zinc-500">Lock Periods</div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center">
+                <div className="text-xl font-bold text-white">
+                  {annualProjection?.toLocaleString()}
+                </div>
+                <div className="mt-1 text-[11px] text-white/35">Annual TZS</div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                <div className="text-2xl font-bold text-blue-400">Daily</div>
-                <div className="mt-1 text-xs text-zinc-500">Reward Payouts</div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center">
+                <div className="text-xl font-bold text-violet-400">{ratePercent}%</div>
+                <div className="mt-1 text-[11px] text-white/35">Rate p.a.</div>
               </div>
             </div>
+          )}
 
-            {/* Notify Form */}
-            <div className="relative mt-8">
-              <p className="text-sm text-zinc-500">Get notified when staking goes live</p>
-              <div className="mt-3 flex gap-3">
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  className="flex-1 rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-white placeholder:text-zinc-600 outline-none focus:border-violet-500/50"
-                />
-                <button className="rounded-xl bg-violet-500 px-6 py-3 font-semibold text-white transition-colors hover:bg-violet-600">
-                  Notify Me
-                </button>
-              </div>
+          {/* How it works */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
+              How it works
+            </h3>
+            <div className="mt-5 space-y-5">
+              {[
+                {
+                  step: '01',
+                  title: 'Deposit TZS',
+                  body: `Transfer Tanzanian Shillings into your savings position. Minimum ${product.minDepositTzs > 0 ? product.minDepositTzs.toLocaleString() + ' TZS' : 'no minimum'}.`,
+                },
+                {
+                  step: '02',
+                  title: 'Earn daily',
+                  body: `Yield accrues every day at ${ratePercent}% p.a. No lock-up period. Your balance compounds over time.`,
+                },
+                {
+                  step: '03',
+                  title: 'Withdraw any time',
+                  body: 'Request your principal and earned yield back to your wallet whenever you need it.',
+                },
+              ].map(({ step, title, body }) => (
+                <div key={step} className="flex gap-4">
+                  <div className="mt-0.5 shrink-0 font-mono text-xs text-violet-500/50">
+                    {step}
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-white">{title}</div>
+                    <div className="mt-1 text-xs leading-relaxed text-white/35">{body}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* How It Works */}
-          <div className="mt-8 rounded-2xl border border-white/10 bg-black/40 p-6">
-            <h3 className="font-semibold text-white">How Staking Works</h3>
-            <div className="mt-4 space-y-4">
-              <div className="flex gap-4">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-400">
-                  1
+          {/* Product details */}
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
+              Product details
+            </h3>
+            <div className="mt-4 divide-y divide-white/5">
+              {[
+                { label: 'Annual rate', value: `${ratePercent}% p.a.` },
+                {
+                  label: 'Lock period',
+                  value: product.lockDays === 0 ? 'None — withdraw any time' : `${product.lockDays} days`,
+                },
+                {
+                  label: 'Minimum deposit',
+                  value: product.minDepositTzs > 0
+                    ? `${product.minDepositTzs.toLocaleString()} TZS`
+                    : 'No minimum',
+                },
+                { label: 'Accrual frequency', value: 'Daily' },
+                { label: 'Currency', value: 'Tanzanian Shilling (TZS)' },
+                { label: 'Yield settlement', value: 'On withdrawal' },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between py-3 text-sm"
+                >
+                  <span className="text-white/40">{label}</span>
+                  <span className="font-medium text-white">{value}</span>
                 </div>
-                <div>
-                  <p className="font-medium text-white">Deposit nTZS</p>
-                  <p className="mt-1 text-sm text-zinc-500">Choose how much nTZS you want to stake</p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-400">
-                  2
-                </div>
-                <div>
-                  <p className="font-medium text-white">Select Duration</p>
-                  <p className="mt-1 text-sm text-zinc-500">Longer lock periods earn higher rewards</p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-400">
-                  3
-                </div>
-                <div>
-                  <p className="font-medium text-white">Earn Rewards</p>
-                  <p className="mt-1 text-sm text-zinc-500">Receive daily payouts directly to your wallet</p>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
+
         </div>
       </div>
     </div>
