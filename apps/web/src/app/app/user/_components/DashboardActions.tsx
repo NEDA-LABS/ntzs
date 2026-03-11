@@ -21,9 +21,9 @@ export function DashboardActions() {
       {/* Save */}
       <ShimmerButton
         onClick={() => router.push('/app/user/stake')}
-        className="h-12 gap-2"
+        className="h-12 gap-2 border-blue-900/30 bg-[linear-gradient(110deg,#1e3a8a,45%,#1e40af,55%,#1e3a8a)] text-white"
       >
-        <Wallet className="h-4 w-4 text-emerald-500" />
+        <Wallet className="h-4 w-4 text-emerald-400" />
         Save
       </ShimmerButton>
 
