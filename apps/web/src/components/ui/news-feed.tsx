@@ -3,10 +3,18 @@
 import type { NewsArticle } from '@/lib/news/getNews'
 import { ExternalLink, Newspaper, TrendingUp } from 'lucide-react'
 
-function SourceBadge({ source, label }: { source: 'citizen' | 'dse'; label: string }) {
+function SourceBadge({ source, label }: { source: 'citizen' | 'dse' | 'tsl'; label: string }) {
   if (source === 'dse') {
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400 ring-1 ring-emerald-500/20">
+        <TrendingUp className="h-2.5 w-2.5" />
+        {label}
+      </span>
+    )
+  }
+  if (source === 'tsl') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-400 ring-1 ring-violet-500/20">
         <TrendingUp className="h-2.5 w-2.5" />
         {label}
       </span>
