@@ -129,6 +129,16 @@ export async function GET(request: NextRequest) {
     const signer = new ethers.Wallet(MINTER_PRIVATE_KEY, provider)
     const token = new ethers.Contract(NTZS_CONTRACT_ADDRESS, NTZS_ABI, signer)
 
+    // Pre-flight: ensure minter wallet has enough ETH for gas
+    const MIN_MINTER_ETH = ethers.parseEther('0.001')
+    const minterBalance = await provider.getBalance(signer.address)
+    if (minterBalance < MIN_MINTER_ETH) {
+      throw new Error(
+        `Minter wallet low on gas: ${ethers.formatEther(minterBalance)} ETH. ` +
+        `Fund ${signer.address} on Base Sepolia with at least 0.001 ETH.`
+      )
+    }
+
     // Verify minter role
     const minterRole: string = await token.MINTER_ROLE()
     const hasMinter: boolean = await token.hasRole(minterRole, await signer.getAddress())

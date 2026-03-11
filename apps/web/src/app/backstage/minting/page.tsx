@@ -68,7 +68,19 @@ async function processPendingMintsAction() {
   const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC_URL)
   const signer = new ethers.Wallet(MINTER_PRIVATE_KEY, provider)
   const contract = new ethers.Contract(NTZS_CONTRACT_ADDRESS, NTZS_ABI, signer)
-  
+
+  // Pre-flight: ensure minter wallet has enough ETH for gas
+  const MIN_MINTER_ETH = ethers.parseEther('0.001')
+  const minterBalance = await provider.getBalance(signer.address)
+  if (minterBalance < MIN_MINTER_ETH) {
+    console.error(
+      `[Manual Mint] Minter wallet low on gas: ${ethers.formatEther(minterBalance)} ETH. ` +
+      `Fund ${signer.address} on Base Sepolia with at least 0.001 ETH.`
+    )
+    revalidatePath('/backstage/minting')
+    return
+  }
+
   for (const deposit of pendingDeposits) {
     try {
       // Mark as processing
