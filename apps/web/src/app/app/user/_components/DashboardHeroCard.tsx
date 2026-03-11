@@ -53,7 +53,7 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
       onMouseLeave={handleMouseLeave}
     >
       <motion.div
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-5 ring-1 ring-white/[0.06]"
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] px-6 pb-6 pt-5 ring-1 ring-white/[0.06]"
         style={{
           rotateX: springRotateX,
           rotateY: springRotateY,
@@ -77,10 +77,11 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
             Welcome back
           </p>
-          <h1 className="mt-0.5 text-xl font-bold text-white">{displayName}</h1>
+          <h1 className="mt-1 text-2xl font-bold text-white">{displayName}</h1>
+          <p className="mt-0.5 text-xs text-zinc-500">Here is a summary of your account</p>
 
           {/* Balance row — dots when resting, number on hover */}
-          <div className="relative mt-3 h-7">
+          <div className="relative mt-5 h-10">
             {/* Hidden state: masked dots */}
             <motion.div
               className="absolute inset-0 flex items-center gap-1.5"
@@ -88,9 +89,9 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
               transition={{ duration: 0.2 }}
             >
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-1.5 w-1.5 rounded-full bg-white/15" />
+                <div key={i} className="h-2 w-2 rounded-full bg-white/15" />
               ))}
-              <span className="ml-1 text-xs text-white/15">TZS</span>
+              <span className="ml-2 text-sm text-white/15">TZS</span>
             </motion.div>
 
             {/* Revealed state: actual balance */}
@@ -100,9 +101,9 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
               transition={{ duration: 0.25, delay: isHovered ? 0.05 : 0 }}
             >
               {walletAddress ? (
-                <TokenBalance walletAddress={walletAddress} compact />
+                <TokenBalance walletAddress={walletAddress} compact className="text-2xl" />
               ) : (
-                <p className="text-sm font-bold text-white">0 TZS</p>
+                <p className="text-2xl font-bold text-white">0 TZS</p>
               )}
             </motion.div>
           </div>

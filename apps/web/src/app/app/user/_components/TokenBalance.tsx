@@ -9,9 +9,10 @@ const RPC_URL = 'https://sepolia.base.org'
 interface TokenBalanceProps {
   walletAddress: string
   compact?: boolean
+  className?: string
 }
 
-export function TokenBalance({ walletAddress, compact = false }: TokenBalanceProps) {
+export function TokenBalance({ walletAddress, compact = false, className }: TokenBalanceProps) {
   const [balance, setBalance] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -54,11 +55,12 @@ export function TokenBalance({ walletAddress, compact = false }: TokenBalancePro
   const usdValue = (numBalance * 0.00039).toFixed(2)
 
   if (compact) {
+    const base = className ?? 'text-sm'
     if (loading) {
-      return <p className="text-sm font-bold text-white/50 animate-pulse">-- TZS</p>
+      return <p className={`${base} font-bold text-white/50 animate-pulse`}>-- TZS</p>
     }
     return (
-      <p className="text-sm font-bold text-white">
+      <p className={`${base} font-bold text-white`}>
         {numBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} TZS
       </p>
     )
