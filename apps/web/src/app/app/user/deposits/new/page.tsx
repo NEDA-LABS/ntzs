@@ -23,22 +23,29 @@ export default async function NewDepositPage() {
     redirect('/app/user/kyc')
   }
 
-  return (
-    <div className="min-h-screen bg-[#0d0d14] px-4 py-6 lg:p-8">
-      <div className="mx-auto max-w-xl">
+  const displayName = dbUser.payAlias ?? dbUser.name ?? dbUser.email.split('@')[0]
 
-        {/* Hero header */}
-        <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-6 ring-1 ring-white/[0.06]">
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
-          <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-blue-600/[0.07] blur-3xl" />
-          <div className="relative">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Top up</p>
-            <h1 className="mt-1 text-xl font-bold text-white">Deposit TZS</h1>
-            <p className="mt-0.5 text-xs text-zinc-500">Funds are minted 1:1 as nTZS after payment confirms</p>
+  return (
+    <div className="px-4 py-6 lg:p-8">
+      <div className="mx-auto max-w-md">
+
+        {/* Header */}
+        <div className="mb-6 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
+            <img src="/ntzs-logo.png" alt="nTZS" className="h-7 w-7 object-contain" />
           </div>
+          <p className="mt-3 text-sm text-zinc-400">Deposit to</p>
+          <h1 className="mt-0.5 text-2xl font-bold text-white">@{displayName}</h1>
         </div>
 
-        <DepositForm defaultBankId={defaultBank?.id} userPhone={dbUser.phone} />
+        {/* Form card */}
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
+          <DepositForm defaultBankId={defaultBank?.id} userPhone={dbUser.phone} />
+        </div>
+
+        <p className="mt-6 text-center text-xs text-zinc-600">
+          Funds are minted 1:1 as nTZS after payment confirms
+        </p>
       </div>
     </div>
   )
