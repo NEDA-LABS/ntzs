@@ -7,7 +7,7 @@ export function DashboardActions() {
   const router = useRouter()
 
   return (
-    <div className="mb-6 flex items-center gap-3 flex-wrap">
+    <div className="flex items-center gap-3 flex-wrap">
       <InteractiveHoverButton
         text="Deposit"
         variant="default"

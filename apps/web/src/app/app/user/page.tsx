@@ -54,37 +54,44 @@ export default async function UserDashboard() {
   const pendingCount = recentDeposits.filter(d => !['minted', 'rejected', 'cancelled'].includes(d.status)).length
 
   return (
-    <div className="min-h-screen bg-[#0d0d14] px-4 py-6 lg:p-8">
+    <div className="bg-[#0d0d14]">
 
-      {/* ── Hero: Greeting + Balance ── */}
-      <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-6 ring-1 ring-white/[0.06]">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
-        <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-blue-600/[0.07] blur-3xl" />
+      {/* ── Sticky Header: Hero + Actions ── */}
+      <div className="sticky top-14 z-20 bg-[#0d0d14] px-4 pt-3 pb-3 lg:top-0 lg:px-8 lg:pt-6 lg:pb-4">
 
-        <div className="relative flex items-start justify-between">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Welcome back</p>
-            <h1 className="mt-1 text-xl font-bold text-white">
-              {dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email}
-            </h1>
-            <p className="mt-0.5 text-xs text-zinc-500">Here is a summary of your account</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-xl bg-blue-600/15 px-3 py-2 ring-1 ring-blue-600/20">
-            <IconWallet className="h-4 w-4 text-blue-400" />
-            <div className="text-right">
-              <p className="text-[10px] font-medium text-blue-400 uppercase tracking-wide">Balance</p>
-              {wallet ? (
-                <TokenBalance walletAddress={wallet.address} compact />
-              ) : (
-                <p className="text-sm font-bold text-white">0 TZS</p>
-              )}
+        {/* Hero: Greeting + Balance */}
+        <div className="relative mb-3 overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-5 ring-1 ring-white/[0.06]">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
+          <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-blue-600/[0.07] blur-3xl" />
+
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Welcome back</p>
+              <h1 className="mt-0.5 text-xl font-bold text-white">
+                {dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email}
+              </h1>
+              <p className="mt-0.5 text-xs text-zinc-500">Here is a summary of your account</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-xl bg-blue-600/15 px-3 py-2 ring-1 ring-blue-600/20">
+              <IconWallet className="h-4 w-4 text-blue-400" />
+              <div className="text-right">
+                <p className="text-[10px] font-medium text-blue-400 uppercase tracking-wide">Balance</p>
+                {wallet ? (
+                  <TokenBalance walletAddress={wallet.address} compact />
+                ) : (
+                  <p className="text-sm font-bold text-white">0 TZS</p>
+                )}
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Action Buttons */}
+        <DashboardActions />
       </div>
 
-      {/* ── Action Buttons ── */}
-      <DashboardActions />
+      {/* ── Scrollable Content ── */}
+      <div className="px-4 pb-6 lg:px-8 lg:pb-8">
 
       {/* ── Main Two-Column Grid ── */}
       <div className="grid gap-5 lg:grid-cols-5">
@@ -259,6 +266,7 @@ export default async function UserDashboard() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   )
