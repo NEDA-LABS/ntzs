@@ -4,8 +4,6 @@ import { redirect } from 'next/navigation'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { TokenBalance } from '../_components/TokenBalance'
-
-import { WalletInfoClient } from './WalletInfoClient'
 import { PayMeSection } from './PayMeSection'
 
 export default async function WalletPage() {
@@ -54,18 +52,10 @@ export default async function WalletPage() {
         </div>
 
         {/* Pay Me — QR + link */}
-        <div className="overflow-hidden rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
-          <PayMeSection
-            currentAlias={dbUser.payAlias ?? null}
-            suggestedAlias={suggestedAlias}
-          />
-        </div>
-
-        {/* Wallet address */}
-        <div className="overflow-hidden rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
-          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-zinc-600">Wallet Details</p>
-          <WalletInfoClient address={wallet.address} />
-        </div>
+        <PayMeSection
+          currentAlias={dbUser.payAlias ?? null}
+          suggestedAlias={suggestedAlias}
+        />
 
         {/* Withdraw */}
         <Link

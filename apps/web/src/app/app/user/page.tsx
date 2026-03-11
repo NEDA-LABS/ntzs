@@ -14,8 +14,8 @@ import {
   IconWallet,
   IconWithdraw,
 } from '@/app/app/_components/icons'
-import { TokenBalance } from './_components/TokenBalance'
 import { DashboardActions } from './_components/DashboardActions'
+import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
@@ -60,31 +60,11 @@ export default async function UserDashboard() {
       <div className="sticky top-14 z-20 bg-[#0d0d14] px-4 pt-3 pb-3 lg:top-0 lg:px-8 lg:pt-6 lg:pb-4">
 
         {/* Hero: Greeting + Balance */}
-        <div className="relative mb-3 overflow-hidden rounded-2xl bg-gradient-to-br from-[#12121e] to-[#0f0f1a] p-5 ring-1 ring-white/[0.06]">
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] bg-[size:44px_44px]" />
-          <div className="pointer-events-none absolute -top-16 right-0 h-48 w-64 rounded-full bg-blue-600/[0.07] blur-3xl" />
-
-          <div className="relative flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Welcome back</p>
-              <h1 className="mt-0.5 text-xl font-bold text-white">
-                {dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email}
-              </h1>
-              <p className="mt-0.5 text-xs text-zinc-500">Here is a summary of your account</p>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl bg-blue-600/15 px-3 py-2 ring-1 ring-blue-600/20">
-              <IconWallet className="h-4 w-4 text-blue-400" />
-              <div className="text-right">
-                <p className="text-[10px] font-medium text-blue-400 uppercase tracking-wide">Balance</p>
-                {wallet ? (
-                  <TokenBalance walletAddress={wallet.address} compact />
-                ) : (
-                  <p className="text-sm font-bold text-white">0 TZS</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardHeroCard
+          payAlias={dbUser.payAlias ?? null}
+          email={dbUser.email}
+          walletAddress={wallet?.address ?? null}
+        />
 
         {/* Action Buttons */}
         <DashboardActions />
