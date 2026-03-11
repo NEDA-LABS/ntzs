@@ -12,10 +12,10 @@ import {
 import { ExternalLink, Newspaper, TrendingUp } from "lucide-react"
 import type { NewsArticle } from "@/lib/news/getNews"
 
-const SOURCE_COLORS: Record<string, { dot: string; text: string; bg: string }> = {
-  citizen: { dot: "bg-blue-400",   text: "text-blue-400",   bg: "rgba(59,130,246,0.08)" },
-  dse:     { dot: "bg-emerald-400", text: "text-emerald-400", bg: "rgba(52,211,153,0.08)" },
-  tsl:     { dot: "bg-violet-400",  text: "text-violet-400",  bg: "rgba(139,92,246,0.08)" },
+const SOURCE_COLORS: Record<string, { dot: string; text: string; bg: string; hex: string }> = {
+  citizen: { dot: "bg-blue-400",   text: "text-blue-400",   bg: "rgba(59,130,246,0.08)",  hex: "#60a5fa" },
+  dse:     { dot: "bg-emerald-400", text: "text-emerald-400", bg: "rgba(52,211,153,0.08)", hex: "#34d399" },
+  tsl:     { dot: "bg-violet-400",  text: "text-violet-400",  bg: "rgba(139,92,246,0.08)", hex: "#a78bfa" },
 }
 
 const SOURCE_TAGS: Record<string, string> = {
@@ -170,7 +170,7 @@ export function NewsCard({ article }: NewsCardProps) {
           <div className="space-y-1.5">
             <motion.h3
               className="text-sm font-semibold leading-snug text-white"
-              style={{ display: "-webkit-box", WebkitLineClamp: isExpanded ? 2 : 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}
               animate={{ x: isHovered ? 3 : 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
             >
@@ -195,7 +195,7 @@ export function NewsCard({ article }: NewsCardProps) {
             <div className="flex items-center justify-between">
               <motion.div
                 className="h-px flex-1 bg-gradient-to-r to-transparent"
-                style={{ backgroundImage: `linear-gradient(to right, ${colors.dot.replace("bg-", "").replace("-400", "")}, transparent)` }}
+                style={{ backgroundImage: `linear-gradient(to right, ${colors.hex}, transparent)` }}
                 initial={{ scaleX: 0, originX: 0 }}
                 animate={{ scaleX: isHovered || isExpanded ? 1 : 0.25 }}
                 transition={{ duration: 0.4, ease: "easeOut" }}
