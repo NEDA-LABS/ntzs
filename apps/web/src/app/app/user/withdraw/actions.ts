@@ -85,7 +85,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
       platformFeeTzs,
     }).returning({ id: burnRequests.id })
     await writeAuditLog('burn.queued_for_approval', 'burn_request', queuedBurn.id, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs }, dbUser.id)
-    redirect('/app/user/activity')
+    return { success: true as const, requiresApproval: true }
   }
 
   // ── Small amounts: execute burn + payout inline ──────────────────────────
@@ -172,5 +172,5 @@ export async function createWithdrawRequestAction(formData: FormData) {
     throw new Error(`Payout failed: ${payoutResult.error ?? 'Payout initiation failed'}`)
   }
 
-  redirect('/app/user/activity')
+  return { success: true as const, requiresApproval: false }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
@@ -52,8 +52,6 @@ interface DepositFormProps {
 }
 
 export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
-  const [phone, setPhone] = useState(userPhone || '')
-  const [submitted, setSubmitted] = useState(false)
   const [submittedAmount, setSubmittedAmount] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('mobile')
   const [cardLoading, setCardLoading] = useState(false)
@@ -64,6 +62,16 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   const [modalPhone, setModalPhone] = useState(userPhone || '')
   const [rememberPhone, setRememberPhone] = useState(true)
   const [isSavedNumber, setIsSavedNumber] = useState(false)
+  const [depositId, setDepositId] = useState<string | null>(null)
+  const [payStatus, setPayStatus] = useState<'pending' | 'processing' | 'success' | 'failed' | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -75,55 +83,123 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
     } catch {}
   }, [userPhone])
 
+  useEffect(() => {
+    if (!depositId) return
+    setPayStatus('pending')
+
+    async function checkStatus() {
+      try {
+        const res = await fetch(`/api/pay/status?id=${depositId}`)
+        if (!res.ok) return
+        const data = await res.json()
+        setPayStatus(data.status)
+        if (data.status === 'success' || data.status === 'failed') stopPolling()
+      } catch {}
+    }
+
+    checkStatus()
+    pollRef.current = setInterval(checkStatus, 3000)
+    const timeout = setTimeout(() => stopPolling(), 5 * 60 * 1000)
+    return () => { stopPolling(); clearTimeout(timeout) }
+  }, [depositId, stopPolling])
+
   const quickAdd = (delta: number) => {
     const base = Number(amount || '0')
     const next = Math.max(0, base + delta)
     setAmount(String(next))
   }
 
-  if (submitted) {
+  if (depositId && payStatus) {
     return (
-      <div className="overflow-hidden rounded-2xl bg-[#12121e] p-8 ring-1 ring-white/[0.06]">
-        <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.15),transparent_50%)]" />
-        
-        <div className="text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
-            <SuccessIcon className="h-8 w-8 text-emerald-400" />
-          </div>
-          
-          <h2 className="mt-6 text-xl font-semibold text-white">Deposit Submitted!</h2>
-          <p className="mt-2 text-zinc-400">
-            Check your phone for the M-Pesa prompt
-          </p>
-          
-          <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <p className="text-3xl font-bold text-emerald-400">{submittedAmount} TZS</p>
-            <p className="mt-1 text-sm text-emerald-300/70">will be minted as nTZS after payment</p>
-          </div>
+      <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+        <div className="px-6 py-10 text-center">
 
-          <div className="mt-6 space-y-3">
-            <p className="text-sm text-zinc-500">
-              Enter your M-Pesa PIN to confirm. Your nTZS will appear in your wallet automatically.
-            </p>
-          </div>
+          {payStatus === 'success' ? (
+            <>
+              <div className="relative mx-auto flex h-20 w-20 items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" style={{ animationDuration: '1.4s', animationIterationCount: 1 }} />
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20 ring-1 ring-emerald-500/30">
+                  <svg className="h-9 w-9 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <h2 className="mt-5 text-xl font-bold text-white">Deposit confirmed</h2>
+              <p className="mt-1.5 text-sm text-zinc-400">Your nTZS is on its way to your wallet</p>
+              <div className="mx-auto mt-5 w-fit rounded-2xl bg-emerald-500/10 px-6 py-3 ring-1 ring-emerald-500/20">
+                <p className="text-2xl font-bold tabular-nums text-emerald-400">{Number(submittedAmount).toLocaleString()} TZS</p>
+                <p className="mt-0.5 text-xs text-emerald-400/60">minted as nTZS</p>
+              </div>
+              <div className="mt-7 flex flex-col gap-3">
+                <Link
+                  href="/app/user"
+                  className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+                >
+                  Go to Dashboard
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => { setDepositId(null); setPayStatus(null); setAmount('') }}
+                  className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-6 py-4 text-base font-medium text-white transition-all duration-75 active:scale-[0.98] hover:bg-white/[0.06]"
+                >
+                  Make another deposit
+                </button>
+              </div>
+            </>
+          ) : payStatus === 'failed' ? (
+            <>
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-rose-500/20 ring-1 ring-rose-500/30">
+                <svg className="h-9 w-9 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h2 className="mt-5 text-xl font-bold text-white">Payment not completed</h2>
+              <p className="mt-1.5 text-sm text-zinc-400">The payment was cancelled or timed out. Please try again.</p>
+              <div className="mt-7 flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setDepositId(null); setPayStatus(null) }}
+                  className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+                >
+                  Try again
+                </button>
+                <Link
+                  href="/app/user"
+                  className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-6 py-4 text-center text-base font-medium text-white transition-all duration-75 active:scale-[0.98] hover:bg-white/[0.06]"
+                >
+                  Go to Dashboard
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-600/15 ring-1 ring-blue-600/20">
+                <svg className="h-9 w-9 animate-spin text-blue-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                  <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              </div>
+              <h2 className="mt-5 text-xl font-bold text-white">
+                {payStatus === 'pending' ? 'Waiting for approval' : 'Processing payment'}
+              </h2>
+              <p className="mt-1.5 text-sm text-zinc-400">
+                {payStatus === 'pending'
+                  ? 'Check your phone — the M-Pesa prompt has been sent'
+                  : 'Payment received, minting your nTZS...'}
+              </p>
+              <div className="mx-auto mt-5 w-fit rounded-2xl bg-blue-600/10 px-6 py-3 ring-1 ring-blue-600/20">
+                <p className="text-2xl font-bold tabular-nums text-white">{Number(submittedAmount).toLocaleString()} TZS</p>
+                <p className="mt-0.5 text-xs text-blue-400/70">in progress</p>
+              </div>
+              <div className="mt-6 flex items-center justify-center gap-1.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '0ms' }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '150ms' }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '300ms' }} />
+              </div>
+              <p className="mt-4 text-xs text-zinc-600">This page updates automatically</p>
+            </>
+          )}
 
-          <div className="mt-8 flex flex-col gap-3">
-            <Link
-              href="/app/user"
-              className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
-            >
-              Go to Dashboard
-            </Link>
-            <button
-              onClick={() => {
-                setSubmitted(false)
-                setSubmittedAmount('')
-              }}
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-base font-medium text-white transition-all duration-75 active:scale-[0.98] active:bg-white/[0.08] hover:bg-white/10"
-            >
-              Make Another Deposit
-            </button>
-          </div>
         </div>
       </div>
     )
@@ -340,7 +416,9 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 try {
                   formData.set('amountTzs', amount)
                   setSubmittedAmount(amount)
-                  await createDepositRequestAction(formData)
+                  const result = await createDepositRequestAction(formData)
+                  setDepositId(result.depositId)
+                  setShowPhoneModal(false)
                 } catch (error) {
                   setShowPhoneModal(false)
                   const errorMessage = error instanceof Error ? error.message : 'Payment failed. Please try again.'

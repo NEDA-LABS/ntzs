@@ -121,7 +121,7 @@ export async function createDepositRequestAction(formData: FormData) {
   revalidatePath('/app/user')
   revalidatePath('/app/user/activity')
 
-  redirect('/app/user/activity')
+  return { depositId: deposit.id }
 }
 
 export async function createCardDepositRequestAction(formData: FormData): Promise<{ paymentUrl: string }> {

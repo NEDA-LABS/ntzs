@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
+import Link from 'next/link'
 
 import { IconInfo, IconPhone } from '@/app/app/_components/icons'
 
@@ -21,7 +22,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-2xl bg-gradient-to-r from-rose-600 to-rose-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-rose-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-rose-500/40"
+      className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-blue-500/40"
     >
       {pending ? (
         <span className="flex items-center justify-center gap-2">
@@ -56,28 +57,59 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
 
   if (submitted) {
     return (
-      <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
-        <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.15),transparent_50%)]" />
-        <div className="text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
-            <svg className="h-8 w-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+      <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+        <div className="px-6 py-10 text-center">
+          <div className="relative mx-auto flex h-20 w-20 items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" style={{ animationDuration: '1.4s', animationIterationCount: '1' as unknown as number }} />
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20 ring-1 ring-emerald-500/30">
+              <svg className="h-9 w-9 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
           </div>
-          <h2 className="mt-6 text-xl font-semibold text-white">Withdrawal submitted</h2>
-          <p className="mt-2 text-zinc-400">
-            {requiresApproval
-              ? 'Your withdrawal requires admin approval. You will receive the payout once approved.'
-              : 'Your nTZS is being burned and the TZS payout will arrive on your mobile money shortly.'}
-          </p>
+
+          {requiresApproval ? (
+            <>
+              <h2 className="mt-5 text-xl font-bold text-white">Queued for approval</h2>
+              <p className="mt-1.5 text-sm text-zinc-400">Large withdrawals require admin review. You will receive a mobile money payout once approved.</p>
+              <div className="mx-auto mt-5 w-fit rounded-2xl bg-amber-500/10 px-6 py-3 ring-1 ring-amber-500/20">
+                <p className="text-2xl font-bold tabular-nums text-amber-300">{Number(amount).toLocaleString()} TZS</p>
+                <p className="mt-0.5 text-xs text-amber-400/60">pending approval</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="mt-5 text-xl font-bold text-white">Withdrawal submitted</h2>
+              <p className="mt-1.5 text-sm text-zinc-400">Your nTZS has been burned. The TZS payout will arrive on your mobile money shortly.</p>
+              <div className="mx-auto mt-5 w-fit rounded-2xl bg-emerald-500/10 px-6 py-3 ring-1 ring-emerald-500/20">
+                <p className="text-2xl font-bold tabular-nums text-emerald-400">{Number(amount).toLocaleString()} TZS</p>
+                <p className="mt-0.5 text-xs text-emerald-400/60">arriving on mobile money</p>
+              </div>
+            </>
+          )}
+
+          <div className="mt-7 flex flex-col gap-3">
+            <Link
+              href="/app/user"
+              className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+            >
+              Go to Dashboard
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSubmitted(false)}
+              className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-6 py-4 text-base font-medium text-white transition-all duration-75 active:scale-[0.98] hover:bg-white/[0.06]"
+            >
+              Make another withdrawal
+            </button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
-      <div className="absolute inset-0 -z-10 rounded-3xl bg-[radial-gradient(circle_at_20%_0%,rgba(220,38,38,0.12),transparent_55%),radial-gradient(circle_at_80%_100%,rgba(0,112,243,0.08),transparent_55%)]" />
+    <div className="overflow-hidden rounded-2xl bg-[#12121e] p-6 ring-1 ring-white/[0.06]">
 
       <form
         action={async (formData: FormData) => {
@@ -92,7 +124,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         className="space-y-5"
       >
         {/* Receive amount */}
-        <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
+        <div className="rounded-2xl border border-white/[0.06] bg-black/40 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">You receive</span>
             <span className="text-xs text-zinc-600">on mobile money</span>
@@ -125,13 +157,13 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         {/* Payout method */}
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Payout method</p>
-          <div className="flex items-center gap-3 rounded-2xl border border-violet-500/40 bg-violet-500/10 px-4 py-4">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20">
-              <IconPhone className="h-5 w-5 text-violet-300" />
+          <div className="flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-600/10 px-4 py-4">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/20">
+              <IconPhone className="h-5 w-5 text-blue-300" />
             </span>
             <span>
               <span className="block font-semibold text-white">Snippe</span>
-              <span className="block text-xs text-violet-300/70">Mobile Money</span>
+              <span className="block text-xs text-blue-300/70">Mobile Money</span>
             </span>
           </div>
         </div>
@@ -146,7 +178,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="07XXXXXXXX"
-            className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-violet-500/50"
+            className="w-full rounded-2xl border border-white/[0.08] bg-black/50 px-4 py-3.5 text-base text-white outline-none placeholder:text-zinc-600 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
           />
           <p className="text-xs text-zinc-500">TZS will be sent to this number via Snippe</p>
         </div>
