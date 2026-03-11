@@ -582,28 +582,66 @@ export const savingsTxStatus = pgEnum('savings_tx_status', [
   'failed',
 ])
 
+export const fundManagerStatus = pgEnum('fund_manager_status', ['active', 'paused', 'terminated'])
+
+export const savingsProductStatus = pgEnum('savings_product_status', ['active', 'paused', 'closed'])
+
 /**
- * Platform-wide APY rate config. Admins insert a new row to change the rate.
- * The most recent effective_from row is the current rate.
+ * Licensed fund managers that custody and invest deposited TZS.
+ * Each manager operates under a separate investment/fund management agreement.
  */
-export const savingsRateConfig = pgTable(
-  'savings_rate_config',
+export const fundManagers = pgTable(
+  'fund_managers',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    annualRateBps: integer('annual_rate_bps').notNull(),
-    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
-    setByUserId: uuid('set_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    contactEmail: varchar('contact_email', { length: 320 }),
+    contactPhone: varchar('contact_phone', { length: 32 }),
+    licenseNumber: text('license_number'),
+    agreementSignedAt: timestamp('agreement_signed_at', { withTimezone: true }),
+    tvlLimitTzs: bigint('tvl_limit_tzs', { mode: 'number' }),
+    status: fundManagerStatus('status').notNull().default('active'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    effectiveFromIdx: index('savings_rate_config_effective_from_idx').on(t.effectiveFrom),
+    statusIdx: index('fund_managers_status_idx').on(t.status),
   })
 )
 
 /**
- * One savings position per user. Tracks running principal + unclaimed yield.
- * annualRateBps is snapshotted from savings_rate_config at open time.
+ * Savings products offered to users. Each product is backed by a specific fund manager.
+ * lockDays = 0 means open-ended (withdraw any time).
+ */
+export const savingsProducts = pgTable(
+  'savings_products',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fundManagerId: uuid('fund_manager_id')
+      .notNull()
+      .references(() => fundManagers.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    annualRateBps: integer('annual_rate_bps').notNull(),
+    lockDays: integer('lock_days').notNull().default(0),
+    minDepositTzs: bigint('min_deposit_tzs', { mode: 'number' }).notNull().default(0),
+    maxDepositTzs: bigint('max_deposit_tzs', { mode: 'number' }),
+    status: savingsProductStatus('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    fundManagerIdx: index('savings_products_fund_manager_id_idx').on(t.fundManagerId),
+    statusIdx: index('savings_products_status_idx').on(t.status),
+  })
+)
+
+/**
+ * One savings position per user per product.
+ * productId links to the savings product (and transitively to the fund manager).
+ * annualRateBps is snapshotted from the product at open time — rate changes
+ * on the product do not affect existing positions.
  */
 export const savingsPositions = pgTable(
   'savings_positions',
@@ -617,6 +655,10 @@ export const savingsPositions = pgTable(
     walletId: uuid('wallet_id')
       .notNull()
       .references(() => wallets.id, { onDelete: 'restrict' }),
+
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => savingsProducts.id, { onDelete: 'restrict' }),
 
     principalTzs: bigint('principal_tzs', { mode: 'number' }).notNull().default(0),
     accruedYieldTzs: bigint('accrued_yield_tzs', { mode: 'number' }).notNull().default(0),
@@ -632,13 +674,15 @@ export const savingsPositions = pgTable(
     lastAccrualAt: timestamp('last_accrual_at', { withTimezone: true }),
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+    maturesAt: timestamp('matures_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    userUq: uniqueIndex('savings_positions_user_uq').on(t.userId),
+    userProductUq: uniqueIndex('savings_positions_user_product_uq').on(t.userId, t.productId),
     statusIdx: index('savings_positions_status_idx').on(t.status),
+    productIdx: index('savings_positions_product_id_idx').on(t.productId),
     lastAccrualIdx: index('savings_positions_last_accrual_idx').on(t.lastAccrualAt),
   })
 )

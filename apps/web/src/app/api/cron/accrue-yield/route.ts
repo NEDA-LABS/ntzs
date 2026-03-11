@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq, and, gt, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { savingsPositions, savingsRateConfig, yieldAccruals } from '@ntzs/db'
+import { savingsPositions, savingsProducts, yieldAccruals } from '@ntzs/db'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
 
@@ -29,28 +29,16 @@ export async function GET(request: NextRequest) {
     const { db } = getDb()
     const today = new Date().toISOString().slice(0, 10)
 
-    // Get the current rate (most recent effective_from <= now)
-    const [rateRow] = await db
-      .select({ annualRateBps: savingsRateConfig.annualRateBps })
-      .from(savingsRateConfig)
-      .where(sql`${savingsRateConfig.effectiveFrom} <= now()`)
-      .orderBy(sql`${savingsRateConfig.effectiveFrom} DESC`)
-      .limit(1)
-
-    if (!rateRow) {
-      return NextResponse.json({ status: 'skipped', reason: 'no_rate_configured' })
-    }
-
-    const rateBps = rateRow.annualRateBps
-
-    // Fetch all active positions with principal > 0
+    // Fetch all active positions with principal > 0, joining product for rate
     const positions = await db
       .select({
         id: savingsPositions.id,
         principalTzs: savingsPositions.principalTzs,
         annualRateBps: savingsPositions.annualRateBps,
+        productStatus: savingsProducts.status,
       })
       .from(savingsPositions)
+      .innerJoin(savingsProducts, eq(savingsPositions.productId, savingsProducts.id))
       .where(and(eq(savingsPositions.status, 'active'), gt(savingsPositions.principalTzs, 0)))
 
     if (!positions.length) {
@@ -101,12 +89,11 @@ export async function GET(request: NextRequest) {
       processed++
     }
 
-    console.log(`[cron/accrue-yield] ${today}: processed=${processed} skipped=${skipped} rate=${rateBps}bps`)
+    console.log(`[cron/accrue-yield] ${today}: processed=${processed} skipped=${skipped} total=${positions.length}`)
 
     return NextResponse.json({
       status: 'ok',
       date: today,
-      rateBps,
       processed,
       skipped,
       total: positions.length,
