@@ -4,7 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { signAndSendTransfer } from '@/lib/waas/hd-wallets'
+import { signAndSendTransfer, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { wallets, partnerUsers, transfers, auditLogs, partners, users } from '@ntzs/db'
 
@@ -270,25 +270,31 @@ export async function POST(request: NextRequest) {
         throw new Error('Sender has no HD wallet index assigned')
       }
 
-      // Check sender has enough ETH for gas
+      // Ensure sender has enough ETH for gas — top up from relayer if needed
+      const MIN_GAS_WEI = ethers.parseEther('0.0001')
       const senderEthBalance = await provider.getBalance(fromWallet.address)
-      if (senderEthBalance === BigInt(0)) {
-        await db
-          .update(transfers)
-          .set({ status: 'failed', error: 'Sender wallet has no ETH for gas', updatedAt: new Date() })
-          .where(eq(transfers.id, transfer.id))
-        return NextResponse.json(
-          {
-            error: 'insufficient_gas',
-            message: 'Sender wallet has no ETH for gas fees',
-            details: {
-              walletAddress: fromWallet.address,
-              ethBalance: '0',
-              solution: 'Wallet needs to be funded with ETH for gas. Contact support for gas funding.'
-            }
-          },
-          { status: 400 }
-        )
+      if (senderEthBalance < MIN_GAS_WEI) {
+        console.log(`[v1/transfers] Topping up gas for ${fromWallet.address} (balance: ${ethers.formatEther(senderEthBalance)} ETH)`)
+        const rpcUrlForFund = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL || rpcUrl
+        const funded = await fundWalletWithGas({
+          toAddress: fromWallet.address,
+          rpcUrl: rpcUrlForFund,
+          amountEth: '0.0005',
+        })
+        if (!funded) {
+          await db
+            .update(transfers)
+            .set({ status: 'failed', error: 'Relayer could not fund gas — RELAYER_PRIVATE_KEY missing or relayer out of ETH', updatedAt: new Date() })
+            .where(eq(transfers.id, transfer.id))
+          return NextResponse.json(
+            {
+              error: 'relayer_unavailable',
+              message: 'Gas relay is temporarily unavailable. Please try again shortly or contact support.',
+              details: { walletAddress: fromWallet.address }
+            },
+            { status: 503 }
+          )
+        }
       }
 
       // Sign and send the main transfer (recipient amount after fee)
