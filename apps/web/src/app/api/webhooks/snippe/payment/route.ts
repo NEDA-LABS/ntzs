@@ -1,9 +1,11 @@
 import { eq, and } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { verifyWebhookSignature, type SnippePaymentWebhookPayload } from '@/lib/psp/snippe'
+import { executeMint } from '@/lib/minting/executeMint'
 import { depositRequests } from '@ntzs/db'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (type === 'payment.completed' && data.status === 'completed') {
-    // Route to Safe approval if amount >= threshold
+    // Route to Safe approval if amount >= threshold, otherwise mint immediately
     const newStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
 
     await db
@@ -75,6 +77,19 @@ export async function POST(request: NextRequest) {
 
     revalidatePath('/app/user')
     revalidatePath('/app/user/activity')
+
+    // Trigger mint immediately in background (after response is sent to Snippe).
+    // The cron /api/cron/process-mints remains as a fallback for retries.
+    if (newStatus === 'mint_pending') {
+      after(async () => {
+        const result = await executeMint(depositRequestId)
+        console.log(`[snippe/payment webhook] instant mint result for ${depositRequestId}:`, result.status)
+        if (result.status === 'minted') {
+          revalidatePath('/app/user')
+          revalidatePath('/app/user/activity')
+        }
+      })
+    }
 
     return NextResponse.json({ status: 'success', depositId: depositRequestId, newStatus })
   }
