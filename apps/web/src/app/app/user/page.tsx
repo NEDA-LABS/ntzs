@@ -16,6 +16,7 @@ import {
 } from '@/app/app/_components/icons'
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
+import { ActivityDropdown } from '@/components/ui/activity-dropdown'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
@@ -78,82 +79,54 @@ export default async function UserDashboard() {
 
         {/* Left col: Recent Transactions (3/5 width) */}
         <div className="lg:col-span-3">
-          <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
-              <h2 className="text-sm font-semibold text-white">Recent Transactions</h2>
-              <Link
-                href="/app/user/activity"
-                prefetch
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                View all
-                <IconChevronRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="divide-y divide-white/[0.04]">
-              {recentTxns.length === 0 ? (
-                <div className="py-14 text-center">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04]">
-                    <IconReceipt className="h-7 w-7 text-zinc-600" />
-                  </div>
-                  <p className="mt-4 text-sm font-medium text-zinc-400">No transactions yet</p>
-                  <p className="mt-1 text-xs text-zinc-600">Make your first deposit to get started</p>
+          {recentTxns.length === 0 ? (
+            <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+              <div className="py-14 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04]">
+                  <IconReceipt className="h-7 w-7 text-zinc-600" />
                 </div>
-              ) : (
-                recentTxns.map((tx) => {
-                  const label =
-                    tx.type === 'deposit'
-                      ? tx.source === 'pay_link'
-                        ? tx.payerName ? `Collection · ${tx.payerName}` : 'Collection'
-                        : 'Deposit'
-                      : 'Withdraw'
-
-                  const statusColor =
-                    tx.type === 'deposit'
-                      ? tx.status === 'minted' ? 'text-emerald-400'
-                        : tx.status === 'rejected' || tx.status === 'cancelled' ? 'text-rose-400'
-                        : 'text-amber-400'
-                      : tx.status === 'burned' ? 'text-rose-300'
-                        : tx.status === 'failed' ? 'text-rose-400'
-                        : 'text-amber-400'
-
-                  return (
-                    <div
-                      key={tx.id}
-                      className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-white/[0.03]"
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                          tx.type === 'deposit' ? 'bg-emerald-500/12' : 'bg-rose-500/12'
-                        }`}>
-                          {tx.type === 'deposit' ? (
-                            <IconPlus className="h-4 w-4 text-emerald-400" />
-                          ) : (
-                            <IconWithdraw className="h-4 w-4 text-rose-300" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-white">{label}</p>
-                          <p className="mt-0.5 text-xs text-zinc-500">
-                            {tx.createdAt ? formatDateEAT(tx.createdAt) : ''}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-semibold font-mono ${tx.type === 'deposit' ? 'text-emerald-400' : 'text-rose-300'}`}>
-                          {tx.type === 'deposit' ? '+' : '-'}{tx.amountTzs.toLocaleString()} TZS
-                        </p>
-                        <p className={`mt-0.5 text-xs capitalize ${statusColor}`}>
-                          {String(tx.status).replace(/_/g, ' ')}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
+                <p className="mt-4 text-sm font-medium text-zinc-400">No transactions yet</p>
+                <p className="mt-1 text-xs text-zinc-600">Make your first deposit to get started</p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <ActivityDropdown
+              title="Recent Transactions"
+              subtitle={`${recentTxns.length} recent activities`}
+              activities={recentTxns.map((tx) => {
+                const label =
+                  tx.type === 'deposit'
+                    ? tx.source === 'pay_link'
+                      ? tx.payerName ? `Collection · ${tx.payerName}` : 'Collection'
+                      : 'Deposit'
+                    : 'Withdraw'
+
+                const statusColor =
+                  tx.type === 'deposit'
+                    ? tx.status === 'minted' ? 'text-emerald-400'
+                      : tx.status === 'rejected' || tx.status === 'cancelled' ? 'text-rose-400'
+                      : 'text-amber-400'
+                    : tx.status === 'burned' ? 'text-rose-300'
+                      : tx.status === 'failed' ? 'text-rose-400'
+                      : 'text-amber-400'
+
+                return {
+                  id: tx.id,
+                  icon: tx.type === 'deposit' ? (
+                    <IconPlus className="h-4 w-4 text-emerald-400" />
+                  ) : (
+                    <IconWithdraw className="h-4 w-4 text-rose-300" />
+                  ),
+                  label,
+                  amount: tx.amountTzs,
+                  status: String(tx.status).replace(/_/g, ' '),
+                  date: tx.createdAt ? formatDateEAT(tx.createdAt) : '',
+                  statusColor,
+                  isDeposit: tx.type === 'deposit',
+                }
+              })}
+            />
+          )}
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
