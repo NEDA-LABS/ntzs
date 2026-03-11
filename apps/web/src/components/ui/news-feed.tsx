@@ -1,6 +1,6 @@
 'use client'
 
-import type { NewsArticle } from '@/app/api/v1/news/route'
+import type { NewsArticle } from '@/lib/news/getNews'
 import { ExternalLink, Newspaper, TrendingUp } from 'lucide-react'
 
 function SourceBadge({ source, label }: { source: 'citizen' | 'dse'; label: string }) {
