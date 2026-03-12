@@ -1,18 +1,12 @@
-import Link from 'next/link'
-
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getCachedWallet } from '@/lib/user/cachedWallet'
-import { getCachedLatestKyc, getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
-
-import { GlassPanel } from '../../_components/GlassPanel'
+import { getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
 import { formatDateTimeEAT } from '@/lib/format-date'
+import { ActivityList } from './_components/ActivityList'
 
 export default async function ActivityPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, latestKyc, deposits, burns] = await Promise.all([
-    getCachedWallet(dbUser.id),
-    getCachedLatestKyc(dbUser.id),
+  const [deposits, burns] = await Promise.all([
     getCachedRecentDeposits(dbUser.id, 50),
     getCachedRecentBurns(dbUser.id, 50),
   ])
@@ -24,7 +18,8 @@ export default async function ActivityPage() {
       payerName: (d as Record<string, unknown>).payerName as string | undefined,
       id: d.id,
       amountTzs: d.amountTzs,
-      status: d.status,
+      status: String(d.status),
+      formattedDate: d.createdAt ? formatDateTimeEAT(d.createdAt) : '',
       createdAt: d.createdAt,
     })),
     ...burns.map((b) => ({
@@ -33,7 +28,8 @@ export default async function ActivityPage() {
       payerName: undefined as string | undefined,
       id: b.id,
       amountTzs: b.amountTzs,
-      status: b.status,
+      status: String(b.status),
+      formattedDate: b.createdAt ? formatDateTimeEAT(b.createdAt) : '',
       createdAt: b.createdAt,
     })),
   ]
@@ -41,81 +37,68 @@ export default async function ActivityPage() {
     .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
     .slice(0, 50)
 
+  const totalIn = deposits
+    .filter((d) => d.status === 'minted')
+    .reduce((s, d) => s + (d.amountTzs ?? 0), 0)
+
+  const totalOut = burns
+    .filter((b) => b.status === 'burned')
+    .reduce((s, b) => s + (b.amountTzs ?? 0), 0)
+
+  const pendingCount = deposits.filter(
+    (d) => !['minted', 'rejected', 'cancelled'].includes(d.status),
+  ).length
+
   return (
-    <main className="flex flex-col gap-6">
-      <GlassPanel title="Activity" description="Review your wallet setup and deposit history.">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="text-xs text-white/60">Wallet</div>
-            <div className="mt-2 text-sm font-semibold">{wallet ? 'Connected' : 'Not set'}</div>
-            <div className="mt-2 break-all font-mono text-xs text-white/60">
-              {wallet?.address ?? '—'}
-            </div>
-            <div className="mt-3">
-              <Link href="/app/user/wallet" className="text-sm text-white underline underline-offset-4">
-                Manage wallet
-              </Link>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#0d0d14] px-4 pt-4 pb-24 lg:px-8 lg:pt-6">
 
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="text-xs text-white/60">Identity check</div>
-            <div className="mt-2 text-sm font-semibold">{latestKyc[0]?.status ?? 'Not started'}</div>
-            <div className="mt-3">
-              <Link href="/app/user/kyc" className="text-sm text-white underline underline-offset-4">
-                View status
-              </Link>
-            </div>
-          </div>
+      {/* Page header */}
+      <div className="mb-5">
+        <h1 className="text-lg font-bold text-white">Activity</h1>
+        <p className="mt-0.5 text-xs text-zinc-600">
+          {txns.length} transaction{txns.length !== 1 ? 's' : ''}
+        </p>
+      </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="text-xs text-white/60">Deposits</div>
-            <div className="mt-2 text-sm font-semibold">{deposits.length}</div>
-            <div className="mt-3">
-              <Link href="/app/user/deposits/new" className="text-sm text-white underline underline-offset-4">
-                Create a deposit
-              </Link>
-            </div>
-          </div>
+      {/* Summary stats */}
+      <div className="mb-5 grid grid-cols-3 gap-3">
+        <div className="rounded-2xl bg-[#12121e] p-4 ring-1 ring-white/[0.06]">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">Total In</p>
+          <p className="mt-2 text-base font-bold text-emerald-400">
+            {totalIn.toLocaleString()}
+          </p>
+          <p className="mt-0.5 text-[10px] text-zinc-600">TZS</p>
         </div>
-      </GlassPanel>
+        <div className="rounded-2xl bg-[#12121e] p-4 ring-1 ring-white/[0.06]">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">Total Out</p>
+          <p className="mt-2 text-base font-bold text-rose-300">
+            {totalOut.toLocaleString()}
+          </p>
+          <p className="mt-0.5 text-[10px] text-zinc-600">TZS</p>
+        </div>
+        <div className="rounded-2xl bg-[#12121e] p-4 ring-1 ring-white/[0.06]">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">Pending</p>
+          <p className="mt-2 text-base font-bold text-amber-400">
+            {pendingCount}
+          </p>
+          <p className="mt-0.5 text-[10px] text-zinc-600">deposits</p>
+        </div>
+      </div>
 
-      <GlassPanel title="Transaction history">
-        {txns.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-white/10 text-left text-white/60">
-                  <th className="py-2 pr-4">Created</th>
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Amount (TZS)</th>
-                  <th className="py-2 pr-4">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txns.map((t) => (
-                  <tr key={t.id} className="border-b border-white/10">
-                    <td className="py-2 pr-4">{formatDateTimeEAT(t.createdAt)}</td>
-                    <td className="py-2 pr-4">
-                      {t.type === 'deposit'
-                        ? t.source === 'pay_link'
-                          ? <span className="text-blue-400">{t.payerName ? `Collection · ${t.payerName}` : 'Collection'}</span>
-                          : 'Deposit'
-                        : 'Withdraw'}
-                    </td>
-                    <td className="py-2 pr-4">{t.type === 'deposit' ? t.amountTzs : -t.amountTzs}</td>
-                    <td className="py-2 pr-4">{String(t.status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Transaction list with filter tabs */}
+      {txns.length === 0 ? (
+        <div className="rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06] py-16 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.04]">
+            <svg className="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+            </svg>
           </div>
-        ) : (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-            No transactions yet.
-          </div>
-        )}
-      </GlassPanel>
-    </main>
+          <p className="text-sm font-medium text-zinc-400">No transactions yet</p>
+          <p className="mt-1 text-xs text-zinc-600">Make your first deposit to get started</p>
+        </div>
+      ) : (
+        <ActivityList txns={txns} />
+      )}
+    </div>
   )
 }
