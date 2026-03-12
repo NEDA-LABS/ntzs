@@ -183,6 +183,7 @@ export function AIOrbit({
   const orbCard = (
     <div className="relative p-4">
       <textarea
+        autoFocus
         rows={3}
         value={input}
         onChange={(e) => setInput(e.target.value)}
