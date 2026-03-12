@@ -1,6 +1,8 @@
 "use client"
 
-import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3 } from "lucide-react"
+import { useRef, useState } from "react"
+import { AnimatePresence, motion } from "framer-motion"
+import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3, Send, Loader2 } from "lucide-react"
 import RadialOrbitalTimeline, { type TimelineItem } from "@/components/ui/radial-orbital-timeline"
 
 interface AIOrbitProps {
@@ -118,6 +120,37 @@ export function AIOrbit({
     },
   ]
 
+  const [input, setInput] = useState("")
+  const [reply, setReply] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleChat = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const text = input.trim()
+    if (!text || loading) return
+    setInput("")
+    setLoading(true)
+    setReply(null)
+    try {
+      const res = await fetch("/api/v1/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: text }],
+          context: { walletBalance, savingsBalance, recentTxCount },
+        }),
+      })
+      const data = await res.json() as { message: string }
+      setReply(data.message)
+    } catch {
+      setReply("Could not reach the AI assistant. Please try again.")
+    } finally {
+      setLoading(false)
+      inputRef.current?.focus()
+    }
+  }
+
   return (
     <div className="mt-5">
       {/* Header */}
@@ -142,6 +175,51 @@ export function AIOrbit({
 
       {/* Orbital */}
       <RadialOrbitalTimeline timelineData={timelineData} />
+
+      {/* AI reply bubble */}
+      <AnimatePresence>
+        {(reply || loading) && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.2 }}
+            className="mx-1 mb-3 rounded-2xl border border-violet-500/20 bg-violet-500/[0.07] px-4 py-3"
+          >
+            {loading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
+                <span className="text-xs text-white/50">Thinking...</span>
+              </div>
+            ) : (
+              <p className="text-sm leading-relaxed text-white/80">{reply}</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Chat input */}
+      <form onSubmit={handleChat} className="mx-1">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-2.5 backdrop-blur-xl focus-within:border-violet-500/40 transition-colors">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400/60" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask me anything..."
+            disabled={loading}
+            className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || loading}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white transition-all active:scale-95 disabled:opacity-40"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
