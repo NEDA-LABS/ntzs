@@ -6,7 +6,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const SYSTEM_PROMPT = `You are the nTZS AI assistant — a concise financial assistant inside the nTZS wallet app. nTZS is a Tanzanian shilling stablecoin on the Base blockchain.
 
 Rules:
-- Keep every answer to 2-3 sentences. Be direct and conversational.
+- Answer in 2 sentences maximum. Never more. Be extremely concise.
 - Never use emojis, markdown, bullet points, or headers. Plain text only.
 - Respond in the same language the user writes in (Swahili or English).
 - Use the search_web tool whenever the user asks about current prices, news, DSE market data, exchange rates, or any real-time information.
@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message })
     }
 
+
     // Claude wants to search — run Tavily then summarize
     const toolBlock = first.content.find((b) => b.type === "tool_use") as Anthropic.ToolUseBlock | undefined
     const query = (toolBlock?.input as { query?: string })?.query ?? ""
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const second = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 300,
+      max_tokens: 150,
       system,
       tools: [SEARCH_TOOL],
       messages: [

@@ -265,7 +265,7 @@ export default function RadialOrbitalTimeline({
                     <CardTitle className="mt-2 text-sm text-white">{item.title}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-white/70">
-                    <p>{item.content}</p>
+                    <p className="max-h-[120px] overflow-y-auto leading-relaxed pr-1">{item.content}</p>
 
                     {/* Energy bar */}
                     <div className="space-y-1">
