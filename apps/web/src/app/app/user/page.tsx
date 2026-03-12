@@ -143,7 +143,7 @@ export default async function UserDashboard() {
                 </div>
               </div>
               <div
-                className="flex gap-3 overflow-x-auto pb-3"
+                className="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory"
                 style={{ scrollbarWidth: 'none' as const, WebkitOverflowScrolling: 'touch' }}
               >
                 {newsArticles.map((article, i) => (

@@ -59,7 +59,7 @@ export function NewsCard({ article }: NewsCardProps) {
   return (
     <motion.div
       ref={containerRef}
-      className="relative select-none"
+      className="relative shrink-0 snap-start select-none"
       style={{ perspective: 1000 }}
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
