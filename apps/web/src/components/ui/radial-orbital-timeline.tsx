@@ -24,11 +24,17 @@ export interface TimelineItem {
 interface RadialOrbitalTimelineProps {
   timelineData: TimelineItem[]
   onActionClick?: (item: TimelineItem) => void
+  onOrbClick?: () => void
+  isThinking?: boolean
+  autoExpandId?: number | null
 }
 
 export default function RadialOrbitalTimeline({
   timelineData,
   onActionClick,
+  onOrbClick,
+  isThinking = false,
+  autoExpandId = null,
 }: RadialOrbitalTimelineProps) {
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({})
   const [rotationAngle, setRotationAngle] = useState<number>(0)
@@ -38,6 +44,19 @@ export default function RadialOrbitalTimeline({
   const containerRef = useRef<HTMLDivElement>(null)
   const orbitRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  useEffect(() => {
+    if (autoExpandId == null) return
+    setExpandedItems({ [autoExpandId]: true })
+    setActiveNodeId(autoExpandId)
+    setAutoRotate(false)
+    const related = timelineData.find((i) => i.id === autoExpandId)?.relatedIds ?? []
+    const pulse: Record<number, boolean> = {}
+    related.forEach((r) => { pulse[r] = true })
+    setPulseEffect(pulse)
+    centerViewOnNode(autoExpandId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoExpandId])
 
   const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === containerRef.current || e.target === orbitRef.current) {
@@ -130,10 +149,24 @@ export default function RadialOrbitalTimeline({
         style={{ perspective: "1000px" }}
       >
         {/* Center orb */}
-        <div className="absolute z-10 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 via-blue-500 to-emerald-500">
-          <div className="absolute h-20 w-20 animate-ping rounded-full border border-white/20 opacity-70" />
-          <div className="absolute h-24 w-24 animate-ping rounded-full border border-white/10 opacity-50" style={{ animationDelay: "0.5s" }} />
-          <div className="h-8 w-8 rounded-full bg-white/80 backdrop-blur-md" />
+        <div
+          className={`absolute z-10 flex h-16 w-16 cursor-pointer items-center justify-center rounded-full transition-transform duration-200 active:scale-95 ${
+            isThinking
+              ? "bg-gradient-to-br from-violet-400 via-fuchsia-500 to-blue-400"
+              : "bg-gradient-to-br from-violet-500 via-blue-500 to-emerald-500"
+          }`}
+          onClick={(e) => { e.stopPropagation(); onOrbClick?.() }}
+        >
+          {/* Thinking: fast spinning ring */}
+          {isThinking && (
+            <div className="absolute h-20 w-20 animate-spin rounded-full border-2 border-transparent border-t-violet-400 border-r-fuchsia-400 opacity-80" />
+          )}
+          <div className={`absolute h-20 w-20 animate-ping rounded-full border border-white/20 opacity-70 ${ isThinking ? "[animation-duration:0.6s]" : "" }`} />
+          <div className={`absolute h-24 w-24 animate-ping rounded-full border border-white/10 opacity-50 ${ isThinking ? "[animation-duration:0.8s]" : "" }`} style={{ animationDelay: "0.2s" }} />
+          {isThinking && (
+            <div className="absolute h-28 w-28 animate-ping rounded-full border border-fuchsia-500/20 opacity-40" style={{ animationDelay: "0.4s" }} />
+          )}
+          <div className={`h-8 w-8 rounded-full backdrop-blur-md transition-colors duration-300 ${ isThinking ? "bg-fuchsia-200/90" : "bg-white/80" }`} />
         </div>
 
         {/* Orbit ring */}

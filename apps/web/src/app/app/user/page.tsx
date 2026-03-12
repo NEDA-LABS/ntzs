@@ -58,8 +58,8 @@ export default async function UserDashboard() {
   return (
     <div className="bg-[#0d0d14]">
 
-      {/* ── Sticky Header: Hero + Actions ── */}
-      <div className="sticky top-14 z-20 bg-[#0d0d14] px-4 pt-3 pb-3 lg:top-0 lg:px-8 lg:pt-6 lg:pb-4">
+      {/* ── Hero + Actions — scrolls away ── */}
+      <div className="px-4 pt-3 pb-3 lg:px-8 lg:pt-6 lg:pb-4">
 
         {/* Hero: Greeting + Balance */}
         <DashboardHeroCard
@@ -129,7 +129,8 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* AI Assistant Orbital */}
+          {/* AI Assistant Orbital — sticks at top once hero scrolls away */}
+          <div className="sticky top-14 z-20 bg-[#0d0d14] pb-2 lg:top-0">
           <AIOrbit
             walletBalance={recentDeposits
               .filter((d) => d.status === 'minted')
@@ -137,6 +138,7 @@ export default async function UserDashboard() {
             recentTxCount={recentTxns.length}
             lastTxAmountTzs={recentTxns[0]?.amountTzs ?? 0}
           />
+          </div>
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}

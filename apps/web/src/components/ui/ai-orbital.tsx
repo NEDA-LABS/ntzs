@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3, Send, Loader2 } from "lucide-react"
+import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3, MessageSquare, Send, X } from "lucide-react"
 import RadialOrbitalTimeline, { type TimelineItem } from "@/components/ui/radial-orbital-timeline"
 
 interface AIOrbitProps {
@@ -120,32 +120,27 @@ export function AIOrbit({
     },
   ]
 
+  const [nodes, setNodes] = useState<TimelineItem[]>(timelineData)
   const [input, setInput] = useState("")
-  const [reply, setReply] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [chatVisible, setChatVisible] = useState(true)
+  const [showInput, setShowInput] = useState(false)
+  const [isThinking, setIsThinking] = useState(false)
+  const [autoExpandId, setAutoExpandId] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const stickyInputRef = useRef<HTMLInputElement>(null)
-  const chatAnchorRef = useRef<HTMLDivElement>(null)
+  const aiNodeCounter = useRef(100)
 
-  useEffect(() => {
-    const el = chatAnchorRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      ([entry]) => setChatVisible(entry.isIntersecting),
-      { threshold: 0, rootMargin: "0px 0px -40px 0px" }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
+  const handleOrbClick = () => {
+    if (isThinking) return
+    setShowInput(true)
+    setTimeout(() => inputRef.current?.focus(), 80)
+  }
 
-  const handleChat = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const text = input.trim()
-    if (!text || loading) return
+    if (!text) return
     setInput("")
-    setLoading(true)
-    setReply(null)
+    setShowInput(false)
+    setIsThinking(true)
     try {
       const res = await fetch("/api/v1/ai/chat", {
         method: "POST",
@@ -156,17 +151,47 @@ export function AIOrbit({
         }),
       })
       const data = await res.json() as { message: string }
-      setReply(data.message)
+      const newId = ++aiNodeCounter.current
+      const shortTitle = text.length > 22 ? text.slice(0, 20) + "…" : text
+      const newNode: TimelineItem = {
+        id: newId,
+        title: shortTitle,
+        date: "AI",
+        content: data.message,
+        category: "AI",
+        icon: MessageSquare,
+        relatedIds: [],
+        status: "completed",
+        energy: 90,
+        accentColor: "violet",
+      }
+      setNodes((prev) => [...prev, newNode])
+      // auto-expand after a short delay so the orbit re-renders with the new node first
+      setTimeout(() => setAutoExpandId(newId), 300)
     } catch {
-      setReply("Could not reach the AI assistant. Please try again.")
+      const errId = ++aiNodeCounter.current
+      setNodes((prev) => [
+        ...prev,
+        {
+          id: errId,
+          title: "Error",
+          date: "AI",
+          content: "Could not reach the AI assistant. Please try again.",
+          category: "AI",
+          icon: MessageSquare,
+          relatedIds: [],
+          status: "pending",
+          energy: 10,
+          accentColor: "violet",
+        },
+      ])
     } finally {
-      setLoading(false)
-      inputRef.current?.focus()
+      setIsThinking(false)
     }
   }
 
   return (
-    <div className="mt-5">
+    <div className="relative mt-5">
       {/* Header */}
       <div className="mb-2 flex items-center justify-between px-0.5">
         <div className="flex items-center gap-2">
@@ -176,120 +201,82 @@ export function AIOrbit({
           </p>
         </div>
         <div className="flex items-center gap-1.5 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-400" />
+          <span className={`h-1.5 w-1.5 rounded-full ${isThinking ? "animate-ping bg-fuchsia-400" : "animate-pulse bg-violet-400"}`} />
           <span className="text-[10px] font-medium uppercase tracking-widest text-violet-400/80">
-            Online
+            {isThinking ? "Thinking" : "Online"}
           </span>
         </div>
       </div>
 
       <p className="mb-1 px-0.5 text-[11px] text-zinc-700">
-        Tap any node to explore your account
+        {isThinking ? "Processing your request..." : "Tap the orb to ask AI · Tap nodes to explore"}
       </p>
 
       {/* Orbital */}
-      <RadialOrbitalTimeline timelineData={timelineData} />
+      <RadialOrbitalTimeline
+        timelineData={nodes}
+        onOrbClick={handleOrbClick}
+        isThinking={isThinking}
+        autoExpandId={autoExpandId}
+      />
 
-      {/* AI reply bubble */}
+      {/* Chat input overlay — appears over the orbital when orb is tapped */}
       <AnimatePresence>
-        {(reply || loading) && (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.2 }}
-            className="mx-1 mb-3 rounded-2xl border border-violet-500/20 bg-violet-500/[0.07] px-4 py-3"
-          >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
-                <span className="text-xs text-white/50">Thinking...</span>
+        {showInput && (
+          <>
+            {/* backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-40 rounded-2xl bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowInput(false)}
+            />
+            {/* input card — centred vertically in the orbital */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 12 }}
+              transition={{ type: "spring", stiffness: 380, damping: 28 }}
+              className="absolute inset-x-4 top-1/2 z-50 -translate-y-1/2 rounded-3xl border border-white/15 bg-zinc-900/95 p-5 shadow-2xl shadow-black/60 backdrop-blur-xl"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500">
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <span className="text-sm font-semibold text-white">Ask AI</span>
+                </div>
+                <button
+                  onClick={() => setShowInput(false)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/60 transition-colors hover:bg-white/20"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-            ) : (
-              <p className="text-sm leading-relaxed text-white/80">{reply}</p>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
-      {/* Anchor sentinel for IntersectionObserver */}
-      <div ref={chatAnchorRef} />
-
-      {/* Sticky chat bar — appears fixed at top when orbital scrolls out of view */}
-      <AnimatePresence>
-        {!chatVisible && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ type: "spring", stiffness: 400, damping: 32 }}
-            className="fixed left-0 right-0 top-14 z-50 border-b border-white/[0.06] bg-[#0d0d14]/95 px-4 py-2.5 backdrop-blur-xl lg:hidden"
-          >
-            <form onSubmit={handleChat}>
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/80 px-3 py-2 focus-within:border-violet-500/40 transition-colors">
-                <Sparkles className="h-3 w-3 shrink-0 text-violet-400/60" />
+              <form onSubmit={handleSubmit} className="space-y-3">
                 <input
-                  ref={stickyInputRef}
+                  ref={inputRef}
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask AI assistant..."
-                  disabled={loading}
-                  className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-50"
+                  placeholder="What would you like to know?"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-violet-500/50 transition-colors"
                 />
-                {loading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!input.trim()}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-violet-500 text-white transition-all active:scale-95 disabled:opacity-40"
-                  >
-                    <Send className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-              {/* Inline reply in sticky mode */}
-              <AnimatePresence>
-                {reply && !loading && (
-                  <motion.p
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18 }}
-                    className="mt-1.5 px-1 text-xs leading-relaxed text-white/60"
-                  >
-                    {reply}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-            </form>
-          </motion.div>
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 py-3 text-sm font-semibold text-white shadow-lg transition-all active:scale-[0.98] disabled:opacity-40"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Send
+                </button>
+              </form>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
-
-      {/* Chat input */}
-      <form onSubmit={handleChat} className="mx-1">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-2.5 backdrop-blur-xl focus-within:border-violet-500/40 transition-colors">
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400/60" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask me anything..."
-            disabled={loading}
-            className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || loading}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white transition-all active:scale-95 disabled:opacity-40"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </form>
     </div>
   )
 }
