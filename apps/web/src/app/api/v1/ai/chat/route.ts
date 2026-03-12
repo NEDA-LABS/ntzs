@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import OpenAI from "openai"
+import Anthropic from "@anthropic-ai/sdk"
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const SYSTEM_PROMPT = `You are the nTZS AI assistant — a smart, concise financial assistant embedded in the nTZS wallet app. nTZS is a Tanzanian shilling stablecoin on the Base blockchain.
 
@@ -31,16 +31,15 @@ export async function POST(req: NextRequest) {
       ? `\n\nUser context: wallet balance ~${context.walletBalance ?? 0} TZS, savings balance ~${context.savingsBalance ?? 0} TZS, ${context.recentTxCount ?? 0} recent transactions.`
       : ""
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
       max_tokens: 300,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT + contextNote },
-        ...messages,
-      ],
+      system: SYSTEM_PROMPT + contextNote,
+      messages,
     })
 
-    const message = response.choices[0]?.message?.content ?? "I could not generate a response. Please try again."
+    const block = response.content[0]
+    const message = block?.type === "text" ? block.text : "I could not generate a response. Please try again."
 
     return NextResponse.json({ message })
   } catch (error) {
