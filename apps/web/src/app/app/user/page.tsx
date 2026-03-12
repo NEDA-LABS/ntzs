@@ -17,18 +17,16 @@ import {
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
-import { NewsList } from '@/components/ui/news-list'
-import { getNews } from '@/lib/news/getNews'
+import { AIOrbit } from '@/components/ui/ai-orbital'
 import { formatDateEAT } from '@/lib/format-date'
 
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, recentDeposits, recentBurns, newsArticles] = await Promise.all([
+  const [wallet, recentDeposits, recentBurns] = await Promise.all([
     getCachedWallet(dbUser.id),
     getCachedRecentDeposits(dbUser.id, 5),
     getCachedRecentBurns(dbUser.id, 5),
-    getNews(),
   ])
 
   const recentTxns = [
@@ -131,8 +129,14 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* Market & News */}
-          <NewsList articles={newsArticles} />
+          {/* AI Assistant Orbital */}
+          <AIOrbit
+            walletBalance={recentDeposits
+              .filter((d) => d.status === 'minted')
+              .reduce((sum, d) => sum + (d.amountTzs ?? 0), 0)}
+            recentTxCount={recentTxns.length}
+            lastTxAmountTzs={recentTxns[0]?.amountTzs ?? 0}
+          />
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
