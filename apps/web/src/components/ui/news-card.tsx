@@ -11,7 +11,6 @@ import {
 } from "framer-motion"
 import { ExternalLink, Newspaper, TrendingUp } from "lucide-react"
 import type { NewsArticle } from "@/lib/news/getNews"
-import { WebViewModal } from "@/components/ui/web-view-modal"
 
 const SOURCE_COLORS: Record<string, { dot: string; text: string; bg: string; hex: string }> = {
   citizen: { dot: "bg-blue-400",   text: "text-blue-400",   bg: "rgba(59,130,246,0.08)",  hex: "#60a5fa" },
@@ -32,7 +31,6 @@ interface NewsCardProps {
 export function NewsCard({ article }: NewsCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
-  const [modalOpen, setModalOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const mouseX = useMotionValue(0)
@@ -170,14 +168,17 @@ export function NewsCard({ article }: NewsCardProps) {
                 <span className={`text-[9px] font-semibold uppercase tracking-wider ${colors.text}`}>{tag}</span>
               </motion.div>
 
-              {/* Opens article in in-app viewer */}
-              <button
-                onClick={(e) => { e.stopPropagation(); setModalOpen(true) }}
+              {/* Opens article in new tab */}
+              <a
+                href={article.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
                 className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.04] text-zinc-600 transition-colors hover:bg-white/[0.08] hover:text-zinc-400"
-                aria-label="Read article"
+                aria-label="Open article"
               >
                 <ExternalLink className="h-3 w-3" />
-              </button>
+              </a>
             </div>
           </div>
 
@@ -235,13 +236,6 @@ export function NewsCard({ article }: NewsCardProps) {
         </div>
       </motion.div>
 
-      <WebViewModal
-        href={article.href}
-        title={article.title}
-        sourceLabel={article.sourceLabel}
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-      />
     </motion.div>
   )
 }
