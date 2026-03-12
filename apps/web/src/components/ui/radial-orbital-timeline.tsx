@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { ArrowRight, Link, Zap } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -182,19 +183,6 @@ export default function RadialOrbitalTimeline({
             <div className="absolute h-28 w-28 animate-ping rounded-full border border-fuchsia-500/20 opacity-40" style={{ animationDelay: "0.4s" }} />
           )}
           <div className={`h-8 w-8 rounded-full backdrop-blur-md transition-colors duration-300 ${ isThinking ? "bg-fuchsia-200/90" : orbExpanded ? "bg-violet-300" : "bg-white/80" }`} />
-
-          {/* Orb chat card — same reveal pattern as node cards */}
-          {orbExpanded && orbCardContent && (
-            <div
-              className="absolute top-20 left-1/2 w-72 -translate-x-1/2 z-[300]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 h-3 w-px bg-white/30" />
-              <div className="overflow-hidden rounded-3xl border border-white/20 bg-zinc-900/95 shadow-xl shadow-black/60 backdrop-blur-xl">
-                {orbCardContent}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Orbit ring */}
@@ -335,6 +323,39 @@ export default function RadialOrbitalTimeline({
           )
         })}
       </div>
+        {/* Orb chat card — floats centered over the orbital, above all nodes */}
+        <AnimatePresence>
+          {orbExpanded && orbCardContent && (
+            <>
+              {/* Dim backdrop — tap to close */}
+              <motion.div
+                key="orb-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                className="absolute inset-0 z-[250] bg-black/50 backdrop-blur-[3px]"
+                onClick={() => { setOrbExpanded(false); setAutoRotate(true) }}
+              />
+              {/* Floating card */}
+              <motion.div
+                key="orb-card"
+                initial={{ opacity: 0, scale: 0.88, y: -16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.88, y: -16 }}
+                transition={{ type: "spring", stiffness: 380, damping: 26 }}
+                className="absolute left-1/2 top-[54%] z-[300] w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2"
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              >
+                {/* Connector line up to orb */}
+                <div className="absolute -top-8 left-1/2 -translate-x-1/2 h-8 w-px bg-gradient-to-b from-transparent via-white/30 to-white/20" />
+                <div className="overflow-hidden rounded-3xl border border-white/[0.15] bg-zinc-950/98 shadow-2xl shadow-black/80 backdrop-blur-2xl">
+                  {orbCardContent}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
     </div>
   )
 }

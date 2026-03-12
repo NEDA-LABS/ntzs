@@ -179,9 +179,9 @@ export function AIOrbit({
   }
 
   const orbCard = (
-    <div className="relative p-3">
+    <div className="relative p-4">
       <textarea
-        rows={2}
+        rows={3}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => {
@@ -189,7 +189,7 @@ export function AIOrbit({
         }}
         placeholder="Ask me anything..."
         disabled={isThinking}
-        className="w-full resize-none rounded-2xl border-0 bg-transparent py-2 pl-3 pr-12 text-sm text-white placeholder-white/30 outline-none disabled:opacity-50"
+        className="w-full resize-none rounded-2xl border-0 bg-transparent py-2 pl-1 pr-12 text-sm text-white placeholder-white/30 outline-none disabled:opacity-50"
       />
       <button
         onClick={handleSend}
