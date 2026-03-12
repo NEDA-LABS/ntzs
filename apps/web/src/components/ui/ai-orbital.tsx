@@ -1,8 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { AnimatePresence, motion } from "framer-motion"
-import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3, MessageSquare, Send, X } from "lucide-react"
+import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3, MessageSquare, CornerRightUp } from "lucide-react"
 import RadialOrbitalTimeline, { type TimelineItem } from "@/components/ui/radial-orbital-timeline"
 
 interface AIOrbitProps {
@@ -122,24 +121,14 @@ export function AIOrbit({
 
   const [nodes, setNodes] = useState<TimelineItem[]>(timelineData)
   const [input, setInput] = useState("")
-  const [showInput, setShowInput] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const [autoExpandId, setAutoExpandId] = useState<number | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
   const aiNodeCounter = useRef(100)
 
-  const handleOrbClick = () => {
-    if (isThinking) return
-    setShowInput(true)
-    setTimeout(() => inputRef.current?.focus(), 80)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSend = async () => {
     const text = input.trim()
-    if (!text) return
+    if (!text || isThinking) return
     setInput("")
-    setShowInput(false)
     setIsThinking(true)
     try {
       const res = await fetch("/api/v1/ai/chat", {
@@ -166,7 +155,6 @@ export function AIOrbit({
         accentColor: "violet",
       }
       setNodes((prev) => [...prev, newNode])
-      // auto-expand after a short delay so the orbit re-renders with the new node first
       setTimeout(() => setAutoExpandId(newId), 300)
     } catch {
       const errId = ++aiNodeCounter.current
@@ -190,8 +178,35 @@ export function AIOrbit({
     }
   }
 
+  const orbCard = (
+    <div className="relative p-3">
+      <textarea
+        rows={2}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend() }
+        }}
+        placeholder="Ask me anything..."
+        disabled={isThinking}
+        className="w-full resize-none rounded-2xl border-0 bg-transparent py-2 pl-3 pr-12 text-sm text-white placeholder-white/30 outline-none disabled:opacity-50"
+      />
+      <button
+        onClick={handleSend}
+        disabled={!input.trim() || isThinking}
+        className="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-900/50 transition-all active:scale-95 disabled:opacity-40"
+      >
+        {isThinking ? (
+          <div className="h-3.5 w-3.5 rounded-sm bg-fuchsia-200 animate-spin" style={{ animationDuration: "1.2s" }} />
+        ) : (
+          <CornerRightUp className="h-4 w-4" />
+        )}
+      </button>
+    </div>
+  )
+
   return (
-    <div className="relative mt-5">
+    <div className="mt-5">
       {/* Header */}
       <div className="mb-2 flex items-center justify-between px-0.5">
         <div className="flex items-center gap-2">
@@ -212,71 +227,12 @@ export function AIOrbit({
         {isThinking ? "Processing your request..." : "Tap the orb to ask AI · Tap nodes to explore"}
       </p>
 
-      {/* Orbital */}
       <RadialOrbitalTimeline
         timelineData={nodes}
-        onOrbClick={handleOrbClick}
         isThinking={isThinking}
         autoExpandId={autoExpandId}
+        orbCardContent={orbCard}
       />
-
-      {/* Chat input overlay — appears over the orbital when orb is tapped */}
-      <AnimatePresence>
-        {showInput && (
-          <>
-            {/* backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-40 rounded-2xl bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowInput(false)}
-            />
-            {/* input card — centred vertically in the orbital */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 12 }}
-              transition={{ type: "spring", stiffness: 380, damping: 28 }}
-              className="absolute inset-x-4 top-1/2 z-50 -translate-y-1/2 rounded-3xl border border-white/15 bg-zinc-900/95 p-5 shadow-2xl shadow-black/60 backdrop-blur-xl"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500">
-                    <Sparkles className="h-3.5 w-3.5 text-white" />
-                  </div>
-                  <span className="text-sm font-semibold text-white">Ask AI</span>
-                </div>
-                <button
-                  onClick={() => setShowInput(false)}
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/60 transition-colors hover:bg-white/20"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-3">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="What would you like to know?"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-violet-500/50 transition-colors"
-                />
-                <button
-                  type="submit"
-                  disabled={!input.trim()}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 py-3 text-sm font-semibold text-white shadow-lg transition-all active:scale-[0.98] disabled:opacity-40"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Send
-                </button>
-              </form>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

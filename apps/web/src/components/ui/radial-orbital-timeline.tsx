@@ -27,6 +27,7 @@ interface RadialOrbitalTimelineProps {
   onOrbClick?: () => void
   isThinking?: boolean
   autoExpandId?: number | null
+  orbCardContent?: React.ReactNode
 }
 
 export default function RadialOrbitalTimeline({
@@ -35,12 +36,14 @@ export default function RadialOrbitalTimeline({
   onOrbClick,
   isThinking = false,
   autoExpandId = null,
+  orbCardContent,
 }: RadialOrbitalTimelineProps) {
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({})
   const [rotationAngle, setRotationAngle] = useState<number>(0)
   const [autoRotate, setAutoRotate] = useState<boolean>(true)
   const [pulseEffect, setPulseEffect] = useState<Record<number, boolean>>({})
   const [activeNodeId, setActiveNodeId] = useState<number | null>(null)
+  const [orbExpanded, setOrbExpanded] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const orbitRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef<Record<number, HTMLDivElement | null>>({})
@@ -64,6 +67,7 @@ export default function RadialOrbitalTimeline({
       setActiveNodeId(null)
       setPulseEffect({})
       setAutoRotate(true)
+      setOrbExpanded(false)
     }
   }
 
@@ -155,7 +159,18 @@ export default function RadialOrbitalTimeline({
               ? "bg-gradient-to-br from-violet-400 via-fuchsia-500 to-blue-400"
               : "bg-gradient-to-br from-violet-500 via-blue-500 to-emerald-500"
           }`}
-          onClick={(e) => { e.stopPropagation(); onOrbClick?.() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!isThinking && orbCardContent) {
+              setOrbExpanded((prev) => {
+                const next = !prev
+                if (next) { setExpandedItems({}); setAutoRotate(false) }
+                else { setAutoRotate(true) }
+                return next
+              })
+            }
+            onOrbClick?.()
+          }}
         >
           {/* Thinking: fast spinning ring */}
           {isThinking && (
@@ -166,7 +181,20 @@ export default function RadialOrbitalTimeline({
           {isThinking && (
             <div className="absolute h-28 w-28 animate-ping rounded-full border border-fuchsia-500/20 opacity-40" style={{ animationDelay: "0.4s" }} />
           )}
-          <div className={`h-8 w-8 rounded-full backdrop-blur-md transition-colors duration-300 ${ isThinking ? "bg-fuchsia-200/90" : "bg-white/80" }`} />
+          <div className={`h-8 w-8 rounded-full backdrop-blur-md transition-colors duration-300 ${ isThinking ? "bg-fuchsia-200/90" : orbExpanded ? "bg-violet-300" : "bg-white/80" }`} />
+
+          {/* Orb chat card — same reveal pattern as node cards */}
+          {orbExpanded && orbCardContent && (
+            <div
+              className="absolute top-20 left-1/2 w-72 -translate-x-1/2 z-[300]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 h-3 w-px bg-white/30" />
+              <div className="overflow-hidden rounded-3xl border border-white/20 bg-zinc-900/95 shadow-xl shadow-black/60 backdrop-blur-xl">
+                {orbCardContent}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Orbit ring */}
