@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3, Send, Loader2 } from "lucide-react"
 import RadialOrbitalTimeline, { type TimelineItem } from "@/components/ui/radial-orbital-timeline"
@@ -123,7 +123,21 @@ export function AIOrbit({
   const [input, setInput] = useState("")
   const [reply, setReply] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [chatVisible, setChatVisible] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
+  const stickyInputRef = useRef<HTMLInputElement>(null)
+  const chatAnchorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = chatAnchorRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setChatVisible(entry.isIntersecting),
+      { threshold: 0, rootMargin: "0px 0px -40px 0px" }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const handleChat = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -194,6 +208,62 @@ export function AIOrbit({
             ) : (
               <p className="text-sm leading-relaxed text-white/80">{reply}</p>
             )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Anchor sentinel for IntersectionObserver */}
+      <div ref={chatAnchorRef} />
+
+      {/* Sticky chat bar — appears fixed at top when orbital scrolls out of view */}
+      <AnimatePresence>
+        {!chatVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ type: "spring", stiffness: 400, damping: 32 }}
+            className="fixed left-0 right-0 top-14 z-50 border-b border-white/[0.06] bg-[#0d0d14]/95 px-4 py-2.5 backdrop-blur-xl lg:hidden"
+          >
+            <form onSubmit={handleChat}>
+              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/80 px-3 py-2 focus-within:border-violet-500/40 transition-colors">
+                <Sparkles className="h-3 w-3 shrink-0 text-violet-400/60" />
+                <input
+                  ref={stickyInputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask AI assistant..."
+                  disabled={loading}
+                  className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-50"
+                />
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!input.trim()}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-violet-500 text-white transition-all active:scale-95 disabled:opacity-40"
+                  >
+                    <Send className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              {/* Inline reply in sticky mode */}
+              <AnimatePresence>
+                {reply && !loading && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="mt-1.5 px-1 text-xs leading-relaxed text-white/60"
+                  >
+                    {reply}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </form>
           </motion.div>
         )}
       </AnimatePresence>
