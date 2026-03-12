@@ -81,7 +81,7 @@ export default async function UserDashboard() {
       <div className="grid gap-5 lg:grid-cols-5">
 
         {/* Left col: Recent Transactions (3/5 width) */}
-        <div className="lg:col-span-3">
+        <div className="min-w-0 lg:col-span-3">
           {recentTxns.length === 0 ? (
             <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
               <div className="py-14 text-center">
@@ -133,7 +133,7 @@ export default async function UserDashboard() {
 
           {/* Market & News */}
           {newsArticles.length > 0 && (
-            <div className="mt-5">
+            <div className="mt-5 overflow-hidden">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-widest text-zinc-600">Market &amp; News</p>
                 <div className="flex items-center gap-2">

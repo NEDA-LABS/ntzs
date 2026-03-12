@@ -7,6 +7,7 @@ export interface NewsArticle {
   source: 'citizen' | 'dse' | 'tsl'
   sourceLabel: string
   pubDate?: string
+  imageSrc?: string
 }
 
 const DSE_FALLBACK: NewsArticle = {
@@ -32,12 +33,13 @@ async function scrapeTSL(limit = 4): Promise<NewsArticle[]> {
     const articles: NewsArticle[] = []
     const seen = new Set<string>()
 
-    // Match /post/N article links
-    const linkRe = /href="(https?:\/\/www\.tanzaniasecurities\.co\.tz\/post\/\d+)"/g
+    // Match /post/N article links — both quote styles
+    const linkRe = /href=["']((?:https?:\/\/www\.tanzaniasecurities\.co\.tz)?\/post\/\d+)["']/g
     let m: RegExpExecArray | null
 
     while ((m = linkRe.exec(html)) !== null && articles.length < limit) {
-      const href = m[1]
+      const raw = m[1]
+      const href = raw.startsWith('http') ? raw : `https://www.tanzaniasecurities.co.tz${raw}`
       if (seen.has(href)) continue
       seen.add(href)
 
@@ -66,13 +68,21 @@ async function scrapeTSL(limit = 4): Promise<NewsArticle[]> {
   }
 }
 
+function extractImg(ctx: string): string | undefined {
+  const m = ctx.match(/src=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*?)["']/)
+  if (!m) return undefined
+  const src = m[1]
+  if (src.startsWith('data:') || src.length < 10) return undefined
+  return src.startsWith('http') ? src : `https://www.thecitizen.co.tz${src}`
+}
+
 async function scrapeTheCitizen(limit = 6): Promise<NewsArticle[]> {
   try {
     const res = await fetch('https://www.thecitizen.co.tz/tanzania/news/national', {
       next: { revalidate: 3600 },
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
+        'Accept': 'text/html,application/xhtml+xml,*/*',
       },
     })
     if (!res.ok) return []
@@ -81,34 +91,35 @@ async function scrapeTheCitizen(limit = 6): Promise<NewsArticle[]> {
     const articles: NewsArticle[] = []
     const seen = new Set<string>()
 
-    // Match article links: /tanzania/news/national/article-slug-NNNNNNN
-    const linkRe = /href="(https?:\/\/www\.thecitizen\.co\.tz\/tanzania\/news\/national\/[^"?#]{10,})"/g
+    // Match both absolute and relative article URLs, both quote styles
+    const linkRe = /href=["']((?:https?:\/\/www\.thecitizen\.co\.tz)?\/tanzania\/news\/national\/[^"'?#]{10,})["']/g
     let m: RegExpExecArray | null
 
     while ((m = linkRe.exec(html)) !== null && articles.length < limit) {
-      const href = m[1]
+      const raw = m[1]
+      const href = raw.startsWith('http') ? raw : `https://www.thecitizen.co.tz${raw}`
       if (seen.has(href)) continue
       seen.add(href)
 
-      // Extract surrounding text context (up to 600 chars after the href)
-      const contextStart = Math.max(0, m.index - 400)
-      const contextEnd = Math.min(html.length, m.index + 600)
-      const ctx = html.slice(contextStart, contextEnd)
+      const ctxStart = Math.max(0, m.index - 600)
+      const ctxEnd = Math.min(html.length, m.index + 600)
+      const ctx = html.slice(ctxStart, ctxEnd)
 
-      // Try to find a heading near this link
-      const h3 = ctx.match(/<h[23][^>]*>\s*([\s\S]{5,200}?)\s*<\/h[23]>/)
-      const titleRaw = h3?.[1] ?? ''
-      const title = titleRaw.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&[a-z]+;/g, ' ').trim()
-
+      const h = ctx.match(/<h[1-4][^>]*>\s*([\s\S]{5,200}?)\s*<\/h[1-4]>/)
+      const titleRaw = h?.[1] ?? ''
+      const title = titleRaw.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#\d+;/g, '').replace(/&[a-z]+;/g, ' ').trim()
       if (!title || title.length < 8) continue
 
-      // Build a short summary from meta description if visible, else re-use title
-      const descMatch = html.slice(m.index, m.index + 800).match(/class="[^"]*summary[^"]*"[^>]*>([\s\S]{10,200}?)</)
-      const summary = descMatch
-        ? descMatch[1].replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim().slice(0, 120)
-        : title.slice(0, 100)
+      const imageSrc = extractImg(ctx)
 
-      articles.push({ href, title: title.slice(0, 120), summary, source: 'citizen', sourceLabel: 'The Citizen' })
+      articles.push({
+        href,
+        title: title.slice(0, 120),
+        summary: title.slice(0, 100),
+        source: 'citizen',
+        sourceLabel: 'The Citizen',
+        imageSrc,
+      })
     }
 
     return articles

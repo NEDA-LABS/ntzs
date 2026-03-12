@@ -11,6 +11,7 @@ import {
 } from "framer-motion"
 import { ExternalLink, Newspaper, TrendingUp } from "lucide-react"
 import type { NewsArticle } from "@/lib/news/getNews"
+import { WebViewModal } from "@/components/ui/web-view-modal"
 
 const SOURCE_COLORS: Record<string, { dot: string; text: string; bg: string; hex: string }> = {
   citizen: { dot: "bg-blue-400",   text: "text-blue-400",   bg: "rgba(59,130,246,0.08)",  hex: "#60a5fa" },
@@ -31,6 +32,7 @@ interface NewsCardProps {
 export function NewsCard({ article }: NewsCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const mouseX = useMotionValue(0)
@@ -82,53 +84,69 @@ export function NewsCard({ article }: NewsCardProps) {
         {/* Subtle gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] via-transparent to-white/[0.04]" />
 
-        {/* Expanded state: grid + summary */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              className="pointer-events-none absolute inset-0"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.35, delay: 0.08 }}
-            >
-              <div className="absolute inset-0 rounded-2xl bg-[#12121e]" />
+        {/* Article image — shown when available */}
+        {article.imageSrc && (
+          <>
+            <div className="absolute inset-0 top-0 h-[52%] overflow-hidden">
+              <img
+                src={article.imageSrc}
+                alt={article.title}
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                draggable={false}
+              />
+            </div>
+            {/* Gradient bleed image → card */}
+            <div className="absolute left-0 right-0 top-[38%] h-20 bg-gradient-to-b from-transparent to-[#0d0d14]" />
+          </>
+        )}
 
-              {/* Road grid */}
-              <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-                <motion.line x1="0%" y1="38%" x2="100%" y2="38%" stroke="rgba(255,255,255,0.12)" strokeWidth="3" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.7, delay: 0.15 }} />
-                <motion.line x1="0%" y1="68%" x2="100%" y2="68%" stroke="rgba(255,255,255,0.12)" strokeWidth="3" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.7, delay: 0.2 }} />
-                <motion.line x1="30%" y1="0%" x2="30%" y2="100%" stroke="rgba(255,255,255,0.08)" strokeWidth="2" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.5, delay: 0.25 }} />
-                <motion.line x1="72%" y1="0%" x2="72%" y2="100%" stroke="rgba(255,255,255,0.08)" strokeWidth="2" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.5, delay: 0.3 }} />
-                {[18, 52, 82].map((y, i) => (
-                  <motion.line key={`h-${i}`} x1="0%" y1={`${y}%`} x2="100%" y2={`${y}%`} stroke="rgba(255,255,255,0.05)" strokeWidth="1" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.35 + i * 0.05 }} />
-                ))}
-                {[14, 50, 86].map((x, i) => (
-                  <motion.line key={`v-${i}`} x1={`${x}%`} y1="0%" x2={`${x}%`} y2="100%" stroke="rgba(255,255,255,0.05)" strokeWidth="1" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.4 + i * 0.05 }} />
-                ))}
-              </svg>
+        {/* Grid pattern — shown when no image */}
+        {!article.imageSrc && (
+          <motion.div
+            className="absolute inset-0"
+            animate={{ opacity: isExpanded ? 0 : 0.04 }}
+            transition={{ duration: 0.3 }}
+          >
+            <svg width="100%" height="100%">
+              <defs>
+                <pattern id={`ng-${article.source}`} width="20" height="20" patternUnits="userSpaceOnUse">
+                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="0.5" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill={`url(#ng-${article.source})`} />
+            </svg>
+          </motion.div>
+        )}
 
-              {/* Bottom fade */}
-              <div className="absolute inset-0 bg-gradient-to-t from-[#12121e] via-transparent to-transparent opacity-80" />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Collapsed grid watermark */}
-        <motion.div
-          className="absolute inset-0"
-          animate={{ opacity: isExpanded ? 0 : 0.04 }}
-          transition={{ duration: 0.3 }}
-        >
-          <svg width="100%" height="100%">
-            <defs>
-              <pattern id={`ng-${article.source}`} width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="0.5" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill={`url(#ng-${article.source})`} />
-          </svg>
-        </motion.div>
+        {/* Expanded state: animated road grid overlay (only when no image) */}
+        {!article.imageSrc && (
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.div
+                className="pointer-events-none absolute inset-0"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.35, delay: 0.08 }}
+              >
+                <div className="absolute inset-0 rounded-2xl bg-[#12121e]" />
+                <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+                  <motion.line x1="0%" y1="38%" x2="100%" y2="38%" stroke="rgba(255,255,255,0.12)" strokeWidth="3" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.7, delay: 0.15 }} />
+                  <motion.line x1="0%" y1="68%" x2="100%" y2="68%" stroke="rgba(255,255,255,0.12)" strokeWidth="3" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.7, delay: 0.2 }} />
+                  <motion.line x1="30%" y1="0%" x2="30%" y2="100%" stroke="rgba(255,255,255,0.08)" strokeWidth="2" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.5, delay: 0.25 }} />
+                  <motion.line x1="72%" y1="0%" x2="72%" y2="100%" stroke="rgba(255,255,255,0.08)" strokeWidth="2" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.5, delay: 0.3 }} />
+                  {[18, 52, 82].map((y, i) => (
+                    <motion.line key={`h-${i}`} x1="0%" y1={`${y}%`} x2="100%" y2={`${y}%`} stroke="rgba(255,255,255,0.05)" strokeWidth="1" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.35 + i * 0.05 }} />
+                  ))}
+                  {[14, 50, 86].map((x, i) => (
+                    <motion.line key={`v-${i}`} x1={`${x}%`} y1="0%" x2={`${x}%`} y2="100%" stroke="rgba(255,255,255,0.05)" strokeWidth="1" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.4 + i * 0.05 }} />
+                  ))}
+                </svg>
+                <div className="absolute inset-0 bg-gradient-to-t from-[#12121e] via-transparent to-transparent opacity-80" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
 
         {/* Card content */}
         <div className="relative z-10 flex h-full flex-col justify-between p-4">
@@ -152,17 +170,14 @@ export function NewsCard({ article }: NewsCardProps) {
                 <span className={`text-[9px] font-semibold uppercase tracking-wider ${colors.text}`}>{tag}</span>
               </motion.div>
 
-              {/* External link — only explicit tap opens article */}
-              <a
-                href={article.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+              {/* Opens article in in-app viewer */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setModalOpen(true) }}
                 className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.04] text-zinc-600 transition-colors hover:bg-white/[0.08] hover:text-zinc-400"
-                aria-label="Open article"
+                aria-label="Read article"
               >
                 <ExternalLink className="h-3 w-3" />
-              </a>
+              </button>
             </div>
           </div>
 
@@ -219,6 +234,14 @@ export function NewsCard({ article }: NewsCardProps) {
           </div>
         </div>
       </motion.div>
+
+      <WebViewModal
+        href={article.href}
+        title={article.title}
+        sourceLabel={article.sourceLabel}
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
     </motion.div>
   )
 }
