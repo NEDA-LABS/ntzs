@@ -1,6 +1,6 @@
 "use client"
 
-import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, CircleDollarSign, BarChart3 } from "lucide-react"
+import { Sparkles, Wallet, TrendingUp, ArrowUpDown, PiggyBank, Newspaper, BarChart3 } from "lucide-react"
 import RadialOrbitalTimeline, { type TimelineItem } from "@/components/ui/radial-orbital-timeline"
 
 interface AIOrbitProps {
@@ -90,16 +90,16 @@ export function AIOrbit({
     },
     {
       id: 5,
-      title: "Deposit",
-      date: "Fund wallet",
-      content: "Add TZS to your wallet via mobile money or bank transfer. Funds are available instantly.",
-      category: "Action",
-      icon: CircleDollarSign,
-      relatedIds: [1, 2],
-      status: "pending",
-      energy: 40,
-      actionLabel: "Deposit TZS",
-      actionHref: "/app/user/deposit",
+      title: "News",
+      date: "TZ · DSE · TSL",
+      content: "Stay up to date with Tanzania financial news from The Citizen, Dar es Salaam Stock Exchange, and Tanzania Securities Limited.",
+      category: "News",
+      icon: Newspaper,
+      relatedIds: [6, 3],
+      status: "completed",
+      energy: 60,
+      actionLabel: "Read The Citizen",
+      actionHref: "https://www.thecitizen.co.tz/tanzania/news/national",
       accentColor: "blue",
     },
     {
@@ -141,10 +141,7 @@ export function AIOrbit({
       </p>
 
       {/* Orbital */}
-      <div className="overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/80 backdrop-blur-xl">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(139,92,246,0.12),transparent_50%),radial-gradient(circle_at_70%_80%,rgba(59,130,246,0.08),transparent_55%)]" />
-        <RadialOrbitalTimeline timelineData={timelineData} />
-      </div>
+      <RadialOrbitalTimeline timelineData={timelineData} />
     </div>
   )
 }
