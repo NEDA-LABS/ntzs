@@ -16,6 +16,7 @@ import {
 } from '@/app/app/_components/icons'
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
+import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
 import { AIOrbit } from '@/components/ui/ai-orbital'
 import { formatDateEAT } from '@/lib/format-date'
@@ -58,19 +59,20 @@ export default async function UserDashboard() {
   return (
     <div className="bg-[#0d0d14]">
 
-      {/* ── Hero + Actions — scrolls away ── */}
+      {/* ── Hero + Actions — scrolls away on mobile ── */}
       <div className="px-4 pt-3 pb-3 lg:px-8 lg:pt-6 lg:pb-4">
-
-        {/* Hero: Greeting + Balance */}
         <DashboardHeroCard
           payAlias={dbUser.payAlias ?? null}
           email={dbUser.email}
           walletAddress={wallet?.address ?? null}
         />
-
-        {/* Action Buttons */}
         <DashboardActions />
       </div>
+
+      {/* ── Compressed hero strip — slides in on mobile when hero scrolls away ── */}
+      <CompressedHeroStrip
+        displayName={dbUser.payAlias ?? dbUser.email.split('@')[0]}
+      />
 
       {/* ── Scrollable Content ── */}
       <div className="px-4 pb-6 lg:px-8 lg:pb-8">
@@ -129,8 +131,7 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* AI Assistant Orbital — sticks at top once hero scrolls away */}
-          <div className="sticky top-14 z-20 bg-[#0d0d14] pb-2 lg:top-0">
+          {/* AI Assistant Orbital */}
           <AIOrbit
             walletBalance={recentDeposits
               .filter((d) => d.status === 'minted')
@@ -138,7 +139,6 @@ export default async function UserDashboard() {
             recentTxCount={recentTxns.length}
             lastTxAmountTzs={recentTxns[0]?.amountTzs ?? 0}
           />
-          </div>
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
