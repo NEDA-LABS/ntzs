@@ -29,6 +29,7 @@ interface RadialOrbitalTimelineProps {
   isThinking?: boolean
   autoExpandId?: number | null
   orbCardContent?: React.ReactNode
+  closeOrbTrigger?: number
 }
 
 export default function RadialOrbitalTimeline({
@@ -38,6 +39,7 @@ export default function RadialOrbitalTimeline({
   isThinking = false,
   autoExpandId = null,
   orbCardContent,
+  closeOrbTrigger = 0,
 }: RadialOrbitalTimelineProps) {
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({})
   const [rotationAngle, setRotationAngle] = useState<number>(0)
@@ -45,6 +47,13 @@ export default function RadialOrbitalTimeline({
   const [pulseEffect, setPulseEffect] = useState<Record<number, boolean>>({})
   const [activeNodeId, setActiveNodeId] = useState<number | null>(null)
   const [orbExpanded, setOrbExpanded] = useState(false)
+
+  useEffect(() => {
+    if (closeOrbTrigger === 0) return
+    setOrbExpanded(false)
+    setAutoRotate(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeOrbTrigger])
   const containerRef = useRef<HTMLDivElement>(null)
   const orbitRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef<Record<number, HTMLDivElement | null>>({})

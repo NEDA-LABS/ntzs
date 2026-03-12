@@ -123,12 +123,14 @@ export function AIOrbit({
   const [input, setInput] = useState("")
   const [isThinking, setIsThinking] = useState(false)
   const [autoExpandId, setAutoExpandId] = useState<number | null>(null)
+  const [closeOrbTrigger, setCloseOrbTrigger] = useState(0)
   const aiNodeCounter = useRef(100)
 
   const handleSend = async () => {
     const text = input.trim()
     if (!text || isThinking) return
     setInput("")
+    setCloseOrbTrigger((n) => n + 1)
     setIsThinking(true)
     try {
       const res = await fetch("/api/v1/ai/chat", {
@@ -232,6 +234,7 @@ export function AIOrbit({
         isThinking={isThinking}
         autoExpandId={autoExpandId}
         orbCardContent={orbCard}
+        closeOrbTrigger={closeOrbTrigger}
       />
     </div>
   )
