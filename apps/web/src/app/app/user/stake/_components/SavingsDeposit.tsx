@@ -103,16 +103,14 @@ export function SavingsDeposit({ product, position }: SavingsDepositProps) {
               onClick={close}
             />
 
-            {/* Sheet */}
+            {/* Modal */}
             <motion.div
-              className="fixed bottom-0 left-0 right-0 z-[410] mx-auto max-w-lg rounded-t-3xl border border-white/[0.08] bg-[#16161f] px-5 pt-5 pb-10 shadow-2xl"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+              className="fixed left-1/2 top-1/2 z-[410] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/[0.08] bg-[#16161f] px-5 pt-5 pb-7 shadow-2xl"
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
             >
-              {/* Handle */}
-              <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-white/10" />
 
               {/* Header */}
               <div className="mb-4 flex items-center justify-between">
@@ -250,7 +248,7 @@ export function SavingsDeposit({ product, position }: SavingsDepositProps) {
                     className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold text-white shadow-lg transition active:scale-[0.98] disabled:opacity-50 ${
                       isWithdraw
                         ? 'bg-gradient-to-r from-rose-600 to-rose-500 shadow-rose-900/40'
-                        : 'bg-gradient-to-r from-violet-600 to-blue-500 shadow-violet-900/40'
+                        : 'bg-gradient-to-r from-blue-600 to-blue-500 shadow-blue-900/40'
                     }`}
                   >
                     {isPending ? (
