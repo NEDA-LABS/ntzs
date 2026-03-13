@@ -30,9 +30,10 @@ interface SavingsCardProps {
   product: SavingsProduct
   position: SavingsPosition | null
   className?: string
+  onSaveTap?: () => void
 }
 
-export function SavingsCard({ product, position, className }: SavingsCardProps) {
+export function SavingsCard({ product, position, className, onSaveTap }: SavingsCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -195,13 +196,13 @@ export function SavingsCard({ product, position, className }: SavingsCardProps) 
                   </div>
                 )}
 
-                <a
-                  href="/app/user/savings/deposit"
-                  onClick={(e) => e.stopPropagation()}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onSaveTap?.() }}
                   className="block w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-3.5 text-center text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 hover:shadow-blue-500/40 active:scale-[0.98]"
                 >
                   {hasFunds ? "Add Funds" : "Start Saving"}
-                </a>
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

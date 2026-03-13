@@ -4,7 +4,7 @@ import { requireAnyRole, requireDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { savingsPositions, savingsProducts } from '@ntzs/db'
 
-import { SavingsCard } from '@/components/ui/savings-card'
+import { SavingsDeposit } from './_components/SavingsDeposit'
 
 export default async function StakePage() {
   await requireAnyRole(['end_user', 'super_admin'])
@@ -84,10 +84,9 @@ export default async function StakePage() {
 
           {/* Animated savings card — hero, sticky on scroll */}
           <div className="sticky top-14 z-20 bg-[#0d0d14] pb-4 pt-1 lg:top-0">
-            <SavingsCard
+            <SavingsDeposit
               product={product}
               position={serialisedPosition}
-              className="w-full"
             />
           </div>
 
