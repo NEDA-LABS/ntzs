@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db'
 import { syncNeonAuthUser } from '@/lib/user/syncNeonAuthUser'
 import { users } from '@ntzs/db'
 
-export type UserRole = 'end_user' | 'bank_admin' | 'platform_compliance' | 'super_admin'
+export type UserRole = 'end_user' | 'bank_admin' | 'platform_compliance' | 'super_admin' | 'fund_manager'
 
 export async function getCurrentDbUser() {
   const dbUser = await syncNeonAuthUser()

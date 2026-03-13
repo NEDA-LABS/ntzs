@@ -19,6 +19,7 @@ export const userRole = pgEnum('user_role', [
   'bank_admin',
   'platform_compliance',
   'super_admin',
+  'fund_manager',
 ])
 
 export const kycStatus = pgEnum('kyc_status', ['pending', 'approved', 'rejected'])
@@ -108,6 +109,7 @@ export const users = pgTable(
 
     role: userRole('role').notNull().default('end_user'),
     bankId: uuid('bank_id').references(() => banks.id),
+    fundManagerId: uuid('fund_manager_id').references(() => fundManagers.id, { onDelete: 'set null' }),
 
     isActive: boolean('is_active').notNull().default(true),
 
