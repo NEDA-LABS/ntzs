@@ -118,3 +118,69 @@ export async function depositToSavings(
     return { success: false, error: 'Something went wrong. Please try again.' }
   }
 }
+
+export async function withdrawFromSavings(
+  amountTzs: number,
+  productId: string,
+): Promise<DepositResult> {
+  try {
+    const dbUser = await requireDbUser()
+    const { db } = getDb()
+
+    const amount = Math.trunc(amountTzs)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { success: false, error: 'Invalid amount.' }
+    }
+
+    // Get active position
+    const [position] = await db
+      .select({
+        id: savingsPositions.id,
+        principalTzs: savingsPositions.principalTzs,
+      })
+      .from(savingsPositions)
+      .where(
+        and(
+          eq(savingsPositions.userId, dbUser.id),
+          eq(savingsPositions.productId, productId),
+          eq(savingsPositions.status, 'active'),
+        ),
+      )
+      .limit(1)
+
+    if (!position) return { success: false, error: 'No active savings position found.' }
+    if (amount > position.principalTzs) {
+      return {
+        success: false,
+        error: `Maximum withdrawal is ${position.principalTzs.toLocaleString()} TZS.`,
+      }
+    }
+
+    const newPrincipal = position.principalTzs - amount
+
+    await db
+      .update(savingsPositions)
+      .set({
+        principalTzs: newPrincipal,
+        totalWithdrawnTzs: sql`${savingsPositions.totalWithdrawnTzs} + ${amount}`,
+        status: newPrincipal === 0 ? 'closed' : 'active',
+        closedAt: newPrincipal === 0 ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(savingsPositions.id, position.id))
+
+    await db.insert(savingsTransactions).values({
+      positionId: position.id,
+      userId: dbUser.id,
+      type: 'withdrawal',
+      status: 'completed',
+      amountTzs: amount,
+    })
+
+    revalidatePath('/app/user/stake')
+    return { success: true }
+  } catch (err) {
+    console.error('[withdrawFromSavings]', err)
+    return { success: false, error: 'Something went wrong. Please try again.' }
+  }
+}

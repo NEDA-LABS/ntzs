@@ -31,9 +31,10 @@ interface SavingsCardProps {
   position: SavingsPosition | null
   className?: string
   onSaveTap?: () => void
+  onWithdrawTap?: () => void
 }
 
-export function SavingsCard({ product, position, className, onSaveTap }: SavingsCardProps) {
+export function SavingsCard({ product, position, className, onSaveTap, onWithdrawTap }: SavingsCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -196,13 +197,24 @@ export function SavingsCard({ product, position, className, onSaveTap }: Savings
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onSaveTap?.() }}
-                  className="block w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-3.5 text-center text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 hover:shadow-blue-500/40 active:scale-[0.98]"
-                >
-                  {hasFunds ? "Add Funds" : "Start Saving"}
-                </button>
+                <div className={hasFunds ? "grid grid-cols-2 gap-2" : ""} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onSaveTap?.() }}
+                    className="block w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-3.5 text-center text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 hover:shadow-blue-500/40 active:scale-[0.98]"
+                  >
+                    {hasFunds ? "Add Funds" : "Start Saving"}
+                  </button>
+                  {hasFunds && onWithdrawTap && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onWithdrawTap() }}
+                      className="block w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3.5 text-center text-sm font-semibold text-white/70 transition-all duration-75 hover:bg-white/[0.08] active:scale-[0.98]"
+                    >
+                      Withdraw
+                    </button>
+                  )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
