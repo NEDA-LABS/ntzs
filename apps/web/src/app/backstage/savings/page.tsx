@@ -11,6 +11,7 @@ import {
   users,
 } from '@ntzs/db'
 import { formatDateTimeEAT } from '@/lib/format-date'
+import { CreateFmCredentials } from './_components/CreateFmCredentials'
 
 export default async function SavingsTvlPage() {
   await requireAnyRole(['super_admin', 'bank_admin'])
@@ -116,6 +117,28 @@ export default async function SavingsTvlPage() {
     .leftJoin(users, eq(users.id, savingsTransactions.userId))
     .orderBy(desc(savingsTransactions.createdAt))
     .limit(30)
+
+  // ── Fund manager user accounts ────────────────────────────────────────────
+  const fmAccounts = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      isActive: users.isActive,
+      createdAt: users.createdAt,
+      fmName: fundManagers.name,
+      fmId: fundManagers.id,
+    })
+    .from(users)
+    .leftJoin(fundManagers, eq(fundManagers.id, users.fundManagerId))
+    .where(eq(users.role, 'fund_manager'))
+    .orderBy(desc(users.createdAt))
+
+  // FM options for the credential generator dropdown
+  const fmOptions = await db
+    .select({ id: fundManagers.id, name: fundManagers.name })
+    .from(fundManagers)
+    .orderBy(fundManagers.name)
 
   // ── Daily accrual history (last 21 days) ─────────────────────────────────
   const accrualHistory = await db
@@ -387,6 +410,55 @@ export default async function SavingsTvlPage() {
           </section>
         </div>
       </div>
+
+      {/* Fund Manager Accounts */}
+      <section className="mt-8">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+            Fund Manager Accounts
+          </h2>
+          <CreateFmCredentials fundManagers={fmOptions} />
+        </div>
+        <div className="overflow-hidden rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.07]">
+          {fmAccounts.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-sm text-zinc-600">No fund manager accounts yet.</p>
+              <p className="mt-1 text-xs text-zinc-700">Use "Create Access" to provision credentials.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                  <th className="px-4 py-3">Account</th>
+                  <th className="px-4 py-3">Fund Manager</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Created</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {fmAccounts.map((acc) => (
+                  <tr key={acc.id} className="hover:bg-white/[0.02]">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-white">{acc.name ?? acc.email}</p>
+                      {acc.name && <p className="text-[11px] text-zinc-600">{acc.email}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-zinc-400">{acc.fmName ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${acc.isActive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${acc.isActive ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                        {acc.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-zinc-600">
+                      {acc.createdAt ? formatDateTimeEAT(acc.createdAt) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
     </div>
   )
 }

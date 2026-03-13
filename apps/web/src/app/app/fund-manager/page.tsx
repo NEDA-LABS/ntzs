@@ -170,7 +170,7 @@ export default async function FundManagerDashboard() {
       : null
 
   return (
-    <div className="min-h-screen bg-[#0d0d14] px-4 pb-24 pt-6 lg:px-8">
+    <div className="min-h-screen bg-black px-6 py-8">
 
       {/* Header */}
       <div className="mb-7 flex items-start justify-between">
@@ -203,7 +203,7 @@ export default async function FundManagerDashboard() {
           { label: 'Total Deposited', value: (summary?.totalDepositedAllTime ?? 0).toLocaleString(), sub: 'All time inflows', color: 'text-emerald-400' },
           { label: 'Total Withdrawn', value: (summary?.totalWithdrawnAllTime ?? 0).toLocaleString(), sub: 'All time outflows', color: 'text-zinc-300' },
         ].map(({ label, value, sub, color }) => (
-          <div key={label} className="rounded-2xl bg-[#12121e] p-4 ring-1 ring-white/[0.06]">
+          <div key={label} className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-white/10">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{label}</p>
             <p className={`mt-2 font-mono text-xl font-bold ${color}`}>{value}</p>
             <p className="mt-0.5 text-[10px] text-zinc-600">{sub}</p>
@@ -213,7 +213,7 @@ export default async function FundManagerDashboard() {
 
       {/* TVL utilization bar */}
       {fm?.tvlLimitTzs && utilizationPct !== null && (
-        <div className="mb-6 rounded-2xl bg-[#12121e] p-4 ring-1 ring-white/[0.06]">
+        <div className="mb-6 rounded-2xl bg-zinc-950 p-4 ring-1 ring-white/10">
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="text-zinc-500">TVL utilization</span>
             <span className={`font-semibold ${utilizationPct >= 90 ? 'text-rose-400' : utilizationPct >= 70 ? 'text-amber-400' : 'text-emerald-400'}`}>
@@ -239,12 +239,12 @@ export default async function FundManagerDashboard() {
         </h2>
         <div className="space-y-2">
           {products.length === 0 ? (
-            <div className="rounded-2xl bg-[#12121e] p-8 text-center ring-1 ring-white/[0.06]">
+            <div className="rounded-2xl bg-zinc-950 p-8 text-center ring-1 ring-white/10">
               <p className="text-sm text-zinc-600">No products configured.</p>
             </div>
           ) : (
             products.map((p) => (
-              <div key={p.id} className="flex items-center justify-between rounded-2xl bg-[#12121e] px-4 py-4 ring-1 ring-white/[0.06]">
+              <div key={p.id} className="flex items-center justify-between rounded-2xl bg-zinc-950 px-4 py-4 ring-1 ring-white/10">
                 <div className="flex items-center gap-3">
                   <span className={`h-2 w-2 rounded-full ${p.status === 'active' ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
                   <div>
@@ -282,7 +282,7 @@ export default async function FundManagerDashboard() {
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">
             Active Positions ({positionsDetail.length})
           </h2>
-          <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+          <div className="overflow-hidden rounded-2xl bg-zinc-950 ring-1 ring-white/10">
             {positionsDetail.length === 0 ? (
               <div className="p-8 text-center text-sm text-zinc-600">No active positions yet.</div>
             ) : (
@@ -331,7 +331,7 @@ export default async function FundManagerDashboard() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">
               Daily Yield Accruals
             </h2>
-            <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+            <div className="overflow-hidden rounded-2xl bg-zinc-950 ring-1 ring-white/10">
               {accrualHistory.length === 0 ? (
                 <div className="p-8 text-center text-sm text-zinc-600">No accruals yet.</div>
               ) : (
@@ -364,7 +364,7 @@ export default async function FundManagerDashboard() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">
               Recent Transactions
             </h2>
-            <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+            <div className="overflow-hidden rounded-2xl bg-zinc-950 ring-1 ring-white/10">
               {recentTxns.length === 0 ? (
                 <div className="p-8 text-center text-sm text-zinc-600">No transactions yet.</div>
               ) : (
