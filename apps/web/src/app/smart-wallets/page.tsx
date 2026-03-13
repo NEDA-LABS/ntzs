@@ -1,13 +1,17 @@
 import Image from 'next/image'
 import Link from 'next/link'
 
+import { DottedSurface } from '@/components/ui/dotted-surface'
+
 export default function SmartWalletsPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-black text-white">
-      {/* Background Effects */}
-      <div className="pointer-events-none absolute inset-0 opacity-70">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(121,40,202,0.25),transparent_40%),radial-gradient(circle_at_80%_30%,rgba(0,112,243,0.25),transparent_45%),radial-gradient(circle_at_45%_90%,rgba(16,185,129,0.18),transparent_45%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:48px_48px]" />
+    <div className="relative min-h-screen overflow-hidden bg-[#07071a] text-white">
+      {/* Animated dotted surface */}
+      <DottedSurface className="opacity-60" />
+
+      {/* Radial colour overlays on top of dots */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(121,40,202,0.30),transparent_42%),radial-gradient(circle_at_80%_30%,rgba(0,112,243,0.28),transparent_46%),radial-gradient(circle_at_45%_90%,rgba(16,185,129,0.14),transparent_50%)]" />
       </div>
 
       <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-6">
