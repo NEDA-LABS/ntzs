@@ -17,5 +17,9 @@ export default async function AppHome() {
     redirect('/app/admin')
   }
 
+  if (dbUser.role === 'fund_manager') {
+    redirect('/app/fund-manager')
+  }
+
   redirect('/app/user')
 }
