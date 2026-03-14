@@ -13,7 +13,8 @@ export const BASE_RPC_URL = sanitizeEnv(
 )
 
 export const NTZS_CONTRACT_ADDRESS_BASE = sanitizeEnv(
-  process.env.NTZS_CONTRACT_ADDRESS_BASE
+  process.env.NTZS_CONTRACT_ADDRESS_BASE ||
+  process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE
 )
 
 export const MINTER_PRIVATE_KEY = sanitizeEnv(process.env.MINTER_PRIVATE_KEY)

@@ -94,12 +94,17 @@ export async function GET(request: NextRequest) {
 
   const userWallets: Record<string, { id: string; address: string; frozen: boolean }> = {}
   if (userIds.length > 0) {
-    for (const uid of userIds) {
-      const [w] = await db
-        .select({ id: wallets.id, address: wallets.address, frozen: wallets.frozen })
-        .from(wallets)
-        .where(and(eq(wallets.userId, uid), eq(wallets.chain, 'base')))
-        .limit(1)
+    const walletResults = await Promise.all(
+      userIds.map((uid) =>
+        db
+          .select({ id: wallets.id, address: wallets.address, frozen: wallets.frozen })
+          .from(wallets)
+          .where(and(eq(wallets.userId, uid), eq(wallets.chain, 'base')))
+          .limit(1)
+          .then(([w]) => ({ uid, w }))
+      )
+    )
+    for (const { uid, w } of walletResults) {
       if (w) userWallets[uid] = w
     }
   }
@@ -137,18 +142,21 @@ export async function GET(request: NextRequest) {
         provider
       )
 
-      for (const uid of userIds) {
-        const addr = userWallets[uid]?.address
-        if (addr && !addr.startsWith('0x_pending_')) {
+      const balanceEntries = await Promise.all(
+        userIds.map(async (uid) => {
+          const addr = userWallets[uid]?.address
+          if (!addr || addr.startsWith('0x_pending_')) return { uid, tzs: 0 }
           try {
             const bal: bigint = await token.balanceOf(addr)
-            const tzs = Number(bal / BigInt(10) ** BigInt(18))
-            userBalances[uid] = tzs
-            totalBalanceTzs += tzs
+            return { uid, tzs: Number(bal / BigInt(10) ** BigInt(18)) }
           } catch {
-            userBalances[uid] = 0
+            return { uid, tzs: 0 }
           }
-        }
+        })
+      )
+      for (const { uid, tzs } of balanceEntries) {
+        userBalances[uid] = tzs
+        totalBalanceTzs += tzs
       }
     } catch {
       // RPC error, balances will be 0
@@ -192,13 +200,18 @@ export async function GET(request: NextRequest) {
         ['function balanceOf(address) view returns (uint256)'],
         provider
       )
-      for (const sw of subWalletRows) {
-        try {
-          const bal: bigint = await token.balanceOf(sw.address)
-          subWalletBalances[sw.id] = Number(bal / BigInt(10) ** BigInt(18))
-        } catch {
-          subWalletBalances[sw.id] = 0
-        }
+      const swEntries = await Promise.all(
+        subWalletRows.map(async (sw) => {
+          try {
+            const bal: bigint = await token.balanceOf(sw.address)
+            return { id: sw.id, tzs: Number(bal / BigInt(10) ** BigInt(18)) }
+          } catch {
+            return { id: sw.id, tzs: 0 }
+          }
+        })
+      )
+      for (const { id, tzs } of swEntries) {
+        subWalletBalances[id] = tzs
       }
     } catch {
       // RPC error — balances stay 0
