@@ -433,6 +433,7 @@ export const reconciliationEntryType = pgEnum('reconciliation_entry_type', [
   'test_mint',
   'manual_correction',
   'double_mint',
+  'opening_balance',
   'other',
 ])
 
@@ -442,8 +443,9 @@ export const reconciliationEntries = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
 
     chain: chain('chain').notNull(),
-    txHash: text('tx_hash').notNull(),
-    toAddress: text('to_address').notNull(),
+    txHash: text('tx_hash'),
+    toAddress: text('to_address'),
+    contractAddress: text('contract_address'),
     amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
 
     entryType: reconciliationEntryType('entry_type').notNull(),
@@ -457,7 +459,6 @@ export const reconciliationEntries = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    txHashUq: uniqueIndex('reconciliation_entries_tx_hash_uq').on(t.txHash),
     chainIdx: index('reconciliation_entries_chain_idx').on(t.chain),
   })
 )
