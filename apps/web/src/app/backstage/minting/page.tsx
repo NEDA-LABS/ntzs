@@ -552,6 +552,7 @@ export default async function MintingPage() {
         txHash: mintTransactions.txHash,
         mintStatus: mintTransactions.status,
         mintError: mintTransactions.error,
+        mintContractAddress: mintTransactions.contractAddress,
         paymentProvider: depositRequests.paymentProvider,
         pspReference: depositRequests.pspReference,
         pspChannel: depositRequests.pspChannel,
@@ -573,11 +574,17 @@ export default async function MintingPage() {
   const pendingApproval = allDeposits.filter(d => d.status === 'bank_approved').length
   const pendingMints = allDeposits.filter(d => d.status === 'mint_pending').length
   const totalMinted = allDeposits.filter(d => d.status === 'minted').length
-  const totalVolume = allDeposits
-    .filter(d => d.status === 'minted')
-    .reduce((sum, d) => sum + d.amountTzs, 0)
+
+  // Split minted deposits: current contract vs legacy wrong contracts
+  const mintedOnCurrentContract = allDeposits
+    .filter(d => d.status === 'minted' && d.mintContractAddress === NTZS_CONTRACT_ADDRESS)
+  const mintedOnWrongContract = allDeposits
+    .filter(d => d.status === 'minted' && d.mintContractAddress !== NTZS_CONTRACT_ADDRESS)
+
+  const totalVolume = mintedOnCurrentContract.reduce((sum, d) => sum + d.amountTzs, 0)
+  const wrongContractVolume = mintedOnWrongContract.reduce((sum, d) => sum + d.amountTzs, 0)
   
-  // Reconciliation totals
+  // Reconciliation totals — only count mints on the current contract
   const reconciliationTotal = allReconciliationEntries.reduce((sum, e) => sum + e.amountTzs, 0)
   const dbTrackedTotal = totalVolume + reconciliationTotal
   const discrepancy = onChainSupply !== null ? onChainSupply - dbTrackedTotal : null
@@ -613,6 +620,15 @@ export default async function MintingPage() {
         {/* Supply Reconciliation */}
         <div className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-6">
           <h2 className="text-lg font-semibold text-white mb-4">Supply Reconciliation</h2>
+          {wrongContractVolume > 0 && (
+            <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
+              <p className="text-sm font-semibold text-rose-400 mb-1">Legacy wrong-contract mints detected</p>
+              <p className="text-xs text-zinc-400">
+                {mintedOnWrongContract.length} deposit{mintedOnWrongContract.length !== 1 ? 's' : ''} ({wrongContractVolume.toLocaleString()} TZS) were minted to old/incorrect contracts and are excluded from reconciliation.
+                These tokens do not exist on the current contract and are not counted in DB Minted below.
+              </p>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-5">
             <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
               <p className="text-2xl font-bold text-cyan-400">{onChainSupply !== null ? onChainSupply.toLocaleString() : '—'}</p>
@@ -622,7 +638,7 @@ export default async function MintingPage() {
             <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
               <p className="text-2xl font-bold text-blue-400">{totalVolume.toLocaleString()}</p>
               <p className="text-sm text-zinc-500">DB Minted</p>
-              <p className="text-xs text-zinc-600 mt-1">From deposits</p>
+              <p className="text-xs text-zinc-600 mt-1">Current contract only</p>
             </div>
             <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
               <p className="text-2xl font-bold text-violet-400">{reconciliationTotal.toLocaleString()}</p>
