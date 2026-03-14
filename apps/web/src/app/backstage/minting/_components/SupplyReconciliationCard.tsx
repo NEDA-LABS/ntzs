@@ -145,57 +145,34 @@ export function SupplyReconciliationCard({
       </div>
 
       {/* Secondary metric tickers */}
-      <div className="px-5 pb-5 -mt-4 relative" style={{ zIndex: 20 }}>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {/* DB Minted */}
-          <motion.div
-            className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3"
-            initial={shouldReduceMotion ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7, duration: 0.4 }}
-          >
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">DB Minted</p>
-            <p className="text-lg font-bold text-blue-400 tabular-nums leading-tight">{dbMinted.toLocaleString()}</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">Current contract only</p>
-          </motion.div>
-
-          {/* Reconciled */}
-          <motion.div
-            className="rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3"
-            initial={shouldReduceMotion ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8, duration: 0.4 }}
-          >
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">Reconciled</p>
-            <p className="text-lg font-bold text-violet-400 tabular-nums leading-tight">{reconciliationTotal.toLocaleString()}</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">{reconciliationEntryCount} {reconciliationEntryCount === 1 ? 'entry' : 'entries'}</p>
-          </motion.div>
-
-          {/* Total Tracked */}
-          <motion.div
-            className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"
-            initial={shouldReduceMotion ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9, duration: 0.4 }}
-          >
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">Total Tracked</p>
-            <p className="text-lg font-bold text-emerald-400 tabular-nums leading-tight">{dbTrackedTotal.toLocaleString()}</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">DB + Reconciled</p>
-          </motion.div>
-
-          {/* Discrepancy */}
-          <motion.div
-            className={`rounded-xl border px-4 py-3 ${discrepancyBorder} ${discrepancyBg}`}
-            initial={shouldReduceMotion ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.0, duration: 0.4 }}
-          >
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">Discrepancy</p>
-            <p className={`text-lg font-bold tabular-nums leading-tight ${discrepancyColor}`}>{discrepancyDisplay}</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">{discrepancyLabel}</p>
-          </motion.div>
+      <motion.div
+        className="px-6 pb-5 -mt-2 relative grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4 sm:divide-x sm:divide-white/[0.05]"
+        style={{ zIndex: 20 }}
+        initial={shouldReduceMotion ? {} : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7, duration: 0.4 }}
+      >
+        <div className="sm:pr-8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">DB Minted</p>
+          <p className="mt-1 text-sm font-bold text-blue-400 tabular-nums">{dbMinted.toLocaleString()}</p>
+          <p className="text-[10px] text-zinc-700">Current contract only</p>
         </div>
-      </div>
+        <div className="sm:px-8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Reconciled</p>
+          <p className="mt-1 text-sm font-bold text-violet-400 tabular-nums">{reconciliationTotal.toLocaleString()}</p>
+          <p className="text-[10px] text-zinc-700">{reconciliationEntryCount} {reconciliationEntryCount === 1 ? 'entry' : 'entries'}</p>
+        </div>
+        <div className="sm:px-8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Total Tracked</p>
+          <p className="mt-1 text-sm font-bold text-emerald-400 tabular-nums">{dbTrackedTotal.toLocaleString()}</p>
+          <p className="text-[10px] text-zinc-700">DB + Reconciled</p>
+        </div>
+        <div className="sm:pl-8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Discrepancy</p>
+          <p className={`mt-1 text-sm font-bold tabular-nums ${discrepancyColor}`}>{discrepancyDisplay}</p>
+          <p className="text-[10px] text-zinc-700">{discrepancyLabel}</p>
+        </div>
+      </motion.div>
     </div>
   )
 }
