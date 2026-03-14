@@ -620,15 +620,6 @@ export default async function MintingPage() {
         {/* Supply Reconciliation */}
         <div className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-6">
           <h2 className="text-lg font-semibold text-white mb-4">Supply Reconciliation</h2>
-          {wrongContractVolume > 0 && (
-            <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
-              <p className="text-sm font-semibold text-rose-400 mb-1">Legacy wrong-contract mints detected</p>
-              <p className="text-xs text-zinc-400">
-                {mintedOnWrongContract.length} deposit{mintedOnWrongContract.length !== 1 ? 's' : ''} ({wrongContractVolume.toLocaleString()} TZS) were minted to old/incorrect contracts and are excluded from reconciliation.
-                These tokens do not exist on the current contract and are not counted in DB Minted below.
-              </p>
-            </div>
-          )}
           <div className="grid gap-4 sm:grid-cols-5">
             <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
               <p className="text-2xl font-bold text-cyan-400">{onChainSupply !== null ? onChainSupply.toLocaleString() : '—'}</p>
