@@ -1503,7 +1503,7 @@ function WalletDetailPanel({
                       </div>
                       <div className="mt-1.5 flex items-center justify-between">
                         <span className="text-xs text-white/40">
-                          {d.pspChannel ? d.pspChannel : 'Bank deposit'}
+                          {d.pspChannel ? d.pspChannel : 'Deposit'}
                           {d.pspReference ? ` · ${d.pspReference.slice(0, 12)}` : ''}
                         </span>
                         <span className="text-[11px] text-white/30">{formatDateEAT(ts)}</span>
