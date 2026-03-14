@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, inArray, or } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
@@ -229,7 +229,12 @@ export async function GET(request: NextRequest) {
     userLookup[u.id] = { email: u.email, name: u.name || null }
   }
 
-  // Get transfers for this partner with resolved names/emails
+  // Get transfers for this partner — match by partnerId OR by user membership
+  // (handles transfers created before partnerId was reliably stamped)
+  const transferWhere = userIds.length > 0
+    ? or(eq(transfers.partnerId, partnerId), inArray(transfers.fromUserId, userIds))
+    : eq(transfers.partnerId, partnerId)
+
   const rawTransfers = await db
     .select({
       id: transfers.id,
@@ -241,7 +246,7 @@ export async function GET(request: NextRequest) {
       createdAt: transfers.createdAt,
     })
     .from(transfers)
-    .where(eq(transfers.partnerId, partnerId))
+    .where(transferWhere)
     .orderBy(desc(transfers.createdAt))
     .limit(200)
 
@@ -270,7 +275,11 @@ export async function GET(request: NextRequest) {
     toName: userLookup[t.toUserId]?.name || null,
   }))
 
-  // Get deposits for this partner
+  // Get deposits for this partner — match by partnerId OR by user membership
+  const depositWhere = userIds.length > 0
+    ? or(eq(depositRequests.partnerId, partnerId), inArray(depositRequests.userId, userIds))
+    : eq(depositRequests.partnerId, partnerId)
+
   const depositRows = await db
     .select({
       id: depositRequests.id,
@@ -284,7 +293,7 @@ export async function GET(request: NextRequest) {
       createdAt: depositRequests.createdAt,
     })
     .from(depositRequests)
-    .where(eq(depositRequests.partnerId, partnerId))
+    .where(depositWhere)
     .orderBy(desc(depositRequests.createdAt))
     .limit(200)
 
