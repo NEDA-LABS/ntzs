@@ -172,9 +172,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Execute on-chain transfer
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = process.env.BASE_RPC_URL
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     await db
@@ -275,7 +274,7 @@ export async function POST(request: NextRequest) {
       const senderEthBalance = await provider.getBalance(fromWallet.address)
       if (senderEthBalance < MIN_GAS_WEI) {
         console.log(`[v1/transfers] Topping up gas for ${fromWallet.address} (balance: ${ethers.formatEther(senderEthBalance)} ETH)`)
-        const rpcUrlForFund = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL || rpcUrl
+        const rpcUrlForFund = process.env.BASE_RPC_URL || rpcUrl
         const funded = await fundWalletWithGas({
           toAddress: fromWallet.address,
           rpcUrl: rpcUrlForFund,

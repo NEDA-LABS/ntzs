@@ -4,10 +4,9 @@ import { eq, and, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { depositRequests, mintTransactions, dailyIssuance, wallets, auditLogs } from '@ntzs/db'
 
-const BASE_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
+const BASE_RPC_URL = process.env.BASE_RPC_URL || ''
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
-const NTZS_CONTRACT_ADDRESS =
-  process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
+const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
 const DAILY_ISSUANCE_CAP_TZS = Number(process.env.DAILY_ISSUANCE_CAP_TZS ?? '100000000')
 
 const NTZS_ABI = [

@@ -1,18 +1,26 @@
 {
   "name": "nTZS Token List",
-  "timestamp": "2025-12-26T00:00:00.000Z",
-  "version": { "major": 1, "minor": 0, "patch": 0 },
+  "timestamp": "2026-03-13T00:00:00.000Z",
+  "version": { "major": 1, "minor": 1, "patch": 0 },
   "tags": {},
-  "logoURI": "/ntzs-logo.png",
-  "keywords": ["ntzs", "stablecoin"],
+  "logoURI": "https://www.ntzs.co.tz/ntzs-icon.svg",
+  "keywords": ["ntzs", "stablecoin", "tanzanian shilling", "base"],
   "tokens": [
+    {
+      "chainId": 8453,
+      "address": "0xF476BA983DE2F1AD532380630e2CF1D1b8b10688",
+      "name": "nTZS",
+      "symbol": "nTZS",
+      "decimals": 18,
+      "logoURI": "https://www.ntzs.co.tz/ntzs-icon.svg"
+    },
     {
       "chainId": 84532,
       "address": "0x6A9525A5C82F92E10741Fcdcb16DbE9111630077",
       "name": "nTZS",
       "symbol": "nTZS",
       "decimals": 18,
-      "logoURI": "/ntzs-logo.png"
+      "logoURI": "https://www.ntzs.co.tz/ntzs-icon.svg"
     }
   ]
 }

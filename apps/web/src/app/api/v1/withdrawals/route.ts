@@ -36,9 +36,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (amountTzs < 1000) {
+  if (amountTzs < 5000) {
     return NextResponse.json(
-      { error: 'Minimum withdrawal amount is 1,000 TZS' },
+      { error: 'Minimum withdrawal amount is 5,000 TZS' },
       { status: 400 }
     )
   }
@@ -78,9 +78,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Check on-chain balance
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = process.env.BASE_RPC_URL
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
@@ -138,7 +137,7 @@ export async function POST(request: NextRequest) {
       amountTzs: burn.amountTzs,
       ...(autoApprove
         ? { message: 'Withdrawal approved. Burn and payout will be processed shortly.' }
-        : { message: 'Withdrawal requires admin approval for amounts >= 9,000 TZS.' }),
+        : { message: 'Withdrawal requires admin approval for amounts >= 100,000 TZS.' }),
     },
     { status: 201 }
   )

@@ -8,6 +8,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') })
 dotenv.config({ path: path.resolve(__dirname, '../../.env.local'), override: true })
 
 const baseSepoliaRpcUrl = process.env.BASE_SEPOLIA_RPC_URL
+const baseMainnetRpcUrl = process.env.BASE_RPC_URL
 const deployerPrivateKey = process.env.DEPLOYER_PRIVATE_KEY
 
 const accounts = deployerPrivateKey ? [deployerPrivateKey] : []
@@ -27,6 +28,11 @@ const config: HardhatUserConfig = {
       url: baseSepoliaRpcUrl || '',
       accounts,
       chainId: 84532,
+    },
+    base: {
+      url: baseMainnetRpcUrl || '',
+      accounts,
+      chainId: 8453,
     },
   },
 }

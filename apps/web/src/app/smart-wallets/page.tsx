@@ -1,89 +1,18 @@
 import Image from 'next/image'
 import Link from 'next/link'
 
-import { DottedSurface } from '@/components/ui/dotted-surface'
+import { SmartWalletsHero } from './_components/SmartWalletsHero'
 
 export default function SmartWalletsPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#07071a] text-white">
-      {/* Animated dotted surface */}
-      <DottedSurface className="opacity-60" />
+    <div className="bg-black text-white">
+      {/* Hero + partner slider (client component) */}
+      <SmartWalletsHero />
 
-      {/* Radial colour overlays on top of dots */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(121,40,202,0.30),transparent_42%),radial-gradient(circle_at_80%_30%,rgba(0,112,243,0.28),transparent_46%),radial-gradient(circle_at_45%_90%,rgba(16,185,129,0.14),transparent_50%)]" />
-      </div>
-
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-6">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="overflow-hidden rounded-full">
-            <Image src="/ntzs-logo.png" alt="nTZS" width={34} height={34} />
-          </div>
-          <div className="text-sm font-semibold tracking-wide">nTZS</div>
-        </Link>
-
-        <nav className="hidden items-center gap-6 text-sm text-white/70 md:flex">
-          <Link className="hover:text-white" href="/">
-            Digital Reserve
-          </Link>
-          <Link className="text-white font-medium" href="/smart-wallets">
-            Smart Wallets
-          </Link>
-          <Link className="hover:text-white" href="/developers">
-            Developers
-          </Link>
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <Link
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 backdrop-blur-lg transition-colors hover:bg-white/10"
-            href="/developers/login"
-          >
-            Partner Login
-          </Link>
-          <Link
-            className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-white/90"
-            href="/developers/signup"
-          >
-            Get API Key
-          </Link>
-        </div>
-      </header>
-
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-24 pt-16 md:pt-24">
-        {/* Hero */}
-        <section className="text-center max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs text-blue-200 backdrop-blur-lg mb-6">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
-            Wallet as a Service (WaaS)
-          </div>
-          
-          <h1 className="text-5xl font-semibold leading-[1.1] tracking-tight md:text-7xl">
-            Smart Wallet Infrastructure for Africa.
-          </h1>
-          
-          <p className="mt-6 text-lg leading-8 text-white/70 md:text-xl max-w-2xl mx-auto">
-            Abstract away the complexity of blockchain. Instantly provision embedded wallets, program custom logic, and seamlessly on-ramp users via mobile money.
-          </p>
-
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href="/developers/signup"
-              className="inline-flex h-14 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90 w-full sm:w-auto"
-            >
-              Start Building for Free
-            </Link>
-            <Link
-              href="/developers"
-              className="inline-flex h-14 items-center justify-center rounded-full border border-white/15 bg-white/5 px-8 text-base text-white/85 backdrop-blur-lg transition-colors hover:bg-white/10 w-full sm:w-auto"
-            >
-              Read the Docs
-            </Link>
-          </div>
-        </section>
-
+      {/* Below-fold content */}
+      <div className="mx-auto w-full max-w-6xl px-6 pb-24 lg:px-12">
         {/* Feature Grid */}
-        <section className="mt-32 grid gap-6 md:grid-cols-2">
+        <section className="mt-24 grid gap-6 md:grid-cols-2">
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-transform hover:-translate-y-1">
             <div className="h-12 w-12 rounded-full bg-blue-500/20 flex items-center justify-center mb-6 border border-blue-500/30">
               <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -176,7 +105,7 @@ export default function SmartWalletsPage() {
             </Link>
           </div>
         </footer>
-      </main>
+      </div>
     </div>
   )
 }

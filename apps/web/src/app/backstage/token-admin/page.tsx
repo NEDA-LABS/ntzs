@@ -107,7 +107,7 @@ export default function TokenAdminPage() {
 
   const searchParams = useSearchParams()
 
-  const [selectedChain, setSelectedChain] = useState<Chain>('base_sepolia')
+  const [selectedChain, setSelectedChain] = useState<Chain>('base')
   const [selectedAction, setSelectedAction] = useState<Action>('pause')
   const [account, setAccount] = useState('')
   const [copied, setCopied] = useState(false)

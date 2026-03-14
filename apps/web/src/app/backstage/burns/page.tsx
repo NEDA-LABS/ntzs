@@ -9,9 +9,9 @@ import { writeAuditLog } from '@/lib/audit'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
-const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
+const BASE_RPC_URL = process.env.BASE_RPC_URL || ''
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
-const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
+const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
 const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
 const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
@@ -179,9 +179,10 @@ async function executeBurnAction(formData: FormData) {
   if (!req) throw new Error('Burn request not found')
   if (req.status !== 'approved') throw new Error('Burn request is not approved')
 
-  const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC_URL)
+  const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
   const signer = new ethers.Wallet(MINTER_PRIVATE_KEY, provider)
-  const token = new ethers.Contract(req.contractAddress, NTZS_ABI, signer)
+  // Always use current env contract address — DB may have stale Sepolia address
+  const token = new ethers.Contract(NTZS_CONTRACT_ADDRESS, NTZS_ABI, signer)
 
   const paused: boolean = await token.paused()
   if (paused) {

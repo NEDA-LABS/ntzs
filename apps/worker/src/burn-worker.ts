@@ -141,9 +141,11 @@ export async function processBurnJob(
     }
 
     // Execute burn on-chain
+    // Always use the current env contract address — DB records may have stale addresses from testnet
+    const activeContractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE || job.contract_address
     const provider = new ethers.JsonRpcProvider(rpcUrl)
     const signer = new ethers.Wallet(privateKey, provider)
-    const token = new ethers.Contract(job.contract_address, NTZS_BURN_ABI, signer)
+    const token = new ethers.Contract(activeContractAddress, NTZS_BURN_ABI, signer)
 
     // Verify burner role
     const burnerRole: string = await token.BURNER_ROLE()

@@ -12,10 +12,10 @@ const { Client } = pg
 const GAS_AMOUNT = '0.0005'
 
 async function main() {
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
+  const rpcUrl = process.env.BASE_RPC_URL
   const relayerKey = process.env.RELAYER_PRIVATE_KEY
 
-  if (!rpcUrl) throw new Error('BASE_SEPOLIA_RPC_URL or BASE_RPC_URL is required')
+  if (!rpcUrl) throw new Error('BASE_RPC_URL is required')
   if (!relayerKey) throw new Error('RELAYER_PRIVATE_KEY is required')
 
   const provider = new ethers.JsonRpcProvider(rpcUrl)
