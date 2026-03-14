@@ -478,7 +478,9 @@ async function addReconciliationEntryAction(formData: FormData) {
   if (needsAddress && (!rawToAddress || !ethers.isAddress(rawToAddress))) {
     throw new Error('A valid wallet address is required for this entry type')
   }
-  if (!amountTzs || amountTzs <= 0) {
+  const correctionTypes: ReconciliationEntryType[] = ['manual_correction', 'opening_balance', 'other']
+  const allowNegative = correctionTypes.includes(entryType)
+  if (!amountTzs || (!allowNegative && amountTzs <= 0)) {
     throw new Error('Invalid amount')
   }
   if (!reason) {

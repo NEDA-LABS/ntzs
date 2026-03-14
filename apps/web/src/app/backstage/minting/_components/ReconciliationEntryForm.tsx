@@ -7,6 +7,7 @@ type ReconciliationEntryType = 'untracked_mint' | 'test_mint' | 'manual_correcti
 
 const TX_HASH_REQUIRED: ReconciliationEntryType[] = ['untracked_mint', 'test_mint', 'double_mint']
 const ADDRESS_REQUIRED: ReconciliationEntryType[] = ['untracked_mint', 'test_mint', 'double_mint']
+const ALLOWS_NEGATIVE: ReconciliationEntryType[] = ['manual_correction', 'opening_balance', 'other']
 
 const TYPE_LABELS: Record<ReconciliationEntryType, string> = {
   untracked_mint: 'Untracked Mint — on-chain tx not in DB (requires tx hash)',
@@ -52,6 +53,7 @@ export function ReconciliationEntryForm({ addReconciliationEntryAction, discrepa
 
   const needsTxHash = TX_HASH_REQUIRED.includes(entryType)
   const needsAddress = ADDRESS_REQUIRED.includes(entryType)
+  const allowsNegative = ALLOWS_NEGATIVE.includes(entryType)
   const description = DESCRIPTIONS[entryType]
 
   return (
@@ -83,6 +85,9 @@ export function ReconciliationEntryForm({ addReconciliationEntryAction, discrepa
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1">
               Amount (TZS) *
+              {allowsNegative && discrepancy !== null && discrepancy < 0 && (
+                <span className="ml-1.5 text-zinc-600">(negative to reduce tracked total)</span>
+              )}
             </label>
             <input
               type="number"
@@ -90,9 +95,14 @@ export function ReconciliationEntryForm({ addReconciliationEntryAction, discrepa
               defaultValue={discrepancy ?? undefined}
               placeholder="e.g. 135388"
               required
-              min={1}
+              min={allowsNegative ? undefined : 1}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-white/30 focus:outline-none"
             />
+            {allowsNegative && discrepancy !== null && discrepancy < 0 && (
+              <p className="mt-1 text-[11px] text-amber-500/80">
+                Discrepancy is {discrepancy.toLocaleString()} TZS. Submit this entry to zero it out.
+              </p>
+            )}
           </div>
 
           <div>
