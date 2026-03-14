@@ -38,7 +38,7 @@ export function AIOrbit({
       status: walletBalance > 0 ? "completed" : "pending",
       energy: walletEnergy,
       actionLabel: walletBalance > 0 ? "Send TZS" : "Deposit",
-      actionHref: walletBalance > 0 ? "/app/user/send" : "/app/user/deposit",
+      actionHref: walletBalance > 0 ? "/app/user/withdraw" : "/app/user/deposits/new",
       accentColor: "blue",
     },
     {
@@ -70,7 +70,7 @@ export function AIOrbit({
       status: recentTxCount > 0 ? "completed" : "pending",
       energy: txEnergy || 5,
       actionLabel: "View all",
-      actionHref: "/app/user/transactions",
+      actionHref: "/app/user/activity",
       accentColor: "emerald",
     },
     {
