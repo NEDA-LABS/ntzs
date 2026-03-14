@@ -27,26 +27,43 @@ function verifySessionToken(token: string): string | null {
   }
 }
 
-async function fetchERC20BalanceTzs(rpcUrl: string, contractAddress: string, walletAddress: string): Promise<number> {
-  const padded = walletAddress.toLowerCase().replace('0x', '').padStart(64, '0')
-  const data = '0x70a08231' + padded // balanceOf(address) selector
+/** Fetch ERC-20 balances for multiple addresses in a single JSON-RPC batch call */
+async function fetchERC20BalancesBatch(
+  rpcUrl: string,
+  contractAddress: string,
+  addresses: string[]
+): Promise<Record<string, number>> {
+  if (addresses.length === 0) return {}
+  const batch = addresses.map((addr, i) => ({
+    jsonrpc: '2.0',
+    method: 'eth_call',
+    params: [
+      { to: contractAddress, data: '0x70a08231' + addr.toLowerCase().replace('0x', '').padStart(64, '0') },
+      'latest',
+    ],
+    id: i,
+  }))
   try {
     const res = await fetch(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'eth_call',
-        params: [{ to: contractAddress, data }, 'latest'],
-        id: 1,
-      }),
-      signal: AbortSignal.timeout(8000),
+      body: JSON.stringify(batch),
+      signal: AbortSignal.timeout(15000),
     })
-    const json = await res.json() as { result?: string; error?: unknown }
-    if (json.error || !json.result || json.result === '0x') return 0
-    return Number(BigInt(json.result) / BigInt(10) ** BigInt(18))
+    const results = await res.json() as Array<{ id: number; result?: string; error?: unknown }>
+    const out: Record<string, number> = {}
+    for (const item of results) {
+      const addr = addresses[item.id]
+      if (!addr) continue
+      if (item.error || !item.result || item.result === '0x') {
+        out[addr] = 0
+      } else {
+        out[addr] = Number(BigInt(item.result) / BigInt(10) ** BigInt(18))
+      }
+    }
+    return out
   } catch {
-    return 0
+    return {}
   }
 }
 
@@ -135,28 +152,27 @@ export async function GET(request: NextRequest) {
   const rpcUrl = BASE_RPC_URL
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
-  // Get treasury wallet balance
-  let treasuryBalanceTzs = 0
-  if (partner.treasuryWalletAddress) {
-    treasuryBalanceTzs = await fetchERC20BalanceTzs(rpcUrl, contractAddress, partner.treasuryWalletAddress)
-  }
+  // Collect all addresses to query in one batch RPC call
+  const treasuryAddr = partner.treasuryWalletAddress
+  const userAddrs: { uid: string; addr: string }[] = userIds
+    .map((uid) => ({ uid, addr: userWallets[uid]?.address ?? '' }))
+    .filter((x) => x.addr && !x.addr.startsWith('0x_pending_'))
+
+  const allAddrs = [
+    ...(treasuryAddr ? [treasuryAddr] : []),
+    ...userAddrs.map((x) => x.addr),
+  ]
+
+  const balanceMap = await fetchERC20BalancesBatch(rpcUrl, contractAddress, allAddrs)
+
+  const treasuryBalanceTzs = treasuryAddr ? (balanceMap[treasuryAddr] ?? 0) : 0
 
   const userBalances: Record<string, number> = {}
   let totalBalanceTzs = 0
-
-  if (userIds.length > 0) {
-    const balanceEntries = await Promise.all(
-      userIds.map(async (uid) => {
-        const addr = userWallets[uid]?.address
-        if (!addr || addr.startsWith('0x_pending_')) return { uid, tzs: 0 }
-        const tzs = await fetchERC20BalanceTzs(rpcUrl, contractAddress, addr)
-        return { uid, tzs }
-      })
-    )
-    for (const { uid, tzs } of balanceEntries) {
-      userBalances[uid] = tzs
-      totalBalanceTzs += tzs
-    }
+  for (const { uid, addr } of userAddrs) {
+    const tzs = balanceMap[addr] ?? 0
+    userBalances[uid] = tzs
+    totalBalanceTzs += tzs
   }
 
   // Build user list with balances
@@ -186,17 +202,13 @@ export async function GET(request: NextRequest) {
     .where(eq(partnerSubWallets.partnerId, partnerId))
     .orderBy(partnerSubWallets.walletIndex)
 
-  // Get on-chain balances for sub-wallets
+  // Get on-chain balances for sub-wallets (batched)
   const subWalletBalances: Record<string, number> = {}
   if (subWalletRows.length > 0) {
-    const swEntries = await Promise.all(
-      subWalletRows.map(async (sw) => {
-        const tzs = await fetchERC20BalanceTzs(rpcUrl, contractAddress, sw.address)
-        return { id: sw.id, tzs }
-      })
-    )
-    for (const { id, tzs } of swEntries) {
-      subWalletBalances[id] = tzs
+    const swAddrs = subWalletRows.map((sw) => sw.address)
+    const swMap = await fetchERC20BalancesBatch(rpcUrl, contractAddress, swAddrs)
+    for (const sw of subWalletRows) {
+      subWalletBalances[sw.id] = swMap[sw.address] ?? 0
     }
   }
 
