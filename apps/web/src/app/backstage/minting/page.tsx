@@ -20,9 +20,9 @@ import { writeAuditLog } from '@/lib/audit'
 import { SafeMintActions } from './_components/SafeMintActions'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
-const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
+const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
-const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
+const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
 const DAILY_ISSUANCE_CAP_TZS = Number(process.env.DAILY_ISSUANCE_CAP_TZS ?? '100000000')
 
 const NTZS_ABI = [
@@ -65,7 +65,7 @@ async function processPendingMintsAction() {
     return
   }
   
-  const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC_URL)
+  const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
   const signer = new ethers.Wallet(MINTER_PRIVATE_KEY, provider)
   const contract = new ethers.Contract(NTZS_CONTRACT_ADDRESS, NTZS_ABI, signer)
 
@@ -75,7 +75,7 @@ async function processPendingMintsAction() {
   if (minterBalance < MIN_MINTER_ETH) {
     console.error(
       `[Manual Mint] Minter wallet low on gas: ${ethers.formatEther(minterBalance)} ETH. ` +
-      `Fund ${signer.address} on Base Sepolia with at least 0.001 ETH.`
+      `Fund ${signer.address} on Base mainnet with at least 0.001 ETH.`
     )
     revalidatePath('/backstage/minting')
     return
@@ -493,7 +493,7 @@ async function addReconciliationEntryAction(formData: FormData) {
 
 async function getOnChainSupply(): Promise<number | null> {
   try {
-    const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC_URL)
+    const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
     const token = new ethers.Contract(
       NTZS_CONTRACT_ADDRESS,
       ['function totalSupply() view returns (uint256)', 'function decimals() view returns (uint8)'],
