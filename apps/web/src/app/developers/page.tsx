@@ -341,7 +341,7 @@ console.log(transfer.feeAmountTzs)  // Platform fee collected`}
               title="withdraw.ts"
               code={`const withdrawal = await ntzs.withdrawals.create({
   userId: user.id,
-  amountTzs: 3000,
+  amountTzs: 5000,   // minimum 5,000 TZS
   phone: '255712345678'
 })
 
@@ -444,9 +444,8 @@ try {
   -d '{"externalId": "user_1", "email": "user@example.com"}'`}
             />
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-              API keys start with <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ntzs_test_</code> for
-              testnet and <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ntzs_live_</code> for
-              production. Get yours from the{' '}
+              API keys start with <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ntzs_live_</code>.
+              Get yours from the{' '}
               <Link href="/developers/signup" className="text-blue-400 hover:underline">
                 partner signup
               </Link>.
