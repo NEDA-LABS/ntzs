@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { eq, and, desc, inArray, or } from 'drizzle-orm'
-import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
@@ -25,6 +24,29 @@ function verifySessionToken(token: string): string | null {
     return payload.pid || null
   } catch {
     return null
+  }
+}
+
+async function fetchERC20BalanceTzs(rpcUrl: string, contractAddress: string, walletAddress: string): Promise<number> {
+  const padded = walletAddress.toLowerCase().replace('0x', '').padStart(64, '0')
+  const data = '0x70a08231' + padded // balanceOf(address) selector
+  try {
+    const res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'eth_call',
+        params: [{ to: contractAddress, data }, 'latest'],
+        id: 1,
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
+    const json = await res.json() as { result?: string; error?: unknown }
+    if (json.error || !json.result || json.result === '0x') return 0
+    return Number(BigInt(json.result) / BigInt(10) ** BigInt(18))
+  } catch {
+    return 0
   }
 }
 
@@ -109,57 +131,31 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Get on-chain balances (best-effort, fallback to 0)
+  // Get on-chain balances using raw JSON-RPC fetch (more reliable in serverless than ethers provider)
   const rpcUrl = BASE_RPC_URL
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
   // Get treasury wallet balance
   let treasuryBalanceTzs = 0
-  if (partner.treasuryWalletAddress && rpcUrl && contractAddress) {
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl)
-      const token = new ethers.Contract(
-        contractAddress,
-        ['function balanceOf(address) view returns (uint256)'],
-        provider
-      )
-      const bal: bigint = await token.balanceOf(partner.treasuryWalletAddress)
-      treasuryBalanceTzs = Number(bal / BigInt(10) ** BigInt(18))
-    } catch {
-      // RPC error, balance stays 0
-    }
+  if (partner.treasuryWalletAddress) {
+    treasuryBalanceTzs = await fetchERC20BalanceTzs(rpcUrl, contractAddress, partner.treasuryWalletAddress)
   }
 
   const userBalances: Record<string, number> = {}
   let totalBalanceTzs = 0
 
-  if (rpcUrl && contractAddress) {
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl)
-      const token = new ethers.Contract(
-        contractAddress,
-        ['function balanceOf(address) view returns (uint256)'],
-        provider
-      )
-
-      const balanceEntries = await Promise.all(
-        userIds.map(async (uid) => {
-          const addr = userWallets[uid]?.address
-          if (!addr || addr.startsWith('0x_pending_')) return { uid, tzs: 0 }
-          try {
-            const bal: bigint = await token.balanceOf(addr)
-            return { uid, tzs: Number(bal / BigInt(10) ** BigInt(18)) }
-          } catch {
-            return { uid, tzs: 0 }
-          }
-        })
-      )
-      for (const { uid, tzs } of balanceEntries) {
-        userBalances[uid] = tzs
-        totalBalanceTzs += tzs
-      }
-    } catch {
-      // RPC error, balances will be 0
+  if (userIds.length > 0) {
+    const balanceEntries = await Promise.all(
+      userIds.map(async (uid) => {
+        const addr = userWallets[uid]?.address
+        if (!addr || addr.startsWith('0x_pending_')) return { uid, tzs: 0 }
+        const tzs = await fetchERC20BalanceTzs(rpcUrl, contractAddress, addr)
+        return { uid, tzs }
+      })
+    )
+    for (const { uid, tzs } of balanceEntries) {
+      userBalances[uid] = tzs
+      totalBalanceTzs += tzs
     }
   }
 
@@ -192,29 +188,15 @@ export async function GET(request: NextRequest) {
 
   // Get on-chain balances for sub-wallets
   const subWalletBalances: Record<string, number> = {}
-  if (rpcUrl && contractAddress && subWalletRows.length > 0) {
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl)
-      const token = new ethers.Contract(
-        contractAddress,
-        ['function balanceOf(address) view returns (uint256)'],
-        provider
-      )
-      const swEntries = await Promise.all(
-        subWalletRows.map(async (sw) => {
-          try {
-            const bal: bigint = await token.balanceOf(sw.address)
-            return { id: sw.id, tzs: Number(bal / BigInt(10) ** BigInt(18)) }
-          } catch {
-            return { id: sw.id, tzs: 0 }
-          }
-        })
-      )
-      for (const { id, tzs } of swEntries) {
-        subWalletBalances[id] = tzs
-      }
-    } catch {
-      // RPC error — balances stay 0
+  if (subWalletRows.length > 0) {
+    const swEntries = await Promise.all(
+      subWalletRows.map(async (sw) => {
+        const tzs = await fetchERC20BalanceTzs(rpcUrl, contractAddress, sw.address)
+        return { id: sw.id, tzs }
+      })
+    )
+    for (const { id, tzs } of swEntries) {
+      subWalletBalances[id] = tzs
     }
   }
 
