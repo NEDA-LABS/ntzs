@@ -113,7 +113,7 @@ export async function executeMint(depositId: string): Promise<MintResult> {
 
     const minterRole: string = await token.MINTER_ROLE()
     const hasMinter: boolean = await token.hasRole(minterRole, await signer.getAddress())
-    if (!hasMinter) throw new Error(`Minter key does not have MINTER_ROLE (signer: ${await signer.getAddress()})`)
+    if (!hasMinter) throw new Error(`Minter key does not have MINTER_ROLE (signer: ${await signer.getAddress()}, contract: ${NTZS_CONTRACT_ADDRESS})`)
 
     const amountWei = BigInt(String(job.amountTzs)) * BigInt(10) ** BigInt(18)
     const tx = await token.mint(wallet.address, amountWei)
