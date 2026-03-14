@@ -13,14 +13,6 @@
       "symbol": "nTZS",
       "decimals": 18,
       "logoURI": "https://www.ntzs.co.tz/ntzs-icon.svg"
-    },
-    {
-      "chainId": 84532,
-      "address": "0x6A9525A5C82F92E10741Fcdcb16DbE9111630077",
-      "name": "nTZS",
-      "symbol": "nTZS",
-      "decimals": 18,
-      "logoURI": "https://www.ntzs.co.tz/ntzs-icon.svg"
     }
   ]
 }
