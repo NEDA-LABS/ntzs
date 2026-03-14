@@ -18,11 +18,9 @@ import {
 } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { SafeMintActions } from './_components/SafeMintActions'
+import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS } from '@/lib/env'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
-const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
-const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
-const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
 const DAILY_ISSUANCE_CAP_TZS = Number(process.env.DAILY_ISSUANCE_CAP_TZS ?? '100000000')
 
 const NTZS_ABI = [
