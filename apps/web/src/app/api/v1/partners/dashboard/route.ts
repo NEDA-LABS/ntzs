@@ -104,9 +104,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Get on-chain balances (best-effort, fallback to 0)
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = process.env.BASE_RPC_URL
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
 
   // Get treasury wallet balance
   let treasuryBalanceTzs = 0
