@@ -19,6 +19,7 @@ import {
 import { writeAuditLog } from '@/lib/audit'
 import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
 import { SafeMintActions } from './_components/SafeMintActions'
+import { SupplyReconciliationCard } from './_components/SupplyReconciliationCard'
 import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS } from '@/lib/env'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
@@ -633,37 +634,15 @@ export default async function MintingPage() {
 
       <div className="p-8">
         {/* Supply Reconciliation */}
-        <div className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Supply Reconciliation</h2>
-          <div className="grid gap-4 sm:grid-cols-5">
-            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-              <p className="text-2xl font-bold text-cyan-400">{onChainSupply !== null ? onChainSupply.toLocaleString() : '—'}</p>
-              <p className="text-sm text-zinc-500">On-Chain Supply</p>
-              <p className="text-xs text-zinc-600 mt-1">Source of truth</p>
-            </div>
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-              <p className="text-2xl font-bold text-blue-400">{totalVolume.toLocaleString()}</p>
-              <p className="text-sm text-zinc-500">DB Minted</p>
-              <p className="text-xs text-zinc-600 mt-1">Current contract only</p>
-            </div>
-            <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
-              <p className="text-2xl font-bold text-violet-400">{reconciliationTotal.toLocaleString()}</p>
-              <p className="text-sm text-zinc-500">Reconciled</p>
-              <p className="text-xs text-zinc-600 mt-1">{allReconciliationEntries.length} entries</p>
-            </div>
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-              <p className="text-2xl font-bold text-emerald-400">{dbTrackedTotal.toLocaleString()}</p>
-              <p className="text-sm text-zinc-500">Total Tracked</p>
-              <p className="text-xs text-zinc-600 mt-1">DB + Reconciled</p>
-            </div>
-            <div className={`rounded-xl border p-4 ${discrepancy === 0 ? 'border-emerald-500/20 bg-emerald-500/5' : discrepancy !== null ? 'border-amber-500/20 bg-amber-500/5' : 'border-zinc-500/20 bg-zinc-500/5'}`}>
-              <p className={`text-2xl font-bold ${discrepancy === 0 ? 'text-emerald-400' : discrepancy !== null ? 'text-amber-400' : 'text-zinc-400'}`}>
-                {discrepancy !== null ? (discrepancy === 0 ? '✓ Balanced' : `${discrepancy > 0 ? '+' : ''}${discrepancy.toLocaleString()}`) : '—'}
-              </p>
-              <p className="text-sm text-zinc-500">Discrepancy</p>
-              <p className="text-xs text-zinc-600 mt-1">{discrepancy === 0 ? 'All accounted' : discrepancy !== null ? 'Needs attention' : 'Loading...'}</p>
-            </div>
-          </div>
+        <div className="mb-6">
+          <SupplyReconciliationCard
+            onChainSupply={onChainSupply}
+            dbMinted={totalVolume}
+            reconciliationTotal={reconciliationTotal}
+            dbTrackedTotal={dbTrackedTotal}
+            discrepancy={discrepancy}
+            reconciliationEntryCount={allReconciliationEntries.length}
+          />
         </div>
 
         {/* Stats */}
