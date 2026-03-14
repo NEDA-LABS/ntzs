@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone } from '@/lib/psp/snippe'
 import { users, wallets, partnerUsers, burnRequests } from '@ntzs/db'
@@ -78,8 +79,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Check on-chain balance
-  const rpcUrl = process.env.BASE_RPC_URL
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = BASE_RPC_URL
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })

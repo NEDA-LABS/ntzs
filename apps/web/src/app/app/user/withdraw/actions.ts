@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp/snippe'
 import { writeAuditLog } from '@/lib/audit'
@@ -56,8 +57,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
     .limit(1)
   if (!approvedKyc.length) redirect('/app/user/kyc')
 
-  const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE ?? process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
   if (!contractAddress) throw new Error('Contract not configured')
 
   const recipientPhone = normalizePhone(phone)
@@ -90,8 +90,8 @@ export async function createWithdrawRequestAction(formData: FormData) {
 
   // ── Small amounts: execute burn + payout inline ──────────────────────────
 
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const privateKey = process.env.MINTER_PRIVATE_KEY
+  const rpcUrl = BASE_RPC_URL
+  const privateKey = MINTER_PRIVATE_KEY
   if (!rpcUrl || !privateKey) throw new Error('Burn executor not configured')
 
   // Create burn request record first (so we have an ID for the audit trail)

@@ -3,6 +3,7 @@ import { ethers } from 'ethers'
 import { sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { wallets } from '@ntzs/db'
 
@@ -18,9 +19,8 @@ export async function GET(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
 
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = BASE_RPC_URL
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })

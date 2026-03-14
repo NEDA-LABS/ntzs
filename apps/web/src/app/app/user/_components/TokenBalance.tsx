@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
-const RPC_URL = 'https://sepolia.base.org'
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE || ''
+const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org'
 
 interface TokenBalanceProps {
   walletAddress: string

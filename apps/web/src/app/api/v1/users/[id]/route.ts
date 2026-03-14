@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { users, wallets, partnerUsers } from '@ntzs/db'
 
@@ -54,9 +55,8 @@ export async function GET(
   let balanceTzs = 0
   if (wallet?.address && !wallet.address.startsWith('0x_pending_')) {
     try {
-      const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-      const contractAddress =
-        process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+      const rpcUrl = BASE_RPC_URL
+      const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
       if (rpcUrl && contractAddress) {
         const provider = new ethers.JsonRpcProvider(rpcUrl)

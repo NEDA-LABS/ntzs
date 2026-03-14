@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { sendPayout, sendBankPayout } from '@/lib/psp/snippe'
 import { deriveTreasuryWallet } from '@/lib/waas/hd-wallets'
 import { partners } from '@ntzs/db'
@@ -114,9 +115,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Verify on-chain treasury balance
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = BASE_RPC_URL
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })

@@ -4,14 +4,13 @@ import { revalidatePath } from 'next/cache'
 
 import { requireRole, requireDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/lib/env'
 import { burnRequests, users, wallets } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
-const BASE_RPC_URL = process.env.BASE_RPC_URL || ''
-const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
-const NTZS_CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
+const NTZS_CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
 const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
 const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''

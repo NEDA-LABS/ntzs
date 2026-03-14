@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+
 const ABI = ['function totalSupply() view returns (uint256)'] as const
 
 /**
@@ -12,8 +14,8 @@ const ABI = ['function totalSupply() view returns (uint256)'] as const
  * Spec: https://docs.google.com/document/d/1v27QFoQq1SKT3Priq3aqPgB70Xd_PnDzbOCiuoCyixw (Section C)
  */
 export async function GET() {
-  const rpcUrl = process.env.BASE_RPC_URL
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = BASE_RPC_URL
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     return new NextResponse('Blockchain configuration missing', { status: 500 })

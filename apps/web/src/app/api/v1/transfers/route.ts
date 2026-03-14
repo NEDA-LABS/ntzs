@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL as ENV_BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE as ENV_CONTRACT_ADDRESS } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { signAndSendTransfer, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
@@ -172,8 +173,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Execute on-chain transfer
-  const rpcUrl = process.env.BASE_RPC_URL
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = ENV_BASE_RPC_URL
+  const contractAddress = ENV_CONTRACT_ADDRESS
 
   if (!rpcUrl || !contractAddress) {
     await db
@@ -274,7 +275,7 @@ export async function POST(request: NextRequest) {
       const senderEthBalance = await provider.getBalance(fromWallet.address)
       if (senderEthBalance < MIN_GAS_WEI) {
         console.log(`[v1/transfers] Topping up gas for ${fromWallet.address} (balance: ${ethers.formatEther(senderEthBalance)} ETH)`)
-        const rpcUrlForFund = process.env.BASE_RPC_URL || rpcUrl
+        const rpcUrlForFund = ENV_BASE_RPC_URL || rpcUrl
         const funded = await fundWalletWithGas({
           toAddress: fromWallet.address,
           rpcUrl: rpcUrlForFund,

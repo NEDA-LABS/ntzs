@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, depositRequests, burnRequests } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateEAT } from '@/lib/format-date'
@@ -81,8 +82,8 @@ export default async function PartnersPage() {
     .orderBy(desc(partners.createdAt))
 
   // Fetch on-chain treasury balances (best-effort)
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = BASE_RPC_URL
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
   const treasuryBalances: Record<string, number> = {}
 
   if (rpcUrl && contractAddress) {

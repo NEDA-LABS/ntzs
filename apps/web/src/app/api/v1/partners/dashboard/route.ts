@@ -4,6 +4,7 @@ import { eq, and, desc } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, partnerSubWallets, users, wallets, transfers, depositRequests } from '@ntzs/db'
 
 function verifySessionToken(token: string): string | null {
@@ -104,8 +105,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Get on-chain balances (best-effort, fallback to 0)
-  const rpcUrl = process.env.BASE_RPC_URL
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = BASE_RPC_URL
+  const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
   // Get treasury wallet balance
   let treasuryBalanceTzs = 0
