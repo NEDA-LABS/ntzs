@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
-import { eq, and, lt, isNotNull } from 'drizzle-orm'
+import { eq, and, lt, isNotNull, inArray } from 'drizzle-orm'
 import { checkPaymentStatus } from '@/lib/psp/snippe'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(depositRequests.status, 'submitted'),
-          eq(depositRequests.paymentProvider, 'snippe'),
+          inArray(depositRequests.paymentProvider, ['snippe', 'snippe_card']),
           isNotNull(depositRequests.pspReference),
           lt(depositRequests.createdAt, thirtySecondsAgo)
         )
