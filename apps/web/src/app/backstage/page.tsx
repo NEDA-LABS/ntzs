@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 
 import { UserRole, requireAnyRole, requireRole, getCurrentDbUser } from '@/lib/auth/rbac'
+import { SubmitButton } from './_components/SubmitButton'
 import { getDb } from '@/lib/db'
 import { users, kycCases, depositRequests, depositApprovals, banks, wallets } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
@@ -389,12 +390,12 @@ export default async function BackstagePage() {
                             <option value="platform_compliance">platform_compliance</option>
                             <option value="super_admin">super_admin</option>
                           </select>
-                          <button
-                            type="submit"
-                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/10 transition-colors"
+                          <SubmitButton
+                            pendingText="Saving..."
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/10"
                           >
                             Update
-                          </button>
+                          </SubmitButton>
                         </form>
                       </td>
                     </tr>
@@ -442,22 +443,22 @@ export default async function BackstagePage() {
                           <form action={updateKycStatusAction} className="flex-1">
                             <input type="hidden" name="kycCaseId" value={kyc.id} />
                             <input type="hidden" name="status" value="approved" />
-                            <button
-                              type="submit"
-                              className="w-full rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            <SubmitButton
+                              pendingText="Approving..."
+                              className="w-full rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
                             >
                               Approve
-                            </button>
+                            </SubmitButton>
                           </form>
                           <form action={updateKycStatusAction} className="flex-1">
                             <input type="hidden" name="kycCaseId" value={kyc.id} />
                             <input type="hidden" name="status" value="rejected" />
-                            <button
-                              type="submit"
-                              className="w-full rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20 transition-colors"
+                            <SubmitButton
+                              pendingText="Rejecting..."
+                              className="w-full rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20"
                             >
                               Reject
-                            </button>
+                            </SubmitButton>
                           </form>
                         </div>
                       </div>
@@ -505,22 +506,22 @@ export default async function BackstagePage() {
                           <form action={approveDepositAction} className="flex-1">
                             <input type="hidden" name="depositId" value={dep.id} />
                             <input type="hidden" name="decision" value="approved" />
-                            <button
-                              type="submit"
-                              className="w-full rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            <SubmitButton
+                              pendingText="Approving..."
+                              className="w-full rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
                             >
                               Approve Mint
-                            </button>
+                            </SubmitButton>
                           </form>
                           <form action={approveDepositAction} className="flex-1">
                             <input type="hidden" name="depositId" value={dep.id} />
                             <input type="hidden" name="decision" value="rejected" />
-                            <button
-                              type="submit"
-                              className="w-full rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20 transition-colors"
+                            <SubmitButton
+                              pendingText="Rejecting..."
+                              className="w-full rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20"
                             >
                               Reject
-                            </button>
+                            </SubmitButton>
                           </form>
                         </div>
                       </div>

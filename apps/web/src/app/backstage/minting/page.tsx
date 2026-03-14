@@ -20,6 +20,7 @@ import { writeAuditLog } from '@/lib/audit'
 import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
 import { SafeMintActions } from './_components/SafeMintActions'
 import { SupplyReconciliationCard } from './_components/SupplyReconciliationCard'
+import { SubmitButton } from '../_components/SubmitButton'
 import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS } from '@/lib/env'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
@@ -618,15 +619,15 @@ export default async function MintingPage() {
           </div>
           {pendingMints > 0 && (
             <form action={processPendingMintsAction}>
-              <button
-                type="submit"
-                className="rounded-lg bg-emerald-500/20 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/30 transition-colors flex items-center gap-2"
+              <SubmitButton
+                pendingText="Processing..."
+                className="rounded-lg bg-emerald-500/20 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/30"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 Process {pendingMints} Pending Mint{pendingMints !== 1 ? 's' : ''}
-              </button>
+              </SubmitButton>
             </form>
           )}
         </div>
@@ -760,33 +761,33 @@ export default async function MintingPage() {
                             <form action={approveDepositAction}>
                               <input type="hidden" name="depositId" value={dep.id} />
                               <input type="hidden" name="decision" value="approved" />
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                              <SubmitButton
+                                pendingText="Approving..."
+                                className="rounded-lg bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20"
                               >
                                 Approve Mint
-                              </button>
+                              </SubmitButton>
                             </form>
                             <form action={approveDepositAction}>
                               <input type="hidden" name="depositId" value={dep.id} />
                               <input type="hidden" name="decision" value="rejected" />
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-400 hover:bg-rose-500/20 transition-colors"
+                              <SubmitButton
+                                pendingText="Rejecting..."
+                                className="rounded-lg bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-400 hover:bg-rose-500/20"
                               >
                                 Reject
-                              </button>
+                              </SubmitButton>
                             </form>
                           </div>
                         ) : dep.status === 'mint_failed' ? (
                           <form action={retryMintAction}>
                             <input type="hidden" name="depositId" value={dep.id} />
-                            <button
-                              type="submit"
-                              className="rounded-lg bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
+                            <SubmitButton
+                              pendingText="Retrying..."
+                              className="rounded-lg bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/20"
                             >
                               Retry Mint
-                            </button>
+                            </SubmitButton>
                           </form>
                         ) : dep.status === 'minted' && dep.txHash ? (
                           <span className="inline-flex items-center gap-1 text-sm text-emerald-400">
@@ -820,12 +821,12 @@ export default async function MintingPage() {
                               placeholder="ZenoPay Trans ID"
                               className="rounded bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-emerald-500/50 outline-none w-32"
                             />
-                            <button
-                              type="submit"
-                              className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            <SubmitButton
+                              pendingText="Verifying..."
+                              className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
                             >
                               Verify & Advance
-                            </button>
+                            </SubmitButton>
                           </form>
                         ) : (
                           <span className="text-sm text-zinc-600">—</span>

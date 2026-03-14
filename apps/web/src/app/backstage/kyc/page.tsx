@@ -2,6 +2,7 @@ import { desc, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 import { requireAnyRole, getCurrentDbUser } from '@/lib/auth/rbac'
+import { SubmitButton } from '../_components/SubmitButton'
 import { getDb } from '@/lib/db'
 import { users, kycCases } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
@@ -162,22 +163,22 @@ export default async function KycPage() {
                             <form action={updateKycStatusAction}>
                               <input type="hidden" name="kycCaseId" value={kyc.id} />
                               <input type="hidden" name="status" value="approved" />
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                              <SubmitButton
+                                pendingText="Approving..."
+                                className="rounded-lg bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20"
                               >
                                 Approve
-                              </button>
+                              </SubmitButton>
                             </form>
                             <form action={updateKycStatusAction}>
                               <input type="hidden" name="kycCaseId" value={kyc.id} />
                               <input type="hidden" name="status" value="rejected" />
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-400 hover:bg-rose-500/20 transition-colors"
+                              <SubmitButton
+                                pendingText="Rejecting..."
+                                className="rounded-lg bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-400 hover:bg-rose-500/20"
                               >
                                 Reject
-                              </button>
+                              </SubmitButton>
                             </form>
                           </div>
                         ) : (

@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { ethers } from 'ethers'
 
 import { requireRole } from '@/lib/auth/rbac'
+import { SubmitButton } from '../_components/SubmitButton'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, depositRequests, burnRequests } from '@ntzs/db'
@@ -290,12 +291,12 @@ export default async function PartnersPage() {
                               placeholder="No limit"
                               className="w-28 rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-xs text-white focus:border-violet-500/50 focus:outline-none"
                             />
-                            <button
-                              type="submit"
-                              className="rounded-lg bg-zinc-700 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-600 transition-colors"
+                            <SubmitButton
+                              pendingText="Setting..."
+                              className="rounded-lg bg-zinc-700 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-600"
                             >
                               Set
-                            </button>
+                            </SubmitButton>
                           </form>
                         </td>
                         <td className="px-6 py-4 text-xs text-zinc-400">
@@ -317,23 +318,23 @@ export default async function PartnersPage() {
                                 placeholder="Reason (optional)"
                                 className="w-36 rounded-lg border border-white/10 bg-zinc-900 px-2 py-1.5 text-xs text-white focus:border-rose-500/50 focus:outline-none"
                               />
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20 transition-colors"
+                              <SubmitButton
+                                pendingText="Suspending..."
+                                className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20"
                               >
                                 Suspend
-                              </button>
+                              </SubmitButton>
                             </form>
                           ) : (
                             <form action={togglePartnerStatusAction}>
                               <input type="hidden" name="partnerId" value={partner.id} />
                               <input type="hidden" name="action" value="reactivate" />
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                              <SubmitButton
+                                pendingText="Reactivating..."
+                                className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
                               >
                                 Reactivate
-                              </button>
+                              </SubmitButton>
                             </form>
                           )}
                         </td>

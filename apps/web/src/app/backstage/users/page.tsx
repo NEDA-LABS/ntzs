@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 
 import { UserRole, requireRole, getCurrentDbUser } from '@/lib/auth/rbac'
+import { SubmitButton } from '../_components/SubmitButton'
 import { getDb } from '@/lib/db'
 import { users, wallets, partnerUsers, partners } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
@@ -242,12 +243,12 @@ export default async function UsersPage() {
                           <option value="platform_compliance">Compliance</option>
                           <option value="super_admin">Super Admin</option>
                         </select>
-                        <button
-                          type="submit"
-                          className="rounded-lg bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-400 hover:bg-violet-500/20 transition-colors"
+                        <SubmitButton
+                          pendingText="Saving..."
+                          className="rounded-lg bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-400 hover:bg-violet-500/20"
                         >
                           Update
-                        </button>
+                        </SubmitButton>
                       </form>
                     </td>
                   </tr>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useFormStatus } from 'react-dom'
 
 type ReconciliationEntryType = 'untracked_mint' | 'test_mint' | 'manual_correction' | 'double_mint' | 'opening_balance' | 'other'
 
@@ -19,6 +20,25 @@ const TYPE_LABELS: Record<ReconciliationEntryType, string> = {
 const DESCRIPTIONS: Partial<Record<ReconciliationEntryType, string>> = {
   opening_balance: 'Use this to account for tokens minted directly during development, migration, or initial distribution that were not tracked through the deposit flow.',
   manual_correction: 'Use this to correct the tracked supply without a specific on-chain transaction, e.g. a known admin mint done outside the system.',
+}
+
+function ReconcileSubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-600 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {pending && (
+        <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      )}
+      {pending ? 'Saving...' : 'Add Reconciliation Entry'}
+    </button>
+  )
 }
 
 interface Props {
@@ -152,12 +172,7 @@ export function ReconciliationEntryForm({ addReconciliationEntryAction, discrepa
           </div>
         </div>
 
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-600 transition-colors"
-        >
-          Add Reconciliation Entry
-        </button>
+        <ReconcileSubmitButton />
       </form>
     </div>
   )
