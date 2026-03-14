@@ -1318,11 +1318,13 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
 function WalletDetailPanel({
   user,
   transfers,
+  deposits,
   onClose,
   onFreezeToggle,
 }: {
   user: DashboardUser
   transfers: DashboardTransfer[]
+  deposits: DashboardDeposit[]
   onClose: () => void
   onFreezeToggle: (walletId: string, frozen: boolean) => void
 }) {
@@ -1332,6 +1334,17 @@ function WalletDetailPanel({
   const userTransfers = transfers.filter(
     (t) => t.fromUserId === user.id || t.toUserId === user.id
   )
+
+  const userDeposits = deposits.filter((d) => d.userId === user.id)
+
+  type TxEvent =
+    | { kind: 'transfer'; data: DashboardTransfer; sortKey: string }
+    | { kind: 'deposit'; data: DashboardDeposit; sortKey: string }
+
+  const timeline: TxEvent[] = [
+    ...userTransfers.map((t) => ({ kind: 'transfer' as const, data: t, sortKey: t.createdAt })),
+    ...userDeposits.map((d) => ({ kind: 'deposit' as const, data: d, sortKey: d.mintedAt ?? d.createdAt })),
+  ].sort((a, b) => (a.sortKey < b.sortKey ? 1 : -1))
 
   const handleToggleFreeze = async () => {
     if (!user.walletId) return
@@ -1422,38 +1435,84 @@ function WalletDetailPanel({
 
           {/* Transaction history */}
           <div>
-            <h4 className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/30">
-              Transaction History
-            </h4>
-            {userTransfers.length === 0 ? (
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-widest text-white/30">
+                Transaction History
+              </h4>
+              <span className="text-[10px] text-white/20">{timeline.length} event{timeline.length !== 1 ? 's' : ''}</span>
+            </div>
+            {timeline.length === 0 ? (
               <p className="text-sm text-white/30">No transactions yet.</p>
             ) : (
               <div className="space-y-2">
-                {userTransfers.map((t) => {
-                  const isSender = t.fromUserId === user.id
+                {timeline.map((event) => {
+                  if (event.kind === 'transfer') {
+                    const t = event.data
+                    const isSender = t.fromUserId === user.id
+                    return (
+                      <div key={`tx-${t.id}`} className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${isSender ? 'text-red-400' : 'text-emerald-400'}`}>
+                              {isSender ? '↑ Sent' : '↓ Received'}
+                            </span>
+                            <StatusBadge status={t.status} />
+                          </div>
+                          <span className={`text-sm font-mono font-bold ${isSender ? 'text-red-300' : 'text-emerald-300'}`}>
+                            {isSender ? '−' : '+'}{t.amountTzs.toLocaleString()} TZS
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex items-center justify-between">
+                          <span className="text-xs text-white/40">
+                            {isSender
+                              ? `To: ${t.toName || t.toEmail || t.toUserId.slice(0, 8)}`
+                              : `From: ${t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)}`}
+                          </span>
+                          <span className="text-[11px] text-white/30">{formatDateEAT(t.createdAt)}</span>
+                        </div>
+                        {t.txHash && (
+                          <a
+                            href={`https://basescan.org/tx/${t.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 block font-mono text-[10px] text-white/20 hover:text-white/50 truncate transition-colors"
+                          >
+                            {t.txHash}
+                          </a>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  const d = event.data
+                  const isMinted = d.status === 'minted'
+                  const statusColor = isMinted ? 'text-emerald-400' : d.status.includes('fail') || d.status === 'rejected' ? 'text-red-400' : 'text-amber-400'
+                  const ts = d.mintedAt ?? d.fiatConfirmedAt ?? d.createdAt
                   return (
-                    <div key={t.id} className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                    <div key={`dep-${d.id}`} className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-semibold uppercase ${isSender ? 'text-red-400' : 'text-emerald-400'}`}>
-                            {isSender ? '↑ Sent' : '↓ Received'}
+                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusColor}`}>
+                            {isMinted ? '↓ Deposit' : '↓ Deposit'}
                           </span>
-                          <StatusBadge status={t.status} />
+                          <StatusBadge status={d.status} />
                         </div>
-                        <span className={`text-sm font-mono font-medium ${isSender ? 'text-red-300' : 'text-emerald-300'}`}>
-                          {isSender ? '−' : '+'}{t.amountTzs.toLocaleString()} TZS
+                        <span className="text-sm font-mono font-bold text-emerald-300">
+                          +{d.amountTzs.toLocaleString()} TZS
                         </span>
                       </div>
                       <div className="mt-1.5 flex items-center justify-between">
                         <span className="text-xs text-white/40">
-                          {isSender
-                            ? `To: ${t.toName || t.toEmail || t.toUserId.slice(0, 8)}`
-                            : `From: ${t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)}`}
+                          {d.pspChannel ? d.pspChannel : 'Bank deposit'}
+                          {d.pspReference ? ` · ${d.pspReference.slice(0, 12)}` : ''}
                         </span>
-                        <span className="text-[11px] text-white/30">{formatDateEAT(t.createdAt)}</span>
+                        <span className="text-[11px] text-white/30">{formatDateEAT(ts)}</span>
                       </div>
-                      {t.txHash && (
-                        <div className="mt-1 font-mono text-[10px] text-white/20 truncate">{t.txHash}</div>
+                      {d.mintedAt && d.mintedAt !== d.createdAt && (
+                        <div className="mt-1 flex items-center justify-between">
+                          <span className="text-[10px] text-white/20">Minted</span>
+                          <span className="text-[10px] text-white/20">{formatDateEAT(d.mintedAt)}</span>
+                        </div>
                       )}
                     </div>
                   )
@@ -2050,6 +2109,7 @@ export default function PartnerDashboardPage() {
         <WalletDetailPanel
           user={selectedWalletUser}
           transfers={transfers}
+          deposits={deposits}
           onClose={() => setSelectedWalletUser(null)}
           onFreezeToggle={handleFreezeToggle}
         />

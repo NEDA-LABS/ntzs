@@ -230,7 +230,7 @@ export async function GET(request: NextRequest) {
     .from(transfers)
     .where(eq(transfers.partnerId, partnerId))
     .orderBy(desc(transfers.createdAt))
-    .limit(50)
+    .limit(200)
 
   // Resolve any user IDs not already in lookup (edge case: users from other queries)
   const missingIds = new Set<string>()
@@ -273,7 +273,7 @@ export async function GET(request: NextRequest) {
     .from(depositRequests)
     .where(eq(depositRequests.partnerId, partnerId))
     .orderBy(desc(depositRequests.createdAt))
-    .limit(50)
+    .limit(200)
 
   return NextResponse.json({
     partner: {
