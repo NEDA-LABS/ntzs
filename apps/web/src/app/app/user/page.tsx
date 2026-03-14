@@ -17,6 +17,7 @@ import {
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
+import { PendingDepositPoller } from './_components/PendingDepositPoller'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
 import { AIOrbit } from '@/components/ui/ai-orbital'
 import { formatDateEAT } from '@/lib/format-date'
@@ -58,6 +59,7 @@ export default async function UserDashboard() {
 
   return (
     <div className="bg-[#0d0d14]">
+      <PendingDepositPoller hasPending={pendingCount > 0} />
 
       {/* ── Hero + Actions — scrolls away on mobile ── */}
       <div className="px-4 pt-3 pb-3 lg:px-8 lg:pt-6 lg:pb-4">

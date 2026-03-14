@@ -2,6 +2,7 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ActivityList } from './_components/ActivityList'
+import { PendingDepositPoller } from '../_components/PendingDepositPoller'
 
 export default async function ActivityPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -51,6 +52,7 @@ export default async function ActivityPage() {
 
   return (
     <div className="min-h-screen bg-[#0d0d14] px-4 pt-4 pb-24 lg:px-8 lg:pt-6">
+      <PendingDepositPoller hasPending={pendingCount > 0} />
 
       {/* Page header */}
       <div className="mb-5">
