@@ -3,14 +3,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone } from '@/lib/psp/snippe'
-import { users, wallets, partnerUsers, burnRequests } from '@ntzs/db'
+import { wallets, partnerUsers, burnRequests } from '@ntzs/db'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
+const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
+const SNIPPE_BASE_URL = 'https://api.snippe.sh'
+const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
+const NTZS_BURN_ABI = [
+  'function burn(address from, uint256 amount)',
+  'function BURNER_ROLE() view returns (bytes32)',
+  'function hasRole(bytes32 role, address account) view returns (bool)',
+] as const
 
 /**
  * POST /api/v1/withdrawals — Initiate nTZS burn + Snippe payout to M-Pesa (off-ramp)
@@ -103,11 +111,40 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to verify balance' }, { status: 500 })
   }
 
-  // Auto-approve small amounts, require admin approval for large ones
-  const autoApprove = amountTzs < SAFE_MINT_THRESHOLD_TZS
-  const initialStatus = autoApprove ? 'approved' : 'requested'
+  // Large amounts require admin approval — queue and return
+  if (amountTzs >= SAFE_MINT_THRESHOLD_TZS) {
+    const [burn] = await db
+      .insert(burnRequests)
+      .values({
+        userId,
+        walletId: wallet.id,
+        chain: 'base',
+        contractAddress,
+        amountTzs,
+        reason: 'WaaS withdrawal',
+        status: 'requested',
+        requestedByUserId: userId,
+        recipientPhone: phoneNumber,
+      })
+      .returning({ id: burnRequests.id, status: burnRequests.status, amountTzs: burnRequests.amountTzs })
 
-  // Create burn request
+    if (!burn) {
+      return NextResponse.json({ error: 'Failed to create withdrawal request' }, { status: 500 })
+    }
+
+    return NextResponse.json(
+      { id: burn.id, status: burn.status, amountTzs: burn.amountTzs, message: 'Withdrawal requires admin approval for amounts >= 100,000 TZS.' },
+      { status: 201 }
+    )
+  }
+
+  // Small amounts: execute burn inline immediately
+  const burnerKey = BURNER_PRIVATE_KEY || MINTER_PRIVATE_KEY
+  if (!burnerKey) {
+    return NextResponse.json({ error: 'Burn executor not configured' }, { status: 500 })
+  }
+
+  // Create burn request in burn_submitted state
   const [burn] = await db
     .insert(burnRequests)
     .values({
@@ -117,29 +154,85 @@ export async function POST(request: NextRequest) {
       contractAddress,
       amountTzs,
       reason: 'WaaS withdrawal',
-      status: initialStatus,
+      status: 'burn_submitted',
       requestedByUserId: userId,
       recipientPhone: phoneNumber,
     })
-    .returning({
-      id: burnRequests.id,
-      status: burnRequests.status,
-      amountTzs: burnRequests.amountTzs,
-    })
+    .returning({ id: burnRequests.id, amountTzs: burnRequests.amountTzs })
 
   if (!burn) {
     return NextResponse.json({ error: 'Failed to create withdrawal request' }, { status: 500 })
   }
 
+  const burnRequestId = burn.id
+
+  // Execute burn on-chain
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
+    const signer = new ethers.Wallet(burnerKey, provider)
+    const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, signer)
+
+    const burnerRole: string = await token.BURNER_ROLE()
+    const hasBurner: boolean = await token.hasRole(burnerRole, await signer.getAddress())
+    if (!hasBurner) {
+      await db.update(burnRequests).set({ status: 'failed', error: 'Burn key lacks BURNER_ROLE', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      return NextResponse.json({ error: 'Burn executor not configured correctly' }, { status: 500 })
+    }
+
+    const amountWei = BigInt(String(amountTzs)) * BigInt(10) ** BigInt(18)
+    const tx = await token.burn(wallet.address, amountWei)
+
+    await db.update(burnRequests).set({ txHash: tx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+
+    await tx.wait(1)
+
+    await db.update(burnRequests).set({ status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    await db.update(burnRequests).set({ status: 'failed', error: errorMessage, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+    console.error('[v1/withdrawals] Burn failed:', errorMessage)
+    return NextResponse.json({ error: 'Burn failed', detail: errorMessage }, { status: 500 })
+  }
+
+  // Trigger Snippe payout
+  if (SNIPPE_API_KEY) {
+    let phone = phoneNumber.replace(/[\s\-+]/g, '')
+    if (phone.startsWith('0')) phone = '255' + phone.substring(1)
+    if (!phone.startsWith('255')) phone = '255' + phone
+
+    const webhookUrl = `${APP_URL}/api/webhooks/snippe/payout`
+
+    try {
+      const payoutResp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amountTzs,
+          channel: 'mobile',
+          recipient_phone: phone,
+          recipient_name: 'nTZS User',
+          narration: 'nTZS withdrawal',
+          ...(webhookUrl.startsWith('https://') ? { webhook_url: webhookUrl } : {}),
+          metadata: { burn_request_id: burnRequestId },
+        }),
+      })
+      const payoutResult = await payoutResp.json() as { status: string; message?: string; data?: { reference: string } }
+
+      if (payoutResult.status === 'success' && payoutResult.data?.reference) {
+        await db.update(burnRequests).set({ payoutReference: payoutResult.data.reference, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      } else {
+        await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: payoutResult.message ?? 'Payout initiation failed', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+        console.error('[v1/withdrawals] Payout failed:', payoutResult.message)
+      }
+    } catch (payoutErr) {
+      const msg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
+      await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: msg, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      console.error('[v1/withdrawals] Payout error:', msg)
+    }
+  }
+
   return NextResponse.json(
-    {
-      id: burn.id,
-      status: burn.status,
-      amountTzs: burn.amountTzs,
-      ...(autoApprove
-        ? { message: 'Withdrawal approved. Burn and payout will be processed shortly.' }
-        : { message: 'Withdrawal requires admin approval for amounts >= 100,000 TZS.' }),
-    },
+    { id: burnRequestId, status: 'burned', amountTzs: burn.amountTzs, message: 'Withdrawal processed successfully.' },
     { status: 201 }
   )
 }
