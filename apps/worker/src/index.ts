@@ -448,7 +448,7 @@ async function main() {
     // Process burn jobs (off-ramp: burn on-chain + Snippe payout)
     try {
       const rpcUrl = requiredEnv('BASE_RPC_URL')
-      const privateKey = requiredEnv('MINTER_PRIVATE_KEY')
+      const privateKey = requiredEnv('BURNER_PRIVATE_KEY')
       const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
       await processBurnJob(databaseUrl, rpcUrl, privateKey, SNIPPE_API_KEY, apiBaseUrl)
     } catch (err) {
