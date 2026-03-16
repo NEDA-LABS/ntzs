@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { GasAddressCopy } from './_components/GasAddressCopy'
 
-const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
+const BASE_MAINNET_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
 const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || ''
 
@@ -63,7 +63,7 @@ export default async function GasMonitorPage() {
   let fetchError = ''
 
   try {
-    const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC_URL)
+    const provider = new ethers.JsonRpcProvider(BASE_MAINNET_RPC_URL)
 
     if (MINTER_PRIVATE_KEY) {
       minterAddress = new ethers.Wallet(MINTER_PRIVATE_KEY).address
@@ -156,7 +156,7 @@ export default async function GasMonitorPage() {
           <div>
             <h1 className="text-xl font-semibold text-white">Gas Monitor</h1>
             <p className="text-sm text-zinc-500">
-              Live ETH balances for platform hot wallets on Base Sepolia
+              Live ETH balances for platform hot wallets on Base mainnet
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -172,7 +172,7 @@ export default async function GasMonitorPage() {
           <p className={`text-sm font-medium ${banner.text}`}>{banner.message}</p>
           {overallStatus !== 'ok' && (
             <p className="mt-1 text-xs text-zinc-500">
-              Fund the wallet(s) below using the Base Sepolia faucet. A minimum of 0.01 ETH per wallet is recommended.
+              Send ETH to the wallet address(es) below on Base mainnet. A minimum of 0.01 ETH per wallet is recommended.
             </p>
           )}
         </div>
@@ -253,7 +253,7 @@ export default async function GasMonitorPage() {
                   </p>
                   <GasAddressCopy address={w.address} />
                   <p className="mt-2 text-[11px] text-zinc-600">
-                    Send ETH to this address on Base Sepolia to top up
+                    Send ETH to this address on Base mainnet to top up
                   </p>
                 </div>
               ) : (
@@ -267,7 +267,7 @@ export default async function GasMonitorPage() {
               {/* Faucet link */}
               {w.configured && w.status !== 'ok' && (
                 <a
-                  href="https://faucet.quicknode.com/base/sepolia"
+                  href={`https://basescan.org/address/${w.address}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center justify-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-400 transition-colors hover:bg-blue-500/15"
@@ -275,7 +275,7 @@ export default async function GasMonitorPage() {
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                   </svg>
-                  Open Base Sepolia Faucet
+                  View on BaseScan
                 </a>
               )}
             </div>
