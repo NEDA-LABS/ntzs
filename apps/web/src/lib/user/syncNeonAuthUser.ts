@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { eq } from 'drizzle-orm'
+import { neonAuth } from '@neondatabase/auth/next/server'
 
 import { getDb } from '@/lib/db'
 import { users } from '@ntzs/db'
@@ -9,13 +10,7 @@ import { MemCache } from '@/lib/cache'
 const userCache = new MemCache<typeof users.$inferSelect>(60_000)
 
 export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
-  // TODO: Update to new Neon Auth API when documentation is available
-  // Temporarily disabled due to API changes in @neondatabase/neon-js
-  // This function is stubbed out to allow builds to succeed
-  return null
-
-  /* Original implementation - disabled until Neon Auth API is updated
-  const user = null
+  const { user } = await neonAuth()
 
   if (!user) {
     return null
@@ -160,5 +155,4 @@ export const syncNeonAuthUser = cache(async function syncNeonAuthUser() {
   }
 
   return null
-  */
 })
