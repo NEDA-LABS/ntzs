@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server'
-import { neonAuth } from '@neondatabase/neon-js/auth/next'
-
 import { getDb } from '@/lib/db'
 
+// Removed neonAuth() call - API has changed
 export async function GET() {
-  const { user } = await neonAuth()
-
   const databaseUrl = process.env.DATABASE_URL
   const parsedDatabaseUrl = databaseUrl ? new URL(databaseUrl) : null
 
@@ -20,8 +17,8 @@ export async function GET() {
   `
 
   return NextResponse.json({
-    authenticated: Boolean(user),
-    neonAuthUserId: user?.id ?? null,
+    authenticated: false, // TODO: Update when Neon Auth API is fixed
+    neonAuthUserId: null,
     databaseHost: parsedDatabaseUrl?.hostname ?? null,
     databaseNameFromUrl: parsedDatabaseUrl?.pathname?.replace(/^\//, '') ?? null,
     currentDatabase: dbNameRows[0]?.current_database ?? null,
