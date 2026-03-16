@@ -1,4 +1,4 @@
-import { desc, eq, and } from 'drizzle-orm'
+import { desc, eq, and, isNotNull } from 'drizzle-orm'
 import { ethers } from 'ethers'
 import { revalidatePath } from 'next/cache'
 
@@ -271,6 +271,60 @@ async function executeBurnAction(formData: FormData) {
   revalidatePath('/backstage/burns')
 }
 
+async function syncPayoutStatusesAction() {
+  'use server'
+
+  await requireRole('super_admin')
+
+  const { db } = getDb();
+
+  const pending = await db
+    .select({ id: burnRequests.id, payoutReference: burnRequests.payoutReference })
+    .from(burnRequests)
+    .where(and(eq(burnRequests.payoutStatus, 'pending'), isNotNull(burnRequests.payoutReference)))
+    .limit(50)
+
+  let updated = 0
+
+  for (const burn of pending) {
+    if (!burn.payoutReference) continue
+
+    try {
+      const resp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${burn.payoutReference}`, {
+        headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` },
+      })
+      const result = await resp.json() as { status: string; data?: { status: string; failure_reason?: string } }
+
+      if (result.status !== 'success' || !result.data) continue
+
+      const payoutStatus = result.data.status
+
+      if (payoutStatus === 'completed') {
+        await db
+          .update(burnRequests)
+          .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
+          .where(eq(burnRequests.id, burn.id))
+        updated++
+      } else if (payoutStatus === 'failed' || payoutStatus === 'reversed') {
+        await db
+          .update(burnRequests)
+          .set({
+            payoutStatus: 'failed',
+            payoutError: result.data.failure_reason || 'Payout failed',
+            updatedAt: new Date(),
+          })
+          .where(eq(burnRequests.id, burn.id))
+        updated++
+      }
+    } catch {
+      // Skip individual failures, continue syncing others
+    }
+  }
+
+  console.log(`[backstage/burns] synced ${updated}/${pending.length} pending payouts`)
+  revalidatePath('/backstage/burns')
+}
+
 export default async function BurnsPage() {
   await requireRole('super_admin')
 
@@ -357,8 +411,11 @@ export default async function BurnsPage() {
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-zinc-900/50 overflow-hidden">
-          <div className="border-b border-white/10 px-6 py-4">
+          <div className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
             <h2 className="font-semibold text-white">Burn requests</h2>
+            <form action={syncPayoutStatusesAction}>
+              <button className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10">Sync payout statuses</button>
+            </form>
           </div>
 
           <div className="overflow-x-auto">
