@@ -217,6 +217,10 @@ export async function GET(request: NextRequest) {
     balanceTzs: subWalletBalances[sw.id] ?? 0,
   }))
 
+  // Calculate total balance across all wallets (treasury + users + sub-wallets)
+  const totalSubWalletBalance = subWallets.reduce((sum, sw) => sum + sw.balanceTzs, 0)
+  const totalBalanceAllWallets = treasuryBalanceTzs + totalBalanceTzs + totalSubWalletBalance
+
   // Build email/name lookup for transfer resolution
   const userLookup: Record<string, { email: string; name: string | null }> = {}
   for (const u of partnerUserRows) {
@@ -315,7 +319,7 @@ export async function GET(request: NextRequest) {
     stats: {
       totalUsers: dashboardUsers.length,
       totalWallets: dashboardUsers.length + (partner.treasuryWalletAddress ? 1 : 0) + subWallets.length,
-      totalBalanceTzs,
+      totalBalanceTzs: totalBalanceAllWallets,
       totalTransfers: transferRows.length,
       totalDeposits: depositRows.length,
     },
