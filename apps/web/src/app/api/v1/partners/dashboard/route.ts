@@ -168,12 +168,15 @@ export async function GET(request: NextRequest) {
   const treasuryBalanceTzs = treasuryAddr ? (balanceMap[treasuryAddr] ?? 0) : 0
 
   const userBalances: Record<string, number> = {}
-  let totalBalanceTzs = 0
+  const uniqueAddressBalances = new Map<string, number>()
+  
   for (const { uid, addr } of userAddrs) {
     const tzs = balanceMap[addr] ?? 0
     userBalances[uid] = tzs
-    totalBalanceTzs += tzs
+    uniqueAddressBalances.set(addr, tzs)
   }
+  
+  const totalBalanceTzs = Array.from(uniqueAddressBalances.values()).reduce((sum, bal) => sum + bal, 0)
 
   // Build user list with balances
   const dashboardUsers = partnerUserRows.map((u) => ({

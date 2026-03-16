@@ -19,5 +19,8 @@
     "db:push": "drizzle-kit push",
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint"
+  },
+  "dependencies": {
+    "@esbuild/darwin-arm64": "^0.27.4"
   }
 }
