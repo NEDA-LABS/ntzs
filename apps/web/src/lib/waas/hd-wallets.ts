@@ -98,7 +98,7 @@ export function deriveWallet(encryptedSeed: string, walletIndex: number): ethers
 /**
  * Fund a user wallet with a small amount of ETH for gas from the platform relayer.
  * Called once at wallet creation. Silently skips if RELAYER_PRIVATE_KEY is not set.
- * On Base mainnet 0.0005 ETH covers ~500 ERC-20 transfers at current gas prices.
+ * On Base mainnet 0.00005 ETH covers ~256 ERC-20 transfers at current gas prices (~0.003 gwei).
  */
 export async function fundWalletWithGas(params: {
   toAddress: string
@@ -111,7 +111,7 @@ export async function fundWalletWithGas(params: {
     return null
   }
 
-  const { toAddress, rpcUrl, amountEth = '0.0005' } = params
+  const { toAddress, rpcUrl, amountEth = '0.00005' } = params
   const provider = new ethers.JsonRpcProvider(rpcUrl)
   const relayer = new ethers.Wallet(relayerKey, provider)
 

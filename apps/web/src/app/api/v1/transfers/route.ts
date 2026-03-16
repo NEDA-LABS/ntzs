@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
         const funded = await fundWalletWithGas({
           toAddress: fromWallet.address,
           rpcUrl: rpcUrlForFund,
-          amountEth: '0.0002',
+          amountEth: '0.00005',
         })
         if (!funded) {
           const reason = !relayerKey
