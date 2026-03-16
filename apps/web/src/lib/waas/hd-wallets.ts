@@ -105,9 +105,9 @@ export async function fundWalletWithGas(params: {
   rpcUrl: string
   amountEth?: string
 }): Promise<{ txHash: string } | null> {
-  const relayerKey = process.env.RELAYER_PRIVATE_KEY
+  const relayerKey = process.env.RELAYER_PRIVATE_KEY || process.env.MINTER_PRIVATE_KEY
   if (!relayerKey) {
-    console.warn('[hd-wallets] RELAYER_PRIVATE_KEY not set — skipping gas prefund')
+    console.warn('[hd-wallets] No relayer key configured (RELAYER_PRIVATE_KEY or MINTER_PRIVATE_KEY) — skipping gas prefund')
     return null
   }
 

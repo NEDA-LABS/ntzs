@@ -276,15 +276,23 @@ export async function POST(request: NextRequest) {
       if (senderEthBalance < MIN_GAS_WEI) {
         console.log(`[v1/transfers] Topping up gas for ${fromWallet.address} (balance: ${ethers.formatEther(senderEthBalance)} ETH)`)
         const rpcUrlForFund = ENV_BASE_RPC_URL || rpcUrl
+        const relayerKey = process.env.RELAYER_PRIVATE_KEY || process.env.MINTER_PRIVATE_KEY
+        if (!relayerKey) {
+          console.error('[v1/transfers] Gas relay failed: RELAYER_PRIVATE_KEY and MINTER_PRIVATE_KEY are both missing from env')
+        }
         const funded = await fundWalletWithGas({
           toAddress: fromWallet.address,
           rpcUrl: rpcUrlForFund,
-          amountEth: '0.0005',
+          amountEth: '0.0002',
         })
         if (!funded) {
+          const reason = !relayerKey
+            ? 'No relayer key configured (RELAYER_PRIVATE_KEY / MINTER_PRIVATE_KEY not set)'
+            : 'Relayer wallet has insufficient ETH'
+          console.error(`[v1/transfers] Gas relay unavailable for ${fromWallet.address}: ${reason}`)
           await db
             .update(transfers)
-            .set({ status: 'failed', error: 'Relayer could not fund gas — RELAYER_PRIVATE_KEY missing or relayer out of ETH', updatedAt: new Date() })
+            .set({ status: 'failed', error: reason, updatedAt: new Date() })
             .where(eq(transfers.id, transfer.id))
           return NextResponse.json(
             {
