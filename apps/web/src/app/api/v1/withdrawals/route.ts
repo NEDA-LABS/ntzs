@@ -219,7 +219,37 @@ export async function POST(request: NextRequest) {
       const payoutResult = await payoutResp.json() as { status: string; message?: string; data?: { reference: string } }
 
       if (payoutResult.status === 'success' && payoutResult.data?.reference) {
-        await db.update(burnRequests).set({ payoutReference: payoutResult.data.reference, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+        const payoutRef = payoutResult.data.reference
+        await db.update(burnRequests).set({ payoutReference: payoutRef, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+
+        // Poll Snippe for completion — don't rely solely on webhook
+        // Checks at 3s, 6s, 12s intervals to catch quick completions
+        void (async () => {
+          const delays = [3000, 6000, 12000]
+          for (const delay of delays) {
+            await new Promise((r) => setTimeout(r, delay))
+            try {
+              const statusResp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${payoutRef}`, {
+                headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` },
+                signal: AbortSignal.timeout(5000),
+              })
+              const statusResult = await statusResp.json() as { status: string; data?: { status: string; failure_reason?: string } }
+              if (statusResult.status !== 'success' || !statusResult.data) continue
+              const ps = statusResult.data.status
+              if (ps === 'completed') {
+                await db.update(burnRequests).set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+                console.log(`[v1/withdrawals] Payout ${payoutRef} completed (polled)`)
+                break
+              } else if (ps === 'failed' || ps === 'reversed') {
+                await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: statusResult.data.failure_reason || 'Payout failed', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+                console.warn(`[v1/withdrawals] Payout ${payoutRef} failed (polled): ${statusResult.data.failure_reason}`)
+                break
+              }
+            } catch {
+              // Continue to next poll interval
+            }
+          }
+        })()
       } else {
         await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: payoutResult.message ?? 'Payout initiation failed', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
         console.error('[v1/withdrawals] Payout failed:', payoutResult.message)

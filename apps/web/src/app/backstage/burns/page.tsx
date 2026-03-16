@@ -271,12 +271,10 @@ async function executeBurnAction(formData: FormData) {
   revalidatePath('/backstage/burns')
 }
 
-async function syncPayoutStatusesAction() {
-  'use server'
+async function syncPendingPayouts() {
+  const { db } = getDb()
 
-  await requireRole('super_admin')
-
-  const { db } = getDb();
+  if (!SNIPPE_API_KEY) return 0
 
   const pending = await db
     .select({ id: burnRequests.id, payoutReference: burnRequests.payoutReference })
@@ -292,6 +290,7 @@ async function syncPayoutStatusesAction() {
     try {
       const resp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${burn.payoutReference}`, {
         headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` },
+        signal: AbortSignal.timeout(5000),
       })
       const result = await resp.json() as { status: string; data?: { status: string; failure_reason?: string } }
 
@@ -321,12 +320,27 @@ async function syncPayoutStatusesAction() {
     }
   }
 
-  console.log(`[backstage/burns] synced ${updated}/${pending.length} pending payouts`)
+  if (updated > 0) {
+    console.log(`[backstage/burns] auto-synced ${updated}/${pending.length} pending payouts`)
+  }
+
+  return updated
+}
+
+async function syncPayoutStatusesAction() {
+  'use server'
+
+  await requireRole('super_admin')
+
+  await syncPendingPayouts()
   revalidatePath('/backstage/burns')
 }
 
 export default async function BurnsPage() {
   await requireRole('super_admin')
+
+  // Auto-sync pending payout statuses from Snippe on every page load
+  await syncPendingPayouts()
 
   const { db } = getDb()
 
