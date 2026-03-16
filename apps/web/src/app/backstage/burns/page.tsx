@@ -417,7 +417,7 @@ export default async function BurnsPage() {
                       {r.txHash ? (
                         <a
                           className="font-mono text-xs text-blue-400 hover:text-blue-300"
-                          href={`https://sepolia.basescan.org/tx/${r.txHash}`}
+                          href={`https://basescan.org/tx/${r.txHash}`}
                           target="_blank"
                           rel="noreferrer"
                         >
