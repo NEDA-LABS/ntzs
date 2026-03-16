@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
     await db
       .update(burnRequests)
       .set({
+        status: 'burned',
         payoutStatus: 'completed',
         updatedAt: new Date(),
       })
