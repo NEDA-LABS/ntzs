@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/accrue-yield",
       "schedule": "5 21 * * *"
+    },
+    {
+      "path": "/api/cron/gas-alert",
+      "schedule": "0 */2 * * *"
     }
   ]
 }
