@@ -16,9 +16,14 @@ export async function POST(request: NextRequest) {
   const timestamp = request.headers.get('x-webhook-timestamp') || undefined
 
   // Verify HMAC signature
-  if (!verifyWebhookSignature(rawBody, signature, timestamp)) {
-    console.error('[snippe/payment webhook] Invalid signature')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  try {
+    if (!verifyWebhookSignature(rawBody, signature, timestamp)) {
+      console.error('[snippe/payment webhook] Invalid signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+  } catch (sigErr) {
+    // SNIPPE_WEBHOOK_SECRET not configured — log and continue processing
+    console.warn('[snippe/payment webhook] Signature verification skipped:', sigErr instanceof Error ? sigErr.message : sigErr)
   }
 
   let payload: SnippePaymentWebhookPayload

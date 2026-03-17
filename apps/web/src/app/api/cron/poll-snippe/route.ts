@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         id: depositRequests.id,
         amountTzs: depositRequests.amountTzs,
         pspReference: depositRequests.pspReference,
+        buyerPhone: depositRequests.buyerPhone,
         createdAt: depositRequests.createdAt,
       })
       .from(depositRequests)
@@ -42,7 +43,6 @@ export async function GET(request: NextRequest) {
         and(
           eq(depositRequests.status, 'submitted'),
           inArray(depositRequests.paymentProvider, ['snippe', 'snippe_card']),
-          isNotNull(depositRequests.pspReference),
           lt(depositRequests.createdAt, thirtySecondsAgo)
         )
       )
