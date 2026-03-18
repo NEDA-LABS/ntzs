@@ -23,6 +23,7 @@ export const metadata: Metadata = {
     icon: "/ntzs-logo.png",
     apple: "/ntzs-logo.png",
   },
+  other: BASE_APP_ID ? { "base:app_id": BASE_APP_ID } : undefined,
 };
 
 export default function RootLayout({
