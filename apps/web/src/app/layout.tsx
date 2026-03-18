@@ -4,6 +4,8 @@ import { NeonAuthUIProvider } from "@neondatabase/neon-js/auth/react/ui";
 import { authClient } from "@/lib/auth/client";
 import "./globals.css";
 
+const BASE_APP_ID = process.env.BASE_APP_ID;
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -30,6 +32,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {BASE_APP_ID ? <meta name="base:app_id" content={BASE_APP_ID} /> : null}
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
