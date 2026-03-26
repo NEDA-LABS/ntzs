@@ -28,6 +28,7 @@ export async function GET(
       status: depositRequests.status,
       amountTzs: depositRequests.amountTzs,
       partnerId: depositRequests.partnerId,
+      paymentProvider: depositRequests.paymentProvider,
       createdAt: depositRequests.createdAt,
     })
     .from(depositRequests)
@@ -68,10 +69,13 @@ export async function GET(
     txHash = mintTx?.txHash ?? null
   }
 
+  const paymentMethod = deposit.paymentProvider === 'snippe_card' ? 'card' : 'mobile_money'
+
   return NextResponse.json({
     id: deposit.id,
     status: deposit.status,
     amountTzs: deposit.amountTzs,
+    paymentMethod,
     txHash,
     createdAt: deposit.createdAt,
   })

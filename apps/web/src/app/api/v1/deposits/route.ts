@@ -4,11 +4,34 @@ import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp/snippe'
+import { initiatePayment, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp/snippe'
 import { users, wallets, partnerUsers, depositRequests } from '@ntzs/db'
 
+type PaymentMethod = 'mobile_money' | 'card'
+
+interface DepositBody {
+  userId: string
+  amountTzs: number
+  paymentMethod?: PaymentMethod
+  // mobile_money
+  phoneNumber?: string
+  // card
+  redirectUrl?: string
+  cancelUrl?: string
+}
+
 /**
- * POST /api/v1/deposits — Initiate an M-Pesa deposit (on-ramp)
+ * POST /api/v1/deposits — Initiate a deposit (on-ramp)
+ *
+ * paymentMethod: "mobile_money" (default) | "card"
+ *
+ * mobile_money: requires phoneNumber. Sends a push prompt to the user's phone.
+ *   Response: { id, status, amountTzs, paymentMethod, instructions }
+ *
+ * card: requires redirectUrl and cancelUrl. Returns a hosted payment page URL.
+ *   Response: { id, status, amountTzs, paymentMethod, paymentUrl }
+ *   Redirect your user to paymentUrl to complete card payment. On completion,
+ *   Snippe fires a webhook and nTZS is minted automatically.
  */
 export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
@@ -16,18 +39,18 @@ export async function POST(request: NextRequest) {
 
   const { partner } = authResult
 
-  let body: { userId: string; amountTzs: number; phoneNumber: string }
+  let body: DepositBody
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, amountTzs, phoneNumber } = body
+  const { userId, amountTzs, paymentMethod = 'mobile_money', phoneNumber, redirectUrl, cancelUrl } = body
 
-  if (!userId || !amountTzs || !phoneNumber) {
+  if (!userId || !amountTzs) {
     return NextResponse.json(
-      { error: 'userId, amountTzs, and phoneNumber are required' },
+      { error: 'userId and amountTzs are required' },
       { status: 400 }
     )
   }
@@ -39,11 +62,42 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!isValidTanzanianPhone(phoneNumber)) {
+  if (paymentMethod !== 'mobile_money' && paymentMethod !== 'card') {
     return NextResponse.json(
-      { error: 'Invalid Tanzanian phone number' },
+      { error: 'paymentMethod must be "mobile_money" or "card"' },
       { status: 400 }
     )
+  }
+
+  // Method-specific validation
+  if (paymentMethod === 'mobile_money') {
+    if (!phoneNumber) {
+      return NextResponse.json(
+        { error: 'phoneNumber is required for mobile_money deposits' },
+        { status: 400 }
+      )
+    }
+    if (!isValidTanzanianPhone(phoneNumber)) {
+      return NextResponse.json(
+        { error: 'Invalid Tanzanian phone number' },
+        { status: 400 }
+      )
+    }
+  }
+
+  if (paymentMethod === 'card') {
+    if (!redirectUrl || !cancelUrl) {
+      return NextResponse.json(
+        { error: 'redirectUrl and cancelUrl are required for card deposits' },
+        { status: 400 }
+      )
+    }
+    if (!redirectUrl.startsWith('https://') || !cancelUrl.startsWith('https://')) {
+      return NextResponse.json(
+        { error: 'redirectUrl and cancelUrl must be HTTPS URLs' },
+        { status: 400 }
+      )
+    }
   }
 
   const { db } = getDb()
@@ -101,7 +155,73 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Create deposit request
+  const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+  const webhookUrl = `${apiBaseUrl}/api/webhooks/snippe/payment`
+
+  // ── Mobile money ───────────────────────────────────────────────────────────
+  if (paymentMethod === 'mobile_money') {
+    const [deposit] = await db
+      .insert(depositRequests)
+      .values({
+        userId,
+        bankId,
+        walletId: wallet.id,
+        chain: 'base',
+        amountTzs,
+        status: 'submitted',
+        idempotencyKey,
+        partnerId: partner.id,
+        paymentProvider: 'snippe',
+        buyerPhone: phoneNumber,
+      })
+      .returning({
+        id: depositRequests.id,
+        status: depositRequests.status,
+        amountTzs: depositRequests.amountTzs,
+      })
+
+    if (!deposit) {
+      return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 })
+    }
+
+    const snippeResult = await initiatePayment({
+      amountTzs,
+      phoneNumber: phoneNumber!,
+      customerEmail: user.email,
+      webhookUrl,
+      metadata: { deposit_request_id: deposit.id },
+    })
+
+    if (!snippeResult.success) {
+      await db
+        .update(depositRequests)
+        .set({ status: 'rejected', updatedAt: new Date() })
+        .where(eq(depositRequests.id, deposit.id))
+
+      return NextResponse.json(
+        { error: snippeResult.error || 'Failed to initiate payment' },
+        { status: 502 }
+      )
+    }
+
+    await db
+      .update(depositRequests)
+      .set({ pspReference: snippeResult.reference, updatedAt: new Date() })
+      .where(eq(depositRequests.id, deposit.id))
+
+    return NextResponse.json(
+      {
+        id: deposit.id,
+        status: 'submitted',
+        amountTzs: deposit.amountTzs,
+        paymentMethod: 'mobile_money',
+        instructions: 'Check your phone for the M-Pesa payment prompt',
+      },
+      { status: 201 }
+    )
+  }
+
+  // ── Card ───────────────────────────────────────────────────────────────────
   const [deposit] = await db
     .insert(depositRequests)
     .values({
@@ -113,8 +233,7 @@ export async function POST(request: NextRequest) {
       status: 'submitted',
       idempotencyKey,
       partnerId: partner.id,
-      paymentProvider: 'snippe',
-      buyerPhone: phoneNumber,
+      paymentProvider: 'snippe_card',
     })
     .returning({
       id: depositRequests.id,
@@ -126,38 +245,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 })
   }
 
-  // Initiate Snippe payment
-  const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
-  const webhookUrl = `${apiBaseUrl}/api/webhooks/snippe/payment`
-
-  const snippeResult = await initiatePayment({
+  const cardResult = await initiateCardPayment({
     amountTzs,
-    phoneNumber,
+    phoneNumber: '',
     customerEmail: user.email,
+    redirectUrl: redirectUrl!,
+    cancelUrl: cancelUrl!,
     webhookUrl,
     metadata: { deposit_request_id: deposit.id },
   })
 
-  if (!snippeResult.success) {
-    // Update deposit to rejected
+  if (!cardResult.success) {
     await db
       .update(depositRequests)
       .set({ status: 'rejected', updatedAt: new Date() })
       .where(eq(depositRequests.id, deposit.id))
 
     return NextResponse.json(
-      { error: snippeResult.error || 'Failed to initiate payment' },
+      { error: cardResult.error || 'Failed to initiate card payment' },
       { status: 502 }
     )
   }
 
-  // Update deposit with Snippe reference
   await db
     .update(depositRequests)
-    .set({
-      pspReference: snippeResult.reference,
-      updatedAt: new Date(),
-    })
+    .set({ pspReference: cardResult.reference, updatedAt: new Date() })
     .where(eq(depositRequests.id, deposit.id))
 
   return NextResponse.json(
@@ -165,7 +277,8 @@ export async function POST(request: NextRequest) {
       id: deposit.id,
       status: 'submitted',
       amountTzs: deposit.amountTzs,
-      instructions: 'Check your phone for the M-Pesa payment prompt',
+      paymentMethod: 'card',
+      paymentUrl: cardResult.paymentUrl,
     },
     { status: 201 }
   )

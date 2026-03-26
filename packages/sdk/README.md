@@ -49,17 +49,34 @@ const getBalance = async (userId: string) => {
   return response.json()
 }
 
-// Create deposit (M-Pesa on-ramp)
-const createDeposit = async (userId: string, amountTzs: number, phoneNumber: string) => {
+// Create deposit — mobile money (M-Pesa on-ramp)
+const createMobileDeposit = async (userId: string, amountTzs: number, phoneNumber: string) => {
   const response = await fetch(`${NTZS_BASE_URL}/api/v1/deposits`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${NTZS_API_KEY}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ userId, amountTzs, phoneNumber })
+    body: JSON.stringify({ userId, amountTzs, paymentMethod: 'mobile_money', phoneNumber })
   })
   return response.json()
+  // Response: { id, status, amountTzs, paymentMethod, instructions }
+}
+
+// Create deposit — card (hosted redirect flow)
+const createCardDeposit = async (userId: string, amountTzs: number, redirectUrl: string, cancelUrl: string) => {
+  const response = await fetch(`${NTZS_BASE_URL}/api/v1/deposits`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${NTZS_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ userId, amountTzs, paymentMethod: 'card', redirectUrl, cancelUrl })
+  })
+  return response.json()
+  // Response: { id, status, amountTzs, paymentMethod, paymentUrl }
+  // Redirect your user to paymentUrl to complete payment.
+  // On success, Snippe fires a webhook and nTZS is minted automatically.
 }
 
 // Create withdrawal (M-Pesa off-ramp)
