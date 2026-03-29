@@ -412,6 +412,38 @@ export async function sendBankPayout(
   }
 }
 
+// ─── Account Balance ─────────────────────────────────────────────────────────
+
+export interface SnippeBalanceResponse {
+  available: number
+  pending: number
+  currency: string
+}
+
+/**
+ * Fetch the Snippe account balance
+ * GET /v1/payments/balance
+ */
+export async function getBalance(): Promise<SnippeBalanceResponse> {
+  const apiKey = getApiKey()
+
+  const response = await fetch(`${SNIPPE_BASE_URL}/v1/payments/balance`, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  })
+
+  const result = await response.json()
+
+  if (result.status !== 'success' || !result.data) {
+    throw new Error(result.message || 'Failed to fetch Snippe balance')
+  }
+
+  return {
+    available: result.data.available?.value ?? result.data.available ?? 0,
+    pending: result.data.pending?.value ?? result.data.pending ?? 0,
+    currency: result.data.currency ?? 'TZS',
+  }
+}
+
 // ─── Payout Fee Calculation ─────────────────────────────────────────────────
 
 export interface SnippePayoutFeeResponse {

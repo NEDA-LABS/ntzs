@@ -81,6 +81,11 @@ export async function getCachedLatestKyc(userId: string) {
   return result
 }
 
+export function invalidateKycCache(userId: string) {
+  kycCache.invalidate(userId)
+  kycCache.invalidate(`latest:${userId}`)
+}
+
 export async function getCachedDefaultBank() {
   const cached = bankCache.get('default')
   if (cached !== undefined) return cached

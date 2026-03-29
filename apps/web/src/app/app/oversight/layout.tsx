@@ -74,7 +74,7 @@ export default async function OversightLayout({ children }: { children: ReactNod
         <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 p-4">
           <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
             <p className="text-xs font-medium text-zinc-400">nTZS Stablecoin</p>
-            <p className="mt-1 text-xs text-zinc-600">Base Sepolia Network</p>
+            <p className="mt-1 text-xs text-zinc-600">Base Mainnet</p>
           </div>
         </div>
       </aside>

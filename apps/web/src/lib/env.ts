@@ -20,3 +20,4 @@ export const NTZS_CONTRACT_ADDRESS_BASE = sanitizeEnv(
 
 export const MINTER_PRIVATE_KEY = sanitizeEnv(process.env.MINTER_PRIVATE_KEY)
 export const BURNER_PRIVATE_KEY = sanitizeEnv(process.env.BURNER_PRIVATE_KEY)
+export const SNIPPE_API_KEY = sanitizeEnv(process.env.SNIPPE_API_KEY)

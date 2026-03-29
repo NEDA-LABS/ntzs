@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
-import { getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
+import { getCachedRecentDeposits, getCachedRecentBurns, getCachedApprovedKyc } from '@/lib/user/cachedQueries'
 
 import {
   IconCheckCircle,
@@ -25,11 +25,14 @@ import { formatDateEAT } from '@/lib/format-date'
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, recentDeposits, recentBurns] = await Promise.all([
+  const [wallet, recentDeposits, recentBurns, approvedKyc] = await Promise.all([
     getCachedWallet(dbUser.id),
     getCachedRecentDeposits(dbUser.id, 5),
     getCachedRecentBurns(dbUser.id, 5),
+    getCachedApprovedKyc(dbUser.id),
   ])
+
+  const kycApproved = approvedKyc.length > 0
 
   const recentTxns = [
     ...recentDeposits.map((d) => ({
@@ -60,6 +63,32 @@ export default async function UserDashboard() {
   return (
     <div className="bg-[#0d0d14]">
       <PendingDepositPoller hasPending={pendingCount > 0} />
+
+      {/* ── KYC Prompt Banner ── */}
+      {!kycApproved && (
+        <div className="mx-4 mt-4 lg:mx-8 lg:mt-6">
+          <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(245,158,11,0.08),transparent_60%)]" />
+            <div className="relative flex items-start gap-3 sm:items-center">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 ring-1 ring-amber-500/30">
+                <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2" />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-amber-300">Verify your identity to start depositing</p>
+                <p className="mt-0.5 text-xs text-amber-400/70">Submit your national ID — takes less than a minute and unlocks deposits instantly.</p>
+              </div>
+              <Link
+                href="/app/user/kyc"
+                className="shrink-0 rounded-xl bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-300 ring-1 ring-amber-500/30 transition-colors hover:bg-amber-500/30"
+              >
+                Submit ID →
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Hero + Actions — scrolls away on mobile ── */}
       <div className="px-4 pt-3 pb-3 lg:px-8 lg:pt-6 lg:pb-4">

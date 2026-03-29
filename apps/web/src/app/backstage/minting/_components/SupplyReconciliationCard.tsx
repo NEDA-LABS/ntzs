@@ -4,11 +4,9 @@ import { motion, useReducedMotion } from 'framer-motion'
 
 interface SupplyReconciliationCardProps {
   onChainSupply: number | null
-  dbMinted: number
-  reconciliationTotal: number
-  dbTrackedTotal: number
-  discrepancy: number | null
-  reconciliationEntryCount: number
+  snippeBalance: number | null
+  dbMintedViaSnippeOnly: number
+  pendingMintsTzs: number
 }
 
 function generateDots(count: number, radius: number, cx: number, cy: number) {
@@ -24,11 +22,9 @@ function generateDots(count: number, radius: number, cx: number, cy: number) {
 
 export function SupplyReconciliationCard({
   onChainSupply,
-  dbMinted,
-  reconciliationTotal,
-  dbTrackedTotal,
-  discrepancy,
-  reconciliationEntryCount,
+  snippeBalance,
+  dbMintedViaSnippeOnly,
+  pendingMintsTzs,
 }: SupplyReconciliationCardProps) {
   const shouldReduceMotion = useReducedMotion()
 
@@ -37,40 +33,35 @@ export function SupplyReconciliationCard({
   const outerDots = generateDots(52, 178, CX, CY)
   const innerDots = generateDots(40, 148, CX, CY)
 
-  const discrepancyColor =
-    discrepancy === null ? 'text-zinc-400' :
-    discrepancy === 0 ? 'text-emerald-400' :
-    discrepancy > 0 ? 'text-amber-400' :
+  const reserveHealth =
+    onChainSupply && onChainSupply > 0 && snippeBalance !== null
+      ? (snippeBalance / onChainSupply) * 100
+      : null
+
+  const healthColor =
+    reserveHealth === null ? 'text-zinc-400' :
+    reserveHealth >= 95 ? 'text-emerald-400' :
+    reserveHealth >= 90 ? 'text-amber-400' :
     'text-rose-400'
 
-  const discrepancyBorder =
-    discrepancy === null ? 'border-zinc-800' :
-    discrepancy === 0 ? 'border-emerald-500/20' :
-    discrepancy > 0 ? 'border-amber-500/20' :
-    'border-rose-500/20'
+  const healthLabel =
+    reserveHealth === null ? 'Loading...' :
+    reserveHealth >= 95 ? 'Healthy' :
+    reserveHealth >= 90 ? 'Watch closely' :
+    'Undercollateralized'
 
-  const discrepancyBg =
-    discrepancy === null ? 'bg-zinc-900/40' :
-    discrepancy === 0 ? 'bg-emerald-500/5' :
-    discrepancy > 0 ? 'bg-amber-500/5' :
-    'bg-rose-500/5'
-
-  const discrepancyLabel =
-    discrepancy === null ? 'Loading...' :
-    discrepancy === 0 ? 'Balanced' :
-    'Needs attention'
-
-  const discrepancyDisplay =
-    discrepancy === null ? '—' :
-    discrepancy === 0 ? 'Balanced' :
-    `${discrepancy > 0 ? '+' : ''}${discrepancy.toLocaleString()}`
+  const dotColor =
+    reserveHealth === null ? '#22d3ee' :
+    reserveHealth >= 95 ? '#22d3ee' :
+    reserveHealth >= 90 ? '#f59e0b' :
+    '#f43f5e'
 
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-zinc-900/60 overflow-hidden">
       {/* Header */}
       <div className="px-6 pt-5 pb-0 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-white">Supply Reconciliation</h2>
-        <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider">Base Mainnet</span>
+        <h2 className="text-base font-semibold text-white">Reserve Health</h2>
+        <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider">Base Mainnet · Snippe PSP</span>
       </div>
 
       {/* Dots + hero supply */}
@@ -86,7 +77,7 @@ export function SupplyReconciliationCard({
               cx={dot.x}
               cy={dot.y}
               r={4.5}
-              fill="#22d3ee"
+              fill={dotColor}
               initial={shouldReduceMotion ? { opacity: 0.35 } : { opacity: 0, scale: 0 }}
               animate={{ opacity: 0.35, scale: 1 }}
               transition={{ delay: dot.delay, duration: 0.4, ease: 'easeOut' }}
@@ -98,7 +89,7 @@ export function SupplyReconciliationCard({
               cx={dot.x}
               cy={dot.y}
               r={3.5}
-              fill="#22d3ee"
+              fill={dotColor}
               initial={shouldReduceMotion ? { opacity: 0.15 } : { opacity: 0, scale: 0 }}
               animate={{ opacity: 0.15, scale: 1 }}
               transition={{ delay: 0.2 + dot.delay, duration: 0.4, ease: 'easeOut' }}
@@ -125,13 +116,29 @@ export function SupplyReconciliationCard({
             {onChainSupply !== null ? onChainSupply.toLocaleString() : '—'}
           </motion.p>
           <motion.p
-            className="mt-2 text-xs text-zinc-600"
+            className="mt-3 text-xs text-zinc-600"
             initial={shouldReduceMotion ? {} : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.75 }}
           >
-            Source of truth
+            nTZS in circulation
           </motion.p>
+          {reserveHealth !== null && (
+            <motion.div
+              className={`mt-3 px-3 py-1 rounded-full border text-xs font-semibold tabular-nums ${
+                reserveHealth >= 95
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                  : reserveHealth >= 90
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+              }`}
+              initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.9 }}
+            >
+              {reserveHealth.toFixed(1)}% reserve
+            </motion.div>
+          )}
         </div>
 
         {/* Gradient fade — bottom half */}
@@ -153,24 +160,30 @@ export function SupplyReconciliationCard({
         transition={{ delay: 0.7, duration: 0.4 }}
       >
         <div className="sm:pr-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">DB Minted</p>
-          <p className="mt-1 text-sm font-bold text-blue-400 tabular-nums">{dbMinted.toLocaleString()}</p>
-          <p className="text-[10px] text-zinc-700">Current contract only</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Snippe Reserve</p>
+          <p className="mt-1 text-sm font-bold text-emerald-400 tabular-nums">
+            {snippeBalance !== null ? snippeBalance.toLocaleString() : '—'}
+          </p>
+          <p className="text-[10px] text-zinc-700">PSP collection balance</p>
         </div>
         <div className="sm:px-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Reconciled</p>
-          <p className="mt-1 text-sm font-bold text-violet-400 tabular-nums">{reconciliationTotal.toLocaleString()}</p>
-          <p className="text-[10px] text-zinc-700">{reconciliationEntryCount} {reconciliationEntryCount === 1 ? 'entry' : 'entries'}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Reserve Health</p>
+          <p className={`mt-1 text-sm font-bold tabular-nums ${healthColor}`}>
+            {reserveHealth !== null ? `${reserveHealth.toFixed(1)}%` : '—'}
+          </p>
+          <p className="text-[10px] text-zinc-700">{healthLabel}</p>
         </div>
         <div className="sm:px-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Total Tracked</p>
-          <p className="mt-1 text-sm font-bold text-emerald-400 tabular-nums">{dbTrackedTotal.toLocaleString()}</p>
-          <p className="text-[10px] text-zinc-700">DB + Reconciled</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Minted via Snippe</p>
+          <p className="mt-1 text-sm font-bold text-blue-400 tabular-nums">{dbMintedViaSnippeOnly.toLocaleString()}</p>
+          <p className="text-[10px] text-zinc-700">Deposit flow</p>
         </div>
         <div className="sm:pl-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Discrepancy</p>
-          <p className={`mt-1 text-sm font-bold tabular-nums ${discrepancyColor}`}>{discrepancyDisplay}</p>
-          <p className="text-[10px] text-zinc-700">{discrepancyLabel}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Pending Queue</p>
+          <p className="mt-1 text-sm font-bold text-amber-400 tabular-nums">
+            {pendingMintsTzs > 0 ? pendingMintsTzs.toLocaleString() : '—'}
+          </p>
+          <p className="text-[10px] text-zinc-700">Awaiting mint</p>
         </div>
       </motion.div>
     </div>

@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { wallets, users } from '@ntzs/db'
+import { invalidateWalletCache } from '@/lib/user/cachedWallet'
 
 export type AliasResult =
   | { success: true; alias: string }
@@ -70,6 +71,7 @@ export async function saveEmbeddedWalletAction(formData: FormData) {
         })
         .where(eq(wallets.id, existing.id))
 
+      invalidateWalletCache(dbUser.id)
       revalidatePath('/app/user')
       revalidatePath('/app/user/wallet')
     }
@@ -84,6 +86,7 @@ export async function saveEmbeddedWalletAction(formData: FormData) {
     provider: 'coinbase_embedded',
   })
 
+  invalidateWalletCache(dbUser.id)
   revalidatePath('/app/user')
   revalidatePath('/app/user/wallet')
 }

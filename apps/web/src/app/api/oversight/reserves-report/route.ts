@@ -3,6 +3,7 @@ import { desc, eq, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import {
   users,
   depositRequests,
@@ -12,8 +13,8 @@ import {
   wallets,
 } from '@ntzs/db'
 
-const CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
-const RPC_URL = 'https://sepolia.base.org'
+const CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
+const RPC_URL = BASE_RPC_URL
 
 async function getOnChainTotalSupply(): Promise<string> {
   if (!CONTRACT_ADDRESS) return '0'
@@ -105,7 +106,7 @@ export async function GET() {
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     contractAddress: CONTRACT_ADDRESS,
-    network: 'Base Sepolia',
+    network: 'Base Mainnet',
     onChainSupply: parseFloat(onChainSupply),
     stats: {
       totalUsers: userCount?.count || 0,

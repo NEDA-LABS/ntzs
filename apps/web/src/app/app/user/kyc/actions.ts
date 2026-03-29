@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { kycCases } from '@ntzs/db'
+import { invalidateKycCache } from '@/lib/user/cachedQueries'
 
 export async function submitKycCaseAction(formData: FormData) {
   await requireAnyRole(['end_user', 'super_admin'])
@@ -36,12 +37,14 @@ export async function submitKycCaseAction(formData: FormData) {
   await db.insert(kycCases).values({
     userId: dbUser.id,
     nationalId,
-    status: 'pending',
+    status: 'approved',
     provider: 'manual',
+    reviewedAt: new Date(),
   })
 
+  invalidateKycCache(dbUser.id)
   revalidatePath('/app/user/kyc')
   revalidatePath('/app/user')
 
-  redirect('/app/user/kyc')
+  redirect('/app/user/deposits/new')
 }

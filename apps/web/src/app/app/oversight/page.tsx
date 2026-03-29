@@ -21,9 +21,10 @@ import {
 } from '@/app/app/_components/icons'
 import { ExportReportButton } from './_components/ExportReportButton'
 import { formatDateTimeEAT } from '@/lib/format-date'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 
-const CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
-const RPC_URL = 'https://sepolia.base.org'
+const CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
+const RPC_URL = BASE_RPC_URL
 
 async function getOnChainTotalSupply(): Promise<string> {
   if (!CONTRACT_ADDRESS) return '0'
@@ -196,7 +197,7 @@ export default async function OversightDashboard() {
         <MetricCard
           title="Total Supply (On-Chain)"
           value={`${formatNumber(parseFloat(onChainSupply))} nTZS`}
-          subtitle="Verified on Base Sepolia"
+          subtitle="Verified on Base Mainnet"
           icon={<IconChain className="h-5 w-5" />}
           color="emerald"
         />
@@ -394,7 +395,7 @@ export default async function OversightDashboard() {
                   <td className="py-3 pr-4">
                     {dep.txHash ? (
                       <a
-                        href={`https://sepolia.basescan.org/tx/${dep.txHash}`}
+                        href={`https://basescan.org/tx/${dep.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs text-blue-400 hover:bg-blue-500/20"
@@ -492,7 +493,7 @@ export default async function OversightDashboard() {
                     <td className="py-3 pr-4">
                       {burn.txHash ? (
                         <a
-                          href={`https://sepolia.basescan.org/tx/${burn.txHash}`}
+                          href={`https://basescan.org/tx/${burn.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs text-blue-400 hover:bg-blue-500/20"
@@ -570,19 +571,19 @@ export default async function OversightDashboard() {
           <div className="rounded-xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Contract Address</p>
             <a
-              href={`https://sepolia.basescan.org/address/${CONTRACT_ADDRESS}`}
+              href={`https://basescan.org/address/${CONTRACT_ADDRESS}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 block font-mono text-sm text-blue-400 hover:text-blue-300"
             >
               {CONTRACT_ADDRESS || 'Not configured'}
             </a>
-            <p className="mt-1 text-xs text-zinc-500">Base Sepolia Network</p>
+            <p className="mt-1 text-xs text-zinc-500">Base Mainnet</p>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Block Explorer</p>
             <a
-              href={`https://sepolia.basescan.org/token/${CONTRACT_ADDRESS}`}
+              href={`https://basescan.org/token/${CONTRACT_ADDRESS}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 block text-sm text-blue-400 hover:text-blue-300"

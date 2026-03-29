@@ -1,9 +1,10 @@
 import Link from 'next/link'
 
 import { requireRole } from '@/lib/auth/rbac'
+import { NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { ExportReportButton } from '../oversight/_components/ExportReportButton'
 
-const CONTRACT_ADDRESS = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
+const CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
 
 function GlassCard({
   title,
@@ -65,7 +66,7 @@ export default async function ComplianceDashboard() {
             <div className="mt-4 flex flex-wrap gap-3 text-xs text-white/60">
               <a
                 className="hover:text-white"
-                href={`https://sepolia.basescan.org/address/${CONTRACT_ADDRESS}`}
+                href={`https://basescan.org/address/${CONTRACT_ADDRESS}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -74,7 +75,7 @@ export default async function ComplianceDashboard() {
               <span className="text-white/30">/</span>
               <a
                 className="hover:text-white"
-                href={`https://sepolia.basescan.org/token/${CONTRACT_ADDRESS}`}
+                href={`https://basescan.org/token/${CONTRACT_ADDRESS}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
