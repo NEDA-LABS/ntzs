@@ -5,7 +5,7 @@ import crypto from 'crypto'
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { initiatePayment, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp/snippe'
-import { users, wallets, partnerUsers, depositRequests } from '@ntzs/db'
+import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
 type PaymentMethod = 'mobile_money' | 'card'
 
@@ -18,6 +18,13 @@ interface DepositBody {
   // card
   redirectUrl?: string
   cancelUrl?: string
+  /**
+   * When true, nTZS is minted directly to the partner's treasury wallet instead
+   * of the individual user's wallet. Use this for payment-collection use cases
+   * where you are collecting funds on behalf of your platform rather than
+   * crediting end-user wallets. Requires the partner treasury to be provisioned.
+   */
+  collectToTreasury?: boolean
 }
 
 /**
@@ -46,7 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, amountTzs, paymentMethod = 'mobile_money', phoneNumber, redirectUrl, cancelUrl } = body
+  const { userId, amountTzs, paymentMethod = 'mobile_money', phoneNumber, redirectUrl, cancelUrl, collectToTreasury = false } = body
 
   if (!userId || !amountTzs) {
     return NextResponse.json(
@@ -124,14 +131,90 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const [wallet] = await db
-    .select({ id: wallets.id })
-    .from(wallets)
-    .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
-    .limit(1)
+  // ── Resolve deposit destination wallet ────────────────────────────────────
+  // collectToTreasury=true  → mint to partner treasury (payment-collection mode)
+  // collectToTreasury=false → mint to the user's own wallet (WaaS mode, default)
+  let walletId: string
 
-  if (!wallet) {
-    return NextResponse.json({ error: 'User has no wallet. Create user first.' }, { status: 400 })
+  if (collectToTreasury) {
+    // Fetch partner treasury address
+    const [partnerRow] = await db
+      .select({ treasuryWalletAddress: partners.treasuryWalletAddress, name: partners.name, email: partners.email })
+      .from(partners)
+      .where(eq(partners.id, partner.id))
+      .limit(1)
+
+    if (!partnerRow?.treasuryWalletAddress) {
+      return NextResponse.json(
+        { error: 'Partner treasury wallet not provisioned. Set up your treasury before using collectToTreasury.' },
+        { status: 400 }
+      )
+    }
+
+    // Resolve or create the synthetic treasury user + wallet record
+    const treasuryNeonId = `treasury_${partner.id}`
+    let [treasuryUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.neonAuthUserId, treasuryNeonId))
+      .limit(1)
+
+    if (!treasuryUser) {
+      const partnerEmail = partnerRow.email ?? `treasury+${partner.id}@waas.internal`
+      const partnerName = partnerRow.name ?? 'Partner'
+      const [created] = await db
+        .insert(users)
+        .values({ neonAuthUserId: treasuryNeonId, email: partnerEmail, name: `${partnerName} Treasury`, role: 'end_user' })
+        .onConflictDoNothing()
+        .returning({ id: users.id })
+      if (!created) {
+        const [refetch] = await db.select({ id: users.id }).from(users).where(eq(users.neonAuthUserId, treasuryNeonId)).limit(1)
+        if (!refetch) return NextResponse.json({ error: 'Failed to resolve treasury account' }, { status: 500 })
+        treasuryUser = refetch
+      } else {
+        treasuryUser = created
+      }
+    }
+
+    // Resolve or create treasury wallet record
+    let [treasuryWallet] = await db
+      .select({ id: wallets.id })
+      .from(wallets)
+      .where(and(eq(wallets.userId, treasuryUser.id), eq(wallets.chain, 'base')))
+      .limit(1)
+
+    if (!treasuryWallet) {
+      const [created] = await db
+        .insert(wallets)
+        .values({ userId: treasuryUser.id, chain: 'base', address: partnerRow.treasuryWalletAddress, provider: 'external' })
+        .onConflictDoNothing()
+        .returning({ id: wallets.id })
+      if (!created) {
+        const [refetch] = await db.select({ id: wallets.id }).from(wallets).where(and(eq(wallets.userId, treasuryUser.id), eq(wallets.chain, 'base'))).limit(1)
+        if (!refetch) return NextResponse.json({ error: 'Failed to resolve treasury wallet record' }, { status: 500 })
+        treasuryWallet = refetch
+      } else {
+        treasuryWallet = created
+      }
+    }
+
+    walletId = treasuryWallet.id
+  } else {
+    // Standard WaaS mode: user must have their own wallet
+    const [userWallet] = await db
+      .select({ id: wallets.id })
+      .from(wallets)
+      .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
+      .limit(1)
+
+    if (!userWallet) {
+      return NextResponse.json(
+        { error: 'User has no wallet. Create the user first via POST /api/v1/partners/users, or pass collectToTreasury: true to collect funds directly to your treasury wallet.' },
+        { status: 400 }
+      )
+    }
+
+    walletId = userWallet.id
   }
 
   // Generate idempotency key for this deposit
@@ -165,7 +248,7 @@ export async function POST(request: NextRequest) {
       .values({
         userId,
         bankId,
-        walletId: wallet.id,
+        walletId,
         chain: 'base',
         amountTzs,
         status: 'submitted',
@@ -227,7 +310,7 @@ export async function POST(request: NextRequest) {
     .values({
       userId,
       bankId,
-      walletId: wallet.id,
+      walletId,
       chain: 'base',
       amountTzs,
       status: 'submitted',
