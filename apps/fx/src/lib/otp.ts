@@ -58,17 +58,28 @@ export async function verifyOtp(email: string, code: string): Promise<boolean> {
 }
 
 export async function sendOtpEmail(email: string, code: string): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    // Dev fallback — print to terminal
     console.log(`\n[SimpleFX OTP] ${email} → ${code}\n`);
     return;
   }
 
-  const { Resend } = await import('resend');
-  const resend = new Resend(apiKey);
+  const { createTransport } = await import('nodemailer');
+  const transport = createTransport({
+    host,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: { user, pass },
+  });
 
-  await resend.emails.send({
-    from: 'SimpleFX <noreply@nedapay.xyz>',
+  const from = process.env.SMTP_FROM ?? `SimpleFX <${user}>`;
+
+  await transport.sendMail({
+    from,
     to: email,
     subject: `Your SimpleFX sign-in code: ${code}`,
     html: `
