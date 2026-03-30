@@ -381,13 +381,13 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [initialCanvasVisible, setInitialCanvasVisible] = useState(true);
   const [reverseCanvasVisible, setReverseCanvasVisible] = useState(false);
-  const cycleWords = ["earning.", "growing.", "working."];
+  const cycleWords = ["Wake up.", "Trade.", "Earn."];
   const [wordIndex, setWordIndex] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
       setWordIndex((i) => (i + 1) % cycleWords.length);
-    }, 2400);
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -473,25 +473,20 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                 <span className="text-blue-400 text-xs font-medium">Base Mainnet — Live</span>
               </div>
 
-              <h1 className="text-5xl sm:text-6xl font-bold leading-[1.05] tracking-tight text-white mb-5 fx-fade-up fx-delay-1">
-                Your{" "}
-                <span className="fx-gradient-text">nTZS</span>
-                {" "}is{" "}
-                <span className="inline-block overflow-hidden align-bottom" style={{ height: '1.1em' }}>
-                  <AnimatePresence mode="wait">
-                    <motion.span
-                      key={wordIndex}
-                      initial={{ y: 28, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      exit={{ y: -28, opacity: 0 }}
-                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                      className="inline-block fx-gradient-text"
-                    >
-                      {cycleWords[wordIndex]}
-                    </motion.span>
-                  </AnimatePresence>
-                </span>
-              </h1>
+              <div className="overflow-hidden mb-5 fx-fade-up fx-delay-1" style={{ height: '1.15em' }}>
+                <AnimatePresence mode="wait">
+                  <motion.h1
+                    key={wordIndex}
+                    initial={{ y: 40, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -40, opacity: 0 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="text-6xl sm:text-7xl font-bold leading-none tracking-tight fx-gradient-text"
+                  >
+                    {cycleWords[wordIndex]}
+                  </motion.h1>
+                </AnimatePresence>
+              </div>
 
               <p className="text-gray-400 text-base leading-relaxed mb-8 fx-fade-up fx-delay-2">
                 Deposit nTZS, set your spread, and collect fees on every swap — automatically, around the clock. No trading desk. No effort.
