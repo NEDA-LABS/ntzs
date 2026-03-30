@@ -131,7 +131,7 @@ export default function DocsPage() {
 
       <Section title="Security">
         <p>SimpleFX uses a non-custodial architecture. LP Wallets are derived from per-user BIP-44 HD wallet paths. Private keys are derived on-demand for transaction signing and are never persisted to disk or logs.</p>
-        <p>Smart contracts on Base mainnet have undergone internal audit. An independent third-party audit is in progress. Contract addresses are published in the Platform interface.</p>
+        <p>Smart contracts on Base mainnet have undergone both internal and independent third-party security audits. Contract addresses are published in the Platform interface.</p>
         <p>We recommend using a strong, unique email password and enabling any additional security features available in your email provider, as your email is used for account recovery.</p>
       </Section>
 
