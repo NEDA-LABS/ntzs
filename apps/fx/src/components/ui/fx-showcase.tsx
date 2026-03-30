@@ -17,6 +17,15 @@ interface Metric {
   icon: LucideIcon;
 }
 
+interface OrbitBadge {
+  label: string;
+  bg: string;
+  text: string;
+  radius: number;
+  duration: number;
+  initialAngle: number;
+}
+
 interface ShowcaseItem {
   id: TokenSide;
   label: string;
@@ -33,6 +42,7 @@ interface ShowcaseItem {
   status: string;
   metrics: Metric[];
   earning: string;
+  orbits: OrbitBadge[];
 }
 
 // =========================================
@@ -55,6 +65,12 @@ const SHOWCASE: Record<TokenSide, ShowcaseItem> = {
       bgRadial: 'rgba(52, 211, 153, 0.10)',
     },
     status: 'Ask Side Active',
+    orbits: [
+      { label: 'Base',     bg: 'bg-blue-950/80',   text: 'text-blue-300',   radius: 152, duration: 18, initialAngle: 0   },
+      { label: 'Polygon',  bg: 'bg-purple-950/80', text: 'text-purple-300', radius: 152, duration: 18, initialAngle: 180 },
+      { label: 'ETH',      bg: 'bg-zinc-800/80',   text: 'text-zinc-200',   radius: 200, duration: 28, initialAngle: 60  },
+      { label: 'Arbitrum', bg: 'bg-sky-950/80',    text: 'text-sky-300',    radius: 200, duration: 28, initialAngle: 240 },
+    ],
     metrics: [
       { label: 'Ask Spread', value: 75, display: '1.5%', icon: TrendingUp },
       { label: 'Fill Rate', value: 94, display: '94%', icon: BarChart3 },
@@ -76,6 +92,12 @@ const SHOWCASE: Record<TokenSide, ShowcaseItem> = {
       bgRadial: 'rgba(59, 130, 246, 0.10)',
     },
     status: 'Bid Side Active',
+    orbits: [
+      { label: 'USDT',  bg: 'bg-emerald-950/80', text: 'text-emerald-300', radius: 152, duration: 20, initialAngle: 40  },
+      { label: 'DAI',   bg: 'bg-orange-950/80',  text: 'text-orange-300',  radius: 152, duration: 20, initialAngle: 220 },
+      { label: 'EURC',  bg: 'bg-indigo-950/80',  text: 'text-indigo-300',  radius: 200, duration: 32, initialAngle: 120 },
+      { label: 'USDe',  bg: 'bg-zinc-800/80',    text: 'text-zinc-200',    radius: 200, duration: 32, initialAngle: 300 },
+    ],
     metrics: [
       { label: 'Bid Spread', value: 60, display: '1.2%', icon: TrendingUp },
       { label: 'Pool Depth', value: 87, display: '87%', icon: Layers },
@@ -157,6 +179,41 @@ const USDCLogo = () => (
 );
 
 // =========================================
+// ORBIT BADGE
+// =========================================
+
+const OrbitItem = ({ label, bg, text, radius, duration, initialAngle }: OrbitBadge) => (
+  <motion.div
+    animate={{ rotate: [initialAngle, initialAngle + 360] }}
+    transition={{ duration, repeat: Infinity, ease: 'linear' }}
+    style={{
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      width: 0,
+      height: 0,
+      transformOrigin: '0px 0px',
+    }}
+  >
+    <motion.div
+      animate={{ rotate: [-(initialAngle), -(initialAngle + 360)] }}
+      transition={{ duration, repeat: Infinity, ease: 'linear' }}
+      style={{
+        position: 'absolute',
+        top: -radius,
+        transform: 'translateX(-50%)',
+      }}
+    >
+      <div
+        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border border-white/10 backdrop-blur-sm whitespace-nowrap select-none ${bg} ${text}`}
+      >
+        {label}
+      </div>
+    </motion.div>
+  </motion.div>
+);
+
+// =========================================
 // TOKEN VISUAL CONTAINER
 // =========================================
 
@@ -198,6 +255,11 @@ const TokenVisual = ({ data, isLeft }: { data: ShowcaseItem; isLeft: boolean }) 
         </AnimatePresence>
       </motion.div>
     </div>
+
+    {/* Orbiting stablecoins / chains */}
+    {data.orbits.map((orbit) => (
+      <OrbitItem key={orbit.label} {...orbit} />
+    ))}
 
     <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
       <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest text-zinc-500 bg-zinc-950/80 px-3 py-1.5 rounded-full border border-white/5 backdrop-blur">
