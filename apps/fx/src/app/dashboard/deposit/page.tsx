@@ -56,19 +56,28 @@ function CopyField({ label, value }: { label: string; value: string }) {
 export default function DepositPage() {
   const { lp, refresh } = useLp();
   const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc'>('ntzs');
+  const [balances, setBalances] = useState<{ ntzs: string; usdc: string } | null>(null);
   const token = TOKENS.find((t) => t.id === activeToken)!;
 
   useEffect(() => {
-    if (lp && lp.onboardingStep === 1) {
+    if (!lp) return;
+    if (lp.onboardingStep === 1) {
       fetch('/api/lp/onboarding', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step: 2 }),
       }).then(() => refresh());
     }
+    fetch('/api/lp/balances').then((r) => r.json()).then(setBalances).catch(() => {});
   }, [lp?.id]);
 
   if (!lp) return null;
+
+  const fmt = (v: string | undefined) => {
+    if (!v) return '—';
+    const n = parseFloat(v);
+    return n === 0 ? '0' : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
 
   return (
     <div className="px-6 py-8 max-w-2xl mx-auto">
@@ -78,7 +87,20 @@ export default function DepositPage() {
         transition={{ duration: 0.4 }}
       >
         <p className="text-xs uppercase tracking-[0.25em] text-zinc-600 mb-1">Deposit</p>
-        <h1 className="text-3xl font-thin text-white mb-8">Fund your inventory</h1>
+        <h1 className="text-3xl font-thin text-white mb-6">Fund your inventory</h1>
+
+        {/* Current balances strip */}
+        <div className="grid grid-cols-2 gap-3 mb-8">
+          {[
+            { label: 'nTZS Inventory', value: fmt(balances?.ntzs) },
+            { label: 'USDC Balance', value: fmt(balances?.usdc) },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-lg border border-white/5 bg-zinc-950 px-4 py-3">
+              <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">{label}</p>
+              <p className="text-lg font-light text-white tabular-nums">{value}</p>
+            </div>
+          ))}
+        </div>
 
         {/* Token tabs */}
         <div className="flex gap-2 mb-8 p-1 bg-zinc-950 border border-white/5 rounded-xl w-fit">
