@@ -19,8 +19,7 @@ interface Metric {
 
 interface OrbitBadge {
   label: string;
-  bg: string;
-  text: string;
+  icon: string;
   radius: number;
   duration: number;
   initialAngle: number;
@@ -66,10 +65,10 @@ const SHOWCASE: Record<TokenSide, ShowcaseItem> = {
     },
     status: 'Ask Side Active',
     orbits: [
-      { label: 'Base',     bg: 'bg-blue-950/80',   text: 'text-blue-300',   radius: 152, duration: 18, initialAngle: 0   },
-      { label: 'Polygon',  bg: 'bg-purple-950/80', text: 'text-purple-300', radius: 152, duration: 18, initialAngle: 180 },
-      { label: 'ETH',      bg: 'bg-zinc-800/80',   text: 'text-zinc-200',   radius: 200, duration: 28, initialAngle: 60  },
-      { label: 'Arbitrum', bg: 'bg-sky-950/80',    text: 'text-sky-300',    radius: 200, duration: 28, initialAngle: 240 },
+      { label: 'Base',     icon: '/base.svg',      radius: 152, duration: 18, initialAngle: 0   },
+      { label: 'Polygon',  icon: '/polygon.svg',   radius: 152, duration: 18, initialAngle: 180 },
+      { label: 'ETH',      icon: '/eth-logo.svg',  radius: 200, duration: 28, initialAngle: 60  },
+      { label: 'Arbitrum', icon: '/arbitrum.svg',  radius: 200, duration: 28, initialAngle: 240 },
     ],
     metrics: [
       { label: 'Ask Spread', value: 75, display: '1.5%', icon: TrendingUp },
@@ -93,10 +92,10 @@ const SHOWCASE: Record<TokenSide, ShowcaseItem> = {
     },
     status: 'Bid Side Active',
     orbits: [
-      { label: 'USDT',  bg: 'bg-emerald-950/80', text: 'text-emerald-300', radius: 152, duration: 20, initialAngle: 40  },
-      { label: 'DAI',   bg: 'bg-orange-950/80',  text: 'text-orange-300',  radius: 152, duration: 20, initialAngle: 220 },
-      { label: 'EURC',  bg: 'bg-indigo-950/80',  text: 'text-indigo-300',  radius: 200, duration: 32, initialAngle: 120 },
-      { label: 'USDe',  bg: 'bg-zinc-800/80',    text: 'text-zinc-200',    radius: 200, duration: 32, initialAngle: 300 },
+      { label: 'USDT', icon: '/usdt-coin.svg',  radius: 152, duration: 20, initialAngle: 40  },
+      { label: 'USDC', icon: '/usdc-logo.svg',  radius: 152, duration: 20, initialAngle: 220 },
+      { label: 'EURC', icon: '/eurc-coin.png',  radius: 200, duration: 32, initialAngle: 120 },
+      { label: 'cNGN', icon: '/cngn.png',       radius: 200, duration: 32, initialAngle: 300 },
     ],
     metrics: [
       { label: 'Bid Spread', value: 60, display: '1.2%', icon: TrendingUp },
@@ -182,7 +181,7 @@ const USDCLogo = () => (
 // ORBIT BADGE
 // =========================================
 
-const OrbitItem = ({ label, bg, text, radius, duration, initialAngle }: OrbitBadge) => (
+const OrbitItem = ({ label, icon, radius, duration, initialAngle }: OrbitBadge) => (
   <motion.div
     animate={{ rotate: [initialAngle, initialAngle + 360] }}
     transition={{ duration, repeat: Infinity, ease: 'linear' }}
@@ -204,10 +203,11 @@ const OrbitItem = ({ label, bg, text, radius, duration, initialAngle }: OrbitBad
         transform: 'translateX(-50%)',
       }}
     >
-      <div
-        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border border-white/10 backdrop-blur-sm whitespace-nowrap select-none ${bg} ${text}`}
-      >
-        {label}
+      <div className="flex flex-col items-center gap-1 select-none">
+        <div className="w-8 h-8 rounded-full bg-zinc-900/90 border border-white/10 flex items-center justify-center overflow-hidden backdrop-blur-sm shadow-lg">
+          <img src={icon} alt={label} className="w-5 h-5 object-contain" draggable={false} />
+        </div>
+        <span className="text-[9px] font-medium text-zinc-500 leading-none">{label}</span>
       </div>
     </motion.div>
   </motion.div>
