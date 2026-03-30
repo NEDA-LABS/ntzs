@@ -411,6 +411,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
 
   const [authError, setAuthError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const router = useRouter();
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -447,6 +448,8 @@ export const SignInPage = ({ className }: SignInPageProps) => {
       if (value && index < 5) codeInputRefs.current[index + 1]?.focus();
       if (index === 5 && value && newCode.every((d) => d.length === 1)) {
         const fullCode = newCode.join("");
+        setVerifying(true);
+        setAuthError("");
         try {
           const res = await fetch("/api/auth/verify-otp", {
             method: "POST",
@@ -456,7 +459,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
           if (!res.ok) {
             setAuthError("Invalid code. Please try again.");
             setCode(["", "", "", "", "", ""]);
-            codeInputRefs.current[0]?.focus();
+            setTimeout(() => codeInputRefs.current[0]?.focus(), 50);
             return;
           }
           setReverseCanvasVisible(true);
@@ -467,6 +470,8 @@ export const SignInPage = ({ className }: SignInPageProps) => {
           }, 2000);
         } catch {
           setAuthError("Verification failed. Please try again.");
+        } finally {
+          setVerifying(false);
         }
       }
     }
@@ -662,9 +667,10 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                                 pattern="[0-9]*"
                                 maxLength={1}
                                 value={digit}
-                                onChange={(e) => handleCodeChange(i, e.target.value)}
+                                onChange={(e) => !verifying && handleCodeChange(i, e.target.value)}
                                 onKeyDown={(e) => handleKeyDown(i, e)}
-                                className="w-8 text-center text-xl bg-transparent text-white border-none focus:outline-none focus:ring-0 appearance-none"
+                                disabled={verifying}
+                                className="w-8 text-center text-xl bg-transparent text-white border-none focus:outline-none focus:ring-0 appearance-none disabled:opacity-40"
                                 style={{ caretColor: "transparent" }}
                               />
                               {!digit && (

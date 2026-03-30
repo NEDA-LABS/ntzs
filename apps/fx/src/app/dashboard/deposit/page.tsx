@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, CheckCircle2, ArrowUpRight, Info } from 'lucide-react';
 import { useLp } from '../layout';
@@ -54,9 +54,19 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 export default function DepositPage() {
-  const { lp } = useLp();
+  const { lp, refresh } = useLp();
   const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc'>('ntzs');
   const token = TOKENS.find((t) => t.id === activeToken)!;
+
+  useEffect(() => {
+    if (lp && lp.onboardingStep === 1) {
+      fetch('/api/lp/onboarding', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: 2 }),
+      }).then(() => refresh());
+    }
+  }, [lp?.id]);
 
   if (!lp) return null;
 
