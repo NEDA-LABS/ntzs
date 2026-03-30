@@ -429,7 +429,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
             <CanvasRevealEffect
               animationSpeed={3}
               containerClassName="bg-black"
-              colors={[[52, 211, 153], [16, 185, 129]]}
+              colors={[[251, 191, 36], [217, 119, 6]]}
               dotSize={5}
               reverse={false}
             />
@@ -440,7 +440,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
             <CanvasRevealEffect
               animationSpeed={4}
               containerClassName="bg-black"
-              colors={[[52, 211, 153], [16, 185, 129]]}
+              colors={[[251, 191, 36], [217, 119, 6]]}
               dotSize={5}
               reverse={true}
             />
