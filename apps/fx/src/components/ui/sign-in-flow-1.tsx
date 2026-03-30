@@ -679,9 +679,23 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                       </div>
                     </div>
 
+                    {authError && (
+                      <p className="text-xs text-red-400 text-center">{authError}</p>
+                    )}
+
                     <motion.p
                       className="text-gray-500 hover:text-gray-300 transition-colors cursor-pointer text-sm"
                       whileHover={{ scale: 1.02 }}
+                      onClick={async () => {
+                        setAuthError("");
+                        try {
+                          await fetch("/api/auth/request-otp", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ email }),
+                          });
+                        } catch { /* silent */ }
+                      }}
                     >
                       Resend code
                     </motion.p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Zap } from 'lucide-react';
 import { useLp } from '../layout';
@@ -78,9 +78,16 @@ function SpreadPreview({ bidBps, askBps }: { bidBps: number; askBps: number }) {
 
 export default function SpreadPage() {
   const { lp, refresh } = useLp();
-  const [bidBps, setBidBps] = useState(lp?.bidBps ?? 120);
-  const [askBps, setAskBps] = useState(lp?.askBps ?? 150);
+  const [bidBps, setBidBps] = useState(120);
+  const [askBps, setAskBps] = useState(150);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (lp) {
+      setBidBps(lp.bidBps);
+      setAskBps(lp.askBps);
+    }
+  }, [lp?.bidBps, lp?.askBps]);
   const [saved, setSaved] = useState(false);
   const [activating, setActivating] = useState(false);
 
