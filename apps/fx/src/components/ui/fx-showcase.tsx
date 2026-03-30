@@ -164,14 +164,27 @@ const NTZSLogo = () => (
 );
 
 const USDCLogo = () => (
-  <div className="relative w-full h-full flex items-center justify-center p-8">
-    <div className="relative">
-      <div
-        className="w-44 h-44 rounded-full bg-gradient-to-br from-blue-400 to-blue-700 flex flex-col items-center justify-center"
-        style={{ boxShadow: '0 0 50px rgba(59,130,246,0.45)' }}
-      >
-        <span className="text-white font-bold text-4xl tracking-tight leading-none">$</span>
-        <span className="text-white/80 font-semibold text-sm tracking-widest uppercase mt-1">USDC</span>
+  <div className="relative w-full h-full flex items-center justify-center">
+    {/* USDT — behind, offset left */}
+    <div className="absolute" style={{ left: '50%', top: '50%', transform: 'translate(-72%, -50%)' }}>
+      <div className="w-28 h-28 rounded-full bg-zinc-900/80 border border-white/10 flex items-center justify-center shadow-xl">
+        <img
+          src="/usdt-coin.svg"
+          alt="USDT"
+          className="w-20 h-20 object-contain drop-shadow-[0_0_20px_rgba(38,195,135,0.5)]"
+          draggable={false}
+        />
+      </div>
+    </div>
+    {/* USDC — front, offset right */}
+    <div className="absolute" style={{ left: '50%', top: '50%', transform: 'translate(-28%, -50%)' }}>
+      <div className="w-32 h-32 rounded-full bg-zinc-900/80 border border-white/10 flex items-center justify-center shadow-xl">
+        <img
+          src="/usdc-logo.svg"
+          alt="USDC"
+          className="w-24 h-24 object-contain drop-shadow-[0_0_24px_rgba(59,130,246,0.55)]"
+          draggable={false}
+        />
       </div>
     </div>
   </div>
