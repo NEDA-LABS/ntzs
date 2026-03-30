@@ -46,7 +46,10 @@ export async function verifyOtp(email: string, code: string): Promise<boolean> {
 
 export async function sendOtpEmail(email: string, code: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error('RESEND_API_KEY not set');
+  if (!apiKey) {
+    console.log(`\n[SimpleFX OTP] ${email} → ${code}\n`);
+    return;
+  }
 
   const { Resend } = await import('resend');
   const resend = new Resend(apiKey);
