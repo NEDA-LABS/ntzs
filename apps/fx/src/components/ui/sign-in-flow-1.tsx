@@ -382,6 +382,13 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [initialCanvasVisible, setInitialCanvasVisible] = useState(true);
   const [reverseCanvasVisible, setReverseCanvasVisible] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.lp) window.location.replace("/dashboard"); })
+      .catch(() => {});
+  }, []);
   const cycleWords = ["Wake up. Trade. Earn.", "Set your spread. Collect fees."];
   const [wordIndex, setWordIndex] = useState(0);
   const [displayText, setDisplayText] = useState("");
