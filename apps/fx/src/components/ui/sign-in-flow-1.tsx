@@ -322,7 +322,7 @@ function Navbar() {
     >
       <div className="flex items-center justify-between w-full gap-x-6 sm:gap-x-8">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
             <div className="w-2 h-2 rounded-full bg-black" />
           </div>
           <span className="text-white font-semibold text-sm tracking-tight">SimpleFX</span>
@@ -333,8 +333,8 @@ function Navbar() {
             Sign In
           </button>
           <div className="relative group">
-            <div className="absolute inset-0 -m-2 rounded-full hidden sm:block bg-amber-500 opacity-20 filter blur-lg pointer-events-none transition-all duration-300 group-hover:opacity-40 group-hover:blur-xl" />
-            <button className="relative z-10 px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-amber-300 to-amber-500 rounded-full hover:from-amber-200 hover:to-amber-400 transition-all duration-200">
+            <div className="absolute inset-0 -m-2 rounded-full hidden sm:block bg-blue-600 opacity-20 filter blur-lg pointer-events-none transition-all duration-300 group-hover:opacity-40 group-hover:blur-xl" />
+            <button className="relative z-10 px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
               Become a Market Maker
             </button>
           </div>
@@ -365,7 +365,7 @@ function Navbar() {
           <button className="w-full px-4 py-2 text-sm border border-white/10 bg-white/5 text-gray-300 rounded-full">
             Sign In
           </button>
-          <button className="w-full px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-amber-300 to-amber-500 rounded-full">
+          <button className="w-full px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
             Become a Market Maker
           </button>
         </div>
@@ -429,7 +429,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
             <CanvasRevealEffect
               animationSpeed={3}
               containerClassName="bg-black"
-              colors={[[251, 191, 36], [217, 119, 6]]}
+              colors={[[59, 130, 246], [29, 78, 216]]}
               dotSize={5}
               reverse={false}
             />
@@ -440,7 +440,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
             <CanvasRevealEffect
               animationSpeed={4}
               containerClassName="bg-black"
-              colors={[[251, 191, 36], [217, 119, 6]]}
+              colors={[[59, 130, 246], [29, 78, 216]]}
               dotSize={5}
               reverse={true}
             />
@@ -459,9 +459,9 @@ export const SignInPage = ({ className }: SignInPageProps) => {
           {/* Left — Hero copy */}
           <div className="flex-1 flex flex-col justify-center px-8 sm:px-16 lg:px-20 pt-32 lg:pt-0">
             <div className="max-w-lg">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 mb-6 fx-fade-up">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                <span className="text-amber-400 text-xs font-medium">Base Mainnet — Live</span>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-600/10 mb-6 fx-fade-up">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-blue-400 text-xs font-medium">Base Mainnet — Live</span>
               </div>
 
               <h1 className="text-5xl sm:text-6xl font-bold leading-[1.05] tracking-tight text-white mb-5 fx-fade-up fx-delay-1">
@@ -479,7 +479,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
               <div className="flex items-center gap-3 mb-10 fx-fade-up fx-delay-3">
                 <a
                   href="#earn"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-black bg-gradient-to-br from-amber-300 to-amber-500 rounded-full hover:from-amber-200 hover:to-amber-400 transition-all duration-200"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200"
                 >
                   How It Works
                 </a>
@@ -524,12 +524,12 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                           placeholder="you@example.com"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          className="w-full bg-white/5 backdrop-blur text-white border border-white/10 rounded-full py-3 px-5 focus:outline-none focus:border-amber-500/50 placeholder:text-gray-600 text-sm"
+                          className="w-full bg-white/5 backdrop-blur text-white border border-white/10 rounded-full py-3 px-5 focus:outline-none focus:border-blue-500/50 placeholder:text-gray-600 text-sm"
                           required
                         />
                         <button
                           type="submit"
-                          className="absolute right-1.5 top-1.5 text-black w-9 h-9 flex items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 hover:from-amber-200 hover:to-amber-400 transition-colors group overflow-hidden"
+                          className="absolute right-1.5 top-1.5 text-black w-9 h-9 flex items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 hover:from-blue-300 hover:to-blue-500 transition-colors group overflow-hidden"
                         >
                           <span className="relative w-full h-full block overflow-hidden">
                             <span className="absolute inset-0 flex items-center justify-center transition-transform duration-300 group-hover:translate-x-full text-xs font-bold">
@@ -544,7 +544,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
 
                       <button
                         type="submit"
-                        className="w-full py-3 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-black font-semibold text-sm hover:from-amber-300 hover:to-amber-500 transition-all duration-200"
+                        className="w-full py-3 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-black font-semibold text-sm hover:from-blue-400 hover:to-blue-600 transition-all duration-200"
                       >
                         Provide Liquidity
                       </button>
@@ -629,7 +629,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                       <motion.button
                         className={`flex-1 rounded-full font-semibold py-3 text-sm transition-all duration-300 ${
                           code.every((d) => d !== "")
-                            ? "bg-gradient-to-br from-amber-400 to-amber-600 text-black hover:from-amber-300 hover:to-amber-500 cursor-pointer"
+                            ? "bg-gradient-to-br from-blue-500 to-blue-700 text-black hover:from-blue-400 hover:to-blue-600 cursor-pointer"
                             : "bg-white/5 text-white/30 border border-white/10 cursor-not-allowed"
                         }`}
                         disabled={!code.every((d) => d !== "")}
@@ -650,7 +650,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                       initial={{ scale: 0.8, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ duration: 0.5, delay: 0.5 }}
-                      className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center"
+                      className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -680,7 +680,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 1 }}
-                      className="block w-full rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-black font-semibold py-3 text-sm hover:from-amber-300 hover:to-amber-500 transition-all duration-200 text-center"
+                      className="block w-full rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-black font-semibold py-3 text-sm hover:from-blue-400 hover:to-blue-600 transition-all duration-200 text-center"
                     >
                       Open Dashboard
                     </motion.a>
