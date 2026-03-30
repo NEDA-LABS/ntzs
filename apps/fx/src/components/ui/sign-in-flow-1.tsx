@@ -381,7 +381,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [initialCanvasVisible, setInitialCanvasVisible] = useState(true);
   const [reverseCanvasVisible, setReverseCanvasVisible] = useState(false);
-  const cycleWords = ["Wake up.", "Trade.", "Earn."];
+  const cycleWords = ["Wake up. Trade. Earn.", "Set your spread. Collect fees."];
   const [wordIndex, setWordIndex] = useState(0);
   const [displayText, setDisplayText] = useState("");
   const [typePhase, setTypePhase] = useState<"typing" | "holding" | "deleting">("typing");
