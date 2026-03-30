@@ -552,11 +552,11 @@ export const SignInPage = ({ className }: SignInPageProps) => {
 
                     <p className="text-xs text-gray-600 pt-2">
                       By continuing, you agree to the{" "}
-                      <Link href="#" className="underline text-gray-500 hover:text-gray-300 transition-colors">
+                      <Link href="/terms" className="underline text-gray-500 hover:text-gray-300 transition-colors">
                         Terms of Service
                       </Link>{" "}
                       and{" "}
-                      <Link href="#" className="underline text-gray-500 hover:text-gray-300 transition-colors">
+                      <Link href="/privacy" className="underline text-gray-500 hover:text-gray-300 transition-colors">
                         Privacy Policy
                       </Link>
                       .
