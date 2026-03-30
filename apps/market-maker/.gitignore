@@ -1,0 +1,10 @@
+# Never commit the generated config - it contains live secrets
+config.toml
+
+# Never commit raw key files
+*.key
+*.pem
+
+# Local env overrides
+.env
+.env.local

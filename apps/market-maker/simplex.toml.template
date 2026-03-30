@@ -1,0 +1,57 @@
+[simplex]
+maxConcurrentOrders = 5
+logging = "info"
+# Required for HyperFX solver selection auction
+substratePrivateKey = "__SUBSTRATE_PRIVATE_KEY__"
+hyperbridgeWsUrl = "wss://nexus.ibp.network"
+
+[simplex.queue]
+maxRechecks = 10
+recheckDelayMs = 30000
+
+[simplex.signer]
+type = "privateKey"
+key = "__SIGNER_PRIVATE_KEY__"
+
+[[chains]]
+chainId = "EVM-8453"
+rpcUrl = "__BASE_RPC_URL__"
+bundlerUrl = "__BUNDLER_URL__"
+
+# ---------------------------------------------------------------
+# HyperFX strategy: nTZS <-> USDC market making on Base mainnet
+#
+# Price curves are expressed as nTZS per USD.
+# Current mid-market rate: 1 USD = ~2600 nTZS (1 nTZS = ~$0.000384)
+# Spread: ~0.75% each side (~1.5% total round-trip margin)
+#
+# To update rates: adjust both curves proportionally and redeploy.
+# Example: if TZS weakens to 2700/USD, shift all values up by ~100.
+# ---------------------------------------------------------------
+
+[[strategies]]
+type = "hyperfx"
+maxOrderUsd = 2000
+
+# bid: nTZS per USD when a user is SELLING nTZS to you (you buy nTZS)
+# Higher value = you pay out less USD per nTZS = more profitable for you
+bidPriceCurve = [
+  { amount = "50",   price = "2620" },
+  { amount = "200",  price = "2615" },
+  { amount = "500",  price = "2612" },
+  { amount = "1000", price = "2608" },
+  { amount = "2000", price = "2604" },
+]
+
+# ask: nTZS per USD when a user is BUYING nTZS from you (you sell nTZS)
+# Lower value = you send fewer nTZS per USD = more profitable for you
+askPriceCurve = [
+  { amount = "50",   price = "2580" },
+  { amount = "200",  price = "2575" },
+  { amount = "500",  price = "2572" },
+  { amount = "1000", price = "2568" },
+  { amount = "2000", price = "2564" },
+]
+
+[strategies.token1]
+"EVM-8453" = "0xF476BA983DE2F1AD532380630e2CF1D1b8b10688"

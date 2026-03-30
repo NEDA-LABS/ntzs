@@ -1,0 +1,12 @@
+app = "ntzs-market-maker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# No HTTP services - this is a pure background worker process
+# Fly.io will keep it running as a persistent machine
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
