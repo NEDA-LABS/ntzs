@@ -1,7 +1,7 @@
 import { createHash, randomInt } from 'crypto';
 import { db } from './db';
 import { lpOtpCodes } from '@ntzs/db';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 
 export function generateOtp(): string {
   return String(randomInt(100000, 999999));
@@ -12,9 +12,22 @@ export function hashOtp(code: string): string {
 }
 
 export async function storeOtp(email: string, code: string): Promise<void> {
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 min
+  const normalized = email.toLowerCase();
+
+  // Clean up expired or used codes for this email first
+  await db
+    .delete(lpOtpCodes)
+    .where(
+      and(
+        eq(lpOtpCodes.email, normalized),
+        lte(lpOtpCodes.expiresAt, now)
+      )
+    );
+
   await db.insert(lpOtpCodes).values({
-    email: email.toLowerCase(),
+    email: normalized,
     codeHash: hashOtp(code),
     expiresAt,
   });
