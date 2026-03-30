@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { TrendingUp, BarChart3, Layers, ArrowRight, ChevronRight, type LucideIcon } from 'lucide-react';
 
@@ -406,24 +405,18 @@ const Switcher = ({ active, onToggle }: { active: TokenSide; onToggle: (id: Toke
 // =========================================
 
 export default function FXShowcase() {
-  const [active, setActive] = useState<TokenSide>('ntzs');
-  const data = SHOWCASE[active];
-  const isLeft = active === 'ntzs';
-
   return (
     <section className="relative w-full bg-black overflow-hidden py-24 px-6">
-      {/* Background glow that shifts between sides */}
-      <motion.div
-        animate={{
-          background: isLeft
-            ? `radial-gradient(circle at 30% 50%, ${SHOWCASE.ntzs.colors.bgRadial}, transparent 60%)`
-            : `radial-gradient(circle at 70% 50%, ${SHOWCASE.usdc.colors.bgRadial}, transparent 60%)`,
-        }}
-        transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+      {/* Dual background glows — emerald left, blue right */}
+      <div
         className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `radial-gradient(circle at 20% 50%, ${SHOWCASE.ntzs.colors.bgRadial}, transparent 45%),
+                       radial-gradient(circle at 80% 50%, ${SHOWCASE.usdc.colors.bgRadial}, transparent 45%)`,
+        }}
       />
 
-      <div className="relative z-10 max-w-6xl mx-auto">
+      <div className="relative z-10 max-w-7xl mx-auto">
         {/* Section header */}
         <div className="text-center mb-16">
           <p className="text-xs uppercase tracking-[0.3em] text-zinc-600 mb-3">How It Works</p>
@@ -435,34 +428,50 @@ export default function FXShowcase() {
           </p>
         </div>
 
-        {/* Swap flow indicator */}
-        <div className="flex justify-center mb-12">
-          <SwapFlow active={active} />
-        </div>
+        {/* Two columns — side by side */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-start gap-8 lg:gap-6">
 
-        {/* Main showcase — two column layout */}
-        <motion.div
-          layout
-          transition={{ type: 'spring', bounce: 0, duration: 0.8 }}
-          className={`flex flex-col md:flex-row items-center justify-center gap-16 md:gap-24 lg:gap-36 w-full ${
-            isLeft ? 'md:flex-row' : 'md:flex-row-reverse'
-          }`}
-        >
-          {/* Token visual */}
-          <TokenVisual data={data} isLeft={isLeft} />
+          {/* Left — nTZS ask side */}
+          <motion.div
+            initial={{ opacity: 0, x: -48 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col items-center gap-12"
+          >
+            <TokenVisual data={SHOWCASE.ntzs} isLeft={true} />
+            <TokenDetails data={SHOWCASE.ntzs} />
+          </motion.div>
 
-          {/* Detail panel */}
-          <div className="w-full max-w-md">
-            <AnimatePresence mode="wait">
-              <TokenDetails key={active} data={data} />
-            </AnimatePresence>
+          {/* Center divider + swap connector */}
+          <div className="hidden lg:flex flex-col items-center justify-center self-stretch gap-4 px-2 pt-24">
+            <div className="flex-1 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent" />
+            <div className="flex flex-col items-center gap-2 py-4">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-600">Ask</div>
+              <div className="px-3 py-1.5 rounded-full border border-white/8 bg-zinc-900/60 text-zinc-400 text-xs font-mono">
+                1.5%
+              </div>
+              <ArrowRight size={14} className="text-zinc-700 rotate-90" />
+              <ArrowRight size={14} className="text-zinc-700 -rotate-90 -mt-2" />
+              <div className="px-3 py-1.5 rounded-full border border-white/8 bg-zinc-900/60 text-zinc-400 text-xs font-mono">
+                1.2%
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-zinc-600">Bid</div>
+            </div>
+            <div className="flex-1 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent" />
           </div>
-        </motion.div>
 
-        {/* Switcher — centered below content */}
-        <div className="flex flex-col items-center gap-4 mt-20">
-          <Switcher active={active} onToggle={setActive} />
-          <p className="text-xs text-zinc-600">Toggle between liquidity sides</p>
+          {/* Right — USDC bid side */}
+          <motion.div
+            initial={{ opacity: 0, x: 48 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+            className="flex flex-col items-center gap-12"
+          >
+            <TokenVisual data={SHOWCASE.usdc} isLeft={false} />
+            <TokenDetails data={SHOWCASE.usdc} />
+          </motion.div>
         </div>
       </div>
     </section>
