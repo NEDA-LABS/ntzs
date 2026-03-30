@@ -9,15 +9,21 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@react-three/fiber": "^9.1.2",
+    "@ntzs/db": "*",
     "@radix-ui/react-slot": "^1.2.3",
+    "@react-three/fiber": "^9.1.2",
+    "@scure/bip32": "^1.7.0",
+    "@scure/bip39": "^1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "ethers": "^6.16.0",
     "framer-motion": "^12.35.1",
+    "jose": "^6.2.2",
     "lucide-react": "^0.555.0",
     "next": "16.1.1",
     "react": "19.1.2",
     "react-dom": "19.1.2",
+    "resend": "^6.10.0",
     "tailwind-merge": "^3.5.0",
     "three": "^0.183.2"
   },

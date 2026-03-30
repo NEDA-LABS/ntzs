@@ -92,6 +92,13 @@
       "when": 1772792400000,
       "tag": "0012_add_partner_payout_destination",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774903965871,
+      "tag": "0013_bumpy_jackal",
+      "breakpoints": true
     }
   ]
 }

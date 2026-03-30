@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -408,9 +409,28 @@ export const SignInPage = ({ className }: SignInPageProps) => {
     }
   }, [displayText, typePhase, wordIndex]);
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
+  const [authError, setAuthError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const router = useRouter();
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) setStep("code");
+    if (!email) return;
+    setSubmitting(true);
+    setAuthError("");
+    try {
+      const res = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error("Failed to send code");
+      setStep("code");
+    } catch {
+      setAuthError("Could not send code. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -419,16 +439,35 @@ export const SignInPage = ({ className }: SignInPageProps) => {
     }
   }, [step]);
 
-  const handleCodeChange = (index: number, value: string) => {
+  const handleCodeChange = async (index: number, value: string) => {
     if (value.length <= 1) {
       const newCode = [...code];
       newCode[index] = value;
       setCode(newCode);
       if (value && index < 5) codeInputRefs.current[index + 1]?.focus();
       if (index === 5 && value && newCode.every((d) => d.length === 1)) {
-        setReverseCanvasVisible(true);
-        setTimeout(() => setInitialCanvasVisible(false), 50);
-        setTimeout(() => setStep("success"), 2000);
+        const fullCode = newCode.join("");
+        try {
+          const res = await fetch("/api/auth/verify-otp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, code: fullCode }),
+          });
+          if (!res.ok) {
+            setAuthError("Invalid code. Please try again.");
+            setCode(["", "", "", "", "", ""]);
+            codeInputRefs.current[0]?.focus();
+            return;
+          }
+          setReverseCanvasVisible(true);
+          setTimeout(() => setInitialCanvasVisible(false), 50);
+          setTimeout(() => {
+            setStep("success");
+            setTimeout(() => router.push("/dashboard"), 1200);
+          }, 2000);
+        } catch {
+          setAuthError("Verification failed. Please try again.");
+        }
       }
     }
   };
@@ -569,11 +608,16 @@ export const SignInPage = ({ className }: SignInPageProps) => {
 
                       <button
                         type="submit"
-                        className="w-full py-3 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-black font-semibold text-sm hover:from-blue-400 hover:to-blue-600 transition-all duration-200"
+                        disabled={submitting}
+                        className="w-full py-3 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-black font-semibold text-sm hover:from-blue-400 hover:to-blue-600 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Provide Liquidity
+                        {submitting ? "Sending code..." : "Provide Liquidity"}
                       </button>
                     </form>
+
+                    {authError && (
+                      <p className="text-xs text-red-400 mt-2 text-center">{authError}</p>
+                    )}
 
                     <p className="text-xs text-gray-600 pt-2">
                       By continuing, you agree to the{" "}

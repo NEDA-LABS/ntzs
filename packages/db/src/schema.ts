@@ -755,6 +755,63 @@ export const yieldAccruals = pgTable(
   })
 )
 
+// ─── SimpleFX LP Tables ──────────────────────────────────────────────────────
+
+export const lpKycStatus = pgEnum('lp_kyc_status', ['pending', 'approved', 'rejected'])
+
+export const lpAccounts = pgTable(
+  'lp_accounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    email: varchar('email', { length: 320 }).notNull(),
+    displayName: text('display_name'),
+
+    walletAddress: text('wallet_address').notNull(),
+    walletIndex: integer('wallet_index').notNull(),
+
+    bidBps: integer('bid_bps').notNull().default(120),
+    askBps: integer('ask_bps').notNull().default(150),
+    isActive: boolean('is_active').notNull().default(false),
+
+    onboardingStep: integer('onboarding_step').notNull().default(1),
+
+    kycStatus: lpKycStatus('kyc_status').notNull().default('pending'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex('lp_accounts_email_uq').on(t.email),
+    walletIndexUq: uniqueIndex('lp_accounts_wallet_index_uq').on(t.walletIndex),
+    walletAddressUq: uniqueIndex('lp_accounts_wallet_address_uq').on(t.walletAddress),
+    kycIdx: index('lp_accounts_kyc_status_idx').on(t.kycStatus),
+  })
+)
+
+export const lpOtpCodes = pgTable(
+  'lp_otp_codes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    email: varchar('email', { length: 320 }).notNull(),
+    codeHash: text('code_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    used: boolean('used').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailIdx: index('lp_otp_codes_email_idx').on(t.email),
+    expiresIdx: index('lp_otp_codes_expires_at_idx').on(t.expiresAt),
+  })
+)
+
+export const lpNextWalletIndex = pgTable(
+  'lp_next_wallet_index',
+  {
+    id: integer('id').primaryKey().default(1),
+    nextIndex: integer('next_index').notNull().default(0),
+  }
+)
+
 export const partnerWebhookEvents = pgTable(
   'partner_webhook_events',
   {
