@@ -478,7 +478,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
 
               <div className="flex items-center gap-3 mb-10 fx-fade-up fx-delay-3">
                 <a
-                  href="#earn"
+                  href="#how-it-works"
                   className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200"
                 >
                   How It Works
