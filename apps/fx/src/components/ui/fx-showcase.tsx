@@ -431,7 +431,7 @@ export default function FXShowcase() {
         {/* Section header */}
         <div className="text-center mb-16">
           <p className="text-xs uppercase tracking-[0.3em] text-zinc-600 mb-3">How It Works</p>
-          <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-4">
+          <h2 className="text-4xl md:text-5xl font-thin tracking-tight text-white mb-4">
             The Spread is the Yield
           </h2>
           <p className="text-zinc-400 text-base max-w-xl mx-auto leading-relaxed">
