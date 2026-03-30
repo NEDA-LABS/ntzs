@@ -409,11 +409,11 @@ export default function FXShowcase() {
   return (
     <section className="relative w-full bg-black overflow-hidden py-24 px-6">
       {/* Ambient canvas particle layer */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.07]">
+      <div className="absolute inset-0 pointer-events-none opacity-20">
         <CanvasRevealEffect
-          animationSpeed={1.2}
-          containerClassName="bg-transparent"
-          colors={[[59, 130, 246], [99, 102, 241]]}
+          animationSpeed={1.5}
+          containerClassName="bg-black"
+          colors={[[147, 197, 253], [165, 180, 252]]}
           dotSize={3}
         />
       </div>
