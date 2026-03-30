@@ -491,22 +491,6 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                 </a>
               </div>
 
-              <div className="flex items-center gap-6 pt-4 border-t border-white/5 fx-fade-up fx-delay-4">
-                <div>
-                  <p className="text-xl font-bold text-white">$2.4M+</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Volume Filled</p>
-                </div>
-                <div className="w-px h-8 bg-white/10" />
-                <div>
-                  <p className="text-xl font-bold text-white">nTZS / USDC</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Active Pair</p>
-                </div>
-                <div className="w-px h-8 bg-white/10" />
-                <div>
-                  <p className="text-xl font-bold text-white">~1.5%</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Avg Spread</p>
-                </div>
-              </div>
             </div>
           </div>
 
