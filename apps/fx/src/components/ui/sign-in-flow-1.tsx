@@ -473,14 +473,14 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                 <span className="text-blue-400 text-xs font-medium">Base Mainnet — Live</span>
               </div>
 
-              <div className="overflow-hidden mb-5 fx-fade-up fx-delay-1" style={{ height: '1.15em' }}>
+              <div className="mb-5 fx-fade-up fx-delay-1">
                 <AnimatePresence mode="wait">
                   <motion.h1
                     key={wordIndex}
-                    initial={{ y: 40, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: -40, opacity: 0 }}
-                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
                     className="text-6xl sm:text-7xl font-bold leading-none tracking-tight fx-gradient-text"
                   >
                     {cycleWords[wordIndex]}
