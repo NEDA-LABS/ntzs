@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { lpAccounts } from '@ntzs/db';
-import { eq, lt } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 export async function PATCH(req: NextRequest) {
   const session = await getSessionFromCookies();
