@@ -484,7 +484,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                   How It Works
                 </a>
                 <a
-                  href="#docs"
+                  href="/docs"
                   className="inline-flex items-center gap-2 px-5 py-2.5 text-sm text-gray-300 border border-white/10 rounded-full hover:border-white/30 hover:text-white transition-all duration-200"
                 >
                   Read the Docs
