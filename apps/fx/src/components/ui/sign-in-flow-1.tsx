@@ -381,6 +381,15 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [initialCanvasVisible, setInitialCanvasVisible] = useState(true);
   const [reverseCanvasVisible, setReverseCanvasVisible] = useState(false);
+  const cycleWords = ["earning.", "growing.", "working."];
+  const [wordIndex, setWordIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWordIndex((i) => (i + 1) % cycleWords.length);
+    }, 2400);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -465,15 +474,27 @@ export const SignInPage = ({ className }: SignInPageProps) => {
               </div>
 
               <h1 className="text-5xl sm:text-6xl font-bold leading-[1.05] tracking-tight text-white mb-5 fx-fade-up fx-delay-1">
-                The Open{" "}
-                <span className="fx-gradient-text">TZS</span>
-                {" "}Liquidity Market
+                Your{" "}
+                <span className="fx-gradient-text">nTZS</span>
+                {" "}is{" "}
+                <span className="inline-block overflow-hidden align-bottom" style={{ height: '1.1em' }}>
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={wordIndex}
+                      initial={{ y: 28, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: -28, opacity: 0 }}
+                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className="inline-block fx-gradient-text"
+                    >
+                      {cycleWords[wordIndex]}
+                    </motion.span>
+                  </AnimatePresence>
+                </span>
               </h1>
 
-              <p className="text-gray-400 text-lg leading-relaxed mb-8 fx-fade-up fx-delay-2">
-                Deposit your nTZS inventory. Set your bid and ask spread.
-                Earn fees on every cross-chain swap filled — automatically,
-                around the clock.
+              <p className="text-gray-400 text-base leading-relaxed mb-8 fx-fade-up fx-delay-2">
+                Deposit nTZS, set your spread, and collect fees on every swap — automatically, around the clock. No trading desk. No effort.
               </p>
 
               <div className="flex items-center gap-3 mb-10 fx-fade-up fx-delay-3">
