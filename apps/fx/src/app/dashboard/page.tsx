@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -161,6 +161,15 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 
 export default function OverviewPage() {
   const { lp } = useLp();
+  const [balances, setBalances] = useState<{ ntzs: string; usdc: string } | null>(null);
+
+  useEffect(() => {
+    if (!lp) return;
+    fetch('/api/lp/balances')
+      .then((r) => r.json())
+      .then(setBalances)
+      .catch(() => {});
+  }, [lp?.walletAddress]);
 
   if (!lp) {
     return (
@@ -180,6 +189,13 @@ export default function OverviewPage() {
 
   const isOnboarding = lp.onboardingStep < 4;
   const spreadPct = ((lp.bidBps + lp.askBps) / 2 / 100).toFixed(2);
+
+  const fmt = (v: string | undefined) => {
+    if (!v) return '—';
+    const n = parseFloat(v);
+    if (n === 0) return '0';
+    return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto">
@@ -204,8 +220,8 @@ export default function OverviewPage() {
 
       {/* Stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="nTZS Inventory" value="0" sub="Base Mainnet" />
-        <StatCard label="USDC Balance" value="0" sub="Base Mainnet" />
+        <StatCard label="nTZS Inventory" value={fmt(balances?.ntzs)} sub="Base Mainnet" />
+        <StatCard label="USDC Balance" value={fmt(balances?.usdc)} sub="Base Mainnet" />
         <StatCard
           label="Avg Spread"
           value={`${spreadPct}%`}
