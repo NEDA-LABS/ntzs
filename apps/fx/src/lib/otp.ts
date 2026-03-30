@@ -63,8 +63,8 @@ export async function sendOtpEmail(email: string, code: string): Promise<void> {
   const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
-    // Dev fallback — print to terminal
-    console.log(`\n[SimpleFX OTP] ${email} → ${code}\n`);
+    const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'].filter(k => !process.env[k]);
+    console.log(`\n[SimpleFX OTP] ${email} → ${code}  (SMTP not configured: ${missing.join(', ')})\n`);
     return;
   }
 
