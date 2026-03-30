@@ -15,7 +15,7 @@ and the HyperFX strategy. Runs as a persistent background process on Fly.io.
 Before deploying, you need:
 
 1. **Fly.io account** - https://fly.io (free tier is sufficient)
-2. **Fly CLI** - `brew install flyctl` then `fly auth login`
+2. **Fly CLI** - `brew install flyctl` then `flyctl auth login`
 3. **Pimlico API key** - https://pimlico.io (ERC-4337 bundler for Base)
 4. **Hyperbridge Substrate keypair** - generate with:
    ```sh
@@ -88,8 +88,8 @@ Check the rate at https://www.google.com/search?q=TZS+USD and update as needed.
 Current configuration (update when rate shifts more than 2%):
 
 | Rate | bid range | ask range |
-|------|-----------|-----------|
-| 1 USD = 2600 nTZS (current) | 2604-2620 | 2564-2580 |
+|------|-----------|----------|
+| 1 USD = 2590 nTZS (updated 2026-03-31) | 2594-2610 | 2554-2570 |
 
 To update the rate:
 1. Edit `simplex.toml.template` - adjust all `price` values in both curves proportionally

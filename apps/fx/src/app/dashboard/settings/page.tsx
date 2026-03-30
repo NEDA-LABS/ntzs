@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Copy, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Copy, AlertCircle, Pencil } from 'lucide-react';
 import { useLp } from '../layout';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -26,8 +26,24 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function SettingsPage() {
-  const { lp } = useLp();
+  const { lp, refresh } = useLp();
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
   if (!lp) return null;
+
+  const saveName = async () => {
+    setSavingName(true);
+    await fetch('/api/lp/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: nameInput }),
+    });
+    await refresh();
+    setSavingName(false);
+    setEditingName(false);
+  };
 
   const kycColor = {
     pending: 'text-amber-400',
@@ -44,6 +60,49 @@ export default function SettingsPage() {
       >
         <p className="text-xs uppercase tracking-[0.25em] text-zinc-600 mb-1">Settings</p>
         <h1 className="text-3xl font-thin text-white mb-8">Account</h1>
+
+        {/* Display name */}
+        <div className="rounded-xl border border-white/5 bg-zinc-950 p-5 mb-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-600 mb-4">Display name</p>
+          {editingName ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
+                placeholder="e.g. Acme Capital"
+                maxLength={80}
+                className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/50"
+              />
+              <button
+                onClick={saveName}
+                disabled={savingName}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
+              >
+                {savingName ? 'Saving' : 'Save'}
+              </button>
+              <button
+                onClick={() => setEditingName(false)}
+                className="px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-zinc-300">
+                {lp.displayName ?? <span className="text-zinc-600 italic">Not set</span>}
+              </p>
+              <button
+                onClick={() => { setNameInput(lp.displayName ?? ''); setEditingName(true); }}
+                className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-300 transition-colors"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Account info */}
         <div className="rounded-xl border border-white/5 bg-zinc-950 p-5 mb-6">
