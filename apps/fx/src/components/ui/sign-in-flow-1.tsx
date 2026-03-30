@@ -383,13 +383,30 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   const [reverseCanvasVisible, setReverseCanvasVisible] = useState(false);
   const cycleWords = ["Wake up.", "Trade.", "Earn."];
   const [wordIndex, setWordIndex] = useState(0);
+  const [displayText, setDisplayText] = useState("");
+  const [typePhase, setTypePhase] = useState<"typing" | "holding" | "deleting">("typing");
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setWordIndex((i) => (i + 1) % cycleWords.length);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    const word = cycleWords[wordIndex];
+    if (typePhase === "typing") {
+      if (displayText.length < word.length) {
+        const t = setTimeout(() => setDisplayText(word.slice(0, displayText.length + 1)), 80);
+        return () => clearTimeout(t);
+      } else {
+        const t = setTimeout(() => setTypePhase("deleting"), 1600);
+        return () => clearTimeout(t);
+      }
+    }
+    if (typePhase === "deleting") {
+      if (displayText.length > 0) {
+        const t = setTimeout(() => setDisplayText(displayText.slice(0, -1)), 45);
+        return () => clearTimeout(t);
+      } else {
+        setWordIndex((i) => (i + 1) % cycleWords.length);
+        setTypePhase("typing");
+      }
+    }
+  }, [displayText, typePhase, wordIndex]);
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -474,18 +491,10 @@ export const SignInPage = ({ className }: SignInPageProps) => {
               </div>
 
               <div className="mb-5 fx-fade-up fx-delay-1">
-                <AnimatePresence mode="wait">
-                  <motion.h1
-                    key={wordIndex}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="text-6xl sm:text-7xl font-bold leading-none tracking-tight fx-gradient-text"
-                  >
-                    {cycleWords[wordIndex]}
-                  </motion.h1>
-                </AnimatePresence>
+                <h1 className="text-6xl sm:text-7xl font-bold leading-none tracking-tight fx-gradient-text">
+                  {displayText}
+                  <span className="inline-block w-[3px] h-[0.85em] bg-blue-400 ml-1 align-middle animate-pulse" />
+                </h1>
               </div>
 
               <p className="text-gray-400 text-base leading-relaxed mb-8 fx-fade-up fx-delay-2">
