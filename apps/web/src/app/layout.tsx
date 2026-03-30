@@ -33,9 +33,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {BASE_APP_ID ? <meta name="base:app_id" content={BASE_APP_ID} /> : null}
-      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
