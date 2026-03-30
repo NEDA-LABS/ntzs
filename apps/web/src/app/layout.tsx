@@ -23,6 +23,7 @@ export const metadata: Metadata = {
     icon: "/ntzs-logo.png",
     apple: "/ntzs-logo.png",
   },
+  other: BASE_APP_ID ? { "base:app_id": BASE_APP_ID } : undefined,
 };
 
 export default function RootLayout({
@@ -32,9 +33,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {BASE_APP_ID && <meta name="base:app_id" content={BASE_APP_ID} />}
-      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
