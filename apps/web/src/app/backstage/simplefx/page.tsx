@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpAccounts, lpFxConfig } from '@ntzs/db'
+import { lpAccounts, lpFxConfig, lpFxPairs } from '@ntzs/db'
 import { SubmitButton } from '../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
 
@@ -18,6 +18,10 @@ async function setMidRateAction(formData: FormData) {
     .insert(lpFxConfig)
     .values({ id: 1, midRateTZS: rate })
     .onConflictDoUpdate({ target: lpFxConfig.id, set: { midRateTZS: rate, updatedAt: new Date() } })
+  // Sync all active pairs so the bot and swap API use the same rate
+  await db
+    .update(lpFxPairs)
+    .set({ midRate: String(rate), updatedAt: new Date() })
   revalidatePath('/backstage/simplefx')
 }
 
