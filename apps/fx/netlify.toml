@@ -1,0 +1,10 @@
+[build]
+  base = "apps/fx"
+  command = "cd ../.. && npm install && npm run build --workspace apps/fx"
+  publish = "apps/fx/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

@@ -1,6 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
+import { useRef, useState } from 'react';
 import { CanvasRevealEffect } from '@/components/ui/sign-in-flow-1';
 import { TrendingUp, BarChart3, Layers, ArrowRight, ChevronRight, type LucideIcon } from 'lucide-react';
 
@@ -152,16 +153,66 @@ const logoVariants = (isLeft: boolean): Variants => ({
 // TOKEN VISUALS
 // =========================================
 
-const NTZSLogo = () => (
-  <div className="relative w-full h-full flex items-center justify-center p-8">
-    <img
-      src="/ntzs-icon.svg"
-      alt="nTZS"
-      className="w-48 h-48 object-contain drop-shadow-[0_0_40px_rgba(52,211,153,0.5)]"
-      draggable={false}
-    />
-  </div>
-);
+const InteractiveLogo = () => {
+  const [totalRotation, setTotalRotation] = useState(0);
+  const [showUsdc, setShowUsdc] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const swapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClick = () => {
+    if (animating) return;
+    setAnimating(true);
+    setTotalRotation((r) => r + 720);
+
+    // Crossfade at spin midpoint (325ms into 650ms)
+    if (swapTimer.current) clearTimeout(swapTimer.current);
+    swapTimer.current = setTimeout(() => setShowUsdc((v) => !v), 325);
+
+    if (doneTimer.current) clearTimeout(doneTimer.current);
+    doneTimer.current = setTimeout(() => setAnimating(false), 680);
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+      className="relative w-full h-full flex items-center justify-center p-8 cursor-pointer group select-none"
+    >
+      <motion.div
+        animate={{ rotate: totalRotation }}
+        transition={{ duration: 0.65, ease: [0.4, 0, 0.15, 1] }}
+        whileHover={{ scale: animating ? 1 : 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        className="relative w-48 h-48"
+      >
+        {/* nTZS — fades out when showing USDC */}
+        <motion.img
+          src="/ntzs-icon.svg"
+          alt="nTZS"
+          animate={{ opacity: showUsdc ? 0 : 1 }}
+          transition={{ duration: 0.2 }}
+          className="absolute inset-0 w-full h-full object-contain drop-shadow-[0_0_40px_rgba(52,211,153,0.5)]"
+          draggable={false}
+        />
+        {/* USDC — fades in on swap */}
+        <motion.img
+          src="/usdc-logo.svg"
+          alt="USDC"
+          animate={{ opacity: showUsdc ? 1 : 0 }}
+          transition={{ duration: 0.2 }}
+          className="absolute inset-0 w-full h-full object-contain drop-shadow-[0_0_40px_rgba(59,130,246,0.55)]"
+          draggable={false}
+        />
+      </motion.div>
+      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] uppercase tracking-widest text-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap">
+        click to swap
+      </span>
+    </div>
+  );
+};
 
 const USDCLogo = () => (
   <div className="relative w-full h-full flex items-center justify-center">
@@ -263,7 +314,7 @@ const TokenVisual = ({ data, isLeft }: { data: ShowcaseItem; isLeft: boolean }) 
             exit="exit"
             className="w-full h-full"
           >
-            {data.id === 'ntzs' ? <NTZSLogo /> : <USDCLogo />}
+            {data.id === 'ntzs' ? <InteractiveLogo /> : <USDCLogo />}
           </motion.div>
         </AnimatePresence>
       </motion.div>

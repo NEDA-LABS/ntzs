@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  ArrowDownToLine, SlidersHorizontal, Zap, Activity,
+  ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap, Activity,
   Copy, CheckCircle2, ChevronRight,
 } from 'lucide-react';
 import { useLp } from './layout';
@@ -237,7 +237,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link
           href="/dashboard/deposit"
           className="flex items-center justify-between px-4 py-3 rounded-lg border border-white/5 hover:border-blue-500/30 hover:bg-blue-600/5 transition-all text-sm text-zinc-400 hover:text-white"
@@ -245,6 +245,16 @@ export default function OverviewPage() {
           <span className="flex items-center gap-2">
             <ArrowDownToLine size={15} className="text-blue-400" />
             Deposit nTZS
+          </span>
+          <ChevronRight size={14} className="text-zinc-700" />
+        </Link>
+        <Link
+          href="/dashboard/withdraw"
+          className="flex items-center justify-between px-4 py-3 rounded-lg border border-white/5 hover:border-blue-500/30 hover:bg-blue-600/5 transition-all text-sm text-zinc-400 hover:text-white"
+        >
+          <span className="flex items-center gap-2">
+            <ArrowUpRight size={15} className="text-blue-400" />
+            Withdraw
           </span>
           <ChevronRight size={14} className="text-zinc-700" />
         </Link>

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, ArrowDownToLine, SlidersHorizontal,
+  LayoutDashboard, ArrowDownToLine, ArrowUpRight, SlidersHorizontal,
   Activity, Settings, LogOut, Menu, X, ChevronRight,
 } from 'lucide-react';
 
@@ -37,6 +37,7 @@ export const useLp = () => useContext(Ctx);
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/deposit', label: 'Deposit', icon: ArrowDownToLine },
+  { href: '/dashboard/withdraw', label: 'Withdraw', icon: ArrowUpRight },
   { href: '/dashboard/spread', label: 'Spread', icon: SlidersHorizontal },
   { href: '/dashboard/positions', label: 'Positions', icon: Activity },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },

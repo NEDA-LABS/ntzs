@@ -60,18 +60,18 @@ export default function MasterLandingPage() {
                 Developers
               </button>
               <Link
-                href="/app"
+                href={process.env.NEXT_PUBLIC_FX_URL ?? 'http://localhost:3001'}
                 className="rounded-full border border-white/20 bg-white/10 px-5 py-2 font-medium backdrop-blur-xl transition-colors hover:bg-white/20"
               >
-                Launch App
+                SimpleFX
               </Link>
             </nav>
             
             <Link
-              href="/app"
+              href={process.env.NEXT_PUBLIC_FX_URL ?? 'http://localhost:3001'}
               className="md:hidden rounded-full border border-white/20 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur-xl transition-colors hover:bg-white/20"
             >
-              Launch App
+              SimpleFX
             </Link>
           </header>
 

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Copy, CheckCircle2, ArrowUpRight, Info } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Copy, CheckCircle2, ArrowUpRight, Info, Smartphone, Loader2 } from 'lucide-react';
 import { useLp } from '../layout';
 
 const TOKENS = [
@@ -53,10 +53,19 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+type MintState = 'idle' | 'loading' | 'sent' | 'error';
+
 export default function DepositPage() {
   const { lp, refresh } = useLp();
   const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc'>('ntzs');
   const [balances, setBalances] = useState<{ ntzs: string; usdc: string } | null>(null);
+
+  // M-Pesa mint form
+  const [mintAmount, setMintAmount] = useState('');
+  const [mintPhone, setMintPhone] = useState('');
+  const [mintState, setMintState] = useState<MintState>('idle');
+  const [mintError, setMintError] = useState('');
+
   const token = TOKENS.find((t) => t.id === activeToken)!;
 
   useEffect(() => {
@@ -141,6 +150,106 @@ export default function DepositPage() {
             <CopyField label="Send to this address" value={lp.walletAddress} />
             <CopyField label="Token contract" value={token.contract} />
           </div>
+
+          {/* M-Pesa mint — nTZS only */}
+          {activeToken === 'ntzs' && (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex-1 h-px bg-white/5" />
+                <span className="text-[10px] uppercase tracking-widest text-zinc-600">or deposit via M-Pesa</span>
+                <div className="flex-1 h-px bg-white/5" />
+              </div>
+
+              <AnimatePresence mode="wait">
+                {mintState === 'sent' ? (
+                  <motion.div
+                    key="sent"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 text-center"
+                  >
+                    <Smartphone size={20} className="text-emerald-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-emerald-300 mb-1">Check your phone</p>
+                    <p className="text-xs text-zinc-500">
+                      An M-Pesa prompt has been sent. Once you confirm, nTZS will be minted to your inventory wallet automatically.
+                    </p>
+                    <button
+                      onClick={() => { setMintState('idle'); setMintAmount(''); setMintPhone(''); }}
+                      className="mt-3 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                    >
+                      Make another deposit
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <div className="space-y-2 mb-3">
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600 pointer-events-none">TZS</span>
+                        <input
+                          type="number"
+                          min="500"
+                          placeholder="Amount in TZS (min 500)"
+                          value={mintAmount}
+                          onChange={(e) => setMintAmount(e.target.value)}
+                          className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                        />
+                      </div>
+                      <div className="relative">
+                        <Smartphone size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
+                        <input
+                          type="tel"
+                          placeholder="Phone number (e.g. 0741 234 567)"
+                          value={mintPhone}
+                          onChange={(e) => setMintPhone(e.target.value)}
+                          className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    {mintError && (
+                      <p className="text-xs text-red-400 mb-3">{mintError}</p>
+                    )}
+
+                    <button
+                      disabled={mintState === 'loading' || !mintAmount || !mintPhone}
+                      onClick={async () => {
+                        setMintError('');
+                        setMintState('loading');
+                        try {
+                          const res = await fetch('/api/lp/mint', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              amountTzs: Number(mintAmount),
+                              phoneNumber: mintPhone,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            setMintError(data.error || 'Deposit failed. Please try again.');
+                            setMintState('error');
+                          } else {
+                            setMintState('sent');
+                          }
+                        } catch {
+                          setMintError('Network error. Please try again.');
+                          setMintState('error');
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-medium text-white transition-colors"
+                    >
+                      {mintState === 'loading' ? (
+                        <><Loader2 size={14} className="animate-spin" /> Sending prompt...</>
+                      ) : (
+                        <><Smartphone size={14} /> Deposit via M-Pesa</>
+                      )}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-950/30 border border-blue-500/15">
             <Info size={14} className="text-blue-400 mt-0.5 shrink-0" />
