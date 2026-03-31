@@ -249,7 +249,7 @@ export async function* executeSwap(params: {
         yield { status: 'FILLED', message: 'Swap complete!', txHash: u.transactionHash }
         return
       case IntentOrderStatus.FAILED:
-        yield { status: 'FAILED', message: 'Swap failed', error: u.error?.message }
+        yield { status: 'FAILED', message: `Swap failed: ${u.error?.message ?? 'unknown reason'}`, error: u.error?.message }
         return
       case IntentOrderStatus.PARTIAL_FILL_EXHAUSTED:
         yield { status: 'PARTIAL_FILL_EXHAUSTED', message: 'Order deadline reached with partial fill' }
