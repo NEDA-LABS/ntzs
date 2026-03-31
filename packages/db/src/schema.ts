@@ -7,6 +7,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  serial,
   text,
   timestamp,
   uniqueIndex,
@@ -821,6 +822,58 @@ export const lpFxConfig = pgTable('lp_fx_config', {
   midRateTZS: integer('mid_rate_tzs').notNull().default(3750),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+/**
+ * Supported trading pairs for the SimpleFX liquidity pool.
+ * Each row is a pair the bot can trade (e.g. nTZS/USDC, nTZS/USDT).
+ * Admin inserts/activates rows to add new pairs.
+ */
+export const lpFxPairs = pgTable(
+  'lp_fx_pairs',
+  {
+    id: serial('id').primaryKey(),
+    token1Address: text('token1_address').notNull(),
+    token1Symbol: text('token1_symbol').notNull(),
+    token1Decimals: integer('token1_decimals').notNull().default(18),
+    token2Address: text('token2_address').notNull(),
+    token2Symbol: text('token2_symbol').notNull(),
+    token2Decimals: integer('token2_decimals').notNull().default(6),
+    midRate: numeric('mid_rate', { precision: 36, scale: 18 }).notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pairUq: uniqueIndex('lp_fx_pairs_tokens_uq').on(t.token1Address, t.token2Address),
+  })
+)
+
+/**
+ * Per-LP, per-token position in the solver pool.
+ * When an LP activates, their tokens are swept to the solver wallet and
+ * recorded here. Earnings from filled orders accumulate in `earned`.
+ */
+export const lpPoolPositions = pgTable(
+  'lp_pool_positions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    tokenAddress: text('token_address').notNull(),
+    tokenSymbol: text('token_symbol').notNull(),
+    decimals: integer('decimals').notNull().default(18),
+    contributed: numeric('contributed', { precision: 36, scale: 18 }).notNull().default('0'),
+    earned: numeric('earned', { precision: 36, scale: 18 }).notNull().default('0'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lpTokenUq: uniqueIndex('lp_pool_positions_lp_token_uq').on(t.lpId, t.tokenAddress),
+    lpIdx: index('lp_pool_positions_lp_id_idx').on(t.lpId),
+    tokenIdx: index('lp_pool_positions_token_address_idx').on(t.tokenAddress),
+  })
+)
 
 export const partnerWebhookEvents = pgTable(
   'partner_webhook_events',

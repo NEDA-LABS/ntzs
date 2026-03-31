@@ -7,6 +7,7 @@ import { ethers } from 'ethers'
 import { createDbClient } from '@ntzs/db'
 import { sleep } from '@ntzs/shared'
 import { processBurnJob } from './burn-worker.js'
+import { processLpEarnings } from './lp-earnings-worker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..')
@@ -452,6 +453,14 @@ async function main() {
       await processBurnJob(databaseUrl, rpcUrl, privateKey, SNIPPE_API_KEY, apiBaseUrl)
     } catch (err) {
       console.error('[worker] processBurnJob error:', err instanceof Error ? err.message : err)
+    }
+
+    // Allocate LP earnings from solver wallet balance delta (every 5 min)
+    try {
+      const rpcUrl = process.env.BASE_RPC_URL
+      if (rpcUrl) await processLpEarnings(databaseUrl, rpcUrl)
+    } catch (err) {
+      console.warn('[worker] LP earnings error:', err instanceof Error ? err.message : err)
     }
 
     await sleep(pollMs)

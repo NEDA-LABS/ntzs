@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { lpFxConfig, lpAccounts } from '@ntzs/db';
+import { lpFxPairs, lpAccounts } from '@ntzs/db';
 import { eq } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
@@ -13,11 +13,10 @@ export async function GET(req: NextRequest) {
 
   const { db } = getDb();
 
-  const [config] = await db
+  const pairs = await db
     .select()
-    .from(lpFxConfig)
-    .where(eq(lpFxConfig.id, 1))
-    .limit(1);
+    .from(lpFxPairs)
+    .where(eq(lpFxPairs.isActive, true));
 
   const [lp] = await db
     .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
@@ -26,8 +25,14 @@ export async function GET(req: NextRequest) {
     .limit(1);
 
   return NextResponse.json({
-    midRateTZS: config?.midRateTZS ?? 3750,
     bidBps: lp?.bidBps ?? 120,
     askBps: lp?.askBps ?? 150,
+    pairs: pairs.map((p) => ({
+      token1Address: p.token1Address,
+      token1Symbol: p.token1Symbol,
+      token2Address: p.token2Address,
+      token2Symbol: p.token2Symbol,
+      midRate: Number(p.midRate),
+    })),
   });
 }

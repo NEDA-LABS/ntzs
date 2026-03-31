@@ -19,32 +19,9 @@ rpcUrl = "__BASE_RPC_URL__"
 bundlerUrl = "__BUNDLER_URL__"
 
 # ---------------------------------------------------------------
-# HyperFX strategy: nTZS <-> USDC market making on Base mainnet
-#
-# Price curves are generated at startup from live portal settings:
-#   midRateTZS  → fetched from lpFxConfig (admin-set mid rate)
-#   bidBps      → LP account bid spread in basis points
-#   askBps      → LP account ask spread in basis points
-#
-# To update: change values in the SimpleFX portal, then restart the bot.
+# HyperFX strategies: generated at startup from active pairs in
+# the SimpleFX portal. One [[strategies]] block per active pair.
+# To add a new pair: insert a row in lp_fx_pairs and restart.
 # ---------------------------------------------------------------
 
-[[strategies]]
-type = "hyperfx"
-maxOrderUsd = 2000
-
-# bid: nTZS per USD when a user is SELLING nTZS to you (you buy nTZS)
-bidPriceCurve = [
-__BID_CURVE__
-]
-
-# ask: nTZS per USD when a user is BUYING nTZS from you (you sell nTZS)
-askPriceCurve = [
-__ASK_CURVE__
-]
-
-[strategies.token1]
-"EVM-8453" = "0xF476BA983DE2F1AD532380630e2CF1D1b8b10688"
-
-[strategies.token2]
-"EVM-8453" = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+__STRATEGIES__
