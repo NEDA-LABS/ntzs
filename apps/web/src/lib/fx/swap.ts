@@ -17,7 +17,7 @@ import {
 } from '@hyperbridge/sdk'
 import type { Order } from '@hyperbridge/sdk'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createWalletClient, http, toHex, parseUnits, padHex, maxUint256 } from 'viem'
+import { createWalletClient, http, toHex, parseUnits, maxUint256 } from 'viem'
 import { JsonRpcProvider, Contract, Wallet } from 'ethers'
 import { base } from 'viem/chains'
 
@@ -157,26 +157,26 @@ export async function* executeSwap(params: {
   const currentBlock = await chain.client.getBlockNumber()
 
   const order = {
-    user: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+    user: '0x' as `0x${string}`,
     source: '0x' as `0x${string}`,
     destination: toHex(chain.config.stateMachineId) as `0x${string}`,
     deadline: currentBlock + BigInt(300),
     nonce: BigInt(0),
     fees: BigInt(0),
-    session: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+    session: '0x' as `0x${string}`,
     predispatch: { assets: [], call: '0x' as `0x${string}` },
     inputs: [
       {
-        token: padHex(from.address, { size: 32 }),
+        token: from.address,
         amount: parseUnits(amount.toFixed(from.decimals), from.decimals),
       },
     ],
     output: {
-      beneficiary: padHex(recipientAddress, { size: 32 }),
+      beneficiary: recipientAddress,
       assets: [
         {
-          token: padHex(to.address, { size: 32 }),
-          amount: parseUnits(minOutput.toFixed(6), to.decimals),
+          token: to.address,
+          amount: parseUnits(minOutput.toFixed(to.decimals), to.decimals),
         },
       ],
       call: '0x' as `0x${string}`,
