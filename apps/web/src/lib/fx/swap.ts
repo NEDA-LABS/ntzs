@@ -6,6 +6,8 @@
  * progress to the client (SSE) or await completion.
  */
 
+import { mkdirSync } from 'fs'
+import { join } from 'path'
 import {
   EvmChain,
   IntentsCoprocessor,
@@ -15,8 +17,22 @@ import {
 } from '@hyperbridge/sdk'
 import type { Order } from '@hyperbridge/sdk'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createWalletClient, http, toHex, parseUnits, padHex } from 'viem'
+import { createWalletClient, createPublicClient, http, toHex, parseUnits, padHex, maxUint256 } from 'viem'
+import { erc20Abi } from 'viem'
 import { base } from 'viem/chains'
+
+const INTENT_GATEWAY_V2 = '0x2d61624A17f361020679FaA16fbB566C344AaF4B' as `0x${string}`
+
+// On Vercel Lambda /var/task is read-only — redirect SDK cache to /tmp
+;(function ensureCacheDir() {
+  const base_path = (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
+    ? '/tmp'
+    : process.cwd()
+  try {
+    mkdirSync(join(base_path, '.hyperbridge-cache', 'session-key-address'), { recursive: true })
+    if (base_path === '/tmp' && process.cwd() !== '/tmp') process.chdir('/tmp')
+  } catch { /* ignore */ }
+})()
 
 export const SWAP_TOKENS = {
   NTZS: {
@@ -102,6 +118,44 @@ export async function* executeSwap(params: {
     chain: base,
     transport: http(rpcUrl),
   })
+  const publicClient = createPublicClient({ chain: base, transport: http(rpcUrl) })
+
+  // Check balance
+  const balance = await publicClient.readContract({
+    address: from.address,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  })
+  const needed = parseUnits(amount.toFixed(from.decimals), from.decimals)
+  if (balance < needed) {
+    yield {
+      status: 'FAILED',
+      message: `Insufficient ${from.symbol} balance. Have ${balance}, need ${needed}`,
+      error: 'INSUFFICIENT_BALANCE',
+    }
+    return
+  }
+
+  // Ensure IntentGatewayV2 has allowance to escrow input tokens
+  const allowance = await publicClient.readContract({
+    address: from.address,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [account.address, INTENT_GATEWAY_V2],
+  })
+  if (allowance < needed) {
+    yield { status: 'APPROVING', message: `Approving ${from.symbol} for IntentGateway...` }
+    const approveTxHash = await walletClient.writeContract({
+      address: from.address,
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [INTENT_GATEWAY_V2, maxUint256],
+    })
+    yield { status: 'APPROVING', message: 'Waiting for approval confirmation...', txHash: approveTxHash }
+    await publicClient.waitForTransactionReceipt({ hash: approveTxHash })
+    yield { status: 'APPROVED', message: 'Token approval confirmed' }
+  }
 
   const currentBlock = await chain.client.getBlockNumber()
 
