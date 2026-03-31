@@ -129,9 +129,11 @@ export async function* executeSwap(params: {
   })
   const needed = parseUnits(amount.toFixed(from.decimals), from.decimals)
   if (balance < needed) {
+    const haveHuman = (Number(balance) / 10 ** from.decimals).toFixed(from.decimals === 6 ? 2 : 4)
+    const needHuman = amount.toFixed(from.decimals === 6 ? 2 : 4)
     yield {
       status: 'FAILED',
-      message: `Insufficient ${from.symbol} balance. Have ${balance}, need ${needed}`,
+      message: `Insufficient ${from.symbol} balance. Have ${haveHuman}, need ${needHuman}`,
       error: 'INSUFFICIENT_BALANCE',
     }
     return
