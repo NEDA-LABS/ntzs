@@ -63,8 +63,7 @@ export async function sendOtpEmail(email: string, code: string): Promise<void> {
 
   if (!host || !user || !pass) {
     const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'].filter(k => !process.env[k]);
-    console.log(`\n[SimpleFX OTP] ${email} → ${code}  (SMTP not configured: ${missing.join(', ')})\n`);
-    return;
+    throw new Error(`SMTP not configured — missing: ${missing.join(', ')}`);
   }
 
   const { createTransport } = await import('nodemailer');
