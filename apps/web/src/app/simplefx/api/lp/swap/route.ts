@@ -5,6 +5,7 @@ import { lpAccounts, lpFxPairs } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { deriveWallet } from '@/lib/fx/lp-wallet'
 import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
+import { BASE_RPC_URL } from '@/lib/env'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -22,10 +23,10 @@ export async function POST(req: NextRequest) {
   const session = await getSessionFromCookies()
   if (!session) return new Response('Unauthorized', { status: 401 })
 
-  const rpcUrl = process.env.BASE_RPC_URL
+  const rpcUrl = BASE_RPC_URL
   const bundlerUrl = process.env.BUNDLER_URL
-  if (!rpcUrl || !bundlerUrl) {
-    return new Response('BASE_RPC_URL or BUNDLER_URL not configured', { status: 503 })
+  if (!bundlerUrl) {
+    return new Response('BUNDLER_URL not configured', { status: 503 })
   }
 
   let body: { fromToken: SwapTokenSymbol; toToken: SwapTokenSymbol; amount: number; slippageBps?: number }
