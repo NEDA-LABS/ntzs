@@ -125,10 +125,7 @@ export async function* executeSwap(params: {
       assets: [
         {
           token: to.address,
-          amount: parseUnits(
-            Math.floor(minOutput * 10 ** to.decimals).toString(),
-            to.decimals
-          ),
+          amount: parseUnits(minOutput.toFixed(6), to.decimals),
         },
       ],
       call: '0x' as `0x${string}`,
