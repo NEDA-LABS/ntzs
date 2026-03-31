@@ -133,7 +133,7 @@ export async function* executeSwap(params: {
     const needHuman = amount.toFixed(from.decimals === 6 ? 2 : 4)
     yield {
       status: 'FAILED',
-      message: `Insufficient ${from.symbol} balance. Have ${haveHuman}, need ${needHuman}`,
+      message: `Insufficient ${from.symbol} balance. Have ${haveHuman}, need ${needHuman} (wallet: ${account.address})`,
       error: 'INSUFFICIENT_BALANCE',
     }
     return
