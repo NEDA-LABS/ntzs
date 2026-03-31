@@ -27,6 +27,11 @@ const nextConfig: NextConfig = {
   env: {
     NEON_AUTH_BASE_URL: process.env.NEON_AUTH_BASE_URL,
   },
+  serverExternalPackages: [
+    '@hyperbridge/sdk',
+    '@substrate/connect',
+    'smoldot',
+  ],
 }
 
 export default nextConfig
