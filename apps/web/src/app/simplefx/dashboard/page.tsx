@@ -144,7 +144,12 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 
 export default function OverviewPage() {
   const { lp } = useLp();
-  const [balances, setBalances] = useState<{ ntzs: string; usdc: string } | null>(null);
+  const [balances, setBalances] = useState<{
+    ntzs: string;
+    usdc: string;
+    source?: string;
+    positions?: Record<string, { contributed: string; earned: string; total: string }>;
+  } | null>(null);
 
   useEffect(() => {
     if (!lp) return;
@@ -152,7 +157,7 @@ export default function OverviewPage() {
       .then((r) => r.json())
       .then(setBalances)
       .catch(() => {});
-  }, [lp?.walletAddress]);
+  }, [lp?.walletAddress, lp?.isActive]);
 
   if (!lp) {
     return (
@@ -197,7 +202,17 @@ export default function OverviewPage() {
         <StatCard label="nTZS Inventory" value={fmt(balances?.ntzs)} sub="Base Mainnet" />
         <StatCard label="USDC Balance" value={fmt(balances?.usdc)} sub="Base Mainnet" />
         <StatCard label="Avg Spread" value={`${spreadPct}%`} sub={`Bid ${lp.bidBps}bps / Ask ${lp.askBps}bps`} accent />
-        <StatCard label="Total Earnings" value="0 nTZS" sub="All time" />
+        <StatCard
+          label="Total Earnings"
+          value={(() => {
+            if (!balances?.positions) return '0 nTZS';
+            const total = Object.values(balances.positions)
+              .reduce((sum, p) => sum + parseFloat(p.earned || '0'), 0);
+            return total > 0 ? `${total.toLocaleString('en-US', { maximumFractionDigits: 4 })} nTZS` : '0 nTZS';
+          })()}
+          sub="All time"
+          accent
+        />
       </div>
 
       <div className="mb-6">
