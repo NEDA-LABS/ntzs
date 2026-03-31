@@ -74,18 +74,18 @@ export async function POST(req: NextRequest) {
     slippageBps,
   })
 
-  const { privateKey, address } = deriveWallet(lp.walletIndex)
+  // When LP is active, tokens are in the solver wallet (swept on activation).
+  // Use solver wallet to place the test order so it has the balance to escrow.
+  // When inactive, LP wallet still holds the tokens.
+  let signerKey: `0x${string}`
 
-  if (address.toLowerCase() !== lp.walletAddress.toLowerCase()) {
-    return new Response(
-      JSON.stringify({
-        error: 'Wallet mismatch',
-        derived: address,
-        stored: lp.walletAddress,
-        walletIndex: lp.walletIndex,
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    )
+  if (lp.isActive) {
+    const solverKey = process.env.SOLVER_PRIVATE_KEY
+    if (!solverKey) return new Response('SOLVER_PRIVATE_KEY not configured', { status: 503 })
+    signerKey = solverKey as `0x${string}`
+  } else {
+    const { privateKey } = deriveWallet(lp.walletIndex)
+    signerKey = privateKey as `0x${string}`
   }
 
   const encoder = new TextEncoder()
@@ -99,12 +99,12 @@ export async function POST(req: NextRequest) {
 
       try {
         for await (const update of executeSwap({
-          privateKey: privateKey as `0x${string}`,
+          privateKey: signerKey,
           fromToken,
           toToken,
           amount,
           minOutput,
-          recipientAddress: address as `0x${string}`,
+          recipientAddress: lp.walletAddress as `0x${string}`,
           rpcUrl,
           bundlerUrl,
         })) {
