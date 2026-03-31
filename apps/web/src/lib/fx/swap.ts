@@ -123,6 +123,7 @@ export async function* executeSwap(params: {
   const tokenContract = new Contract(from.address, [
     'function balanceOf(address) view returns (uint256)',
     'function allowance(address,address) view returns (uint256)',
+    'function approve(address spender, uint256 amount) returns (bool)',
   ], provider)
 
   // Check balance
