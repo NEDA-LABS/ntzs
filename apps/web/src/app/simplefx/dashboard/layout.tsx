@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ArrowDownToLine, ArrowUpRight, SlidersHorizontal,
-  Activity, Settings, LogOut, Menu,
+  Activity, Settings, LogOut, Menu, ArrowLeftRight,
 } from 'lucide-react';
 
 export interface LpAccount {
@@ -35,6 +35,7 @@ const NAV = [
   { href: '/simplefx/dashboard/deposit', label: 'Deposit', icon: ArrowDownToLine },
   { href: '/simplefx/dashboard/withdraw', label: 'Withdraw', icon: ArrowUpRight },
   { href: '/simplefx/dashboard/spread', label: 'Spread', icon: SlidersHorizontal },
+  { href: '/simplefx/dashboard/swap', label: 'Swap', icon: ArrowLeftRight },
   { href: '/simplefx/dashboard/positions', label: 'Positions', icon: Activity },
   { href: '/simplefx/dashboard/settings', label: 'Settings', icon: Settings },
 ];

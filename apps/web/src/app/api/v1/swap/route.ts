@@ -1,0 +1,158 @@
+import { NextRequest } from 'next/server'
+import { getDb } from '@/lib/db'
+import { authenticatePartner } from '@/lib/waas/auth'
+import { deriveWallet } from '@/lib/waas/hd-wallets'
+import { partnerUsers, partners, lpFxPairs, lpAccounts } from '@ntzs/db'
+import { eq, and } from 'drizzle-orm'
+import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
+
+export const runtime = 'nodejs'
+export const maxDuration = 300
+
+/**
+ * POST /api/v1/swap
+ *
+ * Places a HyperBridge same-chain swap intent on Base mainnet on behalf of a WaaS user.
+ * Streams Server-Sent Events (SSE) with real-time order status updates.
+ *
+ * Body: { userId, fromToken: 'USDC'|'NTZS', toToken: 'NTZS'|'USDC', amount, slippageBps? }
+ * Auth: Bearer <partner-api-key>
+ */
+export async function POST(request: NextRequest) {
+  const authResult = await authenticatePartner(request)
+  if ('error' in authResult) return authResult.error
+
+  const { partner } = authResult
+
+  let body: {
+    userId: string
+    fromToken: SwapTokenSymbol
+    toToken: SwapTokenSymbol
+    amount: number
+    slippageBps?: number
+  }
+
+  try {
+    body = await request.json()
+  } catch {
+    return new Response('Invalid JSON body', { status: 400 })
+  }
+
+  const { userId, fromToken, toToken, amount, slippageBps = 100 } = body
+
+  if (!userId || !fromToken || !toToken || !amount) {
+    return new Response('userId, fromToken, toToken, and amount are required', { status: 400 })
+  }
+  if (fromToken === toToken) {
+    return new Response('fromToken and toToken must differ', { status: 400 })
+  }
+  if (!SWAP_TOKENS[fromToken] || !SWAP_TOKENS[toToken]) {
+    return new Response(`Unsupported tokens. Valid: ${Object.keys(SWAP_TOKENS).join(', ')}`, { status: 400 })
+  }
+
+  const rpcUrl = process.env.BASE_RPC_URL
+  const bundlerUrl = process.env.BUNDLER_URL
+  if (!rpcUrl || !bundlerUrl) {
+    return new Response('BASE_RPC_URL or BUNDLER_URL not configured', { status: 503 })
+  }
+
+  const { db } = getDb()
+
+  // Resolve the user's wallet index + partner seed
+  const [pu] = await db
+    .select({ walletIndex: partnerUsers.walletIndex })
+    .from(partnerUsers)
+    .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, userId)))
+    .limit(1)
+
+  if (!pu) return new Response('User not found', { status: 404 })
+  if (pu.walletIndex === null) return new Response('User wallet not provisioned', { status: 404 })
+
+  const [partnerRow] = await db
+    .select({ encryptedHdSeed: partners.encryptedHdSeed })
+    .from(partners)
+    .where(eq(partners.id, partner.id))
+    .limit(1)
+
+  if (!partnerRow?.encryptedHdSeed) return new Response('Partner seed not configured', { status: 503 })
+
+  const hdWallet = deriveWallet(partnerRow.encryptedHdSeed, pu.walletIndex)
+  const privateKey = hdWallet.privateKey as `0x${string}`
+  const recipientAddress = hdWallet.address as `0x${string}`
+
+  // Get current rate from active pair
+  const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
+  const NTZS_ADDR = SWAP_TOKENS.NTZS.address.toLowerCase()
+  const USDC_ADDR = SWAP_TOKENS.USDC.address.toLowerCase()
+  const tokenAddr = (sym: SwapTokenSymbol) => (sym === 'NTZS' ? NTZS_ADDR : USDC_ADDR)
+
+  const pair = pairs.find(
+    (p: typeof pairs[number]) =>
+      (p.token1Address.toLowerCase() === tokenAddr(fromToken) || p.token2Address.toLowerCase() === tokenAddr(fromToken)) &&
+      (p.token1Address.toLowerCase() === tokenAddr(toToken) || p.token2Address.toLowerCase() === tokenAddr(toToken))
+  )
+
+  if (!pair) {
+    return new Response('No active trading pair found for these tokens', { status: 404 })
+  }
+
+  const midRate = parseFloat(pair.midRate.toString())
+  const [lp] = await db
+    .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.isActive, true as unknown as boolean))
+    .limit(1)
+
+  const bidBps = lp?.bidBps ?? 120
+  const askBps = lp?.askBps ?? 150
+
+  const minOutput = calcMinOutput({ fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps })
+
+  // Stream SSE
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+        } catch {
+          // client disconnected
+        }
+      }
+
+      try {
+        for await (const update of executeSwap({
+          privateKey,
+          fromToken,
+          toToken,
+          amount,
+          minOutput,
+          recipientAddress,
+          rpcUrl,
+          bundlerUrl,
+        })) {
+          send(update)
+          if (update.status === 'FILLED' || update.status === 'FAILED' || update.status === 'PARTIAL_FILL_EXHAUSTED') {
+            break
+          }
+        }
+      } catch (err) {
+        send({
+          status: 'FAILED',
+          message: 'Swap error',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  })
+}

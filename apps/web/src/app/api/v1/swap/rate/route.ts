@@ -1,0 +1,92 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getDb } from '@/lib/db'
+import { lpFxPairs, lpAccounts } from '@ntzs/db'
+import { eq, and } from 'drizzle-orm'
+import { calcMinOutput, type SwapTokenSymbol } from '@/lib/fx/swap'
+
+export const runtime = 'nodejs'
+
+/**
+ * GET /api/v1/swap/rate?from=USDC&to=NTZS&amount=5
+ *
+ * Returns the current expected output for a swap, based on active
+ * pair mid-rate and the average LP spread.  Public endpoint — no auth.
+ */
+export async function GET(req: NextRequest) {
+  const { searchParams } = req.nextUrl
+  const from = (searchParams.get('from') ?? '').toUpperCase() as SwapTokenSymbol
+  const to = (searchParams.get('to') ?? '').toUpperCase() as SwapTokenSymbol
+  const amount = parseFloat(searchParams.get('amount') ?? '0')
+
+  if (!from || !to || from === to) {
+    return NextResponse.json({ error: 'from and to are required and must differ' }, { status: 400 })
+  }
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 })
+  }
+
+  const { db } = getDb()
+
+  const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
+
+  const NTZS = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'.toLowerCase()
+  const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'.toLowerCase()
+
+  const tokenAddressFor = (sym: SwapTokenSymbol) => (sym === 'NTZS' ? NTZS : USDC)
+
+  const pair = pairs.find(
+    (p: typeof pairs[number]) =>
+      (p.token1Address.toLowerCase() === tokenAddressFor(from) ||
+        p.token2Address.toLowerCase() === tokenAddressFor(from)) &&
+      (p.token1Address.toLowerCase() === tokenAddressFor(to) ||
+        p.token2Address.toLowerCase() === tokenAddressFor(to))
+  )
+
+  if (!pair) {
+    return NextResponse.json({ error: 'No active pair found for this token combination' }, { status: 404 })
+  }
+
+  const midRate = parseFloat(pair.midRate.toString())
+
+  const [lp] = await db
+    .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.isActive, true as unknown as boolean))
+    .limit(1)
+
+  const bidBps = lp?.bidBps ?? 120
+  const askBps = lp?.askBps ?? 150
+
+  const expectedOutput = calcMinOutput({
+    fromToken: from,
+    toToken: to,
+    amount,
+    midRate,
+    bidBps,
+    askBps,
+    slippageBps: 0,
+  })
+
+  const minOutput = calcMinOutput({
+    fromToken: from,
+    toToken: to,
+    amount,
+    midRate,
+    bidBps,
+    askBps,
+    slippageBps: 100,
+  })
+
+  return NextResponse.json({
+    from,
+    to,
+    amount,
+    midRate,
+    bidBps,
+    askBps,
+    expectedOutput: +expectedOutput.toFixed(6),
+    minOutput: +minOutput.toFixed(6),
+    rate: +(expectedOutput / amount).toFixed(6),
+    expiresAt: new Date(Date.now() + 30_000).toISOString(),
+  })
+}
