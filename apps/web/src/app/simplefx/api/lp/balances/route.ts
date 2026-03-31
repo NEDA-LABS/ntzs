@@ -54,11 +54,20 @@ export async function GET() {
         };
       }
 
+      // Also fetch LP wallet on-chain balance (tokens deposited but not yet swept)
+      const rpcUrl = process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
+      const provider = new JsonRpcProvider(rpcUrl);
+      const [walletNtzs, walletUsdc] = await Promise.all([
+        getOnChainBalance(provider, NTZS, lp.walletAddress),
+        getOnChainBalance(provider, USDC, lp.walletAddress),
+      ]);
+
       return NextResponse.json({
         source: 'pool',
         ntzs: byToken['ntzs']?.total ?? '0',
         usdc: byToken['usdc']?.total ?? '0',
         positions: byToken,
+        wallet: { ntzs: walletNtzs, usdc: walletUsdc },
       });
     } else {
       // LP not yet active — show their on-chain wallet balance (pending deposit)

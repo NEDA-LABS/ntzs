@@ -149,6 +149,7 @@ export default function OverviewPage() {
     usdc: string;
     source?: string;
     positions?: Record<string, { contributed: string; earned: string; total: string }>;
+    wallet?: { ntzs: string; usdc: string };
   } | null>(null);
 
   useEffect(() => {
@@ -199,8 +200,20 @@ export default function OverviewPage() {
       {isOnboarding && <OnboardingWizard currentStep={lp.onboardingStep} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="nTZS Inventory" value={fmt(balances?.ntzs)} sub="Base Mainnet" />
-        <StatCard label="USDC Balance" value={fmt(balances?.usdc)} sub="Base Mainnet" />
+        <StatCard
+          label="nTZS Inventory"
+          value={fmt(balances?.ntzs)}
+          sub={balances?.wallet && parseFloat(balances.wallet.ntzs) > 0
+            ? `+${fmt(balances.wallet.ntzs)} in wallet (unsent)`
+            : 'In solver pool'}
+        />
+        <StatCard
+          label="USDC Balance"
+          value={fmt(balances?.usdc)}
+          sub={balances?.wallet && parseFloat(balances.wallet.usdc) > 0
+            ? `+${fmt(balances.wallet.usdc)} in wallet (unsent)`
+            : 'In solver pool'}
+        />
         <StatCard label="Avg Spread" value={`${spreadPct}%`} sub={`Bid ${lp.bidBps}bps / Ask ${lp.askBps}bps`} accent />
         <StatCard
           label="Total Earnings"
