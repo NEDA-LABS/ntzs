@@ -17,8 +17,8 @@ import {
 } from '@hyperbridge/sdk'
 import type { Order } from '@hyperbridge/sdk'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createWalletClient, createPublicClient, http, toHex, parseUnits, padHex, maxUint256 } from 'viem'
-import { erc20Abi } from 'viem'
+import { createWalletClient, http, toHex, parseUnits, padHex, maxUint256 } from 'viem'
+import { JsonRpcProvider, Contract, Wallet } from 'ethers'
 import { base } from 'viem/chains'
 
 const INTENT_GATEWAY_V2 = '0x2d61624A17f361020679FaA16fbB566C344AaF4B' as `0x${string}`
@@ -118,15 +118,15 @@ export async function* executeSwap(params: {
     chain: base,
     transport: http(rpcUrl),
   })
-  const publicClient = createPublicClient({ chain: base, transport: http(rpcUrl) })
+  // Use ethers.js for reads (proven reliable on Base mainnet)
+  const provider = new JsonRpcProvider(rpcUrl)
+  const tokenContract = new Contract(from.address, [
+    'function balanceOf(address) view returns (uint256)',
+    'function allowance(address,address) view returns (uint256)',
+  ], provider)
 
   // Check balance
-  const balance = await publicClient.readContract({
-    address: from.address,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [account.address],
-  })
+  const balance: bigint = await tokenContract.balanceOf(account.address)
   const needed = parseUnits(amount.toFixed(from.decimals), from.decimals)
   if (balance < needed) {
     const haveHuman = (Number(balance) / 10 ** from.decimals).toFixed(from.decimals === 6 ? 2 : 4)
@@ -140,22 +140,16 @@ export async function* executeSwap(params: {
   }
 
   // Ensure IntentGatewayV2 has allowance to escrow input tokens
-  const allowance = await publicClient.readContract({
-    address: from.address,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: [account.address, INTENT_GATEWAY_V2],
-  })
+  const allowance: bigint = await tokenContract.allowance(account.address, INTENT_GATEWAY_V2)
   if (allowance < needed) {
     yield { status: 'APPROVING', message: `Approving ${from.symbol} for IntentGateway...` }
-    const approveTxHash = await walletClient.writeContract({
-      address: from.address,
-      abi: erc20Abi,
-      functionName: 'approve',
-      args: [INTENT_GATEWAY_V2, maxUint256],
+    const ethersWallet = new Wallet(privateKey, provider)
+    const approveTx = await ethersWallet.sendTransaction({
+      to: from.address,
+      data: tokenContract.interface.encodeFunctionData('approve', [INTENT_GATEWAY_V2, maxUint256]),
     })
-    yield { status: 'APPROVING', message: 'Waiting for approval confirmation...', txHash: approveTxHash }
-    await publicClient.waitForTransactionReceipt({ hash: approveTxHash })
+    yield { status: 'APPROVING', message: 'Waiting for approval confirmation...', txHash: approveTx.hash as `0x${string}` }
+    await approveTx.wait()
     yield { status: 'APPROVED', message: 'Token approval confirmed' }
   }
 
