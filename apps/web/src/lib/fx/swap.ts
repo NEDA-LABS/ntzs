@@ -199,20 +199,22 @@ export async function* executeSwap(params: {
     return
   }
 
-  const { to: txTo, data, value } = first.value as { to: `0x${string}`; data: `0x${string}`; value: bigint }
+  const { to: txTo, data, value: txValue } = first.value as { to: `0x${string}`; data: `0x${string}`; value: bigint }
 
   yield { status: 'PLACING_ORDER', message: 'Submitting order to HyperBridge...' }
 
-  const signedTx = await walletClient.signTransaction({
+  // Use ethers to send (auto-estimates gas), then pass txHash to the generator
+  const ethersWalletOrder = new Wallet(privateKey, provider)
+  const orderTx = await ethersWalletOrder.sendTransaction({
     to: txTo,
     data,
-    value: value ?? BigInt(0),
-    type: 'eip1559',
-    chain: base,
-  }) as `0x${string}`
+    value: txValue ?? BigInt(0),
+  })
+  yield { status: 'PLACING_ORDER', message: 'Order tx submitted, waiting for confirmation...', txHash: orderTx.hash as `0x${string}` }
+  await orderTx.wait()
 
-  // Step 2: pass signed tx, get ORDER_PLACED confirmation
-  const second = await gen.next(signedTx)
+  // Step 2: pass txHash (66 chars), SDK will fetch the receipt
+  const second = await gen.next(orderTx.hash as `0x${string}`)
   if (!second.done && second.value) {
     const placed = second.value as { order?: Order; receipt?: { transactionHash: string } }
     yield {
