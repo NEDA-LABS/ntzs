@@ -4,7 +4,7 @@ import { db } from '@/lib/fx/db';
 import { lpAccounts, lpFxPairs, lpPoolPositions } from '@ntzs/db';
 import { eq, sql } from 'drizzle-orm';
 import { deriveWallet } from '@/lib/fx/lp-wallet';
-import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits } from 'ethers';
+import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits, parseEther } from 'ethers';
 
 const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
@@ -52,6 +52,17 @@ export async function PATCH(req: NextRequest) {
 
     const { privateKey } = deriveWallet(lp.walletIndex);
     const lpSigner = new Wallet(privateKey, provider);
+
+    // Pre-fund LP wallet with gas if needed (LP wallets start with 0 ETH)
+    const MIN_GAS = parseEther('0.0001');
+    const lpEthBalance: bigint = await provider.getBalance(lp.walletAddress);
+    if (lpEthBalance < MIN_GAS) {
+      const relayerKey = process.env.RELAYER_PRIVATE_KEY ?? process.env.MINTER_PRIVATE_KEY;
+      if (!relayerKey) return NextResponse.json({ error: 'Relayer key not configured — cannot fund gas' }, { status: 503 });
+      const relayer = new Wallet(relayerKey, provider);
+      const gasTx = await relayer.sendTransaction({ to: lp.walletAddress, value: MIN_GAS });
+      await gasTx.wait(1);
+    }
 
     const swept: Array<{ tokenAddress: string; symbol: string; amount: string }> = [];
 
