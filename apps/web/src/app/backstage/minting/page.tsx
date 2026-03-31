@@ -327,12 +327,12 @@ async function confirmSafeMintAction(formData: FormData): Promise<{ success: boo
     return { success: false, error: 'Deposit is not awaiting Safe mint' }
   }
 
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE || ''
   if (!contractAddress || !ethers.isAddress(contractAddress)) {
     return { success: false, error: 'Contract address not configured' }
   }
 
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org'
+  const rpcUrl = process.env.BASE_RPC_URL || ''
   const provider = new ethers.JsonRpcProvider(rpcUrl)
   const receipt = await provider.getTransactionReceipt(txHash)
 
@@ -837,8 +837,8 @@ export default async function MintingPage() {
                             depositId={dep.id}
                             amountTzs={dep.amountTzs}
                             walletAddress={dep.walletAddress}
-                            contractAddress={process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || ''}
-                            chainId="84532"
+                            contractAddress={process.env.NTZS_CONTRACT_ADDRESS_BASE || ''}
+                            chainId="8453"
                             onConfirm={confirmSafeMintAction}
                           />
                         ) : dep.status === 'submitted' ? (

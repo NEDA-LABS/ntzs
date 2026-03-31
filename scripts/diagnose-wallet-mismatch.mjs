@@ -40,8 +40,8 @@ function deriveAddress(encryptedSeed, walletIndex) {
 }
 
 async function main() {
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || process.env.BASE_RPC_URL
-  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA || process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = process.env.BASE_RPC_URL
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
 
   if (!rpcUrl || !contractAddress) {
     throw new Error('RPC_URL and CONTRACT_ADDRESS required')

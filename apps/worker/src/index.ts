@@ -241,12 +241,11 @@ async function pollSnippeForCompletedPayments(sql: ReturnType<typeof createDbCli
 
 async function claimNextMintJob(sql: ReturnType<typeof createDbClient>['sql']) {
   const contractAddress =
-    process.env.NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA ??
     process.env.NTZS_CONTRACT_ADDRESS_BASE ??
     ''
 
   if (!contractAddress) {
-    throw new Error('Missing env var: NTZS_CONTRACT_ADDRESS_BASE_SEPOLIA')
+    throw new Error('Missing env var: NTZS_CONTRACT_ADDRESS_BASE')
   }
 
   const rows = await sql<

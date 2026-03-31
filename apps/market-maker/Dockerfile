@@ -1,8 +1,6 @@
-FROM ghcr.io/polytope-labs/simplex:latest
+FROM polytopelabs/simplex:latest
 
-COPY entrypoint.sh /entrypoint.sh
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY simplex.toml.template /simplex.toml.template
-
-RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

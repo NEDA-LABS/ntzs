@@ -812,6 +812,16 @@ export const lpNextWalletIndex = pgTable(
   }
 )
 
+/**
+ * Single-row config table for SimpleFX platform settings.
+ * id is always 1. Admin sets midRateTZS (nTZS per 1 USDC).
+ */
+export const lpFxConfig = pgTable('lp_fx_config', {
+  id: integer('id').primaryKey().default(1),
+  midRateTZS: integer('mid_rate_tzs').notNull().default(3750),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const partnerWebhookEvents = pgTable(
   'partner_webhook_events',
   {

@@ -9,6 +9,7 @@ const TOKENS = [
   {
     id: 'ntzs',
     label: 'nTZS',
+    icon: '/ntzs-icon.svg',
     description: 'Tokenised Tanzanian Shilling — your primary inventory asset',
     color: 'emerald',
     contract: '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688',
@@ -18,6 +19,7 @@ const TOKENS = [
   {
     id: 'usdc',
     label: 'USDC',
+    icon: '/usdc-logo.svg',
     description: 'USD Coin — accepted as collateral on the bid side',
     color: 'blue',
     contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
@@ -104,12 +106,13 @@ export default function DepositPage() {
             <button
               key={t.id}
               onClick={() => setActiveToken(t.id as 'ntzs' | 'usdc')}
-              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeToken === t.id
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
+              <img src={t.icon} alt={t.label} className="h-4 w-4 rounded-full" />
               {t.label}
             </button>
           ))}

@@ -21,13 +21,12 @@ bundlerUrl = "__BUNDLER_URL__"
 # ---------------------------------------------------------------
 # HyperFX strategy: nTZS <-> USDC market making on Base mainnet
 #
-# Price curves are expressed as nTZS per USD.
-# Current mid-market rate: 1 USD = ~2590 nTZS (1 nTZS = ~$0.000386)
-# Spread: ~0.75% each side (~1.5% total round-trip margin)
+# Price curves are generated at startup from live portal settings:
+#   midRateTZS  → fetched from lpFxConfig (admin-set mid rate)
+#   bidBps      → LP account bid spread in basis points
+#   askBps      → LP account ask spread in basis points
 #
-# To update rates: adjust both curves proportionally and redeploy.
-# Example: if TZS weakens to 2700/USD, shift all values up by ~110.
-# Last updated: 2026-03-31 (rate was 2590)
+# To update: change values in the SimpleFX portal, then restart the bot.
 # ---------------------------------------------------------------
 
 [[strategies]]
@@ -35,23 +34,13 @@ type = "hyperfx"
 maxOrderUsd = 2000
 
 # bid: nTZS per USD when a user is SELLING nTZS to you (you buy nTZS)
-# Higher value = you pay out less USD per nTZS = more profitable for you
 bidPriceCurve = [
-  { amount = "50",   price = "2610" },
-  { amount = "200",  price = "2605" },
-  { amount = "500",  price = "2602" },
-  { amount = "1000", price = "2598" },
-  { amount = "2000", price = "2594" },
+__BID_CURVE__
 ]
 
 # ask: nTZS per USD when a user is BUYING nTZS from you (you sell nTZS)
-# Lower value = you send fewer nTZS per USD = more profitable for you
 askPriceCurve = [
-  { amount = "50",   price = "2570" },
-  { amount = "200",  price = "2565" },
-  { amount = "500",  price = "2562" },
-  { amount = "1000", price = "2558" },
-  { amount = "2000", price = "2554" },
+__ASK_CURVE__
 ]
 
 [strategies.token1]
