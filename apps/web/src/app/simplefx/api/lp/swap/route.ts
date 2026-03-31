@@ -75,6 +75,18 @@ export async function POST(req: NextRequest) {
 
   const { privateKey, address } = deriveWallet(lp.walletIndex)
 
+  if (address.toLowerCase() !== lp.walletAddress.toLowerCase()) {
+    return new Response(
+      JSON.stringify({
+        error: 'Wallet mismatch',
+        derived: address,
+        stored: lp.walletAddress,
+        walletIndex: lp.walletIndex,
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
