@@ -5,6 +5,7 @@ import { db } from '@/lib/fx/db';
 import { lpAccounts } from '@ntzs/db';
 import { eq } from 'drizzle-orm';
 import { provisionLpWallet } from '@/lib/fx/lp-wallet';
+import { fundWalletWithGas } from '@/lib/waas/hd-wallets';
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,6 +38,13 @@ export async function POST(req: NextRequest) {
           onboardingStep: 1,
         })
         .returning();
+
+      const rpcUrl = process.env.BASE_RPC_URL;
+      if (rpcUrl) {
+        fundWalletWithGas({ toAddress: address, rpcUrl, amountEth: '0.0001' }).catch((err) =>
+          console.warn('[verify-otp] gas prefund failed:', err instanceof Error ? err.message : err)
+        );
+      }
     }
 
     const token = await createSession(lp.id);
