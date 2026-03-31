@@ -17,7 +17,7 @@ import {
 } from '@hyperbridge/sdk'
 import type { Order } from '@hyperbridge/sdk'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createWalletClient, http, toHex, parseUnits, maxUint256 } from 'viem'
+import { createWalletClient, http, toHex, parseUnits, padHex, maxUint256 } from 'viem'
 import { JsonRpcProvider, Contract, Wallet } from 'ethers'
 import { base } from 'viem/chains'
 
@@ -155,15 +155,17 @@ export async function* executeSwap(params: {
   }
 
   const currentBlock = await chain.client.getBlockNumber()
+  const stateMachineId = toHex(chain.config.stateMachineId) as `0x${string}`
+  const BYTES32_ZERO = padHex('0x', { size: 32 }) as `0x${string}`
 
   const order = {
-    user: '0x' as `0x${string}`,
-    source: '0x' as `0x${string}`,
-    destination: toHex(chain.config.stateMachineId) as `0x${string}`,
+    user: BYTES32_ZERO,
+    source: stateMachineId,
+    destination: stateMachineId,
     deadline: currentBlock + BigInt(300),
     nonce: BigInt(0),
     fees: BigInt(0),
-    session: '0x' as `0x${string}`,
+    session: BYTES32_ZERO,
     predispatch: { assets: [], call: '0x' as `0x${string}` },
     inputs: [
       {
