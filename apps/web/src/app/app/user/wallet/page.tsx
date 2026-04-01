@@ -5,6 +5,7 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { TokenBalance } from '../_components/TokenBalance'
 import { PayMeSection } from './PayMeSection'
+import { SendSection } from './SendSection'
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -56,6 +57,9 @@ export default async function WalletPage() {
           currentAlias={dbUser.payAlias ?? null}
           suggestedAlias={suggestedAlias}
         />
+
+        {/* Send */}
+        <SendSection walletAddress={wallet.address} />
 
         {/* Withdraw */}
         <Link
