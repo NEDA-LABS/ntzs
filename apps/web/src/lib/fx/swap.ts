@@ -17,9 +17,8 @@ import {
 } from '@hyperbridge/sdk'
 import type { Order } from '@hyperbridge/sdk'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createWalletClient, http, toHex, parseUnits, padHex, maxUint256 } from 'viem'
+import { toHex, parseUnits, padHex, maxUint256 } from 'viem'
 import { JsonRpcProvider, Contract, Wallet } from 'ethers'
-import { base } from 'viem/chains'
 
 const INTENT_GATEWAY_V2 = '0x2d61624A17f361020679FaA16fbB566C344AaF4B' as `0x${string}`
 
@@ -113,12 +112,7 @@ export async function* executeSwap(params: {
   const intentGateway = await IntentGateway.create(chain, chain, coprocessor)
 
   const account = privateKeyToAccount(privateKey)
-  const walletClient = createWalletClient({
-    account,
-    chain: base,
-    transport: http(rpcUrl),
-  })
-  // Use ethers.js for reads (proven reliable on Base mainnet)
+  // Use ethers.js for reads and sends (proven reliable on Base mainnet)
   const provider = new JsonRpcProvider(rpcUrl)
   const tokenContract = new Contract(from.address, [
     'function balanceOf(address) view returns (uint256)',
@@ -154,30 +148,31 @@ export async function* executeSwap(params: {
     yield { status: 'APPROVED', message: 'Token approval confirmed' }
   }
 
-  const currentBlock = await chain.client.getBlockNumber()
   const stateMachineId = toHex(chain.config.stateMachineId) as `0x${string}`
   const BYTES32_ZERO = padHex('0x', { size: 32 }) as `0x${string}`
+  // Deadline is a Unix timestamp — 10 minutes from now
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 600)
 
   const order = {
     user: BYTES32_ZERO,
     source: stateMachineId,
     destination: stateMachineId,
-    deadline: currentBlock + BigInt(300),
+    deadline,
     nonce: BigInt(0),
     fees: BigInt(0),
     session: BYTES32_ZERO,
     predispatch: { assets: [], call: '0x' as `0x${string}` },
     inputs: [
       {
-        token: padHex(from.address, { size: 32 }),
+        token: from.address,
         amount: parseUnits(amount.toFixed(from.decimals), from.decimals),
       },
     ],
     output: {
-      beneficiary: padHex(recipientAddress, { size: 32 }),
+      beneficiary: recipientAddress,
       assets: [
         {
-          token: padHex(to.address, { size: 32 }),
+          token: to.address,
           amount: parseUnits(minOutput.toFixed(to.decimals), to.decimals),
         },
       ],
