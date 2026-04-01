@@ -164,15 +164,15 @@ export async function* executeSwap(params: {
     predispatch: { assets: [], call: '0x' as `0x${string}` },
     inputs: [
       {
-        token: from.address,
+        token: padHex(from.address, { size: 32, dir: 'left' }),
         amount: parseUnits(amount.toFixed(from.decimals), from.decimals),
       },
     ],
     output: {
-      beneficiary: recipientAddress,
+      beneficiary: padHex(recipientAddress, { size: 32, dir: 'left' }),
       assets: [
         {
-          token: to.address,
+          token: padHex(to.address, { size: 32, dir: 'left' }),
           amount: parseUnits(minOutput.toFixed(to.decimals), to.decimals),
         },
       ],
