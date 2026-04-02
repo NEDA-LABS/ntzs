@@ -8,6 +8,7 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { wallets, users, auditLogs } from '@ntzs/db'
 import { invalidateWalletCache } from '@/lib/user/cachedWallet'
+import { invalidateSendsCache } from '@/lib/user/cachedQueries'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY } from '@/lib/env'
 
 export type AliasResult =
@@ -155,22 +156,20 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
     }
   }
 
-  // Step 1: burn from sender
+  // Step 1: burn from sender — submit only, no confirmation wait
   let burnTxHash: string
   try {
     const burnTx = await token.burn(fromWallet.address, amountWei)
-    await burnTx.wait(1)
     burnTxHash = burnTx.hash
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: `Failed to debit your wallet: ${msg}` }
   }
 
-  // Step 2: mint to recipient — if this fails, refund the sender immediately
+  // Step 2: mint to recipient — submit only, no confirmation wait
   let mintTxHash: string
   try {
     const mintTx = await token.mint(toAddress, amountWei)
-    await mintTx.wait(1)
     mintTxHash = mintTx.hash
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -179,7 +178,6 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
     // Attempt automatic refund
     try {
       const refundTx = await token.mint(fromWallet.address, amountWei)
-      await refundTx.wait(1)
       await db.insert(auditLogs).values({
         action: 'user_send_ntzs_refunded',
         entityType: 'transfer',
@@ -188,7 +186,6 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
       })
       return { success: false, error: 'Transfer failed — your balance has been refunded. Please try again.' }
     } catch (refundErr) {
-      // Refund also failed — log for manual ops intervention
       const refundMsg = refundErr instanceof Error ? refundErr.message : String(refundErr)
       console.error('[sendNtzsAction] CRITICAL: Burn succeeded but mint AND refund failed', { burnTxHash, fromWallet: fromWallet.address, amountTzs, mintError: msg, refundError: refundMsg })
       await db.insert(auditLogs).values({
@@ -215,6 +212,9 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
       mintTxHash,
     },
   })
+
+  invalidateSendsCache(dbUser.id)
+  revalidatePath('/app/user/activity')
 
   return { success: true, burnTxHash, mintTxHash, amountTzs, toAddress }
 }

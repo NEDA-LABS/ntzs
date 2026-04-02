@@ -1,5 +1,5 @@
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getCachedRecentDeposits, getCachedRecentBurns } from '@/lib/user/cachedQueries'
+import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends } from '@/lib/user/cachedQueries'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ActivityList } from './_components/ActivityList'
 import { PendingDepositPoller } from '../_components/PendingDepositPoller'
@@ -7,9 +7,10 @@ import { PendingDepositPoller } from '../_components/PendingDepositPoller'
 export default async function ActivityPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [deposits, burns] = await Promise.all([
+  const [deposits, burns, sends] = await Promise.all([
     getCachedRecentDeposits(dbUser.id, 50),
     getCachedRecentBurns(dbUser.id, 50),
+    getCachedRecentSends(dbUser.id, 50),
   ])
 
   const txns = [
@@ -20,6 +21,8 @@ export default async function ActivityPage() {
       id: d.id,
       amountTzs: d.amountTzs,
       status: String(d.status),
+      toAddress: undefined as string | undefined,
+      mintTxHash: undefined as string | undefined,
       formattedDate: d.createdAt ? formatDateTimeEAT(d.createdAt) : '',
       createdAt: d.createdAt,
     })),
@@ -30,8 +33,22 @@ export default async function ActivityPage() {
       id: b.id,
       amountTzs: b.amountTzs,
       status: String(b.status),
+      toAddress: undefined as string | undefined,
+      mintTxHash: undefined as string | undefined,
       formattedDate: b.createdAt ? formatDateTimeEAT(b.createdAt) : '',
       createdAt: b.createdAt,
+    })),
+    ...sends.map((s) => ({
+      type: 'send' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
+      id: s.id,
+      amountTzs: s.amountTzs,
+      status: 'sent',
+      toAddress: s.toAddress,
+      mintTxHash: s.mintTxHash,
+      formattedDate: s.createdAt ? formatDateTimeEAT(s.createdAt) : '',
+      createdAt: s.createdAt,
     })),
   ]
     .filter((t) => t.createdAt)
@@ -42,9 +59,9 @@ export default async function ActivityPage() {
     .filter((d) => d.status === 'minted')
     .reduce((s, d) => s + (d.amountTzs ?? 0), 0)
 
-  const totalOut = burns
-    .filter((b) => b.status === 'burned')
-    .reduce((s, b) => s + (b.amountTzs ?? 0), 0)
+  const totalOut =
+    burns.filter((b) => b.status === 'burned').reduce((s, b) => s + (b.amountTzs ?? 0), 0) +
+    sends.reduce((s, t) => s + t.amountTzs, 0)
 
   const pendingCount = deposits.filter(
     (d) => !['minted', 'rejected', 'cancelled'].includes(d.status),

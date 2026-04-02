@@ -1,12 +1,13 @@
-import { eq, desc, and } from 'drizzle-orm'
+import { eq, desc, and, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { depositRequests, burnRequests, kycCases, banks } from '@ntzs/db'
+import { depositRequests, burnRequests, kycCases, banks, auditLogs } from '@ntzs/db'
 import { MemCache } from '@/lib/cache'
 
 // 15s TTL — fresh enough for financial data, fast enough to skip Neon
 const depositsCache = new MemCache<typeof depositRequests.$inferSelect[]>(15_000)
 const burnsCache = new MemCache<{ id: string; amountTzs: number; status: string; createdAt: Date | null }[]>(15_000)
+const sendsCache = new MemCache<{ id: string; amountTzs: number; toAddress: string; burnTxHash: string; mintTxHash: string; createdAt: Date | null }[]>(15_000)
 const kycCache = new MemCache<{ id: string; status: string; createdAt: Date | null }[]>(15_000)
 const bankCache = new MemCache<typeof banks.$inferSelect | null>(30_000)
 
@@ -47,6 +48,48 @@ export async function getCachedRecentBurns(userId: string, limit = 5) {
 
   burnsCache.set(key, result)
   return result
+}
+
+export async function getCachedRecentSends(userId: string, limit = 50) {
+  const key = `${userId}:${limit}`
+  const cached = sendsCache.get(key)
+  if (cached) return cached
+
+  const { db } = getDb()
+  const rows = await db
+    .select({
+      id: auditLogs.id,
+      metadata: auditLogs.metadata,
+      createdAt: auditLogs.createdAt,
+    })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.action, 'user_send_ntzs'),
+        sql`${auditLogs.metadata}->>'fromUserId' = ${userId}`
+      )
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(limit)
+
+  const result = rows.map((r) => {
+    const m = (r.metadata ?? {}) as Record<string, unknown>
+    return {
+      id: r.id,
+      amountTzs: Number(m.amountTzs ?? 0),
+      toAddress: String(m.toAddress ?? ''),
+      burnTxHash: String(m.burnTxHash ?? ''),
+      mintTxHash: String(m.mintTxHash ?? ''),
+      createdAt: r.createdAt,
+    }
+  })
+
+  sendsCache.set(key, result)
+  return result
+}
+
+export function invalidateSendsCache(userId: string) {
+  sendsCache.invalidate(`${userId}:50`)
 }
 
 export async function getCachedApprovedKyc(userId: string) {
