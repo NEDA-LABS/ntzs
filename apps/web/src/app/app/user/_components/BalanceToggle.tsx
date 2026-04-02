@@ -43,7 +43,7 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
         const [ntzsRaw, usdcRaw] = await Promise.all([
           TOKENS.NTZS.address
             ? new ethers.Contract(TOKENS.NTZS.address, abi, provider).balanceOf(walletAddress)
-            : Promise.resolve(0n),
+            : Promise.resolve(BigInt(0)),
           new ethers.Contract(TOKENS.USDC.address, abi, provider).balanceOf(walletAddress),
         ])
 
