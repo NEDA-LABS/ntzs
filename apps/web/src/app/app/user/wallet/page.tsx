@@ -6,6 +6,7 @@ import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { TokenBalance } from '../_components/TokenBalance'
 import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
+import { SwapSection } from './SwapSection'
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -60,6 +61,9 @@ export default async function WalletPage() {
 
         {/* Send */}
         <SendSection walletAddress={wallet.address} />
+
+        {/* Swap */}
+        <SwapSection walletAddress={wallet.address} />
 
         {/* Withdraw */}
         <Link

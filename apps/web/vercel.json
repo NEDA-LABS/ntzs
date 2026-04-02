@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/gas-alert",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/bot-alert",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
