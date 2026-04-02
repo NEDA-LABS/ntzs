@@ -8,8 +8,7 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { wallets, users, auditLogs } from '@ntzs/db'
 import { invalidateWalletCache } from '@/lib/user/cachedWallet'
-import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
-import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY } from '@/lib/env'
 
 export type AliasResult =
   | { success: true; alias: string }
@@ -49,19 +48,25 @@ export async function updatePayAlias(formData: FormData): Promise<AliasResult> {
 
 // ─── Send nTZS ────────────────────────────────────────────────────────────────
 
-const NTZS_TRANSFER_ABI = [
+const NTZS_SEND_ABI = [
   'function balanceOf(address) view returns (uint256)',
-  'function transfer(address to, uint256 amount) returns (bool)',
-  'function decimals() view returns (uint8)',
+  'function burn(address from, uint256 amount)',
+  'function mint(address to, uint256 amount)',
+  'function paused() view returns (bool)',
 ] as const
 
 export type SendNtzsResult =
-  | { success: true; txHash: string; amountTzs: number; toAddress: string }
+  | { success: true; burnTxHash: string; mintTxHash: string; amountTzs: number; toAddress: string }
   | { success: false; error: string }
 
 /**
- * Send nTZS from the current user's CDP wallet to any EVM address on Base,
+ * Send nTZS from the current user's wallet to any EVM address on Base,
  * or to a platform user identified by their @alias.
+ *
+ * Uses a custodial burn-then-mint pattern:
+ *   1. BURNER_ROLE burns from sender's wallet
+ *   2. MINTER_ROLE mints to recipient's address
+ * No user private key required — platform keys handle both steps.
  */
 export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult> {
   await requireAnyRole(['end_user', 'super_admin'])
@@ -102,21 +107,17 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
     toAddress = targetWallet.address
   }
 
-  // Validate EVM address
   if (!ethers.isAddress(toAddress)) {
     return { success: false, error: 'Invalid address — must be a valid 0x… address or @alias' }
   }
 
-  // Get sender wallet (CDP only for user-initiated sends)
+  // Get sender wallet
   const fromWallet = await db.query.wallets.findFirst({
     where: and(eq(wallets.userId, dbUser.id), eq(wallets.chain, 'base')),
   })
 
   if (!fromWallet || fromWallet.address.startsWith('0x_pending_')) {
     return { success: false, error: 'Your wallet is not ready yet' }
-  }
-  if (fromWallet.provider !== 'coinbase_embedded') {
-    return { success: false, error: 'Only embedded wallets can send from the app' }
   }
 
   if (toAddress.toLowerCase() === fromWallet.address.toLowerCase()) {
@@ -125,15 +126,26 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
 
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
   const rpcUrl = BASE_RPC_URL
-  if (!contractAddress || !rpcUrl) {
-    return { success: false, error: 'Blockchain not configured — contact support' }
+  // BURNER_PRIVATE_KEY falls back to MINTER_PRIVATE_KEY — same key holds both roles
+  const signerKey = BURNER_PRIVATE_KEY || MINTER_PRIVATE_KEY
+
+  if (!contractAddress || !rpcUrl || !signerKey) {
+    return { success: false, error: 'Platform not configured — contact support' }
   }
 
-  // Check balance
   const provider = new ethers.JsonRpcProvider(rpcUrl)
-  const token = new ethers.Contract(contractAddress, NTZS_TRANSFER_ABI, provider)
-  const balanceWei: bigint = await token.balanceOf(fromWallet.address)
+  const signer = new ethers.Wallet(signerKey, provider)
+  const token = new ethers.Contract(contractAddress, NTZS_SEND_ABI, signer)
+
+  // Check contract is not paused
+  const paused: boolean = await token.paused()
+  if (paused) {
+    return { success: false, error: 'Transfers are temporarily paused — try again later' }
+  }
+
+  // Check sender balance
   const amountWei = ethers.parseUnits(amountTzs.toFixed(18), 18)
+  const balanceWei: bigint = await token.balanceOf(fromWallet.address)
 
   if (balanceWei < amountWei) {
     const available = parseFloat(ethers.formatUnits(balanceWei, 18))
@@ -143,39 +155,30 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
     }
   }
 
-  // Execute transfer via CDP
-  const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)'])
-  const encodedData = iface.encodeFunctionData('transfer', [toAddress, amountWei]) as `0x${string}`
-  const result = await sendCdpTransaction(dbUser.id, dbUser.email, {
-    evmAccount: fromWallet.address as `0x${string}`,
-    network: 'base' as const,
-    transaction: {
-      to: contractAddress as `0x${string}`,
-      data: encodedData,
-      chainId: 8453,
-      type: 'eip1559' as const,
-    },
-  })
+  // Step 1: burn from sender
+  const burnTx = await token.burn(fromWallet.address, amountWei)
+  await burnTx.wait(1)
 
-  if ('error' in result) {
-    return { success: false, error: result.error }
-  }
+  // Step 2: mint to recipient
+  const mintTx = await token.mint(toAddress, amountWei)
+  await mintTx.wait(1)
 
   // Audit log
   await db.insert(auditLogs).values({
     action: 'user_send_ntzs',
     entityType: 'transfer',
-    entityId: result.txHash,
+    entityId: burnTx.hash,
     metadata: {
       fromUserId: dbUser.id,
       fromWallet: fromWallet.address,
       toAddress,
       amountTzs,
-      txHash: result.txHash,
+      burnTxHash: burnTx.hash,
+      mintTxHash: mintTx.hash,
     },
   })
 
-  return { success: true, txHash: result.txHash, amountTzs, toAddress }
+  return { success: true, burnTxHash: burnTx.hash, mintTxHash: mintTx.hash, amountTzs, toAddress }
 }
 
 // ─── Wallet setup ─────────────────────────────────────────────────────────────

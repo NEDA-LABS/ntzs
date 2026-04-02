@@ -98,7 +98,7 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                     </p>
                   </div>
                   <a
-                    href={`${BASE_SCAN}${result.txHash}`}
+                    href={`${BASE_SCAN}${result.mintTxHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-mono text-blue-400 hover:bg-white/10 transition-colors"
