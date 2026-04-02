@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
-import { TokenBalance } from '../_components/TokenBalance'
+import { BalanceToggle } from '../_components/BalanceToggle'
 import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
@@ -41,15 +41,7 @@ export default async function WalletPage() {
               </h1>
               <p className="mt-0.5 text-xs text-zinc-500">Base network · nTZS</p>
             </div>
-            <div className="flex items-center gap-2 rounded-xl bg-blue-600/15 px-3 py-2 ring-1 ring-blue-600/20">
-              <svg className="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18-3a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3m18 0V6" />
-              </svg>
-              <div className="text-right">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-blue-400">Balance</p>
-                <TokenBalance walletAddress={wallet.address} compact />
-              </div>
-            </div>
+            <BalanceToggle walletAddress={wallet.address} />
           </div>
         </div>
 
