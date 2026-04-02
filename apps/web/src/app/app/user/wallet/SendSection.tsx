@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { sendNtzsAction, type SendNtzsResult } from './actions'
 
@@ -8,18 +8,43 @@ interface SendSectionProps {
   walletAddress: string
 }
 
+const STEPS = [
+  { label: 'Verifying balance…',        duration: 3000 },
+  { label: 'Step 1/2 — Debiting your wallet…', duration: 7000 },
+  { label: 'Step 2/2 — Crediting recipient…',  duration: 7000 },
+  { label: 'Confirming on Base…',        duration: 99999 },
+]
+
 export function SendSection({ walletAddress }: SendSectionProps) {
   const [open, setOpen] = useState(false)
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
   const [result, setResult] = useState<SendNtzsResult | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [stepIdx, setStepIdx] = useState(0)
+  const stepTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
+
+  // Advance step labels while pending
+  useEffect(() => {
+    if (!isPending) { setStepIdx(0); return }
+    let idx = 0
+    function advance() {
+      idx = Math.min(idx + 1, STEPS.length - 1)
+      setStepIdx(idx)
+      if (idx < STEPS.length - 1) {
+        stepTimer.current = setTimeout(advance, STEPS[idx]!.duration)
+      }
+    }
+    stepTimer.current = setTimeout(advance, STEPS[0]!.duration)
+    return () => { if (stepTimer.current) clearTimeout(stepTimer.current) }
+  }, [isPending])
 
   function reset() {
     setTo('')
     setAmount('')
     setResult(null)
+    setStepIdx(0)
   }
 
   function handleClose() {
@@ -190,7 +215,7 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                         </svg>
-                        Sending…
+                        {STEPS[stepIdx]?.label ?? 'Sending…'}
                       </span>
                     ) : 'Send nTZS'}
                   </button>
