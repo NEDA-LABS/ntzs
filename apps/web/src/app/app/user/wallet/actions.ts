@@ -156,29 +156,67 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
   }
 
   // Step 1: burn from sender
-  const burnTx = await token.burn(fromWallet.address, amountWei)
-  await burnTx.wait(1)
+  let burnTxHash: string
+  try {
+    const burnTx = await token.burn(fromWallet.address, amountWei)
+    await burnTx.wait(1)
+    burnTxHash = burnTx.hash
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: `Failed to debit your wallet: ${msg}` }
+  }
 
-  // Step 2: mint to recipient
-  const mintTx = await token.mint(toAddress, amountWei)
-  await mintTx.wait(1)
+  // Step 2: mint to recipient — if this fails, refund the sender immediately
+  let mintTxHash: string
+  try {
+    const mintTx = await token.mint(toAddress, amountWei)
+    await mintTx.wait(1)
+    mintTxHash = mintTx.hash
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[sendNtzsAction] Mint failed after burn — attempting refund', { burnTxHash, fromWallet: fromWallet.address, amountTzs, error: msg })
+
+    // Attempt automatic refund
+    try {
+      const refundTx = await token.mint(fromWallet.address, amountWei)
+      await refundTx.wait(1)
+      await db.insert(auditLogs).values({
+        action: 'user_send_ntzs_refunded',
+        entityType: 'transfer',
+        entityId: burnTxHash,
+        metadata: { fromUserId: dbUser.id, fromWallet: fromWallet.address, toAddress, amountTzs, burnTxHash, refundTxHash: refundTx.hash, mintError: msg },
+      })
+      return { success: false, error: 'Transfer failed — your balance has been refunded. Please try again.' }
+    } catch (refundErr) {
+      // Refund also failed — log for manual ops intervention
+      const refundMsg = refundErr instanceof Error ? refundErr.message : String(refundErr)
+      console.error('[sendNtzsAction] CRITICAL: Burn succeeded but mint AND refund failed', { burnTxHash, fromWallet: fromWallet.address, amountTzs, mintError: msg, refundError: refundMsg })
+      await db.insert(auditLogs).values({
+        action: 'user_send_ntzs_failed_unrecovered',
+        entityType: 'transfer',
+        entityId: burnTxHash,
+        metadata: { fromUserId: dbUser.id, fromWallet: fromWallet.address, toAddress, amountTzs, burnTxHash, mintError: msg, refundError: refundMsg },
+      })
+      return { success: false, error: 'Transfer failed. Our team has been notified and will restore your balance within 24 hours.' }
+    }
+  }
 
   // Audit log
   await db.insert(auditLogs).values({
     action: 'user_send_ntzs',
     entityType: 'transfer',
-    entityId: burnTx.hash,
+    entityId: burnTxHash,
     metadata: {
       fromUserId: dbUser.id,
       fromWallet: fromWallet.address,
       toAddress,
       amountTzs,
-      burnTxHash: burnTx.hash,
-      mintTxHash: mintTx.hash,
+      burnTxHash,
+      mintTxHash,
     },
   })
 
-  return { success: true, burnTxHash: burnTx.hash, mintTxHash: mintTx.hash, amountTzs, toAddress }
+  return { success: true, burnTxHash, mintTxHash, amountTzs, toAddress }
 }
 
 // ─── Wallet setup ─────────────────────────────────────────────────────────────
