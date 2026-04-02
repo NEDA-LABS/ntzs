@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { getDb } from '@/lib/db'
-import { lpFxPairs, lpAccounts } from '@ntzs/db'
+import { wallets, lpFxPairs, lpAccounts } from '@ntzs/db'
 import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
@@ -19,11 +18,18 @@ export async function POST(request: NextRequest) {
     return new Response('Unauthorized', { status: 401 })
   }
 
-  const wallet = await getCachedWallet(dbUser.id)
-  if (!wallet) return new Response('Wallet not found', { status: 404 })
-  if (wallet.provider !== 'platform_hd') {
-    return new Response('Swap is only available for platform wallets', { status: 400 })
-  }
+  const { db } = getDb()
+
+  // Always use the platform_hd wallet for signing — it's the only wallet type
+  // the server can sign for. Embedded/external wallets require client-side signing.
+  const [wallet] = await db
+    .select()
+    .from(wallets)
+    .where(and(eq(wallets.userId, dbUser.id), eq(wallets.provider, 'platform_hd')))
+    .limit(1)
+
+  if (!wallet) return new Response('No swap-eligible wallet found for this account', { status: 404 })
+  if (wallet.providerWalletRef === null) return new Response('Wallet index not provisioned', { status: 404 })
 
   const platformSeed = process.env.PLATFORM_HD_SEED
   const rpcUrl = process.env.BASE_RPC_URL
@@ -52,7 +58,6 @@ export async function POST(request: NextRequest) {
     return new Response('Unsupported tokens. Valid: NTZS, USDC', { status: 400 })
   }
 
-  const { db } = getDb()
   const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
   const NTZS_ADDR = SWAP_TOKENS.NTZS.address.toLowerCase()
   const USDC_ADDR = SWAP_TOKENS.USDC.address.toLowerCase()
