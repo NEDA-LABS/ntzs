@@ -12,7 +12,6 @@ import {
   EvmChain,
   IntentsCoprocessor,
   IntentGateway,
-  IntentOrderStatus,
   DEFAULT_GRAFFITI,
 } from '@hyperbridge/sdk'
 import type { Order } from '@hyperbridge/sdk'
@@ -221,7 +220,6 @@ export async function* executeSwap(params: {
   const minOutputUnits = parseUnits(minOutput.toFixed(to.decimals), to.decimals)
   let initialToBalance: bigint = BigInt(0)
   try { initialToBalance = await toTokenContract.balanceOf(recipientAddress) } catch { /* ignore */ }
-  let lastFillCheckMs = 0
 
   // Check balance
   const balance: bigint = await tokenContract.balanceOf(account.address)
@@ -352,72 +350,33 @@ export async function* executeSwap(params: {
     }
   }
 
-  // Step 3: stream remaining status updates — cast to any to bypass bidirectional generator typing
-  const genAny = gen as unknown as AsyncIterable<unknown>
-  for await (const update of genAny) {
-    const u = update as { status: string; bidCount?: number; userOpHash?: string; transactionHash?: string; error?: Error }
-    switch (u.status) {
-      case IntentOrderStatus.AWAITING_BIDS:
-        yield { status: 'AWAITING_BIDS', message: 'Waiting for solver bids on HyperBridge...' }
-        break
-      case IntentOrderStatus.BIDS_RECEIVED:
-        yield { status: 'BIDS_RECEIVED', message: `${u.bidCount ?? 1} bid(s) received`, bidCount: u.bidCount }
-        break
-      case IntentOrderStatus.BID_SELECTED:
-        yield { status: 'BID_SELECTED', message: 'Best bid selected, executing fill...' }
-        break
-      case IntentOrderStatus.USEROP_SUBMITTED:
-        yield { status: 'USEROP_SUBMITTED', message: 'Fill transaction submitted', txHash: u.userOpHash }
-        break
-      case IntentOrderStatus.PARTIAL_FILL:
-        yield { status: 'PARTIAL_FILL', message: 'Partial fill received, awaiting more...' }
-        break
-      case IntentOrderStatus.FILLED:
-        yield { status: 'FILLED', message: 'Swap complete!', txHash: u.transactionHash }
-        return
-      case IntentOrderStatus.FAILED: {
-        // Bot may have filled the order but the WebSocket missed the FILLED event,
-        // causing the SDK to report FAILED. Check balance before cancelling.
-        try {
-          const bal: bigint = await toTokenContract.balanceOf(recipientAddress)
-          if (bal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
-            yield { status: 'FILLED', message: 'Swap complete!' }
-            return
-          }
-        } catch { /* ignore */ }
-        yield { status: 'FAILED', message: `Swap failed: ${u.error?.message ?? 'unknown reason'}`, error: u.error?.message }
-        yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
+  // Step 3: Poll toToken balance directly every 5s.
+  // The coprocessor WebSocket is unreliable in serverless — the bot fills on-chain
+  // independently, so we detect the fill via balance increase instead of SDK events.
+  yield { status: 'AWAITING_BIDS', message: 'Waiting for solver to fill order...' }
+
+  const maxWaitUntil = Date.now() + 120_000 // 2-minute cap (order deadline is 10 min)
+  while (Date.now() < maxWaitUntil) {
+    await new Promise<void>(resolve => setTimeout(resolve, 5_000))
+    try {
+      const bal: bigint = await toTokenContract.balanceOf(recipientAddress)
+      if (bal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
+        yield { status: 'FILLED', message: 'Swap complete!' }
         return
       }
-      case 'PARTIAL_FILL_EXHAUSTED' as string: {
-        try {
-          const bal: bigint = await toTokenContract.balanceOf(recipientAddress)
-          if (bal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
-            yield { status: 'FILLED', message: 'Swap complete!' }
-            return
-          }
-        } catch { /* ignore */ }
-        yield { status: 'PARTIAL_FILL_EXHAUSTED', message: 'Order deadline reached with partial fill' }
-        yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
-        return
-      }
-      default: {
-        // Coprocessor WebSocket sometimes drops and misses the FILLED event.
-        // Fall back to polling the recipient's toToken balance every 10s.
-        const now = Date.now()
-        if (now - lastFillCheckMs >= 10_000) {
-          lastFillCheckMs = now
-          try {
-            const currentBal: bigint = await toTokenContract.balanceOf(recipientAddress)
-            if (currentBal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
-              yield { status: 'FILLED', message: 'Swap complete!' }
-              return
-            }
-          } catch { /* ignore — will retry next cycle */ }
-        }
-        yield { status: u.status, message: 'Processing...' }
-        break
-      }
-    }
+    } catch { /* RPC hiccup — retry next cycle */ }
+    yield { status: 'AWAITING_BIDS', message: 'Waiting for solver to fill order...' }
   }
+
+  // 2-minute timeout — final balance check before giving up
+  try {
+    const bal: bigint = await toTokenContract.balanceOf(recipientAddress)
+    if (bal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
+      yield { status: 'FILLED', message: 'Swap complete!' }
+      return
+    }
+  } catch { /* ignore */ }
+
+  yield { status: 'PARTIAL_FILL_EXHAUSTED', message: 'Order timed out — recovering escrowed tokens...' }
+  yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
 }
