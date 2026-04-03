@@ -24,9 +24,10 @@ export async function POST(req: NextRequest) {
   if (!session) return new Response('Unauthorized', { status: 401 })
 
   const rpcUrl = BASE_RPC_URL
-  const bundlerUrl = process.env.BUNDLER_URL
-  if (!bundlerUrl) {
-    return new Response('BUNDLER_URL not configured', { status: 503 })
+  const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
+  const solverAddress = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
+  if (!solverPrivateKey) {
+    return new Response('SOLVER_PRIVATE_KEY not configured', { status: 503 })
   }
 
   let body: { fromToken: SwapTokenSymbol; toToken: SwapTokenSymbol; amount: number; slippageBps?: number }
@@ -99,14 +100,15 @@ export async function POST(req: NextRequest) {
 
       try {
         for await (const update of executeSwap({
-          privateKey: signerKey,
+          userPrivateKey: signerKey,
+          solverPrivateKey: solverPrivateKey!,
+          solverAddress,
           fromToken,
           toToken,
           amount,
           minOutput,
           recipientAddress: lp.walletAddress as `0x${string}`,
           rpcUrl,
-          bundlerUrl,
         })) {
           send(update)
           if (['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'].includes(update.status)) break

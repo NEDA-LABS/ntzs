@@ -51,9 +51,10 @@ export async function POST(request: NextRequest) {
   }
 
   const rpcUrl = process.env.BASE_RPC_URL
-  const bundlerUrl = process.env.BUNDLER_URL
-  if (!rpcUrl || !bundlerUrl) {
-    return new Response('BASE_RPC_URL or BUNDLER_URL not configured', { status: 503 })
+  const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
+  const solverAddress = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
+  if (!rpcUrl || !solverPrivateKey) {
+    return new Response('BASE_RPC_URL or SOLVER_PRIVATE_KEY not configured', { status: 503 })
   }
 
   const { db } = getDb()
@@ -122,14 +123,15 @@ export async function POST(request: NextRequest) {
 
       try {
         for await (const update of executeSwap({
-          privateKey,
+          userPrivateKey: privateKey,
+          solverPrivateKey: solverPrivateKey!,
+          solverAddress,
           fromToken,
           toToken,
           amount,
           minOutput,
           recipientAddress,
           rpcUrl,
-          bundlerUrl,
         })) {
           send(update)
           if (update.status === 'FILLED' || update.status === 'FAILED' || update.status === 'PARTIAL_FILL_EXHAUSTED') {

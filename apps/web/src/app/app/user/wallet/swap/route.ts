@@ -1,14 +1,16 @@
 import { NextRequest } from 'next/server'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { getDb } from '@/lib/db'
-import { wallets, lpFxPairs, lpAccounts } from '@ntzs/db'
+import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db'
 import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
+
+const SOLVER_ADDRESS = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
 
 export async function POST(request: NextRequest) {
   let dbUser: Awaited<ReturnType<typeof requireAnyRole>>
@@ -20,8 +22,6 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  // Always use the platform_hd wallet for signing — it's the only wallet type
-  // the server can sign for. Embedded/external wallets require client-side signing.
   const [wallet] = await db
     .select()
     .from(wallets)
@@ -32,15 +32,16 @@ export async function POST(request: NextRequest) {
   if (wallet.providerWalletRef === null) return new Response('Wallet index not provisioned', { status: 404 })
 
   const platformSeed = process.env.PLATFORM_HD_SEED
+  const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
   const rpcUrl = process.env.BASE_RPC_URL
-  const bundlerUrl = process.env.BUNDLER_URL
-  if (!platformSeed || !rpcUrl || !bundlerUrl) {
+
+  if (!platformSeed || !solverPrivateKey || !rpcUrl) {
     return new Response('Server configuration error', { status: 503 })
   }
 
   const walletIndex = parseInt(wallet.providerWalletRef ?? '0', 10)
   const hdWallet = deriveWallet(platformSeed, walletIndex)
-  const privateKey = hdWallet.privateKey as `0x${string}`
+  const userPrivateKey = hdWallet.privateKey as `0x${string}`
   const recipientAddress = hdWallet.address as `0x${string}`
 
   let body: { fromToken: SwapTokenSymbol; toToken: SwapTokenSymbol; amount: number; slippageBps?: number }
@@ -72,13 +73,15 @@ export async function POST(request: NextRequest) {
 
   const midRate = parseFloat(pair.midRate.toString())
   const [lp] = await db
-    .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+    .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
     .where(eq(lpAccounts.isActive, true as unknown as boolean))
     .limit(1)
 
-  const bidBps = lp?.bidBps ?? 120
-  const askBps = lp?.askBps ?? 150
+  if (!lp) return new Response('No active liquidity provider', { status: 503 })
+
+  const bidBps = lp.bidBps ?? 120
+  const askBps = lp.askBps ?? 150
   const minOutput = calcMinOutput({ fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps })
 
   const encoder = new TextEncoder()
@@ -91,17 +94,76 @@ export async function POST(request: NextRequest) {
       }
       try {
         for await (const update of executeSwap({
-          privateKey,
+          userPrivateKey,
+          solverPrivateKey,
+          solverAddress: SOLVER_ADDRESS,
           fromToken,
           toToken,
           amount,
           minOutput,
           recipientAddress,
           rpcUrl,
-          bundlerUrl,
         })) {
-          send(update)
-          if (['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'].includes(update.status)) break
+          const { _result, ...clientUpdate } = update as typeof update & { _result?: { inTxHash: string; outTxHash: string; amountIn: string; amountOut: string } }
+          send(clientUpdate)
+
+          // On success, record the fill and credit LP earnings
+          if (update.status === 'FILLED' && _result) {
+            const fromDecimals = SWAP_TOKENS[fromToken].decimals
+            const toDecimals = SWAP_TOKENS[toToken].decimals
+
+            // Spread earned = difference between mid-rate output and actual output paid
+            const midOutput = fromToken === 'NTZS'
+              ? amount / midRate
+              : amount * midRate
+            const spread = Math.max(0, midOutput - parseFloat(_result.amountOut))
+
+            try {
+              await db.insert(lpFills).values({
+                lpId: lp.id,
+                userAddress: recipientAddress,
+                fromToken: SWAP_TOKENS[fromToken].address,
+                toToken: SWAP_TOKENS[toToken].address,
+                amountIn: _result.amountIn,
+                amountOut: _result.amountOut,
+                spreadEarned: spread.toFixed(toDecimals),
+                inTxHash: _result.inTxHash,
+                outTxHash: _result.outTxHash,
+              })
+
+              // Credit earned spread to LP pool position for the output token
+              const outTokenAddr = SWAP_TOKENS[toToken].address.toLowerCase()
+              await db
+                .update(lpPoolPositions)
+                .set({
+                  earned: sql`${lpPoolPositions.earned} + ${spread.toFixed(toDecimals)}::numeric`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(lpPoolPositions.lpId, lp.id),
+                  eq(lpPoolPositions.tokenAddress, outTokenAddr),
+                ))
+
+              // Also update contributed to reflect new pool balance (in += amountIn, out -= amountOut)
+              const inTokenAddr = SWAP_TOKENS[fromToken].address.toLowerCase()
+              await db
+                .update(lpPoolPositions)
+                .set({
+                  contributed: sql`${lpPoolPositions.contributed} + ${_result.amountIn}::numeric`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(lpPoolPositions.lpId, lp.id),
+                  eq(lpPoolPositions.tokenAddress, inTokenAddr),
+                ))
+
+              void fromDecimals // used above
+            } catch (err) {
+              console.error('[swap] Failed to record fill:', err)
+            }
+          }
+
+          if (['FILLED', 'FAILED'].includes(update.status)) break
         }
       } catch (err) {
         send({ status: 'FAILED', message: err instanceof Error ? err.message : 'Swap error' })

@@ -875,6 +875,33 @@ export const lpPoolPositions = pgTable(
   })
 )
 
+/**
+ * Individual fill records for the SimpleFX LP portal Positions page.
+ * Written on every successful direct swap from the solver pool.
+ */
+export const lpFills = pgTable(
+  'lp_fills',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    userAddress: text('user_address').notNull(),
+    fromToken: text('from_token').notNull(),
+    toToken: text('to_token').notNull(),
+    amountIn: numeric('amount_in', { precision: 36, scale: 18 }).notNull(),
+    amountOut: numeric('amount_out', { precision: 36, scale: 18 }).notNull(),
+    spreadEarned: numeric('spread_earned', { precision: 36, scale: 18 }).notNull().default('0'),
+    inTxHash: text('in_tx_hash').notNull(),
+    outTxHash: text('out_tx_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lpIdx: index('lp_fills_lp_id_idx').on(t.lpId),
+    createdIdx: index('lp_fills_created_at_idx').on(t.createdAt),
+  })
+)
+
 export const partnerWebhookEvents = pgTable(
   'partner_webhook_events',
   {
