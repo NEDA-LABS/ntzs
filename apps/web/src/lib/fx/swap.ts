@@ -22,6 +22,99 @@ import { JsonRpcProvider, Contract, Wallet } from 'ethers'
 
 const INTENT_GATEWAY_V2 = '0x2d61624A17f361020679FaA16fbB566C344AaF4B' as `0x${string}`
 
+// Minimal ABI for parsing OrderPlaced events and calling cancelOrder
+const GATEWAY_ABI = [
+  {
+    type: 'event',
+    name: 'OrderPlaced',
+    inputs: [
+      { name: 'user', type: 'bytes32' },
+      { name: 'source', type: 'bytes' },
+      { name: 'destination', type: 'bytes' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'fees', type: 'uint256' },
+      { name: 'session', type: 'address' },
+      { name: 'beneficiary', type: 'bytes32' },
+      { name: 'predispatch', type: 'tuple[]', components: [{ name: 'token', type: 'bytes32' }, { name: 'amount', type: 'uint256' }] },
+      { name: 'inputs', type: 'tuple[]', components: [{ name: 'token', type: 'bytes32' }, { name: 'amount', type: 'uint256' }] },
+      { name: 'outputs', type: 'tuple[]', components: [{ name: 'token', type: 'bytes32' }, { name: 'amount', type: 'uint256' }] },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'cancelOrder',
+    inputs: [
+      {
+        name: 'order', type: 'tuple',
+        components: [
+          { name: 'user', type: 'bytes32' },
+          { name: 'source', type: 'bytes' },
+          { name: 'destination', type: 'bytes' },
+          { name: 'deadline', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'fees', type: 'uint256' },
+          { name: 'session', type: 'address' },
+          {
+            name: 'predispatch', type: 'tuple',
+            components: [
+              { name: 'assets', type: 'tuple[]', components: [{ name: 'token', type: 'bytes32' }, { name: 'amount', type: 'uint256' }] },
+              { name: 'call', type: 'bytes' },
+            ],
+          },
+          { name: 'inputs', type: 'tuple[]', components: [{ name: 'token', type: 'bytes32' }, { name: 'amount', type: 'uint256' }] },
+          {
+            name: 'output', type: 'tuple',
+            components: [
+              { name: 'beneficiary', type: 'bytes32' },
+              { name: 'assets', type: 'tuple[]', components: [{ name: 'token', type: 'bytes32' }, { name: 'amount', type: 'uint256' }] },
+              { name: 'call', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+      { name: 'params', type: 'tuple', components: [{ name: 'relayerFee', type: 'uint256' }, { name: 'height', type: 'uint256' }] },
+    ],
+  },
+]
+
+type FinalizedOrder = {
+  user: string
+  source: string
+  destination: string
+  deadline: bigint
+  nonce: bigint
+  fees: bigint
+  session: string
+  predispatch: { assets: { token: string; amount: bigint }[]; call: string }
+  inputs: { token: string; amount: bigint }[]
+  output: { beneficiary: string; assets: { token: string; amount: bigint }[]; call: string }
+}
+
+async function* autoCancelOrder(
+  order: FinalizedOrder | null,
+  privateKey: `0x${string}`,
+  provider: JsonRpcProvider,
+  gateway: Contract,
+): AsyncGenerator<SwapStatusUpdate> {
+  if (!order) return
+  try {
+    const signer = new Wallet(privateKey, provider)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gw = gateway.connect(signer) as any
+    yield { status: 'CANCELLING', message: 'Order failed — recovering escrowed tokens...' }
+    const tx = await gw.cancelOrder(order, { relayerFee: BigInt(0), height: BigInt(0) })
+    yield { status: 'CANCELLING', message: 'Cancel submitted, waiting for confirmation...', txHash: tx.hash }
+    await tx.wait()
+    yield { status: 'CANCELLED', message: 'Escrowed tokens returned to your wallet' }
+  } catch (err) {
+    yield {
+      status: 'CANCEL_FAILED',
+      message: `Could not auto-recover tokens: ${err instanceof Error ? err.message : 'unknown error'}`,
+    }
+  }
+}
+
 // On Vercel Lambda /var/task is read-only — redirect SDK cache to /tmp
 ;(function ensureCacheDir() {
   const base_path = (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
@@ -114,11 +207,21 @@ export async function* executeSwap(params: {
   const account = privateKeyToAccount(privateKey)
   // Use ethers.js for reads and sends (proven reliable on Base mainnet)
   const provider = new JsonRpcProvider(rpcUrl)
-  const tokenContract = new Contract(from.address, [
+  const gateway = new Contract(INTENT_GATEWAY_V2, GATEWAY_ABI, provider)
+  let finalizedOrder: FinalizedOrder | null = null
+  const ERC20_ABI = [
     'function balanceOf(address) view returns (uint256)',
     'function allowance(address,address) view returns (uint256)',
     'function approve(address spender, uint256 amount) returns (bool)',
-  ], provider)
+  ]
+  const tokenContract = new Contract(from.address, ERC20_ABI, provider)
+  // Track the recipient's initial `to` token balance so we can detect a fill
+  // even if the coprocessor WebSocket drops and we miss the FILLED event.
+  const toTokenContract = new Contract(to.address, ERC20_ABI, provider)
+  const minOutputUnits = parseUnits(minOutput.toFixed(to.decimals), to.decimals)
+  let initialToBalance: bigint = BigInt(0)
+  try { initialToBalance = await toTokenContract.balanceOf(recipientAddress) } catch { /* ignore */ }
+  let lastFillCheckMs = 0
 
   // Check balance
   const balance: bigint = await tokenContract.balanceOf(account.address)
@@ -208,6 +311,35 @@ export async function* executeSwap(params: {
   yield { status: 'PLACING_ORDER', message: 'Order tx submitted, waiting for confirmation...', txHash: orderTx.hash as `0x${string}` }
   await orderTx.wait()
 
+  // Parse OrderPlaced event from receipt to capture exact commitment values for auto-cancel
+  try {
+    const fullReceipt = await provider.getTransactionReceipt(orderTx.hash)
+    if (fullReceipt) {
+      for (const log of fullReceipt.logs) {
+        try {
+          const parsed = gateway.interface.parseLog({ topics: [...log.topics], data: log.data })
+          if (parsed?.name === 'OrderPlaced') {
+            const a = parsed.args
+            const copyAssets = (arr: { token: string; amount: bigint }[]) => arr.map(t => ({ token: t.token, amount: t.amount }))
+            finalizedOrder = {
+              user: a.user,
+              source: a.source,
+              destination: a.destination,
+              deadline: a.deadline,
+              nonce: a.nonce,
+              fees: a.fees,
+              session: a.session,
+              predispatch: { assets: copyAssets(a.predispatch), call: '0x' },
+              inputs: copyAssets(a.inputs),
+              output: { beneficiary: a.beneficiary, assets: copyAssets(a.outputs), call: '0x' },
+            }
+            break
+          }
+        } catch { /* not the event we want */ }
+      }
+    }
+  } catch { /* non-fatal — auto-cancel will be skipped if parsing fails */ }
+
   // Step 2: pass txHash (66 chars), SDK will fetch the receipt
   const second = await gen.next(orderTx.hash as `0x${string}`)
   if (!second.done && second.value) {
@@ -245,12 +377,29 @@ export async function* executeSwap(params: {
         return
       case IntentOrderStatus.FAILED:
         yield { status: 'FAILED', message: `Swap failed: ${u.error?.message ?? 'unknown reason'}`, error: u.error?.message }
+        yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
         return
       case 'PARTIAL_FILL_EXHAUSTED' as string:
         yield { status: 'PARTIAL_FILL_EXHAUSTED', message: 'Order deadline reached with partial fill' }
+        yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
         return
-      default:
+      default: {
+        // Coprocessor WebSocket sometimes drops and misses the FILLED event.
+        // Fall back to polling the recipient's toToken balance every 10s.
+        const now = Date.now()
+        if (now - lastFillCheckMs >= 10_000) {
+          lastFillCheckMs = now
+          try {
+            const currentBal: bigint = await toTokenContract.balanceOf(recipientAddress)
+            if (currentBal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
+              yield { status: 'FILLED', message: 'Swap complete!' }
+              return
+            }
+          } catch { /* ignore — will retry next cycle */ }
+        }
         yield { status: u.status, message: 'Processing...' }
+        break
+      }
     }
   }
 }
