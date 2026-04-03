@@ -5,8 +5,9 @@
  */
 import { ethers } from 'ethers'
 import { createRequire } from 'module'
+import { createDecipheriv } from 'crypto'
 import { config } from 'dotenv'
-config({ path: '.env' })
+config({ path: new URL('../.env', import.meta.url).pathname })
 
 const require = createRequire(import.meta.url)
 
@@ -97,12 +98,30 @@ const GATEWAY_ABI = [
 const NTZS_ABI = ['function balanceOf(address) view returns (uint256)']
 const NTZS = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
 
+function decryptSeed(encrypted) {
+  const keyHex = process.env.WAAS_ENCRYPTION_KEY
+  if (!keyHex) throw new Error('WAAS_ENCRYPTION_KEY not set')
+  const key = Buffer.from(keyHex, 'hex')
+  const [ivHex, authTagHex, ciphertext] = encrypted.split(':')
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'))
+  decipher.setAuthTag(Buffer.from(authTagHex, 'hex'))
+  let decrypted = decipher.update(ciphertext, 'hex', 'utf8')
+  decrypted += decipher.final('utf8')
+  return decrypted
+}
+
 async function main() {
   const provider = new ethers.JsonRpcProvider(process.env.BASE_RPC_URL)
-  const minterKey = process.env.MINTER_PRIVATE_KEY.startsWith('0x')
-    ? process.env.MINTER_PRIVATE_KEY
-    : '0x' + process.env.MINTER_PRIVATE_KEY
-  const signer = new ethers.Wallet(minterKey, provider)
+
+  // The order's `user` field is the platform HD wallet at index 2.
+  // cancelOrder requires the signer to be that same wallet.
+  const encryptedSeed = process.env.PLATFORM_HD_SEED
+  if (!encryptedSeed) throw new Error('PLATFORM_HD_SEED not set')
+  const mnemonic = decryptSeed(encryptedSeed)
+  const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, "m/44'/8453'/0'/0")
+  const platformWallet = hdNode.deriveChild(2)
+  console.log(`Signing with platform HD wallet: ${platformWallet.address}`)
+  const signer = platformWallet.connect(provider)
 
   const gateway = new ethers.Contract(GATEWAY, GATEWAY_ABI, provider)
   const ntzs = new ethers.Contract(NTZS, NTZS_ABI, provider)
@@ -146,6 +165,8 @@ async function main() {
     }
 
     console.log(`\nCancelling order nonce=${a.nonce}, deadline=${new Date(Number(deadline) * 1000).toISOString()}`)
+    console.log(`  user (bytes32): ${a.user}`)
+    console.log(`  user (addr):    0x${a.user.slice(-40)}`)
     console.log(`  session: ${a.session}`)
 
     // Deep-copy event args — ethers v6 returns frozen Result objects that can't be mutated

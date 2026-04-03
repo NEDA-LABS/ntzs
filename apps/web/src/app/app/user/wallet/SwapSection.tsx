@@ -156,6 +156,9 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
             if (TERMINAL.has(update.status)) {
               setDone(true)
               setSwapping(false)
+              if (update.status === 'FILLED') {
+                window.dispatchEvent(new Event('swap:complete'))
+              }
             }
           } catch { /* ignore malformed */ }
         }
@@ -377,7 +380,7 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                           <Spinner className="h-4 w-4" />
                           Cancel
                         </span>
-                      ) : isFailed ? 'Try again' : 'Swap via HyperBridge'}
+                      ) : isFailed ? 'Try again' : 'Swap'}
                     </button>
 
                     {/* Live status log */}
