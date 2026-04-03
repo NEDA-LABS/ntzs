@@ -375,14 +375,32 @@ export async function* executeSwap(params: {
       case IntentOrderStatus.FILLED:
         yield { status: 'FILLED', message: 'Swap complete!', txHash: u.transactionHash }
         return
-      case IntentOrderStatus.FAILED:
+      case IntentOrderStatus.FAILED: {
+        // Bot may have filled the order but the WebSocket missed the FILLED event,
+        // causing the SDK to report FAILED. Check balance before cancelling.
+        try {
+          const bal: bigint = await toTokenContract.balanceOf(recipientAddress)
+          if (bal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
+            yield { status: 'FILLED', message: 'Swap complete!' }
+            return
+          }
+        } catch { /* ignore */ }
         yield { status: 'FAILED', message: `Swap failed: ${u.error?.message ?? 'unknown reason'}`, error: u.error?.message }
         yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
         return
-      case 'PARTIAL_FILL_EXHAUSTED' as string:
+      }
+      case 'PARTIAL_FILL_EXHAUSTED' as string: {
+        try {
+          const bal: bigint = await toTokenContract.balanceOf(recipientAddress)
+          if (bal >= initialToBalance + minOutputUnits * BigInt(9) / BigInt(10)) {
+            yield { status: 'FILLED', message: 'Swap complete!' }
+            return
+          }
+        } catch { /* ignore */ }
         yield { status: 'PARTIAL_FILL_EXHAUSTED', message: 'Order deadline reached with partial fill' }
         yield* autoCancelOrder(finalizedOrder, privateKey, provider, gateway)
         return
+      }
       default: {
         // Coprocessor WebSocket sometimes drops and misses the FILLED event.
         // Fall back to polling the recipient's toToken balance every 10s.
