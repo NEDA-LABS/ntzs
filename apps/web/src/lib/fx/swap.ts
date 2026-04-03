@@ -285,7 +285,6 @@ export async function* executeSwap(params: {
 
   const gen = intentGateway.execute(order, DEFAULT_GRAFFITI, {
     minBids: 1,
-    bidTimeoutMs: 60_000,
   })
 
   // Step 1: get placeOrder calldata
