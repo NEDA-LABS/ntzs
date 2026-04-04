@@ -99,15 +99,29 @@ export function calcMinOutput(params: {
 }
 
 /**
+ * Optional external signer for Step 1 (user → solver transfer).
+ * Used for CDP (coinbase_embedded) wallets where we don't hold the private key.
+ * Should return the transaction hash after the transfer is confirmed.
+ */
+export type ExternalTransferFn = (params: {
+  tokenAddress: string
+  toAddress: string
+  amountWei: bigint
+}) => Promise<{ txHash: string }>
+
+/**
  * Execute a direct swap via the shared solver pool.
  *
  * Step 1: user's platform wallet sends `fromToken` to the solver pool.
+ *   - If `userPrivateKey` is provided, signs directly with ethers.
+ *   - If `externalTransfer` is provided, delegates signing to an external service (e.g. CDP).
  * Step 2: solver pool sends `toToken` to the user's wallet.
  *
  * `selectedLpId` identifies which LP gets credited for the fill.
  */
 export async function* executeSwap(params: {
-  userPrivateKey: `0x${string}`
+  userPrivateKey?: `0x${string}`
+  externalTransfer?: ExternalTransferFn
   solverPrivateKey: `0x${string}`
   solverAddress: `0x${string}`
   selectedLpId: string
@@ -118,13 +132,17 @@ export async function* executeSwap(params: {
   recipientAddress: `0x${string}`
   rpcUrl: string
 }): AsyncGenerator<SwapStatusUpdate & { _result?: SwapResult }> {
-  const { userPrivateKey, solverPrivateKey, solverAddress, selectedLpId, fromToken, toToken, amount, minOutput, recipientAddress, rpcUrl } = params
+  const { userPrivateKey, externalTransfer, solverPrivateKey, solverAddress, selectedLpId, fromToken, toToken, amount, minOutput, recipientAddress, rpcUrl } = params
+
+  if (!userPrivateKey && !externalTransfer) {
+    yield { status: 'FAILED', message: 'No signing method available for this wallet', error: 'NO_SIGNER' }
+    return
+  }
 
   const from = SWAP_TOKENS[fromToken]
   const to = SWAP_TOKENS[toToken]
 
   const provider = new JsonRpcProvider(rpcUrl)
-  const userWallet = new Wallet(userPrivateKey, provider)
   const solverWallet = new Wallet(solverPrivateKey, provider)
 
   const fromContract = new Contract(from.address, ERC20_ABI, provider)
@@ -132,7 +150,7 @@ export async function* executeSwap(params: {
 
   // Check user balance
   yield { status: 'CHECKING', message: 'Checking balance...' }
-  const balance: bigint = await fromContract.balanceOf(userWallet.address)
+  const balance: bigint = await fromContract.balanceOf(recipientAddress)
   const amountInUnits = parseUnits(amount.toFixed(from.decimals), from.decimals)
   if (balance < amountInUnits) {
     const have = formatUnits(balance, from.decimals)
@@ -157,23 +175,48 @@ export async function* executeSwap(params: {
   }
 
   // Gas check: top up user wallet if ETH balance is too low for an ERC-20 transfer
-  const GAS_THRESHOLD = parseEther('0.00003')
-  const GAS_TOPUP = parseEther('0.00005')
-  const userEthBalance = await provider.getBalance(userWallet.address)
-  if (userEthBalance < GAS_THRESHOLD) {
-    yield { status: 'PREPARING', message: 'Topping up gas...' }
-    const gasTx = await solverWallet.sendTransaction({ to: userWallet.address, value: GAS_TOPUP })
-    await gasTx.wait()
-    console.log(`[swap] Gas top-up: ${formatEther(GAS_TOPUP)} ETH → ${userWallet.address}, tx: ${gasTx.hash}`)
+  // (only needed for HD wallets — CDP wallets handle gas internally)
+  if (userPrivateKey) {
+    const GAS_THRESHOLD = parseEther('0.00003')
+    const GAS_TOPUP = parseEther('0.00005')
+    const userEthBalance = await provider.getBalance(recipientAddress)
+    if (userEthBalance < GAS_THRESHOLD) {
+      yield { status: 'PREPARING', message: 'Topping up gas...' }
+      const gasTx = await solverWallet.sendTransaction({ to: recipientAddress, value: GAS_TOPUP })
+      await gasTx.wait()
+      console.log(`[swap] Gas top-up: ${formatEther(GAS_TOPUP)} ETH → ${recipientAddress}, tx: ${gasTx.hash}`)
+    }
   }
 
   // Step 1: user sends fromToken to solver pool
   yield { status: 'SENDING', message: `Sending ${amount} ${from.symbol} to liquidity pool...` }
-  const userFromContract = fromContract.connect(userWallet) as Contract
-  const inTx = await (userFromContract as unknown as { transfer: (to: string, amount: bigint) => Promise<{ hash: string; wait: () => Promise<unknown> }> })
-    .transfer(solverAddress, amountInUnits)
-  yield { status: 'SENDING', message: 'Confirming deposit...', txHash: inTx.hash }
-  await inTx.wait()
+  let inTxHash: string
+
+  if (externalTransfer) {
+    // CDP / external wallet signing
+    const result = await externalTransfer({
+      tokenAddress: from.address,
+      toAddress: solverAddress,
+      amountWei: amountInUnits,
+    })
+    inTxHash = result.txHash
+    yield { status: 'SENDING', message: 'Confirming deposit...', txHash: inTxHash }
+    // Wait for confirmation on-chain
+    const receipt = await provider.waitForTransaction(inTxHash, 1, 120_000)
+    if (!receipt || receipt.status === 0) {
+      yield { status: 'FAILED', message: 'Deposit transaction failed on-chain', error: 'TX_FAILED' }
+      return
+    }
+  } else {
+    // HD wallet signing — we have the private key
+    const userWallet = new Wallet(userPrivateKey!, provider)
+    const userFromContract = fromContract.connect(userWallet) as Contract
+    const inTx = await (userFromContract as unknown as { transfer: (to: string, amount: bigint) => Promise<{ hash: string; wait: () => Promise<unknown> }> })
+      .transfer(solverAddress, amountInUnits)
+    inTxHash = inTx.hash
+    yield { status: 'SENDING', message: 'Confirming deposit...', txHash: inTxHash }
+    await inTx.wait()
+  }
 
   // Step 2: solver pool sends toToken to user
   yield { status: 'FILLING', message: `Sending ${from.symbol === 'nTZS' ? 'USDC' : 'nTZS'} to your wallet...` }
@@ -188,7 +231,7 @@ export async function* executeSwap(params: {
     message: 'Swap complete!',
     txHash: outTx.hash,
     _result: {
-      inTxHash: inTx.hash,
+      inTxHash: inTxHash,
       outTxHash: outTx.hash,
       amountIn: amount.toString(),
       amountOut: minOutput.toString(),
