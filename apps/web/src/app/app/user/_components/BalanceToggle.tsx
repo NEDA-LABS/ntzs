@@ -8,7 +8,7 @@ const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.or
 
 const TOKENS = {
   NTZS: {
-    address: process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE || '',
+    address: process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE || '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688',
     decimals: 18,
     symbol: 'TZS',
     label: 'nTZS',

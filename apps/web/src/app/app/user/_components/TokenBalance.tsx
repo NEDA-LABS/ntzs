@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE || ''
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NTZS_CONTRACT_ADDRESS_BASE || '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
 const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org'
 
 interface TokenBalanceProps {
