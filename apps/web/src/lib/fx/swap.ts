@@ -4,9 +4,12 @@
  * Transfers input tokens from the user's platform wallet to the solver pool,
  * then immediately sends the output tokens from the solver pool to the user.
  * No HyperBridge / ERC-4337 involved.
+ *
+ * All liquidity is pooled in a single solver wallet. Multiple LPs contribute
+ * to the pool — we pick the best LP rate and attribute fills accordingly.
  */
 
-import { JsonRpcProvider, Contract, Wallet, parseUnits, formatUnits } from 'ethers'
+import { JsonRpcProvider, Contract, Wallet, parseUnits, parseEther, formatUnits, formatEther } from 'ethers'
 
 export const SWAP_TOKENS = {
   NTZS: {
@@ -37,6 +40,28 @@ export interface SwapResult {
   outTxHash: string
   amountIn: string
   amountOut: string
+  lpId: string
+}
+
+/** LP rate info for routing — wallet is always the shared solver. */
+export interface LPConfig {
+  id: string
+  bidBps: number
+  askBps: number
+}
+
+/**
+ * Pick the best LP for a given swap direction.
+ * USDC → nTZS: lowest askBps gives user the most nTZS.
+ * nTZS → USDC: lowest bidBps gives user the most USDC.
+ * Returns the full ranked list (best first) so callers can use the top pick.
+ */
+export function rankLPsByRate(lps: LPConfig[], direction: 'USDC_TO_NTZS' | 'NTZS_TO_USDC'): LPConfig[] {
+  return [...lps].sort((a, b) =>
+    direction === 'USDC_TO_NTZS'
+      ? a.askBps - b.askBps
+      : a.bidBps - b.bidBps
+  )
 }
 
 const ERC20_ABI = [
@@ -74,14 +99,18 @@ export function calcMinOutput(params: {
 }
 
 /**
- * Execute a direct swap from the LP solver pool.
+ * Execute a direct swap via the shared solver pool.
+ *
  * Step 1: user's platform wallet sends `fromToken` to the solver pool.
  * Step 2: solver pool sends `toToken` to the user's wallet.
+ *
+ * `selectedLpId` identifies which LP gets credited for the fill.
  */
 export async function* executeSwap(params: {
   userPrivateKey: `0x${string}`
   solverPrivateKey: `0x${string}`
   solverAddress: `0x${string}`
+  selectedLpId: string
   fromToken: SwapTokenSymbol
   toToken: SwapTokenSymbol
   amount: number
@@ -89,7 +118,7 @@ export async function* executeSwap(params: {
   recipientAddress: `0x${string}`
   rpcUrl: string
 }): AsyncGenerator<SwapStatusUpdate & { _result?: SwapResult }> {
-  const { userPrivateKey, solverPrivateKey, solverAddress, fromToken, toToken, amount, minOutput, recipientAddress, rpcUrl } = params
+  const { userPrivateKey, solverPrivateKey, solverAddress, selectedLpId, fromToken, toToken, amount, minOutput, recipientAddress, rpcUrl } = params
 
   const from = SWAP_TOKENS[fromToken]
   const to = SWAP_TOKENS[toToken]
@@ -121,10 +150,21 @@ export async function* executeSwap(params: {
   if (solverBalance < amountOutUnits) {
     yield {
       status: 'FAILED',
-      message: `Insufficient liquidity in pool for this swap. Please try a smaller amount.`,
+      message: 'Insufficient liquidity in pool for this swap. Please try a smaller amount.',
       error: 'INSUFFICIENT_LIQUIDITY',
     }
     return
+  }
+
+  // Gas check: top up user wallet if ETH balance is too low for an ERC-20 transfer
+  const GAS_THRESHOLD = parseEther('0.00003')
+  const GAS_TOPUP = parseEther('0.00005')
+  const userEthBalance = await provider.getBalance(userWallet.address)
+  if (userEthBalance < GAS_THRESHOLD) {
+    yield { status: 'PREPARING', message: 'Topping up gas...' }
+    const gasTx = await solverWallet.sendTransaction({ to: userWallet.address, value: GAS_TOPUP })
+    await gasTx.wait()
+    console.log(`[swap] Gas top-up: ${formatEther(GAS_TOPUP)} ETH → ${userWallet.address}, tx: ${gasTx.hash}`)
   }
 
   // Step 1: user sends fromToken to solver pool
@@ -152,6 +192,7 @@ export async function* executeSwap(params: {
       outTxHash: outTx.hash,
       amountIn: amount.toString(),
       amountOut: minOutput.toString(),
+      lpId: selectedLpId,
     },
   }
 }

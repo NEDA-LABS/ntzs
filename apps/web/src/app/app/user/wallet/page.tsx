@@ -7,6 +7,7 @@ import { BalanceToggle } from '../_components/BalanceToggle'
 import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
+import { SwapHistory } from './SwapHistory'
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -56,6 +57,9 @@ export default async function WalletPage() {
 
         {/* Swap */}
         <SwapSection walletAddress={wallet.address} />
+
+        {/* Swap history */}
+        <SwapHistory />
 
         {/* Withdraw */}
         <Link

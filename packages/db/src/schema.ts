@@ -899,6 +899,7 @@ export const lpFills = pgTable(
   (t) => ({
     lpIdx: index('lp_fills_lp_id_idx').on(t.lpId),
     createdIdx: index('lp_fills_created_at_idx').on(t.createdAt),
+    userAddrIdx: index('lp_fills_user_address_idx').on(t.userAddress),
   })
 )
 

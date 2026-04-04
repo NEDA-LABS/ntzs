@@ -99,6 +99,44 @@ export interface NtzsReconciliation {
   chain: string
 }
 
+// ─── Swap Types ─────────────────────────────────────────────────────────────
+
+export type SwapToken = 'NTZS' | 'USDC'
+
+export interface SwapRateParams {
+  from: SwapToken
+  to: SwapToken
+  amount: number
+}
+
+export interface SwapRate {
+  from: SwapToken
+  to: SwapToken
+  amount: number
+  midRate: number
+  bidBps: number
+  askBps: number
+  expectedOutput: number
+  minOutput: number
+  rate: number
+  expiresAt: string
+}
+
+export interface CreateSwapParams {
+  userId: string
+  fromToken: SwapToken
+  toToken: SwapToken
+  amount: number
+  slippageBps?: number
+}
+
+export interface SwapStatusUpdate {
+  status: string
+  message: string
+  txHash?: string
+  error?: string
+}
+
 // ─── Error Types ────────────────────────────────────────────────────────────
 
 export interface NtzsApiError {

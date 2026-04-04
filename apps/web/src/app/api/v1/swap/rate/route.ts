@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { lpFxPairs, lpAccounts } from '@ntzs/db'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { calcMinOutput, type SwapTokenSymbol } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
@@ -48,14 +48,22 @@ export async function GET(req: NextRequest) {
 
   const midRate = parseFloat(pair.midRate.toString())
 
-  const [lp] = await db
+  // Pick best LP spread for this direction
+  const activeLPs = await db
     .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
     .where(eq(lpAccounts.isActive, true as unknown as boolean))
-    .limit(1)
 
-  const bidBps = lp?.bidBps ?? 120
-  const askBps = lp?.askBps ?? 150
+  const direction = from === 'USDC' ? 'ask' : 'bid'
+  const sorted = [...activeLPs].sort((a, b) =>
+    direction === 'ask'
+      ? (a.askBps ?? 150) - (b.askBps ?? 150)
+      : (a.bidBps ?? 120) - (b.bidBps ?? 120)
+  )
+  const bestLP = sorted[0]
+
+  const bidBps = bestLP?.bidBps ?? 120
+  const askBps = bestLP?.askBps ?? 150
 
   const expectedOutput = calcMinOutput({
     fromToken: from,

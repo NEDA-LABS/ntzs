@@ -4,15 +4,17 @@ import { authenticatePartner } from '@/lib/waas/auth'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { partnerUsers, partners, lpFxPairs, lpAccounts } from '@ntzs/db'
 import { eq, and } from 'drizzle-orm'
-import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
+import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+const SOLVER_ADDRESS = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
+
 /**
  * POST /api/v1/swap
  *
- * Places a HyperBridge same-chain swap intent on Base mainnet on behalf of a WaaS user.
+ * Places a direct LP pool swap on Base mainnet on behalf of a WaaS user.
  * Streams Server-Sent Events (SSE) with real-time order status updates.
  *
  * Body: { userId, fromToken: 'USDC'|'NTZS', toToken: 'NTZS'|'USDC', amount, slippageBps? }
@@ -52,7 +54,6 @@ export async function POST(request: NextRequest) {
 
   const rpcUrl = process.env.BASE_RPC_URL
   const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
-  const solverAddress = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
   if (!rpcUrl || !solverPrivateKey) {
     return new Response('BASE_RPC_URL or SOLVER_PRIVATE_KEY not configured', { status: 503 })
   }
@@ -98,16 +99,29 @@ export async function POST(request: NextRequest) {
   }
 
   const midRate = parseFloat(pair.midRate.toString())
-  const [lp] = await db
-    .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+
+  // Pick best LP rate for this direction
+  const activeLPs = await db
+    .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
     .where(eq(lpAccounts.isActive, true as unknown as boolean))
-    .limit(1)
 
-  const bidBps = lp?.bidBps ?? 120
-  const askBps = lp?.askBps ?? 150
+  if (activeLPs.length === 0) {
+    return new Response('No active liquidity provider', { status: 503 })
+  }
 
-  const minOutput = calcMinOutput({ fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps })
+  const direction = fromToken === 'USDC' ? 'USDC_TO_NTZS' : 'NTZS_TO_USDC'
+  const lpConfigs: LPConfig[] = activeLPs.map((lp) => ({
+    id: lp.id,
+    bidBps: lp.bidBps ?? 120,
+    askBps: lp.askBps ?? 150,
+  }))
+  const bestLP = rankLPsByRate(lpConfigs, direction)[0]
+
+  const minOutput = calcMinOutput({
+    fromToken, toToken, amount, midRate,
+    bidBps: bestLP.bidBps, askBps: bestLP.askBps, slippageBps,
+  })
 
   // Stream SSE
   const encoder = new TextEncoder()
@@ -124,8 +138,9 @@ export async function POST(request: NextRequest) {
       try {
         for await (const update of executeSwap({
           userPrivateKey: privateKey,
-          solverPrivateKey: solverPrivateKey!,
-          solverAddress,
+          solverPrivateKey,
+          solverAddress: SOLVER_ADDRESS,
+          selectedLpId: bestLP.id,
           fromToken,
           toToken,
           amount,

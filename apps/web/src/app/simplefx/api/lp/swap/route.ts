@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
           userPrivateKey: signerKey,
           solverPrivateKey: solverPrivateKey!,
           solverAddress,
+          selectedLpId: lp.id,
           fromToken,
           toToken,
           amount,
