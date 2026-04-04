@@ -13,5 +13,10 @@ export type {
   CreateTransferParams,
   NtzsSupply,
   NtzsReconciliation,
+  SwapToken,
+  SwapRateParams,
+  SwapRate,
+  CreateSwapParams,
+  SwapStatusUpdate,
   NtzsApiError as NtzsApiErrorInfo,
 } from './types.js'

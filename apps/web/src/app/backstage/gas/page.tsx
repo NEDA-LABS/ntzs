@@ -5,6 +5,7 @@ import { GasAddressCopy } from './_components/GasAddressCopy'
 const BASE_MAINNET_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
 const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || ''
+const SOLVER_PRIVATE_KEY = process.env.SOLVER_PRIVATE_KEY || ''
 
 const CRITICAL_THRESHOLD = 0.001
 const LOW_THRESHOLD = 0.005
@@ -60,6 +61,8 @@ export default async function GasMonitorPage() {
   let minterBalanceEth = 0
   let relayerAddress = ''
   let relayerBalanceEth = 0
+  let solverAddress = ''
+  let solverBalanceEth = 0
   let fetchError = ''
 
   try {
@@ -76,22 +79,30 @@ export default async function GasMonitorPage() {
       const raw = await provider.getBalance(relayerAddress)
       relayerBalanceEth = parseFloat(ethers.formatEther(raw))
     }
+
+    if (SOLVER_PRIVATE_KEY) {
+      solverAddress = new ethers.Wallet(SOLVER_PRIVATE_KEY).address
+      const raw = await provider.getBalance(solverAddress)
+      solverBalanceEth = parseFloat(ethers.formatEther(raw))
+    }
   } catch (err) {
     fetchError = err instanceof Error ? err.message : 'Failed to fetch balances'
   }
 
   const minterStatus = getStatus(minterBalanceEth, !!MINTER_PRIVATE_KEY)
   const relayerStatus = getStatus(relayerBalanceEth, !!RELAYER_PRIVATE_KEY)
+  const solverStatus = getStatus(solverBalanceEth, !!SOLVER_PRIVATE_KEY)
 
   const overallStatus: Status =
-    minterStatus === 'critical' || relayerStatus === 'critical'
+    minterStatus === 'critical' || relayerStatus === 'critical' || solverStatus === 'critical'
       ? 'critical'
-      : minterStatus === 'low' || relayerStatus === 'low'
+      : minterStatus === 'low' || relayerStatus === 'low' || solverStatus === 'low'
       ? 'low'
       : 'ok'
 
   const minterOpsLeft = Math.floor(minterBalanceEth / (MINT_GAS * GAS_PRICE_ETH))
   const relayerOpsLeft = Math.floor(relayerBalanceEth / (ETH_SEND_GAS * GAS_PRICE_ETH + TOP_UP_AMOUNT_ETH))
+  const solverOpsLeft = Math.floor(solverBalanceEth / (ETH_SEND_GAS * GAS_PRICE_ETH + TOP_UP_AMOUNT_ETH))
 
   const overallBanner: Record<Status, { bg: string; text: string; message: string }> = {
     ok: {
@@ -140,6 +151,17 @@ export default async function GasMonitorPage() {
       opsLabel: 'user wallet top-ups',
       opCost: `~${TOP_UP_AMOUNT_ETH} ETH / top-up`,
       configured: !!RELAYER_PRIVATE_KEY,
+    },
+    {
+      role: 'Solver (LP Pool)',
+      description: 'Executes swaps and auto-refills user gas during swaps',
+      address: solverAddress,
+      balance: solverBalanceEth,
+      status: solverStatus,
+      opsLeft: solverOpsLeft,
+      opsLabel: 'swap gas top-ups',
+      opCost: `~${TOP_UP_AMOUNT_ETH} ETH / top-up`,
+      configured: !!SOLVER_PRIVATE_KEY,
     },
   ]
 

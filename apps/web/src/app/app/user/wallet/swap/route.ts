@@ -5,7 +5,7 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { getDb } from '@/lib/db'
 import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db'
-import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
+import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -72,17 +72,27 @@ export async function POST(request: NextRequest) {
   if (!pair) return new Response('No active trading pair found', { status: 404 })
 
   const midRate = parseFloat(pair.midRate.toString())
-  const [lp] = await db
+
+  // Query all active LPs, pick the one with the best rate for this direction
+  const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
     .where(eq(lpAccounts.isActive, true as unknown as boolean))
-    .limit(1)
 
-  if (!lp) return new Response('No active liquidity provider', { status: 503 })
+  if (activeLPs.length === 0) return new Response('No active liquidity provider', { status: 503 })
 
-  const bidBps = lp.bidBps ?? 120
-  const askBps = lp.askBps ?? 150
-  const minOutput = calcMinOutput({ fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps })
+  const direction = fromToken === 'USDC' ? 'USDC_TO_NTZS' : 'NTZS_TO_USDC'
+  const lpConfigs: LPConfig[] = activeLPs.map((lp) => ({
+    id: lp.id,
+    bidBps: lp.bidBps ?? 120,
+    askBps: lp.askBps ?? 150,
+  }))
+  const bestLP = rankLPsByRate(lpConfigs, direction)[0]
+
+  const minOutput = calcMinOutput({
+    fromToken, toToken, amount, midRate,
+    bidBps: bestLP.bidBps, askBps: bestLP.askBps, slippageBps,
+  })
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -97,6 +107,7 @@ export async function POST(request: NextRequest) {
           userPrivateKey,
           solverPrivateKey,
           solverAddress: SOLVER_ADDRESS,
+          selectedLpId: bestLP.id,
           fromToken,
           toToken,
           amount,
@@ -104,15 +115,14 @@ export async function POST(request: NextRequest) {
           recipientAddress,
           rpcUrl,
         })) {
-          const { _result, ...clientUpdate } = update as typeof update & { _result?: { inTxHash: string; outTxHash: string; amountIn: string; amountOut: string } }
+          const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
           send(clientUpdate)
 
-          // On success, record the fill and credit LP earnings
+          // On success, record the fill and credit the LP
           if (update.status === 'FILLED' && _result) {
-            const fromDecimals = SWAP_TOKENS[fromToken].decimals
+            const filledLpId = _result.lpId
             const toDecimals = SWAP_TOKENS[toToken].decimals
 
-            // Spread earned = difference between mid-rate output and actual output paid
             const midOutput = fromToken === 'NTZS'
               ? amount / midRate
               : amount * midRate
@@ -120,7 +130,7 @@ export async function POST(request: NextRequest) {
 
             try {
               await db.insert(lpFills).values({
-                lpId: lp.id,
+                lpId: filledLpId,
                 userAddress: recipientAddress,
                 fromToken: SWAP_TOKENS[fromToken].address,
                 toToken: SWAP_TOKENS[toToken].address,
@@ -131,7 +141,6 @@ export async function POST(request: NextRequest) {
                 outTxHash: _result.outTxHash,
               })
 
-              // Credit earned spread to LP pool position for the output token
               const outTokenAddr = SWAP_TOKENS[toToken].address.toLowerCase()
               await db
                 .update(lpPoolPositions)
@@ -140,11 +149,10 @@ export async function POST(request: NextRequest) {
                   updatedAt: new Date(),
                 })
                 .where(and(
-                  eq(lpPoolPositions.lpId, lp.id),
+                  eq(lpPoolPositions.lpId, filledLpId),
                   eq(lpPoolPositions.tokenAddress, outTokenAddr),
                 ))
 
-              // Also update contributed to reflect new pool balance (in += amountIn, out -= amountOut)
               const inTokenAddr = SWAP_TOKENS[fromToken].address.toLowerCase()
               await db
                 .update(lpPoolPositions)
@@ -153,11 +161,9 @@ export async function POST(request: NextRequest) {
                   updatedAt: new Date(),
                 })
                 .where(and(
-                  eq(lpPoolPositions.lpId, lp.id),
+                  eq(lpPoolPositions.lpId, filledLpId),
                   eq(lpPoolPositions.tokenAddress, inTokenAddr),
                 ))
-
-              void fromDecimals // used above
             } catch (err) {
               console.error('[swap] Failed to record fill:', err)
             }
@@ -181,3 +187,5 @@ export async function POST(request: NextRequest) {
     },
   })
 }
+
+type SwapResult = { inTxHash: string; outTxHash: string; amountIn: string; amountOut: string; lpId: string }

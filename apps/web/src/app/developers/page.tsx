@@ -108,6 +108,9 @@ export default function DevelopersPage() {
             <a href="#balance" className={navItemClass('balance')}>
               Check Balance
             </a>
+            <a href="#swap" className={navItemClass('swap')}>
+              Swap (nTZS ↔ USDC)
+            </a>
             <a href="#webhooks" className={navItemClass('webhooks')}>
               Webhooks
             </a>
@@ -364,6 +367,91 @@ console.log(\`Balance: \${balanceTzs} TZS\`)
 // Or get full user profile with balance
 const profile = await ntzs.users.get(user.id)
 console.log(profile.walletAddress, profile.balanceTzs)`}
+            />
+          </DocSection>
+
+          {/* Swap */}
+          <DocSection
+            id="swap"
+            step="Swap"
+            title="Swap nTZS ↔ USDC"
+            description="Let your users swap between nTZS and USDC on Base. The swap executes instantly via our LP pool and streams real-time status updates over SSE."
+          >
+            <CodeBlock
+              title="get-rate.ts"
+              code={`// 1. Get the current exchange rate before swapping
+const rate = await ntzs.swap.getRate({
+  from: 'USDC',
+  to: 'NTZS',
+  amount: 5
+})
+
+console.log(rate.expectedOutput)  // e.g. 18750 nTZS
+console.log(rate.midRate)         // e.g. 3750 (nTZS per USDC)
+console.log(rate.rate)            // effective rate after spread
+console.log(rate.expiresAt)       // rate valid for 30 seconds`}
+            />
+
+            <CodeBlock
+              title="execute-swap.ts"
+              code={`// 2. Execute the swap — streams real-time status via SSE
+for await (const update of ntzs.swap.execute({
+  userId: user.id,
+  fromToken: 'USDC',
+  toToken: 'NTZS',
+  amount: 5,
+  slippageBps: 100  // optional, default 1%
+})) {
+  console.log(update.status, update.message)
+  // CHECKING  → "Checking balance..."
+  // PREPARING → "Topping up gas..."     (if needed)
+  // SENDING   → "Sending 5 USDC..."     + txHash
+  // FILLING   → "Sending nTZS..."       + txHash
+  // FILLED    → "Swap complete!"        + txHash (final)
+
+  if (update.status === 'FILLED') {
+    console.log('Payout tx:', update.txHash)
+  }
+  if (update.status === 'FAILED') {
+    console.error('Swap failed:', update.message)
+  }
+}`}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs font-medium text-white/50">Supported Pairs</div>
+                <div className="mt-2 text-sm text-white/80">nTZS → USDC and USDC → nTZS</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs font-medium text-white/50">Settlement</div>
+                <div className="mt-2 text-sm text-white/80">Two on-chain ERC-20 transfers, ~5 seconds total</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs font-medium text-white/50">Gas</div>
+                <div className="mt-2 text-sm text-white/80">Auto-funded. If the user wallet is low on ETH, we top it up.</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+              <span className="font-semibold text-white/90">Streaming response:</span> The swap endpoint
+              returns an SSE stream, not a single JSON response. The SDK&apos;s{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">swap.execute()</code> method
+              handles parsing automatically — just iterate with <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">for await</code>.
+            </div>
+
+            <CodeBlock
+              title="curl (raw SSE)"
+              code={`curl -N -X POST https://www.ntzs.co.tz/api/v1/swap \\
+  -H "Authorization: Bearer ntzs_live_your_api_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"userId":"usr_123","fromToken":"USDC","toToken":"NTZS","amount":5}'
+
+# Response (text/event-stream):
+# data: {"status":"CHECKING","message":"Checking balance..."}
+# data: {"status":"SENDING","message":"Sending 5 USDC...","txHash":"0xabc..."}
+# data: {"status":"FILLING","message":"Sending nTZS...","txHash":"0xdef..."}
+# data: {"status":"FILLED","message":"Swap complete!","txHash":"0xdef..."}`}
             />
           </DocSection>
 
