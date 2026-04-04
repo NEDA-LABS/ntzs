@@ -69,9 +69,11 @@ export async function POST(request: NextRequest) {
         evmAccount: wallet.address,
         network: 'base',
         transaction: {
-          to: tokenAddress,
-          data: iface.encodeFunctionData('transfer', [toAddress, amountWei]),
-          value: '0x0',
+          type: 'eip1559',
+          chainId: 8453,
+          to: tokenAddress as `0x${string}`,
+          data: iface.encodeFunctionData('transfer', [toAddress, amountWei]) as `0x${string}`,
+          value: BigInt(0),
         },
       } as any)
       if ('error' in result) throw new Error(result.error)
