@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { wallets } from '@ntzs/db'
@@ -13,7 +13,11 @@ export async function getCachedWallet(userId: string): Promise<Wallet | null> {
   if (cached !== undefined) return cached
 
   const { db } = getDb()
+
+  // Prefer the platform_hd wallet (used for swaps), fall back to any wallet
   const wallet = await db.query.wallets.findFirst({
+    where: and(eq(wallets.userId, userId), eq(wallets.provider, 'platform_hd')),
+  }) ?? await db.query.wallets.findFirst({
     where: eq(wallets.userId, userId),
   }) ?? null
 
