@@ -1,11 +1,13 @@
 import { NextRequest } from 'next/server'
 import { and, eq, sql } from 'drizzle-orm'
+import { ethers } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
+import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { getDb } from '@/lib/db'
-import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db'
-import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
+import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills, users } from '@ntzs/db'
+import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type ExternalTransferFn } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -22,27 +24,57 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  const [wallet] = await db
+  // Look for any swap-eligible wallet: prefer platform_hd, fall back to coinbase_embedded
+  const userWallets = await db
     .select()
     .from(wallets)
-    .where(and(eq(wallets.userId, dbUser.id), eq(wallets.provider, 'platform_hd')))
-    .limit(1)
+    .where(eq(wallets.userId, dbUser.id))
+    .limit(10)
+
+  const wallet =
+    userWallets.find((w) => w.provider === 'platform_hd') ??
+    userWallets.find((w) => w.provider === 'coinbase_embedded') ??
+    null
 
   if (!wallet) return new Response('No swap-eligible wallet found for this account', { status: 404 })
-  if (wallet.providerWalletRef === null) return new Response('Wallet index not provisioned', { status: 404 })
 
-  const platformSeed = process.env.PLATFORM_HD_SEED
   const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
   const rpcUrl = process.env.BASE_RPC_URL
 
-  if (!platformSeed || !solverPrivateKey || !rpcUrl) {
+  if (!solverPrivateKey || !rpcUrl) {
     return new Response('Server configuration error', { status: 503 })
   }
 
-  const walletIndex = parseInt(wallet.providerWalletRef ?? '0', 10)
-  const hdWallet = deriveWallet(platformSeed, walletIndex)
-  const userPrivateKey = hdWallet.privateKey as `0x${string}`
-  const recipientAddress = hdWallet.address as `0x${string}`
+  let userPrivateKey: `0x${string}` | undefined
+  let externalTransfer: ExternalTransferFn | undefined
+  const recipientAddress = wallet.address as `0x${string}`
+
+  if (wallet.provider === 'platform_hd') {
+    // HD wallet — derive private key from seed
+    const platformSeed = process.env.PLATFORM_HD_SEED
+    if (!platformSeed) return new Response('Server configuration error', { status: 503 })
+    if (wallet.providerWalletRef === null) return new Response('Wallet index not provisioned', { status: 404 })
+
+    const walletIndex = parseInt(wallet.providerWalletRef ?? '0', 10)
+    const hdWallet = deriveWallet(platformSeed, walletIndex)
+    userPrivateKey = hdWallet.privateKey as `0x${string}`
+  } else if (wallet.provider === 'coinbase_embedded') {
+    // CDP wallet — use Coinbase SDK signing
+    const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, dbUser.id)).limit(1)
+    if (!user) return new Response('User not found', { status: 404 })
+
+    externalTransfer = async ({ tokenAddress, toAddress, amountWei }) => {
+      const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)'])
+      const result = await sendCdpTransaction(dbUser.id, user.email, {
+        destination: tokenAddress,
+        data: iface.encodeFunctionData('transfer', [toAddress, amountWei]),
+      } as any)
+      if ('error' in result) throw new Error(result.error)
+      return { txHash: result.txHash }
+    }
+  } else {
+    return new Response('Wallet type not supported for swaps', { status: 400 })
+  }
 
   let body: { fromToken: SwapTokenSymbol; toToken: SwapTokenSymbol; amount: number; slippageBps?: number }
   try {
@@ -105,6 +137,7 @@ export async function POST(request: NextRequest) {
       try {
         for await (const update of executeSwap({
           userPrivateKey,
+          externalTransfer,
           solverPrivateKey,
           solverAddress: SOLVER_ADDRESS,
           selectedLpId: bestLP.id,
