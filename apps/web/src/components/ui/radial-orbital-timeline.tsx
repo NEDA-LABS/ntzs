@@ -6,6 +6,7 @@ import { ArrowRight, Link, Zap } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb"
 
 export interface TimelineItem {
   id: number
@@ -162,13 +163,9 @@ export default function RadialOrbitalTimeline({
         ref={orbitRef}
         style={{ perspective: "1000px" }}
       >
-        {/* Center orb */}
+        {/* Center orb — WebGL powered */}
         <div
-          className={`absolute z-10 flex h-16 w-16 cursor-pointer items-center justify-center rounded-full transition-transform duration-200 active:scale-95 ${
-            isThinking
-              ? "bg-gradient-to-br from-violet-400 via-fuchsia-500 to-blue-400"
-              : "bg-gradient-to-br from-violet-500 via-blue-500 to-emerald-500"
-          }`}
+          className="absolute z-10 flex h-20 w-20 cursor-pointer items-center justify-center rounded-full transition-transform duration-200 active:scale-95"
           onClick={(e) => {
             e.stopPropagation()
             if (!isThinking && orbCardContent) {
@@ -182,16 +179,17 @@ export default function RadialOrbitalTimeline({
             onOrbClick?.()
           }}
         >
+          <VoicePoweredOrb
+            enableVoiceControl={false}
+            hue={isThinking ? 280 : 0}
+            className="h-20 w-20 rounded-full overflow-hidden"
+          />
           {/* Thinking: fast spinning ring */}
           {isThinking && (
-            <div className="absolute h-20 w-20 animate-spin rounded-full border-2 border-transparent border-t-violet-400 border-r-fuchsia-400 opacity-80" />
+            <div className="absolute h-24 w-24 animate-spin rounded-full border-2 border-transparent border-t-violet-400 border-r-fuchsia-400 opacity-80" />
           )}
-          <div className={`absolute h-20 w-20 animate-ping rounded-full border border-white/20 opacity-70 ${ isThinking ? "[animation-duration:0.6s]" : "" }`} />
-          <div className={`absolute h-24 w-24 animate-ping rounded-full border border-white/10 opacity-50 ${ isThinking ? "[animation-duration:0.8s]" : "" }`} style={{ animationDelay: "0.2s" }} />
-          {isThinking && (
-            <div className="absolute h-28 w-28 animate-ping rounded-full border border-fuchsia-500/20 opacity-40" style={{ animationDelay: "0.4s" }} />
-          )}
-          <div className={`h-8 w-8 rounded-full backdrop-blur-md transition-colors duration-300 ${ isThinking ? "bg-fuchsia-200/90" : orbExpanded ? "bg-violet-300" : "bg-white/80" }`} />
+          <div className={`absolute h-24 w-24 animate-ping rounded-full border border-white/20 opacity-40 ${ isThinking ? "[animation-duration:0.6s]" : "" }`} />
+          <div className={`absolute h-28 w-28 animate-ping rounded-full border border-white/10 opacity-30 ${ isThinking ? "[animation-duration:0.8s]" : "" }`} style={{ animationDelay: "0.2s" }} />
         </div>
 
         {/* Orbit ring */}
