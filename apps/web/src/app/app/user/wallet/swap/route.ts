@@ -66,8 +66,13 @@ export async function POST(request: NextRequest) {
     externalTransfer = async ({ tokenAddress, toAddress, amountWei }) => {
       const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)'])
       const result = await sendCdpTransaction(dbUser.id, user.email, {
-        destination: tokenAddress,
-        data: iface.encodeFunctionData('transfer', [toAddress, amountWei]),
+        evmAccount: wallet.address,
+        network: 'base',
+        transaction: {
+          to: tokenAddress,
+          data: iface.encodeFunctionData('transfer', [toAddress, amountWei]),
+          value: '0x0',
+        },
       } as any)
       if ('error' in result) throw new Error(result.error)
       return { txHash: result.txHash }
