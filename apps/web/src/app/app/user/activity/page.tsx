@@ -1,5 +1,5 @@
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends } from '@/lib/user/cachedQueries'
+import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends, getCachedRecentSwaps } from '@/lib/user/cachedQueries'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ActivityList } from './_components/ActivityList'
 import { PendingDepositPoller } from '../_components/PendingDepositPoller'
@@ -7,10 +7,11 @@ import { PendingDepositPoller } from '../_components/PendingDepositPoller'
 export default async function ActivityPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [deposits, burns, sends] = await Promise.all([
+  const [deposits, burns, sends, swaps] = await Promise.all([
     getCachedRecentDeposits(dbUser.id, 50),
     getCachedRecentBurns(dbUser.id, 50),
     getCachedRecentSends(dbUser.id, 50),
+    getCachedRecentSwaps(dbUser.id, 50),
   ])
 
   const txns = [
@@ -49,6 +50,22 @@ export default async function ActivityPage() {
       mintTxHash: s.mintTxHash,
       formattedDate: s.createdAt ? formatDateTimeEAT(s.createdAt) : '',
       createdAt: s.createdAt,
+    })),
+    ...swaps.map((sw) => ({
+      type: 'swap' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
+      id: sw.id,
+      amountTzs: 0,
+      status: 'filled',
+      toAddress: undefined as string | undefined,
+      mintTxHash: sw.outTxHash,
+      formattedDate: sw.createdAt ? formatDateTimeEAT(sw.createdAt) : '',
+      createdAt: sw.createdAt,
+      fromSymbol: sw.fromToken,
+      toSymbol: sw.toToken,
+      amountIn: sw.amountIn,
+      amountOut: sw.amountOut,
     })),
   ]
     .filter((t) => t.createdAt)
