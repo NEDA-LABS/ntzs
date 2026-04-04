@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Link2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface Txn {
   id: string
-  type: 'deposit' | 'burn' | 'send'
+  type: 'deposit' | 'burn' | 'send' | 'swap'
   source?: string
   payerName?: string
   toAddress?: string
@@ -14,15 +14,22 @@ export interface Txn {
   amountTzs: number
   status: string
   formattedDate: string
+  // swap-specific
+  fromSymbol?: string
+  toSymbol?: string
+  amountIn?: string
+  amountOut?: string
 }
 
-const FILTERS = ['All', 'Deposits', 'Sent', 'Withdrawals'] as const
+const FILTERS = ['All', 'Deposits', 'Sent', 'Swaps', 'Withdrawals'] as const
 type Filter = (typeof FILTERS)[number]
 
-function StatusBadge({ status, type }: { status: string; type: 'deposit' | 'burn' | 'send' }) {
+function StatusBadge({ status, type }: { status: string; type: Txn['type'] }) {
   const s = status.toLowerCase().replace(/_/g, ' ')
   const color =
-    type === 'send'
+    type === 'swap'
+      ? 'bg-violet-500/12 text-violet-400'
+      : type === 'send'
       ? 'bg-blue-500/12 text-blue-400'
       : type === 'deposit'
         ? s === 'minted' ? 'bg-emerald-500/12 text-emerald-400'
@@ -46,6 +53,7 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
     if (filter === 'Deposits') return t.type === 'deposit'
     if (filter === 'Withdrawals') return t.type === 'burn'
     if (filter === 'Sent') return t.type === 'send'
+    if (filter === 'Swaps') return t.type === 'swap'
     return true
   })
 
@@ -81,10 +89,13 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
       ) : (
         <div className="divide-y divide-white/[0.04]">
           {filtered.map((t) => {
+            const isSwap = t.type === 'swap'
             const isSend = t.type === 'send'
             const isDeposit = t.type === 'deposit'
             const isCollection = t.source === 'pay_link'
-            const label = isSend
+            const label = isSwap
+              ? `Swap · ${t.fromSymbol} → ${t.toSymbol}`
+              : isSend
               ? `Send · ${t.toAddress ? `${t.toAddress.slice(0, 6)}…${t.toAddress.slice(-4)}` : ''}`
               : isDeposit
                 ? isCollection
@@ -92,9 +103,9 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
                   : 'Deposit'
                 : 'Withdrawal'
 
-            const iconBg = isSend ? 'bg-blue-500/12' : isDeposit ? (isCollection ? 'bg-blue-500/12' : 'bg-emerald-500/12') : 'bg-rose-500/12'
-            const amountColor = isSend ? 'text-blue-400' : isDeposit ? 'text-emerald-400' : 'text-rose-300'
-            const amountPrefix = isDeposit ? '+' : '-'
+            const iconBg = isSwap ? 'bg-violet-500/12' : isSend ? 'bg-blue-500/12' : isDeposit ? (isCollection ? 'bg-blue-500/12' : 'bg-emerald-500/12') : 'bg-rose-500/12'
+            const amountColor = isSwap ? 'text-violet-400' : isSend ? 'text-blue-400' : isDeposit ? 'text-emerald-400' : 'text-rose-300'
+            const amountPrefix = isDeposit ? '+' : isSwap ? '' : '-'
 
             return (
               <div
@@ -103,7 +114,9 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
               >
                 <div className="flex items-center gap-3.5">
                   <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', iconBg)}>
-                    {isSend ? (
+                    {isSwap ? (
+                      <ArrowLeftRight className="h-4 w-4 text-violet-400" />
+                    ) : isSend ? (
                       <ArrowUpRight className="h-4 w-4 text-blue-400" />
                     ) : isDeposit ? (
                       isCollection ? <Link2 className="h-4 w-4 text-blue-400" /> : <ArrowDownLeft className="h-4 w-4 text-emerald-400" />
@@ -118,9 +131,15 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
                 </div>
 
                 <div className="text-right">
-                  <p className={cn('text-sm font-semibold font-mono', amountColor)}>
-                    {amountPrefix}{t.amountTzs.toLocaleString()} TZS
-                  </p>
+                  {isSwap ? (
+                    <p className={cn('text-sm font-semibold font-mono', amountColor)}>
+                      {parseFloat(t.amountIn || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} {t.fromSymbol} → {parseFloat(t.amountOut || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} {t.toSymbol}
+                    </p>
+                  ) : (
+                    <p className={cn('text-sm font-semibold font-mono', amountColor)}>
+                      {amountPrefix}{t.amountTzs.toLocaleString()} TZS
+                    </p>
+                  )}
                   <div className="mt-1 flex justify-end">
                     <StatusBadge status={t.status} type={t.type} />
                   </div>
