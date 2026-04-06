@@ -10,6 +10,16 @@ const SOLVER_PRIVATE_KEY = process.env.SOLVER_PRIVATE_KEY || ''
 const CRITICAL_THRESHOLD = 0.001
 const LOW_THRESHOLD = 0.005
 
+// Liquidity pool thresholds
+const NTZS_LOW_THRESHOLD = 50_000
+const NTZS_CRITICAL_THRESHOLD = 10_000
+const USDC_LOW_THRESHOLD = 20
+const USDC_CRITICAL_THRESHOLD = 5
+
+const NTZS_CONTRACT = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
+const USDC_CONTRACT = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const ERC20_ABI = ['function balanceOf(address) view returns (uint256)']
+
 const GAS_PRICE_ETH = 0.01 / 1e9
 const MINT_GAS = 65000
 const ETH_SEND_GAS = 21000
@@ -63,6 +73,8 @@ export default async function GasMonitorPage() {
   let relayerBalanceEth = 0
   let solverAddress = ''
   let solverBalanceEth = 0
+  let poolNtzs = 0
+  let poolUsdc = 0
   let fetchError = ''
 
   try {
@@ -84,6 +96,16 @@ export default async function GasMonitorPage() {
       solverAddress = new ethers.Wallet(SOLVER_PRIVATE_KEY).address
       const raw = await provider.getBalance(solverAddress)
       solverBalanceEth = parseFloat(ethers.formatEther(raw))
+
+      // Fetch solver pool token balances
+      const ntzs = new ethers.Contract(NTZS_CONTRACT, ERC20_ABI, provider)
+      const usdc = new ethers.Contract(USDC_CONTRACT, ERC20_ABI, provider)
+      const [ntzsRaw, usdcRaw] = await Promise.all([
+        ntzs.balanceOf(solverAddress),
+        usdc.balanceOf(solverAddress),
+      ])
+      poolNtzs = parseFloat(ethers.formatUnits(ntzsRaw, 18))
+      poolUsdc = parseFloat(ethers.formatUnits(usdcRaw, 6))
     }
   } catch (err) {
     fetchError = err instanceof Error ? err.message : 'Failed to fetch balances'
@@ -304,6 +326,103 @@ export default async function GasMonitorPage() {
           </div>
         ))}
       </div>
+
+      {/* Liquidity Pool Monitor */}
+      {!!SOLVER_PRIVATE_KEY && (
+        <div className="mt-6 rounded-2xl border border-white/[0.07] bg-zinc-950 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Liquidity Pool (Solver)</p>
+              <p className="mt-0.5 text-xs text-zinc-500">Token balances available for swaps</p>
+            </div>
+            <StatusBadge status={
+              poolUsdc < USDC_CRITICAL_THRESHOLD || poolNtzs < NTZS_CRITICAL_THRESHOLD ? 'critical'
+              : poolUsdc < USDC_LOW_THRESHOLD || poolNtzs < NTZS_LOW_THRESHOLD ? 'low'
+              : 'ok'
+            } />
+          </div>
+          <div className="p-6">
+            <div className="grid gap-5 sm:grid-cols-2">
+              {/* nTZS balance */}
+              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-600 mb-1">nTZS Balance</p>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-2xl font-bold tabular-nums ${
+                    poolNtzs < NTZS_CRITICAL_THRESHOLD ? 'text-rose-400'
+                    : poolNtzs < NTZS_LOW_THRESHOLD ? 'text-amber-400'
+                    : 'text-white'
+                  }`}>
+                    {poolNtzs.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-sm text-zinc-500">nTZS</span>
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-600">
+                  Handles USDC → nTZS swaps · Low: {NTZS_LOW_THRESHOLD.toLocaleString()} · Critical: {NTZS_CRITICAL_THRESHOLD.toLocaleString()}
+                </p>
+                {poolNtzs < NTZS_LOW_THRESHOLD && (
+                  <p className={`mt-2 text-xs font-medium ${poolNtzs < NTZS_CRITICAL_THRESHOLD ? 'text-rose-400' : 'text-amber-400'}`}>
+                    {poolNtzs < NTZS_CRITICAL_THRESHOLD
+                      ? 'Users buying nTZS will be rejected. Mint more nTZS to solver.'
+                      : 'Running low. Consider minting more nTZS to solver.'}
+                  </p>
+                )}
+              </div>
+
+              {/* USDC balance */}
+              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-600 mb-1">USDC Balance</p>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-2xl font-bold tabular-nums ${
+                    poolUsdc < USDC_CRITICAL_THRESHOLD ? 'text-rose-400'
+                    : poolUsdc < USDC_LOW_THRESHOLD ? 'text-amber-400'
+                    : 'text-white'
+                  }`}>
+                    {poolUsdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-sm text-zinc-500">USDC</span>
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-600">
+                  Handles nTZS → USDC swaps · Low: ${USDC_LOW_THRESHOLD} · Critical: ${USDC_CRITICAL_THRESHOLD}
+                </p>
+                {poolUsdc < USDC_LOW_THRESHOLD && (
+                  <p className={`mt-2 text-xs font-medium ${poolUsdc < USDC_CRITICAL_THRESHOLD ? 'text-rose-400' : 'text-amber-400'}`}>
+                    {poolUsdc < USDC_CRITICAL_THRESHOLD
+                      ? 'Users selling nTZS will be rejected. Send USDC to solver.'
+                      : 'Running low. Consider sending more USDC to solver.'}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Swap capacity estimate */}
+            <div className="mt-4 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+              <p className="text-xs font-medium text-zinc-500 mb-2">Estimated Swap Capacity</p>
+              <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500">nTZS → USDC (1,000 nTZS each)</span>
+                  <span className={`font-semibold tabular-nums ${
+                    Math.floor(poolUsdc / 0.38) < 10 ? 'text-rose-400'
+                    : Math.floor(poolUsdc / 0.38) < 50 ? 'text-amber-400'
+                    : 'text-emerald-400'
+                  }`}>
+                    ~{Math.floor(poolUsdc / 0.38).toLocaleString()} swaps
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500">USDC → nTZS ($1 USDC each)</span>
+                  <span className={`font-semibold tabular-nums ${
+                    Math.floor(poolNtzs / 2610) < 10 ? 'text-rose-400'
+                    : Math.floor(poolNtzs / 2610) < 50 ? 'text-amber-400'
+                    : 'text-emerald-400'
+                  }`}>
+                    ~{Math.floor(poolNtzs / 2610).toLocaleString()} swaps
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Thresholds Reference */}
       <div className="mt-6 rounded-2xl border border-white/[0.07] bg-zinc-950 p-6">
