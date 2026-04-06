@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ethers } from 'ethers'
 import { getDb } from '@/lib/db'
 import { lpFxPairs, lpAccounts } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
-import { calcMinOutput, type SwapTokenSymbol } from '@/lib/fx/swap'
+import { calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 
@@ -85,6 +86,23 @@ export async function GET(req: NextRequest) {
     slippageBps: 100,
   })
 
+  // Check solver pool liquidity for the output token
+  let lowLiquidity = false
+  const solverAddress = process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646'
+  const rpcUrl = process.env.BASE_RPC_URL
+  if (rpcUrl) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      const outToken = SWAP_TOKENS[to]
+      const contract = new ethers.Contract(outToken.address, ['function balanceOf(address) view returns (uint256)'], provider)
+      const balance = await contract.balanceOf(solverAddress)
+      const balanceFormatted = parseFloat(ethers.formatUnits(balance, outToken.decimals))
+      lowLiquidity = balanceFormatted < expectedOutput * 1.1
+    } catch {
+      // If check fails, don't block the rate — swap will catch it
+    }
+  }
+
   return NextResponse.json({
     from,
     to,
@@ -96,5 +114,6 @@ export async function GET(req: NextRequest) {
     minOutput: +minOutput.toFixed(6),
     rate: +(expectedOutput / amount).toFixed(6),
     expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    lowLiquidity,
   })
 }

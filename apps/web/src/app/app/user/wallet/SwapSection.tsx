@@ -10,6 +10,7 @@ interface RateInfo {
   minOutput: number
   midRate: number
   expiresAt: string
+  lowLiquidity?: boolean
 }
 
 interface StatusUpdate {
@@ -352,6 +353,17 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                         ))}
                       </div>
                     </div>
+
+                    {/* Low liquidity warning */}
+                    {rate?.lowLiquidity && !swapping && !done && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="rounded-xl bg-amber-500/10 px-3 py-2.5 text-xs text-amber-300 ring-1 ring-amber-500/20"
+                      >
+                        Liquidity is currently low for this swap. Please try a smaller amount or try again later.
+                      </motion.div>
+                    )}
 
                     {/* Error state */}
                     {isFailed && (
