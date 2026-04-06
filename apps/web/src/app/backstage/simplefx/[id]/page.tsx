@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, desc } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
@@ -6,7 +6,7 @@ import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpAccounts } from '@ntzs/db'
+import { lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db'
 import { SubmitButton } from '../../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
 
@@ -59,6 +59,20 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
 
   const [lp] = await db.select().from(lpAccounts).where(eq(lpAccounts.id, id)).limit(1)
   if (!lp) notFound()
+
+  // Fetch pool positions and recent fills
+  const [positions, recentFills] = await Promise.all([
+    db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, id)),
+    db
+      .select()
+      .from(lpFills)
+      .where(eq(lpFills.lpId, id))
+      .orderBy(desc(lpFills.createdAt))
+      .limit(20),
+  ])
+
+  const totalSpreadEarned = recentFills.reduce((sum, f) => sum + parseFloat(f.spreadEarned?.toString() ?? '0'), 0)
+  const totalFills = recentFills.length
 
   // Fetch on-chain balances (Base mainnet)
   let balances: Record<string, string> = {}
@@ -236,6 +250,112 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
                 <p className="text-xs text-zinc-600 mt-0.5">{lp.askBps} bps</p>
               </div>
             </div>
+          </div>
+
+          {/* Pool Positions */}
+          <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 mb-4">Live Positions</h2>
+            {positions.length === 0 ? (
+              <p className="text-sm text-zinc-600">No pool positions yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {positions.map((pos) => {
+                  const contributed = parseFloat(pos.contributed?.toString() ?? '0')
+                  const earned = parseFloat(pos.earned?.toString() ?? '0')
+                  return (
+                    <div key={pos.id} className="rounded-xl bg-black/40 border border-white/5 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-white">{pos.tokenSymbol}</span>
+                        <span className="text-xs font-mono text-zinc-600">{pos.tokenAddress.slice(0, 10)}…</span>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500 mb-0.5">Contributed</p>
+                        <p className="text-lg font-light text-white tabular-nums">
+                          {contributed.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500 mb-0.5">Spread Earned</p>
+                        <p className={`text-lg font-light tabular-nums ${earned > 0 ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                          {earned > 0 ? '+' : ''}{earned.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Fills */}
+          <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Recent Fills</h2>
+              <div className="flex items-center gap-4 text-xs text-zinc-500">
+                <span>{totalFills} fill{totalFills !== 1 ? 's' : ''}</span>
+                {totalSpreadEarned > 0 && (
+                  <span className="text-emerald-400">+{totalSpreadEarned.toFixed(6)} spread earned</span>
+                )}
+              </div>
+            </div>
+            {recentFills.length === 0 ? (
+              <p className="text-sm text-zinc-600">No fills recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/5 text-xs text-zinc-600">
+                      <th className="pb-2 text-left font-medium">Time</th>
+                      <th className="pb-2 text-left font-medium">Direction</th>
+                      <th className="pb-2 text-right font-medium">In</th>
+                      <th className="pb-2 text-right font-medium">Out</th>
+                      <th className="pb-2 text-right font-medium">Spread</th>
+                      <th className="pb-2 text-left font-medium">Tx</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {recentFills.map((fill) => {
+                      const fromSym = fill.fromToken.toLowerCase().includes('f476') ? 'nTZS' : 'USDC'
+                      const toSym = fill.toToken.toLowerCase().includes('f476') ? 'nTZS' : 'USDC'
+                      const spread = parseFloat(fill.spreadEarned?.toString() ?? '0')
+                      return (
+                        <tr key={fill.id} className="text-zinc-400 hover:bg-white/[0.02] transition-colors">
+                          <td className="py-2.5 text-xs text-zinc-500 whitespace-nowrap">
+                            {formatDateEAT(fill.createdAt)}
+                          </td>
+                          <td className="py-2.5">
+                            <span className="inline-flex items-center gap-1 text-xs">
+                              <span className={fromSym === 'USDC' ? 'text-blue-400' : 'text-violet-400'}>{fromSym}</span>
+                              <span className="text-zinc-600">→</span>
+                              <span className={toSym === 'USDC' ? 'text-blue-400' : 'text-violet-400'}>{toSym}</span>
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right font-mono text-xs tabular-nums">
+                            {parseFloat(fill.amountIn?.toString() ?? '0').toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                          </td>
+                          <td className="py-2.5 text-right font-mono text-xs tabular-nums">
+                            {parseFloat(fill.amountOut?.toString() ?? '0').toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                          </td>
+                          <td className={`py-2.5 text-right font-mono text-xs tabular-nums ${spread > 0 ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                            {spread > 0 ? `+${spread.toFixed(6)}` : '0'}
+                          </td>
+                          <td className="py-2.5">
+                            <a
+                              href={`https://basescan.org/tx/${fill.outTxHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-xs text-zinc-600 hover:text-blue-400 transition-colors"
+                            >
+                              {fill.outTxHash.slice(0, 8)}…
+                            </a>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
