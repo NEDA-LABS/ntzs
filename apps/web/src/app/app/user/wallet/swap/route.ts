@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
@@ -7,7 +7,7 @@ import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { getDb } from '@/lib/db'
 import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills, users } from '@ntzs/db'
-import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type ExternalTransferFn } from '@/lib/fx/swap'
+import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type ExternalTransferFn } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -126,7 +126,17 @@ export async function POST(request: NextRequest) {
     bidBps: lp.bidBps ?? 120,
     askBps: lp.askBps ?? 150,
   }))
-  const bestLP = rankLPsByRate(lpConfigs, direction)[0]
+
+  // Load-balance: query each LP's most recent fill to break ties via LRU
+  const lastFillRows = await db
+    .select({ lpId: lpFills.lpId, lastAt: sql<Date>`max(${lpFills.createdAt})` })
+    .from(lpFills)
+    .where(inArray(lpFills.lpId, lpConfigs.map((lp) => lp.id)))
+    .groupBy(lpFills.lpId)
+  const lastFillTimes = new Map<string, number>(
+    lastFillRows.map((r) => [r.lpId, r.lastAt ? new Date(r.lastAt).getTime() : 0]),
+  )
+  const bestLP = selectLPForSwap(lpConfigs, direction, lastFillTimes)
 
   const minOutput = calcMinOutput({
     fromToken, toToken, amount, midRate,

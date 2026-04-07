@@ -64,6 +64,39 @@ export function rankLPsByRate(lps: LPConfig[], direction: 'USDC_TO_NTZS' | 'NTZS
   )
 }
 
+/**
+ * Select an LP to fill a swap with load balancing.
+ *
+ * Among LPs whose rate is within `toleranceBps` of the best rate, pick the
+ * least-recently-used one (so fills get distributed across competitive MMs
+ * instead of always landing on the single lowest-spread one).
+ *
+ * `lastFillTimes` maps lpId → epoch ms of that LP's most recent fill (0 if
+ * the LP has never filled). Tolerance is small enough that user output stays
+ * within slippage protection.
+ */
+export function selectLPForSwap(
+  lps: LPConfig[],
+  direction: 'USDC_TO_NTZS' | 'NTZS_TO_USDC',
+  lastFillTimes: Map<string, number>,
+  toleranceBps = 5,
+): LPConfig {
+  if (lps.length === 0) throw new Error('No LPs available')
+  const ranked = rankLPsByRate(lps, direction)
+  const bestRate = direction === 'USDC_TO_NTZS' ? ranked[0].askBps : ranked[0].bidBps
+  const eligible = ranked.filter((lp) => {
+    const rate = direction === 'USDC_TO_NTZS' ? lp.askBps : lp.bidBps
+    return rate - bestRate <= toleranceBps
+  })
+  if (eligible.length === 1) return eligible[0]
+  // Pick the LP with the oldest (or missing) last-fill timestamp
+  return eligible.reduce((winner, lp) => {
+    const winnerLast = lastFillTimes.get(winner.id) ?? 0
+    const lpLast = lastFillTimes.get(lp.id) ?? 0
+    return lpLast < winnerLast ? lp : winner
+  }, eligible[0])
+}
+
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address to, uint256 amount) returns (bool)',

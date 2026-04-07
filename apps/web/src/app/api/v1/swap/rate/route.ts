@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getDb } from '@/lib/db'
-import { lpFxPairs, lpAccounts } from '@ntzs/db'
-import { eq } from 'drizzle-orm'
-import { calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
+import { lpFxPairs, lpAccounts, lpFills } from '@ntzs/db'
+import { eq, inArray, sql } from 'drizzle-orm'
+import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
 
 export const runtime = 'nodejs'
 
@@ -49,22 +49,34 @@ export async function GET(req: NextRequest) {
 
   const midRate = parseFloat(pair.midRate.toString())
 
-  // Pick best LP spread for this direction
+  // Pick LP using same load-balanced logic as the swap route, so the
+  // displayed rate matches the LP that will actually fill.
   const activeLPs = await db
-    .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+    .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
     .where(eq(lpAccounts.isActive, true as unknown as boolean))
 
-  const direction = from === 'USDC' ? 'ask' : 'bid'
-  const sorted = [...activeLPs].sort((a, b) =>
-    direction === 'ask'
-      ? (a.askBps ?? 150) - (b.askBps ?? 150)
-      : (a.bidBps ?? 120) - (b.bidBps ?? 120)
-  )
-  const bestLP = sorted[0]
-
-  const bidBps = bestLP?.bidBps ?? 120
-  const askBps = bestLP?.askBps ?? 150
+  let bidBps = 120
+  let askBps = 150
+  if (activeLPs.length > 0) {
+    const lpConfigs: LPConfig[] = activeLPs.map((lp) => ({
+      id: lp.id,
+      bidBps: lp.bidBps ?? 120,
+      askBps: lp.askBps ?? 150,
+    }))
+    const lastFillRows = await db
+      .select({ lpId: lpFills.lpId, lastAt: sql<Date>`max(${lpFills.createdAt})` })
+      .from(lpFills)
+      .where(inArray(lpFills.lpId, lpConfigs.map((lp) => lp.id)))
+      .groupBy(lpFills.lpId)
+    const lastFillTimes = new Map<string, number>(
+      lastFillRows.map((r) => [r.lpId, r.lastAt ? new Date(r.lastAt).getTime() : 0]),
+    )
+    const direction = from === 'USDC' ? 'USDC_TO_NTZS' : 'NTZS_TO_USDC'
+    const bestLP = selectLPForSwap(lpConfigs, direction, lastFillTimes)
+    bidBps = bestLP.bidBps
+    askBps = bestLP.askBps
+  }
 
   const expectedOutput = calcMinOutput({
     fromToken: from,
