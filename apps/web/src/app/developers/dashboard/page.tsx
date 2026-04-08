@@ -255,10 +255,13 @@ function NavItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-        active ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white/70'
+      className={`relative flex w-full items-center gap-3 rounded-xl py-2.5 pl-4 pr-3 text-sm font-medium transition-all duration-200 ${
+        active ? 'bg-white/[0.07] text-white' : 'text-white/50 hover:bg-white/5 hover:text-white/70'
       }`}
     >
+      {active && (
+        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-emerald-400/70" />
+      )}
       <Icon className="h-4 w-4" />
       {label}
     </button>
