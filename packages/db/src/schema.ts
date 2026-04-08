@@ -778,6 +778,8 @@ export const lpAccounts = pgTable(
 
     kycStatus: lpKycStatus('kyc_status').notNull().default('pending'),
 
+    apiKeyHash: text('api_key_hash'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -786,6 +788,7 @@ export const lpAccounts = pgTable(
     walletIndexUq: uniqueIndex('lp_accounts_wallet_index_uq').on(t.walletIndex),
     walletAddressUq: uniqueIndex('lp_accounts_wallet_address_uq').on(t.walletAddress),
     kycIdx: index('lp_accounts_kyc_status_idx').on(t.kycStatus),
+    apiKeyHashUq: uniqueIndex('lp_accounts_api_key_hash_uq').on(t.apiKeyHash),
   })
 )
 

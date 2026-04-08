@@ -14,7 +14,7 @@ export default function DocsPage() {
     >
       <Section title="Overview">
         <p>SimpleFX is an on-chain liquidity provisioning protocol for the Tanzanian Shilling stablecoin, nTZS. Market makers (Liquidity Providers) deposit nTZS inventory, configure bid/ask spreads, and earn fees automatically as cross-chain swap orders fill against their inventory.</p>
-        <p>The protocol is deployed on Base mainnet and settles swaps across Ethereum, Polygon, and Arbitrum via the HyperBridge cross-chain messaging layer.</p>
+        <p>The protocol is deployed on Base mainnet. Swaps settle directly against the LP pool on-chain.</p>
       </Section>
 
       <Section title="Getting Started">
