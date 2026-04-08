@@ -55,8 +55,36 @@ function DocSection({
   )
 }
 
+const NAV = [
+  {
+    group: 'Getting Started',
+    items: [
+      { id: 'auth', label: 'Authentication' },
+      { id: 'users', label: 'Create Users' },
+      { id: 'balance', label: 'Get User & Balance' },
+    ],
+  },
+  {
+    group: 'Payments',
+    items: [
+      { id: 'deposits', label: 'Deposits (On-Ramp)' },
+      { id: 'transfers', label: 'Transfers' },
+      { id: 'withdrawals', label: 'Withdrawals (Off-Ramp)' },
+    ],
+  },
+  {
+    group: 'Advanced',
+    items: [
+      { id: 'swap', label: 'Swap (nTZS / USDC)' },
+      { id: 'webhooks', label: 'Webhooks' },
+      { id: 'errors', label: 'Error Reference' },
+    ],
+  },
+]
+
 export default function DevelopersPage() {
   const [activeSection, setActiveSection] = useState('')
+  const [tocOpen, setTocOpen] = useState(false)
 
   useEffect(() => {
     document.documentElement.style.scrollBehavior = 'smooth'
@@ -76,32 +104,73 @@ export default function DevelopersPage() {
     }
   }, [])
 
+  const activeLabel =
+    NAV.flatMap((g) => g.items).find((i) => i.id === activeSection)?.label ?? 'On this page'
+
   const navItemClass = (id: string) =>
-    `block rounded-lg px-3 py-1.5 transition-colors ${
+    `block rounded-lg px-3 py-1.5 text-sm transition-colors ${
       activeSection === id
         ? 'bg-white/10 text-white font-medium'
-        : 'text-white/60 hover:bg-white/5 hover:text-white'
+        : 'text-white/50 hover:bg-white/5 hover:text-white'
     }`
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
-      <div className="grid gap-12 lg:grid-cols-[220px_1fr]">
-        {/* Sidebar */}
+    <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-12">
+
+      {/* Mobile TOC bar */}
+      <div className="lg:hidden mb-8 rounded-xl border border-white/10 bg-white/[0.03]">
+        <button
+          onClick={() => setTocOpen((o) => !o)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm"
+        >
+          <span className="font-medium text-white/80">{activeLabel}</span>
+          <span className="text-white/40">{tocOpen ? '▲' : '▼'}</span>
+        </button>
+        {tocOpen && (
+          <div className="border-t border-white/10 px-3 pb-3 pt-2 space-y-4">
+            {NAV.map((group) => (
+              <div key={group.group}>
+                <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-white/30">
+                  {group.group}
+                </div>
+                {group.items.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    onClick={() => setTocOpen(false)}
+                    className={navItemClass(item.id)}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-12 lg:grid-cols-[240px_1fr]">
+        {/* Desktop sidebar */}
         <aside className="hidden lg:block">
-          <nav className="sticky top-24 space-y-1 text-sm">
-            <div className="mb-4 text-xs font-medium uppercase tracking-wider text-white/40">Getting Started</div>
-            <a href="#auth" className={navItemClass('auth')}>Authentication</a>
-            <a href="#users" className={navItemClass('users')}>Create Users</a>
-            <a href="#balance" className={navItemClass('balance')}>Get User &amp; Balance</a>
-            <div className="mt-6 mb-4 text-xs font-medium uppercase tracking-wider text-white/40">Payments</div>
-            <a href="#deposits" className={navItemClass('deposits')}>Deposits (On-Ramp)</a>
-            <a href="#transfers" className={navItemClass('transfers')}>Transfers</a>
-            <a href="#withdrawals" className={navItemClass('withdrawals')}>Withdrawals (Off-Ramp)</a>
-            <div className="mt-6 mb-4 text-xs font-medium uppercase tracking-wider text-white/40">Advanced</div>
-            <a href="#swap" className={navItemClass('swap')}>Swap (nTZS / USDC)</a>
-            <a href="#webhooks" className={navItemClass('webhooks')}>Webhooks</a>
-            <a href="#errors" className={navItemClass('errors')}>Error Reference</a>
-          </nav>
+          <div className="sticky top-24 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/30">
+              Contents
+            </div>
+            <nav className="space-y-4">
+              {NAV.map((group) => (
+                <div key={group.group}>
+                  <div className="mb-1 px-3 text-[10px] font-medium uppercase tracking-wider text-white/30">
+                    {group.group}
+                  </div>
+                  {group.items.map((item) => (
+                    <a key={item.id} href={`#${item.id}`} className={navItemClass(item.id)}>
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              ))}
+            </nav>
+          </div>
         </aside>
 
         {/* Main content */}
