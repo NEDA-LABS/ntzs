@@ -92,6 +92,7 @@ export default function DevelopersPage() {
             <div className="mb-4 text-xs font-medium uppercase tracking-wider text-white/40">Getting Started</div>
             <a href="#auth" className={navItemClass('auth')}>Authentication</a>
             <a href="#users" className={navItemClass('users')}>Create Users</a>
+            <a href="#balance" className={navItemClass('balance')}>Get User &amp; Balance</a>
             <div className="mt-6 mb-4 text-xs font-medium uppercase tracking-wider text-white/40">Payments</div>
             <a href="#deposits" className={navItemClass('deposits')}>Deposits (On-Ramp)</a>
             <a href="#transfers" className={navItemClass('transfers')}>Transfers</a>
@@ -217,10 +218,41 @@ export default function DevelopersPage() {
             </div>
           </DocSection>
 
+          {/* Balance */}
+          <DocSection
+            id="balance"
+            step="Step 3"
+            title="Get user profile &amp; balance"
+            description="Fetch a user's on-chain nTZS balance alongside their profile. The balance is read live from Base mainnet at request time."
+          >
+            <CodeBlock
+              title="GET /api/v1/users/:id"
+              code={`const res = await fetch(
+  'https://www.ntzs.co.tz/api/v1/users/14e17d04-ec7f-4d99-91a3-dfbaca19fba1',
+  { headers: { 'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx' } }
+)
+const user = await res.json()
+// {
+//   id: "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
+//   externalId: "your-internal-user-id",
+//   email: "user@example.com",
+//   phone: "255712345678",
+//   walletAddress: "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C",
+//   balanceTzs: 25000
+// }`}
+            />
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">balanceTzs</span> is the live on-chain balance
+              read directly from the nTZS contract on Base. It reflects all deposits, transfers, and
+              withdrawals that have settled on-chain. The field is <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">0</code> if
+              the wallet has not received any funds yet.
+            </Note>
+          </DocSection>
+
           {/* Deposits */}
           <DocSection
             id="deposits"
-            step="Step 3"
+            step="Step 4"
             title="Accept deposits (On-Ramp)"
             description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
           >
@@ -292,7 +324,7 @@ body: JSON.stringify({
           {/* Transfers */}
           <DocSection
             id="transfers"
-            step="Step 4"
+            step="Step 5"
             title="Transfer between users"
             description="Move nTZS between any two users on your platform. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
           >
@@ -339,7 +371,7 @@ const transfer = await res.json()
           {/* Withdrawals */}
           <DocSection
             id="withdrawals"
-            step="Step 5"
+            step="Step 6"
             title="Cash out to mobile money (Off-Ramp)"
             description="Burns nTZS tokens on-chain and sends TZS to the user's mobile money number. Supports all major Tanzanian mobile networks. The burn and payout happen automatically."
           >
