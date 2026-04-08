@@ -217,7 +217,7 @@ export default function DevelopersPage() {
         <div className="min-w-0 space-y-16">
           {/* Hero */}
           <div>
-            <h1 className="hero-title text-3xl font-bold tracking-tight md:text-4xl">nTZS WaaS API</h1>
+            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Developer Documentation</h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
               Embed digital Tanzanian Shilling wallets directly into your product. Create users, accept M-Pesa
               deposits, send peer-to-peer transfers, and cash out to mobile money — all over a REST API.
