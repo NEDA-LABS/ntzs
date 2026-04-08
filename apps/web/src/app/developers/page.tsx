@@ -170,7 +170,7 @@ export default function DevelopersPage() {
             description="Register a user and provision an on-chain wallet in a single call. Wallets are deterministically derived from your partner seed — no blockchain transaction required."
           >
             <CodeBlock
-              title="POST /api/v1/users"
+              title="POST /api/v1/users — request"
               code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/users', {
   method: 'POST',
   headers: {
@@ -178,23 +178,31 @@ export default function DevelopersPage() {
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    externalId: 'your-internal-user-id',  // required — your system's user ID
+    externalId: 'your-internal-user-id',  // required — your own system's user ID
     email: 'user@example.com',            // required
     name: 'Jane Doe',                     // optional
     phone: '255712345678',                // optional, Tanzanian format
   }),
-})
-const user = await res.json()
-// {
-//   id: "uuid...",
-//   externalId: "your-internal-user-id",
-//   email: "user@example.com",
-//   name: "Jane Doe",
-//   phone: "255712345678",
-//   walletAddress: "0xFfD2dF4aA86978A8971493B20287F5632bC0Fb5d",
-//   balance: 0
-// }`}
+})`}
             />
+            <CodeBlock
+              title="201 response"
+              code={`{
+  "id": "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
+  "externalId": "your-internal-user-id",
+  "email": "user@example.com",
+  "name": "Jane Doe",
+  "phone": "255712345678",
+  "walletAddress": "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C",
+  "balance": 0
+}`}
+            />
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Store the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">id</code> field.</span>{' '}
+              This is the nTZS user ID you will pass as <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">userId</code> in all
+              subsequent requests (deposits, transfers, withdrawals). It is different from your own
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs"> externalId</code>.
+            </Note>
             <div className="grid gap-3 sm:grid-cols-2">
               <Note variant="neutral">
                 <span className="font-semibold text-white/90">Idempotent:</span> Calling with the same{' '}
@@ -216,6 +224,11 @@ const user = await res.json()
             title="Accept deposits (On-Ramp)"
             description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
           >
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">userId</span> must be the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">id</code> returned from{' '}
+              <strong>POST /api/v1/users</strong> — not your own <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">externalId</code>.
+            </Note>
             <CodeBlock
               title="POST /api/v1/deposits — mobile money"
               code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/deposits', {
@@ -225,15 +238,15 @@ const user = await res.json()
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    userId: user.id,
+    userId: '14e17d04-ec7f-4d99-91a3-dfbaca19fba1', // id from POST /api/v1/users
     amountTzs: 10000,               // minimum 500 TZS
     paymentMethod: 'mobile_money',  // default
-    phoneNumber: '255712345678',    // required for mobile_money
+    phoneNumber: '255712345678',    // required for mobile_money — use phoneNumber, not phone
   }),
 })
 // { id, status: "submitted", amountTzs: 10000,
 //   paymentMethod: "mobile_money",
-//   instructions: "Check your phone for the M-Pesa payment prompt" }`}
+//   instructions: "Check your phone for the mobile money payment prompt" }`}
             />
             <CodeBlock
               title="POST /api/v1/deposits — card"
@@ -265,7 +278,7 @@ body: JSON.stringify({
             <div className="grid gap-3 sm:grid-cols-3">
               {[
                 { label: 'Minimum', value: '500 TZS' },
-                { label: 'Mobile providers', value: 'Vodacom M-Pesa, Tigo Pesa, Airtel Money' },
+                { label: 'Mobile providers', value: 'Vodacom (M-Pesa), Airtel (Airtel Money), Tigo (Tigo Pesa), Halotel (HaloPesa), TTCL (TTCL Pesa), Yass' },
                 { label: 'Settlement', value: 'Real-time on Base mainnet after payment confirmation' },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
@@ -327,8 +340,8 @@ const transfer = await res.json()
           <DocSection
             id="withdrawals"
             step="Step 5"
-            title="Cash out to M-Pesa (Off-Ramp)"
-            description="Burns nTZS tokens on-chain and sends TZS to the user's mobile money number. The burn and payout happen automatically."
+            title="Cash out to mobile money (Off-Ramp)"
+            description="Burns nTZS tokens on-chain and sends TZS to the user's mobile money number. Supports all major Tanzanian mobile networks. The burn and payout happen automatically."
           >
             <CodeBlock
               title="POST /api/v1/withdrawals"
@@ -341,7 +354,7 @@ const transfer = await res.json()
   body: JSON.stringify({
     userId:      user.id,
     amountTzs:   10000,           // minimum 5,000 TZS
-    phoneNumber: '255712345678',  // M-Pesa recipient
+    phoneNumber: '255712345678',  // mobile money recipient (Vodacom, Airtel, Tigo, Halotel, TTCL, Yass)
   }),
 })
 const withdrawal = await res.json()
