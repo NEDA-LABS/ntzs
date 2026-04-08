@@ -605,6 +605,14 @@ while (true) {
                 </div>
               ))}
             </div>
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Balance tracking after a swap:</span>{' '}
+              Once a swap settles, the user&apos;s stablecoin holdings are immediately visible via{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/users/:id</code>.
+              A nTZS{'\u2192'}USDC swap increases <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">balanceUsdc</code> and
+              decreases <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">balanceTzs</code>. A USDC{'\u2192'}nTZS swap does the reverse.
+              Both fields reflect live on-chain state — no caching.
+            </Note>
           </DocSection>
 
           {/* Webhooks */}

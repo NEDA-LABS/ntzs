@@ -45,6 +45,7 @@ interface DashboardUser {
   walletAddress: string | null
   walletFrozen: boolean
   balanceTzs: number
+  balanceUsdc: number
   createdAt: string
 }
 
@@ -1398,7 +1399,8 @@ function WalletDetailPanel({
               { label: 'Phone', value: user.phone || '—' },
               { label: 'External ID', value: user.externalId || '—' },
               { label: 'Wallet Address', value: user.walletAddress || '—', mono: true },
-              { label: 'Balance', value: `${user.balanceTzs.toLocaleString()} TZS` },
+              { label: 'TZS Balance', value: `${user.balanceTzs.toLocaleString()} TZS` },
+              { label: 'USDC Balance', value: user.balanceUsdc > 0 ? `${user.balanceUsdc.toFixed(2)} USDC` : '—' },
               { label: 'Created', value: formatDateEAT(user.createdAt) },
             ].map(({ label, value, mono }) => (
               <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5">
@@ -1950,7 +1952,10 @@ export default function PartnerDashboardPage() {
                               </div>
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-white/80">
-                              {u.balanceTzs.toLocaleString()} TZS
+                              <div>{u.balanceTzs.toLocaleString()} TZS</div>
+                              {u.balanceUsdc > 0 && (
+                                <div className="text-[11px] text-blue-300/70">{u.balanceUsdc.toFixed(2)} USDC</div>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-right">
                               {u.walletId && (

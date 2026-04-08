@@ -6,6 +6,9 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, partnerSubWallets, users, wallets, transfers, depositRequests } from '@ntzs/db'
 
+const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const USDC_DECIMALS = 6
+
 function verifySessionToken(token: string): string | null {
   const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
   const parts = token.split('.')
@@ -31,7 +34,8 @@ function verifySessionToken(token: string): string | null {
 async function fetchERC20BalancesBatch(
   rpcUrl: string,
   contractAddress: string,
-  addresses: string[]
+  addresses: string[],
+  decimals = 18
 ): Promise<Record<string, number>> {
   if (addresses.length === 0) return {}
   const batch = addresses.map((addr, i) => ({
@@ -58,7 +62,11 @@ async function fetchERC20BalancesBatch(
       if (item.error || !item.result || item.result === '0x') {
         out[addr] = 0
       } else {
-        out[addr] = Number(BigInt(item.result) / BigInt(10) ** BigInt(18))
+        // For high-decimal tokens (>=18) use BigInt division to avoid float overflow
+        // For low-decimal tokens like USDC (6) use float division to preserve cents
+        out[addr] = decimals >= 18
+          ? Number(BigInt(item.result) / BigInt(10) ** BigInt(decimals))
+          : Number(BigInt(item.result)) / 10 ** decimals
       }
     }
     return out
@@ -163,16 +171,23 @@ export async function GET(request: NextRequest) {
     ...userAddrs.map((x) => x.addr),
   ]
 
-  const balanceMap = await fetchERC20BalancesBatch(rpcUrl, contractAddress, allAddrs)
+  const userOnlyAddrs = userAddrs.map((x) => x.addr)
+
+  const [balanceMap, usdcMap] = await Promise.all([
+    fetchERC20BalancesBatch(rpcUrl, contractAddress, allAddrs, 18),
+    fetchERC20BalancesBatch(rpcUrl, USDC_CONTRACT_BASE, userOnlyAddrs, USDC_DECIMALS),
+  ])
 
   const treasuryBalanceTzs = treasuryAddr ? (balanceMap[treasuryAddr] ?? 0) : 0
 
   const userBalances: Record<string, number> = {}
+  const userUsdcBalances: Record<string, number> = {}
   const uniqueAddressBalances = new Map<string, number>()
   
   for (const { uid, addr } of userAddrs) {
     const tzs = balanceMap[addr] ?? 0
     userBalances[uid] = tzs
+    userUsdcBalances[uid] = usdcMap[addr] ?? 0
     uniqueAddressBalances.set(addr, tzs)
   }
   
@@ -189,6 +204,7 @@ export async function GET(request: NextRequest) {
     walletAddress: userWallets[u.id]?.address || null,
     walletFrozen: userWallets[u.id]?.frozen ?? false,
     balanceTzs: userBalances[u.id] || 0,
+    balanceUsdc: userUsdcBalances[u.id] || 0,
     createdAt: u.createdAt,
   }))
 
