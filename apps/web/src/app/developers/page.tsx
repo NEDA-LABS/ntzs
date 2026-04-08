@@ -3,11 +3,33 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+const STYLES = `
+  @keyframes shimmer {
+    0%   { background-position: 0% center; }
+    100% { background-position: 200% center; }
+  }
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .hero-title {
+    background: linear-gradient(90deg, #ffffff 0%, #a7f3d0 35%, #93c5fd 65%, #ffffff 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 5s linear infinite;
+  }
+  .nav-active-bar {
+    animation: fadeSlide 0.15s ease-out;
+  }
+`
+
 function CodeBlock({ title, code, lang = 'bash' }: { title: string; code: string; lang?: string }) {
   void lang
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+    <div className="group overflow-hidden rounded-2xl border border-white/10 bg-black/40 transition-all duration-300 hover:border-emerald-500/20 hover:shadow-[0_0_24px_rgba(52,211,153,0.06)]">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5 transition-colors duration-300 group-hover:border-emerald-500/10">
         <span className="text-xs font-medium text-white/50">{title}</span>
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-6 text-emerald-300/90">
@@ -36,21 +58,29 @@ function DocSection({
   title,
   description,
   children,
+  isActive,
 }: {
   id: string
   step: string
   title: string
   description: string
   children: React.ReactNode
+  isActive?: boolean
 }) {
   return (
-    <section id={id} className="scroll-mt-24">
-      <div className="mb-4 inline-flex rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white/50">
-        {step}
+    <section id={id} className="scroll-mt-24 rounded-2xl border border-transparent p-1 transition-colors duration-500" style={isActive ? { borderColor: 'rgba(52,211,153,0.08)', background: 'rgba(52,211,153,0.02)' } : {}}>
+      <div className="p-5 md:p-6">
+        <div className={`mb-4 inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-500 ${
+          isActive
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90'
+            : 'border-white/10 bg-white/5 text-white/50'
+        }`}>
+          {step}
+        </div>
+        <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">{description}</p>
+        <div className="mt-6 space-y-4">{children}</div>
       </div>
-      <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">{description}</p>
-      <div className="mt-6 space-y-4">{children}</div>
     </section>
   )
 }
@@ -108,14 +138,22 @@ export default function DevelopersPage() {
     NAV.flatMap((g) => g.items).find((i) => i.id === activeSection)?.label ?? 'On this page'
 
   const navItemClass = (id: string) =>
-    `block rounded-lg px-3 py-1.5 text-sm transition-colors ${
+    `relative block rounded-lg py-1.5 pl-4 pr-3 text-sm transition-all duration-200 ${
       activeSection === id
-        ? 'bg-white/10 text-white font-medium'
+        ? 'bg-white/[0.07] text-white font-medium'
         : 'text-white/50 hover:bg-white/5 hover:text-white'
     }`
 
+  const navItemInner = (id: string) =>
+    activeSection === id ? (
+      <span
+        className="nav-active-bar absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-emerald-400/70"
+      />
+    ) : null
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-12">
+      <style dangerouslySetInnerHTML={{ __html: STYLES }} />
 
       {/* Mobile TOC bar */}
       <div className="lg:hidden mb-8 rounded-xl border border-white/10 bg-white/[0.03]">
@@ -140,6 +178,7 @@ export default function DevelopersPage() {
                     onClick={() => setTocOpen(false)}
                     className={navItemClass(item.id)}
                   >
+                    {navItemInner(item.id)}
                     {item.label}
                   </a>
                 ))}
@@ -164,6 +203,7 @@ export default function DevelopersPage() {
                   </div>
                   {group.items.map((item) => (
                     <a key={item.id} href={`#${item.id}`} className={navItemClass(item.id)}>
+                      {navItemInner(item.id)}
                       {item.label}
                     </a>
                   ))}
@@ -177,7 +217,7 @@ export default function DevelopersPage() {
         <div className="min-w-0 space-y-16">
           {/* Hero */}
           <div>
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">nTZS WaaS API</h1>
+            <h1 className="hero-title text-3xl font-bold tracking-tight md:text-4xl">nTZS WaaS API</h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
               Embed digital Tanzanian Shilling wallets directly into your product. Create users, accept M-Pesa
               deposits, send peer-to-peer transfers, and cash out to mobile money — all over a REST API.
@@ -208,6 +248,7 @@ export default function DevelopersPage() {
           {/* Auth */}
           <DocSection
             id="auth"
+            isActive={activeSection === 'auth'}
             step="Step 1"
             title="Authentication"
             description="Every request requires your partner API key as a Bearer token in the Authorization header. Keys are environment-scoped."
@@ -235,6 +276,7 @@ export default function DevelopersPage() {
           {/* Users */}
           <DocSection
             id="users"
+            isActive={activeSection === 'users'}
             step="Step 2"
             title="Create users"
             description="Register a user and provision an on-chain wallet in a single call. Wallets are deterministically derived from your partner seed — no blockchain transaction required."
@@ -290,6 +332,7 @@ export default function DevelopersPage() {
           {/* Balance */}
           <DocSection
             id="balance"
+            isActive={activeSection === 'balance'}
             step="Step 3"
             title="Get user profile &amp; balance"
             description="Fetch a user's on-chain nTZS balance alongside their profile. The balance is read live from Base mainnet at request time."
@@ -332,6 +375,7 @@ const user = await res.json()
           {/* Deposits */}
           <DocSection
             id="deposits"
+            isActive={activeSection === 'deposits'}
             step="Step 4"
             title="Accept deposits (On-Ramp)"
             description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
@@ -404,6 +448,7 @@ body: JSON.stringify({
           {/* Transfers */}
           <DocSection
             id="transfers"
+            isActive={activeSection === 'transfers'}
             step="Step 5"
             title="Transfer between users"
             description="Move nTZS between any two users on your platform. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
@@ -451,6 +496,7 @@ const transfer = await res.json()
           {/* Withdrawals */}
           <DocSection
             id="withdrawals"
+            isActive={activeSection === 'withdrawals'}
             step="Step 6"
             title="Cash out to mobile money (Off-Ramp)"
             description="Burns nTZS tokens on-chain and sends TZS to the user's mobile money number. Supports all major Tanzanian mobile networks. The burn and payout happen automatically."
@@ -494,6 +540,7 @@ const withdrawal = await res.json()
           {/* Swap */}
           <DocSection
             id="swap"
+            isActive={activeSection === 'swap'}
             step="Advanced"
             title="Swap nTZS / USDC"
             description="Let users swap between nTZS and USDC on Base. The swap settles directly against the LP pool and streams real-time status over SSE."
@@ -563,6 +610,7 @@ while (true) {
           {/* Webhooks */}
           <DocSection
             id="webhooks"
+            isActive={activeSection === 'webhooks'}
             step="Events"
             title="Webhooks"
             description="Receive real-time POST notifications to your server when payment events complete. Configure your endpoint and signing secret in the partner dashboard."
@@ -612,6 +660,7 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
           {/* Errors */}
           <DocSection
             id="errors"
+            isActive={activeSection === 'errors'}
             step="Reference"
             title="Error reference"
             description="All errors return a consistent JSON body. Match on the error field for programmatic handling."
