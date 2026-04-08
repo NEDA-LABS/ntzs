@@ -22,7 +22,7 @@ export default function PrivacyPage() {
         <p>
           NEDA Labs Ltd.<br />
           Dar es Salaam, United Republic of Tanzania<br />
-          Email: privacy@nedapay.xyz
+          Email: devops@ntzs.co.tz
         </p>
       </Section>
 
@@ -96,7 +96,7 @@ export default function PrivacyPage() {
           <li><strong>Right to Data Portability:</strong> To receive your data in a structured, machine-readable format where technically feasible;</li>
           <li><strong>Right to Withdraw Consent:</strong> Where processing is based on consent, to withdraw it at any time without affecting the lawfulness of prior processing.</li>
         </ul>
-        <p>To exercise any of these rights, please contact us at privacy@nedapay.xyz. We will respond within thirty (30) days. You also have the right to lodge a complaint with the Personal Data Protection Commission of Tanzania.</p>
+        <p>To exercise any of these rights, please contact us at devops@ntzs.co.tz. We will respond within thirty (30) days. You also have the right to lodge a complaint with the Personal Data Protection Commission of Tanzania.</p>
       </Section>
 
       <Section title="9. Cookies and Tracking">
@@ -122,7 +122,7 @@ export default function PrivacyPage() {
           Data Protection Officer<br />
           NEDA Labs Ltd.<br />
           Dar es Salaam, United Republic of Tanzania<br />
-          Email: privacy@nedapay.xyz
+          Email: devops@ntzs.co.tz
         </p>
       </Section>
     </LegalLayout>

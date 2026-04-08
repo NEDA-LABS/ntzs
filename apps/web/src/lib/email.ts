@@ -1,9 +1,9 @@
 import nodemailer from 'nodemailer'
 
 export const GAS_ALERT_RECIPIENTS = [
-  'victor@nedapay.xyz',
-  'machuche@nedapay.xyz',
-  'devops@nedapay.xyz',
+  'victor@ntzs.co.tz',
+  'machuche@ntzs.co.tz',
+  'devops@ntzs.co.tz',
 ]
 
 function getTransporter() {

@@ -201,12 +201,12 @@ export default function OverviewPage() {
         <p className="text-sm font-medium text-zinc-300 mb-1">Need help?</p>
         <p className="text-sm text-zinc-500">
           Email{' '}
-          <a href="mailto:support@nedapay.xyz" className="text-blue-400 hover:text-blue-300 transition-colors">
-            support@nedapay.xyz
+          <a href="mailto:devops@ntzs.co.tz" className="text-blue-400 hover:text-blue-300 transition-colors">
+            devops@ntzs.co.tz
           </a>{' '}
           for technical or account queries, or{' '}
-          <a href="mailto:legal@nedapay.xyz" className="text-blue-400 hover:text-blue-300 transition-colors">
-            legal@nedapay.xyz
+          <a href="mailto:devops@ntzs.co.tz" className="text-blue-400 hover:text-blue-300 transition-colors">
+            devops@ntzs.co.tz
           </a>{' '}
           for compliance matters.
         </p>

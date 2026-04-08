@@ -46,7 +46,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
           <div className="flex gap-4">
             <Link href="/simplefx/terms" className="hover:text-zinc-400 transition-colors">Terms</Link>
             <Link href="/simplefx/privacy" className="hover:text-zinc-400 transition-colors">Privacy</Link>
-            <a href="mailto:support@nedapay.xyz" className="hover:text-zinc-400 transition-colors">Support</a>
+            <a href="mailto:devops@ntzs.co.tz" className="hover:text-zinc-400 transition-colors">Support</a>
           </div>
         </div>
       </div>

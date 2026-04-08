@@ -148,7 +148,7 @@ export default function SettingsPage() {
               <p className="text-sm text-amber-300 font-medium mb-1">KYC verification pending</p>
               <p className="text-xs text-zinc-500 leading-relaxed">
                 Identity verification is required before your position can go live. Please contact{' '}
-                <a href="mailto:support@nedapay.xyz" className="text-blue-400 underline">support@nedapay.xyz</a>{' '}
+                <a href="mailto:devops@ntzs.co.tz" className="text-blue-400 underline">devops@ntzs.co.tz</a>{' '}
                 to complete your verification.
               </p>
             </div>

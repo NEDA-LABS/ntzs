@@ -172,8 +172,8 @@ export default function DocsPage() {
       <Section title="Support">
         <p>For technical support, account queries, or compliance matters:</p>
         <p>
-          Email: support@nedapay.xyz<br />
-          For urgent compliance matters: legal@nedapay.xyz
+          Email: devops@ntzs.co.tz<br />
+          For urgent compliance matters: devops@ntzs.co.tz
         </p>
       </Section>
     </LegalLayout>

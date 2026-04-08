@@ -117,7 +117,7 @@ export default function TermsPage() {
       </Section>
 
       <Section title="14. Contact">
-        <p>NEDA Labs Ltd.<br />Dar es Salaam, United Republic of Tanzania<br />Email: legal@nedapay.xyz</p>
+        <p>NEDA Labs Ltd.<br />Dar es Salaam, United Republic of Tanzania<br />Email: devops@ntzs.co.tz</p>
       </Section>
     </LegalLayout>
   );

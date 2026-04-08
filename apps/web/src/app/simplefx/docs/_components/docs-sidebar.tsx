@@ -38,7 +38,7 @@ const NAV = [
     group: 'More',
     items: [
       { label: 'Changelog', href: '/simplefx/docs/changelog' },
-      { label: 'Support', href: 'mailto:support@nedapay.xyz' },
+      { label: 'Support', href: 'mailto:devops@ntzs.co.tz' },
     ],
   },
 ]
