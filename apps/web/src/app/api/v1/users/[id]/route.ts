@@ -7,7 +7,10 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { users, wallets, partnerUsers } from '@ntzs/db'
 
-const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
+const BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
+
+const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const USDC_DECIMALS = 6
 
 /**
  * GET /api/v1/users/:id — Get user profile and nTZS balance
@@ -51,21 +54,30 @@ export async function GET(
     .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
     .limit(1)
 
-  // Try to read on-chain balance
+  // Read nTZS and USDC balances in parallel
   let balanceTzs = 0
-  if (wallet?.address && !wallet.address.startsWith('0x_pending_')) {
-    try {
-      const rpcUrl = BASE_RPC_URL
-      const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
+  let balanceUsdc = 0
 
-      if (rpcUrl && contractAddress) {
+  if (wallet?.address && !wallet.address.startsWith('0x_pending_')) {
+    const rpcUrl = BASE_RPC_URL
+    const ntzsAddress = NTZS_CONTRACT_ADDRESS_BASE
+
+    if (rpcUrl && ntzsAddress) {
+      try {
         const provider = new ethers.JsonRpcProvider(rpcUrl)
-        const token = new ethers.Contract(contractAddress, NTZS_BALANCE_ABI, provider)
-        const balanceWei: bigint = await token.balanceOf(wallet.address)
-        balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
+        const ntzsToken = new ethers.Contract(ntzsAddress, BALANCE_ABI, provider)
+        const usdcToken = new ethers.Contract(USDC_CONTRACT_BASE, BALANCE_ABI, provider)
+
+        const [ntzsWei, usdcRaw] = await Promise.all([
+          ntzsToken.balanceOf(wallet.address) as Promise<bigint>,
+          usdcToken.balanceOf(wallet.address) as Promise<bigint>,
+        ])
+
+        balanceTzs = Number(ntzsWei / (BigInt(10) ** BigInt(18)))
+        balanceUsdc = Number(usdcRaw) / 10 ** USDC_DECIMALS
+      } catch (err) {
+        console.warn('[v1/users] Failed to read on-chain balances:', err instanceof Error ? err.message : err)
       }
-    } catch (err) {
-      console.warn('[v1/users] Failed to read on-chain balance:', err instanceof Error ? err.message : err)
     }
   }
 
@@ -76,5 +88,6 @@ export async function GET(
     phone: user.phone,
     walletAddress: wallet?.address || null,
     balanceTzs,
+    balanceUsdc,
   })
 }

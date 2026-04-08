@@ -238,14 +238,25 @@ const user = await res.json()
 //   email: "user@example.com",
 //   phone: "255712345678",
 //   walletAddress: "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C",
-//   balanceTzs: 25000
+//   balanceTzs: 25000,   // nTZS balance (18 decimals, integer TZS units)
+//   balanceUsdc: 6.50    // USDC balance (6 decimals, float)
 // }`}
             />
-            <Note variant="neutral">
-              <span className="font-semibold text-white/90">balanceTzs</span> is the live on-chain balance
-              read directly from the nTZS contract on Base. It reflects all deposits, transfers, and
-              withdrawals that have settled on-chain. The field is <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">0</code> if
-              the wallet has not received any funds yet.
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">balanceTzs</span> — live nTZS balance read
+                from the nTZS contract on Base mainnet. Increases on deposit, decreases on withdrawal or
+                nTZS{'→'}USDC swap.
+              </Note>
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">balanceUsdc</span> — live USDC balance in the
+                same wallet. Accumulates when the user swaps nTZS{'→'}USDC. Both balances are fetched in
+                parallel in a single API call.
+              </Note>
+            </div>
+            <Note variant="info">
+              Both fields are read directly from Base mainnet at request time — no caching. Always use this
+              endpoint before initiating a transfer or withdrawal to confirm the user has sufficient funds.
             </Note>
           </DocSection>
 
