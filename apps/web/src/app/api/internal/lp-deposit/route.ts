@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 })
   }
 
-  const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+  const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
   const webhookUrl = `${apiBaseUrl}/api/webhooks/snippe/payment`
 
   const snippeResult = await initiatePayment({

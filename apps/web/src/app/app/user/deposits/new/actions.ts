@@ -14,7 +14,7 @@ import {
   isValidTanzanianPhone,
 } from '@/lib/psp/snippe'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
 
 export async function createDepositRequestAction(formData: FormData) {
   await requireAnyRole(['end_user', 'super_admin'])
