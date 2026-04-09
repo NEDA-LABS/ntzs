@@ -1930,7 +1930,7 @@ export default function PartnerDashboardPage() {
             {section === 'wallets' && (
               <div>
                 <h2 className="text-lg font-semibold mb-4">Wallets</h2>
-                <div className="overflow-hidden rounded-2xl border border-white/10">
+                <div className="overflow-x-auto rounded-2xl border border-white/10">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-white/10 bg-white/5">
@@ -2075,7 +2075,7 @@ export default function PartnerDashboardPage() {
             {section === 'transfers' && (
               <div>
                 <h2 className="text-lg font-semibold mb-4">Transfers</h2>
-                <div className="overflow-hidden rounded-2xl border border-white/10">
+                <div className="overflow-x-auto rounded-2xl border border-white/10">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-white/10 bg-white/5">
@@ -2130,7 +2130,7 @@ export default function PartnerDashboardPage() {
             {section === 'deposits' && (
               <div>
                 <h2 className="text-lg font-semibold mb-4">Deposits</h2>
-                <div className="overflow-hidden rounded-2xl border border-white/10">
+                <div className="overflow-x-auto rounded-2xl border border-white/10">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-white/10 bg-white/5">
