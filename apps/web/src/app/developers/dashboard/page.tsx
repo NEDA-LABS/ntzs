@@ -33,20 +33,30 @@ interface PartnerInfo {
   payoutBankAccount: string | null
   payoutBankName: string | null
   createdAt: string
+  updatedAt: string
 }
 
 interface DashboardUser {
   id: string
   externalId: string
+  walletIndex: number | null
   email: string
   name: string | null
   phone: string | null
   walletId: string | null
   walletAddress: string | null
   walletFrozen: boolean
+  walletCreatedAt: string | null
   balanceTzs: number
   balanceUsdc: number
+  totalTransfers: number
+  totalSent: number
+  totalReceived: number
+  totalDeposited: number
+  totalDepositCount: number
+  lastTransferAt: string | null
   createdAt: string
+  updatedAt: string
 }
 
 interface DashboardTransfer {
@@ -61,18 +71,24 @@ interface DashboardTransfer {
   status: string
   txHash: string | null
   createdAt: string
+  updatedAt: string
 }
 
 interface DashboardDeposit {
   id: string
   userId: string
+  userEmail: string | null
+  userName: string | null
   amountTzs: number
   status: string
   pspReference: string | null
   pspChannel: string | null
+  payerName: string | null
+  buyerPhone: string | null
   fiatConfirmedAt: string | null
   mintedAt: string | null
   createdAt: string
+  updatedAt: string
 }
 
 interface DashboardSubWallet {
@@ -84,18 +100,40 @@ interface DashboardSubWallet {
   createdAt: string
 }
 
+interface ActivityItem {
+  type: 'transfer' | 'deposit'
+  id: string
+  createdAt: string
+  updatedAt: string
+  amountTzs: number
+  status: string
+  fromEmail?: string | null
+  fromName?: string | null
+  toEmail?: string | null
+  toName?: string | null
+  txHash?: string | null
+  userEmail?: string | null
+  userName?: string | null
+  pspChannel?: string | null
+}
+
 interface DashboardData {
   partner: PartnerInfo
   users: DashboardUser[]
   subWallets: DashboardSubWallet[]
   transfers: DashboardTransfer[]
   deposits: DashboardDeposit[]
+  pendingTransfers: DashboardTransfer[]
+  pendingDeposits: DashboardDeposit[]
+  recentActivity: ActivityItem[]
   stats: {
     totalUsers: number
     totalWallets: number
     totalBalanceTzs: number
     totalTransfers: number
     totalDeposits: number
+    pendingTransfers: number
+    pendingDeposits: number
   }
 }
 
@@ -1599,7 +1637,7 @@ export default function PartnerDashboardPage() {
 
   if (!data) return null
 
-  const { partner, subWallets, transfers, deposits, stats } = data
+  const { partner, subWallets, transfers, deposits, pendingTransfers, pendingDeposits, recentActivity, stats } = data
 
   // Merge optimistic freeze overrides into the users array
   const users = data.users.map((u) =>
@@ -1630,11 +1668,6 @@ export default function PartnerDashboardPage() {
     router.push('/developers/login')
   }
 
-  // Resolve deposit user emails
-  const userMap: Record<string, { email: string; name: string | null }> = {}
-  for (const u of users) {
-    userMap[u.id] = { email: u.email, name: u.name }
-  }
 
   return (
     <div className="flex min-h-screen bg-[#060609] text-white">
@@ -1750,7 +1783,7 @@ export default function PartnerDashboardPage() {
           )}
 
           {/* Stats row (always visible) */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
             <StatCard label="Total Wallets" value={String(stats.totalWallets)} />
             <StatCard
               label="Total Balance"
@@ -1764,6 +1797,11 @@ export default function PartnerDashboardPage() {
             />
             <StatCard label="Transactions" value={String(stats.totalTransfers)} />
             <StatCard label="Deposits" value={String(stats.totalDeposits)} />
+            <StatCard
+              label="Pending"
+              value={String(stats.pendingTransfers + stats.pendingDeposits)}
+              sub={`${stats.pendingTransfers} transfers · ${stats.pendingDeposits} deposits`}
+            />
           </div>
 
           {/* Quick Actions */}
@@ -1796,65 +1834,94 @@ export default function PartnerDashboardPage() {
             {/* ── Overview ── */}
             {section === 'overview' && (
               <div className="space-y-6">
-                <h3 className="text-sm font-semibold text-white/60 uppercase tracking-widest">Recent Activity</h3>
-
-                {/* Recent transfers */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-white/60">Recent Transfers</h3>
-                    <button onClick={() => setSection('transfers')} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
-                      View all
-                      <IconChevronRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                  {transfers.length === 0 ? (
-                    <p className="text-sm text-white/30">No transfers yet.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {transfers.slice(0, 5).map((t) => (
-                        <div key={t.id} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3">
-                          <div>
-                            <div className="text-sm">{t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)} → {t.toName || t.toEmail || t.toUserId.slice(0, 8)}</div>
-                            <div className="text-xs text-white/40">{formatDateEAT(t.createdAt)}</div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium">{t.amountTzs.toLocaleString()} TZS</span>
+                {/* Pending alerts */}
+                {(pendingTransfers.length > 0 || pendingDeposits.length > 0) && (
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                      <span className="text-xs font-semibold text-amber-300 uppercase tracking-widest">Needs Attention</span>
+                    </div>
+                    <div className="space-y-2">
+                      {pendingTransfers.slice(0, 3).map((t) => (
+                        <div key={t.id} className="flex items-center justify-between text-sm">
+                          <span className="text-white/60">
+                            Transfer: {t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)} → {t.toName || t.toEmail || t.toUserId.slice(0, 8)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-white/80">{t.amountTzs.toLocaleString()} TZS</span>
                             <StatusBadge status={t.status} />
                           </div>
                         </div>
                       ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Recent deposits */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-white/60">Recent Deposits</h3>
-                    <button onClick={() => setSection('deposits')} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
-                      View all
-                      <IconChevronRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                  {deposits.length === 0 ? (
-                    <p className="text-sm text-white/30">No deposits yet.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {deposits.slice(0, 5).map((d) => (
-                        <div key={d.id} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3">
-                          <div>
-                            <div className="text-sm">{userMap[d.userId]?.name || userMap[d.userId]?.email || d.userId.slice(0, 8)}</div>
-                            <div className="text-xs text-white/40">Submitted {formatDateEAT(d.createdAt)}</div>
-                            {d.mintedAt && <div className="text-xs text-emerald-400/70">Minted {formatDateEAT(d.mintedAt)}</div>}
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium">{d.amountTzs.toLocaleString()} TZS</span>
+                      {pendingDeposits.slice(0, 3).map((d) => (
+                        <div key={d.id} className="flex items-center justify-between text-sm">
+                          <span className="text-white/60">
+                            Deposit: {d.userName || d.userEmail || d.userId.slice(0, 8)}
+                            {d.pspChannel && <span className="ml-1 text-white/40">via {d.pspChannel}</span>}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-white/80">{d.amountTzs.toLocaleString()} TZS</span>
                             <StatusBadge status={d.status} />
                           </div>
                         </div>
                       ))}
                     </div>
+                    {(pendingTransfers.length > 3 || pendingDeposits.length > 3) && (
+                      <p className="mt-2 text-xs text-white/30">and {Math.max(0, pendingTransfers.length - 3) + Math.max(0, pendingDeposits.length - 3)} more...</p>
+                    )}
+                  </div>
+                )}
+
+                <h3 className="text-sm font-semibold text-white/60 uppercase tracking-widest">Recent Activity</h3>
+
+                {/* Unified activity feed */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  {recentActivity.length === 0 ? (
+                    <p className="text-sm text-white/30">No activity yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {recentActivity.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              item.type === 'transfer'
+                                ? 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
+                                : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                            }`}>
+                              {item.type === 'transfer' ? 'Transfer' : 'Deposit'}
+                            </span>
+                            <div className="min-w-0">
+                              {item.type === 'transfer' ? (
+                                <div className="text-sm truncate">
+                                  {item.fromName || item.fromEmail || '?'} → {item.toName || item.toEmail || '?'}
+                                </div>
+                              ) : (
+                                <div className="text-sm truncate">{item.userName || item.userEmail || '?'}</div>
+                              )}
+                              <div className="text-xs text-white/40">
+                                {formatDateEAT(item.createdAt)}
+                                {item.updatedAt !== item.createdAt && (
+                                  <span className="ml-2 text-white/25">updated {formatDateEAT(item.updatedAt)}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-sm font-medium font-mono">{item.amountTzs.toLocaleString()} TZS</span>
+                            <StatusBadge status={item.status} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
+                  <div className="mt-4 flex gap-4">
+                    <button onClick={() => setSection('transfers')} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+                      All transfers <IconChevronRight className="h-3 w-3" />
+                    </button>
+                    <button onClick={() => setSection('deposits')} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+                      All deposits <IconChevronRight className="h-3 w-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1873,6 +1940,9 @@ export default function PartnerDashboardPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Wallet Address</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Label</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Balance</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Txns</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Last Transfer</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Joined (EAT)</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Actions</th>
                       </tr>
                     </thead>
@@ -1895,6 +1965,10 @@ export default function PartnerDashboardPage() {
                             {partner.treasuryBalanceTzs.toLocaleString()} TZS
                           </td>
                           <td className="px-4 py-3" />
+                          <td className="px-4 py-3" />
+                          <td className="px-4 py-3" />
+                          <td className="px-4 py-3" />
+                          <td className="px-4 py-3" />
                         </tr>
                       )}
                       {/* Sub-wallet rows */}
@@ -1915,12 +1989,15 @@ export default function PartnerDashboardPage() {
                             {sw.balanceTzs.toLocaleString()} TZS
                           </td>
                           <td className="px-4 py-3" />
+                          <td className="px-4 py-3" />
+                          <td className="px-4 py-3 text-xs text-white/30">{formatDateEAT(sw.createdAt)}</td>
+                          <td className="px-4 py-3" />
                         </tr>
                       ))}
                       {/* User wallets */}
                       {users.length === 0 && !partner.treasuryWalletAddress && subWallets.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-8 text-center text-white/40">
+                          <td colSpan={10} className="px-4 py-8 text-center text-white/40">
                             No wallets yet.
                           </td>
                         </tr>
@@ -1932,7 +2009,7 @@ export default function PartnerDashboardPage() {
                             className={`cursor-pointer border-b border-white/5 transition-colors hover:bg-white/[0.04] ${u.walletFrozen ? 'bg-red-500/[0.03]' : ''}`}
                           >
                             <td className="px-4 py-3 text-white/80">{u.name || '—'}</td>
-                            <td className="px-4 py-3 text-white/60">{u.email}</td>
+                            <td className="px-4 py-3 text-white/60 text-xs">{u.email}</td>
                             <td className="px-4 py-3 font-mono text-xs text-white/50">{u.externalId}</td>
                             <td className="px-4 py-3 font-mono text-xs text-white/50">
                               {u.walletAddress
@@ -1955,6 +2032,21 @@ export default function PartnerDashboardPage() {
                               <div>{u.balanceTzs.toLocaleString()} TZS</div>
                               {u.balanceUsdc > 0 && (
                                 <div className="text-[11px] text-blue-300/70">{u.balanceUsdc.toFixed(2)} USDC</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right text-xs text-white/50">
+                              <div>{u.totalTransfers}</div>
+                              {u.totalTransfers > 0 && (
+                                <div className="text-[10px] text-white/30">{u.totalSent} out · {u.totalReceived} in</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-white/40">
+                              {u.lastTransferAt ? formatDateEAT(u.lastTransferAt) : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-white/40">
+                              <div>{formatDateEAT(u.createdAt)}</div>
+                              {u.walletCreatedAt && u.walletCreatedAt !== u.createdAt && (
+                                <div className="text-[10px] text-white/25">wallet {formatDateEAT(u.walletCreatedAt)}</div>
                               )}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -1992,29 +2084,39 @@ export default function PartnerDashboardPage() {
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Amount</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Tx Hash</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Submitted (EAT)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Last Updated (EAT)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {transfers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-white/40">
+                          <td colSpan={7} className="px-4 py-8 text-center text-white/40">
                             No transfers yet.
                           </td>
                         </tr>
                       ) : (
                         transfers.map((t) => (
                           <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
-                            <td className="px-4 py-3 text-white/70 text-xs">{t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)}</td>
-                            <td className="px-4 py-3 text-white/70 text-xs">{t.toName || t.toEmail || t.toUserId.slice(0, 8)}</td>
+                            <td className="px-4 py-3 text-white/70 text-xs">
+                              <div>{t.fromName || t.fromEmail || t.fromUserId.slice(0, 8)}</div>
+                              {t.fromName && t.fromEmail && <div className="text-[10px] text-white/30">{t.fromEmail}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-white/70 text-xs">
+                              <div>{t.toName || t.toEmail || t.toUserId.slice(0, 8)}</div>
+                              {t.toName && t.toEmail && <div className="text-[10px] text-white/30">{t.toEmail}</div>}
+                            </td>
                             <td className="px-4 py-3 text-right font-mono text-white/80">
                               {t.amountTzs.toLocaleString()} TZS
                             </td>
                             <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                             <td className="px-4 py-3 font-mono text-xs text-white/40">
-                              {t.txHash ? `${t.txHash.slice(0, 10)}...` : '—'}
+                              {t.txHash
+                                ? <a href={`https://basescan.org/tx/${t.txHash}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">{t.txHash.slice(0, 10)}...</a>
+                                : '—'}
                             </td>
                             <td className="px-4 py-3 text-xs text-white/40">{formatDateEAT(t.createdAt)}</td>
+                            <td className="px-4 py-3 text-xs text-white/40">{formatDateEAT(t.updatedAt)}</td>
                           </tr>
                         ))
                       )}
@@ -2034,18 +2136,20 @@ export default function PartnerDashboardPage() {
                       <tr className="border-b border-white/10 bg-white/5">
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">ID</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">User</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Payer</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Amount</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Reference</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Submitted (EAT)</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Payment Confirmed (EAT)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Last Updated (EAT)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Confirmed (EAT)</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Minted (EAT)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {deposits.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-white/40">
+                          <td colSpan={10} className="px-4 py-8 text-center text-white/40">
                             No deposits yet.
                           </td>
                         </tr>
@@ -2053,13 +2157,21 @@ export default function PartnerDashboardPage() {
                         deposits.map((d) => (
                           <tr key={d.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                             <td className="px-4 py-3 font-mono text-xs text-white/50">{d.id.slice(0, 8)}...</td>
-                            <td className="px-4 py-3 text-xs text-white/70">{userMap[d.userId]?.name || userMap[d.userId]?.email || d.userId.slice(0, 8)}</td>
+                            <td className="px-4 py-3 text-xs text-white/70">
+                              <div>{d.userName || d.userEmail || d.userId.slice(0, 8)}</div>
+                              {d.userName && d.userEmail && <div className="text-[10px] text-white/30">{d.userEmail}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-white/50">
+                              <div>{d.payerName || '—'}</div>
+                              {d.buyerPhone && <div className="text-[10px] text-white/30">{d.buyerPhone}</div>}
+                            </td>
                             <td className="px-4 py-3 text-right font-mono text-white/80">
                               {d.amountTzs.toLocaleString()} TZS
                             </td>
                             <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
                             <td className="px-4 py-3 font-mono text-xs text-white/40">{d.pspReference || '—'}</td>
                             <td className="px-4 py-3 text-xs text-white/40">{formatDateEAT(d.createdAt)}</td>
+                            <td className="px-4 py-3 text-xs text-white/40">{formatDateEAT(d.updatedAt)}</td>
                             <td className="px-4 py-3 text-xs text-white/40">{d.fiatConfirmedAt ? formatDateEAT(d.fiatConfirmedAt) : '—'}</td>
                             <td className="px-4 py-3 text-xs">{d.mintedAt ? <span className="text-emerald-400">{formatDateEAT(d.mintedAt)}</span> : <span className="text-white/30">—</span>}</td>
                           </tr>
