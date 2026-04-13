@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { ChartNoAxesCombined, KeyRound, Landmark, Workflow } from 'lucide-react'
 
 import { SmartWalletsHero } from './_components/SmartWalletsHero'
 
@@ -15,49 +16,41 @@ export default function SmartWalletsPage() {
         <section className="mt-24 grid gap-6 md:grid-cols-2">
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-transform hover:-translate-y-1">
             <div className="h-12 w-12 rounded-full bg-blue-500/20 flex items-center justify-center mb-6 border border-blue-500/30">
-              <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+              <KeyRound className="h-5 w-5 text-blue-300" strokeWidth={2.2} />
             </div>
-            <h3 className="text-xl font-semibold mb-3">Instant Provisioning</h3>
+            <h3 className="text-xl font-semibold mb-3">Partner-Isolated HD Wallets</h3>
             <p className="text-white/60 leading-relaxed">
-              Create an on-chain HD wallet for your users instantly via a single API call. No seed phrases, no private keys to manage, no friction.
+              Every partner gets an isolated encrypted seed, and each user wallet is deterministically derived on demand. No private key storage, no seed phrase UX, and instant provisioning via API.
             </p>
           </div>
 
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-transform hover:-translate-y-1">
-            <div className="h-12 w-12 rounded-full bg-purple-500/20 flex items-center justify-center mb-6 border border-purple-500/30">
-              <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="h-12 w-12 rounded-full bg-indigo-500/20 flex items-center justify-center mb-6 border border-indigo-500/30">
+              <Landmark className="h-5 w-5 text-indigo-300" strokeWidth={2.2} />
             </div>
-            <h3 className="text-xl font-semibold mb-3">Gasless & Abstracted</h3>
+            <h3 className="text-xl font-semibold mb-3">Treasury & Fee Controls</h3>
             <p className="text-white/60 leading-relaxed">
-              Users never see gas fees or network complexities. Transactions are signed server-side and settled instantly on Base network.
+              Configure platform fees, route deposit collection to treasury, and monitor treasury balances from one partner dashboard. Built for marketplaces and payout-heavy flows.
             </p>
           </div>
 
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-transform hover:-translate-y-1">
             <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center mb-6 border border-emerald-500/30">
-              <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
+              <Workflow className="h-5 w-5 text-emerald-300" strokeWidth={2.2} />
             </div>
-            <h3 className="text-xl font-semibold mb-3">Native M-Pesa Rails</h3>
+            <h3 className="text-xl font-semibold mb-3">Programmable TZS Flows</h3>
             <p className="text-white/60 leading-relaxed">
-              Built-in fiat on/off ramps via mobile money. Accept deposits and process withdrawals directly to and from your users' phones.
+              Run deposits, transfers, and withdrawals over native M-Pesa rails with webhook-driven automation. Funds settle on Base while users operate in familiar TZS amounts.
             </p>
           </div>
 
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-transform hover:-translate-y-1">
             <div className="h-12 w-12 rounded-full bg-orange-500/20 flex items-center justify-center mb-6 border border-orange-500/30">
-              <svg className="w-6 h-6 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-              </svg>
+              <ChartNoAxesCombined className="h-5 w-5 text-orange-300" strokeWidth={2.2} />
             </div>
-            <h3 className="text-xl font-semibold mb-3">Developer First</h3>
+            <h3 className="text-xl font-semibold mb-3">Operational Visibility</h3>
             <p className="text-white/60 leading-relaxed">
-              Integrate in minutes with our comprehensive Node.js/TypeScript SDK. Full webhook support, robust error handling, and partner dashboard.
+              Track wallets, transfers, deposits, treasury balances, and settings with clear named views in the partner dashboard. Ship faster with fewer support loops.
             </p>
           </div>
         </section>
@@ -75,14 +68,15 @@ export default function SmartWalletsPage() {
            <div className="p-6 md:p-8 overflow-x-auto">
              <pre className="font-mono text-sm leading-relaxed">
                <span className="text-blue-400">const</span> <span className="text-white">user</span> <span className="text-blue-400">=</span> <span className="text-purple-400">await</span> <span className="text-white">ntzs.users.</span><span className="text-yellow-200">create</span><span className="text-white">(&#123;</span>{'\n'}
-               <span className="text-white">  externalId: </span><span className="text-green-300">'user_123'</span><span className="text-white">,</span>{'\n'}
-               <span className="text-white">  email: </span><span className="text-green-300">'builder@startup.com'</span><span className="text-white">,</span>{'\n'}
-               <span className="text-white">&#125;)</span>{'\n'}
-               {'\n'}
-               <span className="text-white/40">// Wallet instantly generated on Base network</span>{'\n'}
-               <span className="text-blue-400">console</span><span className="text-white">.</span><span className="text-yellow-200">log</span><span className="text-white">(user.walletAddress)</span>{'\n'}
-               <span className="text-white/40">// {'->'} 0xFfD2dF4aA86978A8971493B20287F5632bC0Fb5d</span>
-             </pre>
+              <span className="text-white">  externalId: </span><span className="text-green-300">&apos;user_123&apos;</span><span className="text-white">,</span>{'\n'}
+              <span className="text-white">  name: </span><span className="text-green-300">&apos;Asha M.&apos;</span><span className="text-white">,</span>{'\n'}
+              <span className="text-white">  email: </span><span className="text-green-300">&apos;builder@startup.com&apos;</span><span className="text-white">,</span>{'\n'}
+              <span className="text-white">&#125;)</span>{'\n'}
+              {'\n'}
+              <span className="text-white/40">{`// Wallet derived from your partner HD tree on Base`}</span>{'\n'}
+              <span className="text-blue-400">console</span><span className="text-white">.</span><span className="text-yellow-200">log</span><span className="text-white">(user.walletAddress)</span>{'\n'}
+              <span className="text-white/40">{`// -> 0xFfD2dF4aA86978A8971493B20287F5632bC0Fb5d`}</span>
+            </pre>
            </div>
         </section>
 
