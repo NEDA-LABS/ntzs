@@ -64,7 +64,7 @@ export default async function NewDepositPage() {
         {/* Header */}
         <div className="mb-6 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-border/40 bg-background/35">
-            <img src="/ntzs-logo.png" alt="nTZS" className="h-7 w-7 object-contain" />
+            <img src="/ntzs-icon.svg" alt="nTZS" className="h-7 w-7 object-contain" />
           </div>
           <p className="mt-3 text-sm text-muted-foreground">Deposit to</p>
           <h1 className="mt-0.5 text-2xl font-bold text-foreground">@{displayName}</h1>

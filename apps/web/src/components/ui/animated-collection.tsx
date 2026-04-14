@@ -21,16 +21,16 @@ const ITEMS: CollectionItem[] = [
     title: "nTZS",
     subtitle: "Stable TZS",
     idNumber: "TZS",
-    image: "/ntzs-logo.png",
+    image: "/ntzs-icon.svg",
     iconSrc: "/ntzs-icon.svg",
   },
   {
     id: "2",
-    title: "USDC",
-    subtitle: "USD Coin",
-    idNumber: "USD",
-    image: "/usdc.png",
-    iconSrc: "/usdc-logo.svg",
+    title: "nTZS",
+    subtitle: "Stable TZS",
+    idNumber: "TZS",
+    image: "/ntzs-icon.svg",
+    iconSrc: "/ntzs-icon.svg",
   },
 ];
 
