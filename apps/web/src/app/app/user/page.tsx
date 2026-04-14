@@ -176,11 +176,11 @@ export default async function UserDashboard() {
         <div className="hidden lg:flex lg:col-span-2 lg:flex-col lg:gap-4">
 
           {/* Quick Links card */}
-          <div className="rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06] overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/[0.05]">
-              <p className="text-sm font-semibold text-white">Quick Links</p>
+          <div className="overflow-hidden rounded-[28px] border border-border/40 bg-card/60 backdrop-blur-2xl">
+            <div className="px-5 py-4 border-b border-border/40">
+              <p className="text-sm font-semibold text-foreground">Quick Links</p>
             </div>
-            <div className="divide-y divide-white/[0.04]">
+            <div className="divide-y divide-border/40">
               {[
                 {
                   href: '/app/user/wallet',
@@ -217,18 +217,18 @@ export default async function UserDashboard() {
                   key={item.href}
                   href={item.href}
                   prefetch
-                  className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-white/[0.04] group"
+                  className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-background/35 group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.05]">
-                      <item.icon className="h-4 w-4 text-zinc-400 group-hover:text-orange-400 transition-colors" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/40 bg-background/40">
+                      <item.icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-white">{item.label}</p>
-                      <p className="text-[11px] text-zinc-600">{item.sub}</p>
+                      <p className="text-xs font-medium text-foreground">{item.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.sub}</p>
                     </div>
                   </div>
-                  <IconChevronRight className="h-3.5 w-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
+                  <IconChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground/80 transition-colors" />
                 </Link>
               ))}
             </div>
@@ -236,16 +236,16 @@ export default async function UserDashboard() {
 
           {/* Wallet address card */}
           {wallet && (
-            <div className="rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
-              <div className="flex items-center gap-2 mb-3">
-                <IconWallet className="h-4 w-4 text-blue-400" />
-                <p className="text-xs font-semibold text-white">Wallet</p>
-                <span className="ml-auto text-[10px] text-zinc-600">Base network</span>
+            <div className="rounded-[28px] border border-border/40 bg-card/60 p-5 backdrop-blur-2xl">
+              <div className="mb-3 flex items-center gap-2">
+                <IconWallet className="h-4 w-4 text-primary" />
+                <p className="text-xs font-semibold text-foreground">Wallet</p>
+                <span className="ml-auto text-[10px] text-muted-foreground">Base network</span>
               </div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">Address</p>
-              <p className="truncate font-mono text-xs text-zinc-400">{wallet.address}</p>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Address</p>
+              <p className="truncate font-mono text-xs text-foreground/80">{wallet.address}</p>
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-zinc-600">Status</span>
+                <span className="text-xs text-muted-foreground">Status</span>
                 <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
                   <IconCheckCircle className="h-3 w-3" />
                   Active
@@ -253,7 +253,7 @@ export default async function UserDashboard() {
               </div>
               {pendingCount > 0 && (
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-zinc-600">Pending deposits</span>
+                  <span className="text-xs text-muted-foreground">Pending deposits</span>
                   <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
                     {pendingCount}
                   </span>

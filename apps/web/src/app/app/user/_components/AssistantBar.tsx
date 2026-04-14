@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 
 import { GlassInput } from "@/components/ui/glass-input"
+import { track } from "@/lib/telemetry"
 
 type Intent =
   | { type: "receive" }
@@ -20,18 +21,39 @@ function parseIntent(input: string): Intent | null {
 
   if (/^(receive|pay(\s+link)?)\b/.test(s)) return { type: "receive" }
 
-  const sendMatch = s.match(/send\s+([0-9]+(?:[.,][0-9]+)?)\s*(?:tzs|ntzs)?\s*(?:to)?\s*(@[a-z0-9_-]+|0x[a-f0-9]{6,})?/)
+  // Normalize amounts like 25k, 1.5m
+  const toNumber = (t?: string) => {
+    if (!t) return undefined
+    const m = t.match(/([0-9]+(?:[.,][0-9]+)?)([km])?/)
+    if (!m) return undefined
+    const base = parseFloat(m[1].replace(",", "."))
+    const suf = m[2]
+    if (!Number.isFinite(base)) return undefined
+    if (suf === 'k') return String(base * 1_000)
+    if (suf === 'm') return String(base * 1_000_000)
+    return String(base)
+  }
+
+  // send <amt> [tzs] to <recipient> | send to <recipient> <amt>
+  const sendMatch = s.match(/send\s+(?:(?:to\s+)?(@[a-z0-9_-]+|0x[a-f0-9]{6,})\s+([0-9]+(?:[.,][0-9]+)?[km]?))|([0-9]+(?:[.,][0-9]+)?[km]?)\s*(?:tzs|ntzs)?\s*(?:to)?\s*(@[a-z0-9_-]+|0x[a-f0-9]{6,})/)
   if (sendMatch) {
-    const amount = sendMatch[1]?.replace(",", ".")
-    const to = sendMatch[2]
+    const to = sendMatch[1] || sendMatch[4]
+    const amountRaw = sendMatch[2] || sendMatch[3]
+    const amount = toNumber(amountRaw)
     return { type: "send", amount, to }
   }
 
-  const swapMatch = s.match(/swap\s+([0-9]+(?:[.,][0-9]+)?)\s*(usdc|tzs)?\s*(?:to|→)\s*(usdc|tzs)/)
+  // swap <amt> [usdc|tzs] to <usdc|tzs> | swap to usdc <amt>
+  const swapMatch = s.match(/swap\s+(?:(?:to\s*(usdc|tzs)\s*([0-9]+(?:[.,][0-9]+)?[km]?))|([0-9]+(?:[.,][0-9]+)?[km]?)\s*(usdc|tzs)?\s*(?:to|→)\s*(usdc|tzs))/)
   if (swapMatch) {
-    const amount = swapMatch[1]?.replace(",", ".")
-    const from = (swapMatch[2] || "tzs").toUpperCase() as "TZS" | "USDC"
-    const toSym = swapMatch[3].toUpperCase() as "TZS" | "USDC"
+    const altTo = swapMatch[1]
+    const altAmt = swapMatch[2]
+    const stdAmt = swapMatch[3]
+    const stdFrom = swapMatch[4]
+    const stdTo = swapMatch[5]
+    const amount = toNumber(altAmt || stdAmt)
+    const from = ((stdFrom || (altTo === 'usdc' ? 'tzs' : 'usdc')) || 'tzs').toUpperCase() as "TZS" | "USDC"
+    const toSym = ((stdTo || altTo) || 'usdc').toUpperCase() as "TZS" | "USDC"
     return { type: "swap", amount, from, toSym }
   }
 
@@ -88,7 +110,9 @@ export function AssistantBar() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    go(parseIntent(value))
+    const intent = parseIntent(value)
+    track('assistant_submit', { value, intent })
+    go(intent)
   }
 
   return (
@@ -125,6 +149,7 @@ export function AssistantBar() {
             key={chip.label}
             href={chip.href}
             prefetch
+            onClick={() => track('assistant_chip_click', { label: chip.label, href: chip.href })}
             className="rounded-full border border-border/40 bg-background/35 px-3 py-1.5 text-xs font-medium text-foreground/80 backdrop-blur-xl transition-colors hover:bg-background/45 focus-visible:outline-none focus:ring-2 focus:ring-ring"
           >
             {chip.label}
