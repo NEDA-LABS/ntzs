@@ -73,6 +73,13 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
 
+  // Open via TopActions event
+  useEffect(() => {
+    const onOpen = () => { reset(); setOpen(true) }
+    window.addEventListener('wallet:openSwap', onOpen)
+    return () => window.removeEventListener('wallet:openSwap', onOpen)
+  }, [])
+
   function flip() {
     setFromToken(toToken)
     setToToken(fromToken)

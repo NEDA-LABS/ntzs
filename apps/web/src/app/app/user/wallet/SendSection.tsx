@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { sendNtzsAction, type SendNtzsResult } from './actions'
 
@@ -26,6 +26,13 @@ export function SendSection({ walletAddress }: SendSectionProps) {
     setOpen(false)
     setTimeout(reset, 300)
   }
+
+  // Open via TopActions event
+  useEffect(() => {
+    const onOpen = () => { reset(); setOpen(true) }
+    window.addEventListener('wallet:openSend', onOpen)
+    return () => window.removeEventListener('wallet:openSend', onOpen)
+  }, [])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

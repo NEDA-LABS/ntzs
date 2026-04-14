@@ -8,6 +8,7 @@ import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
 import { TopActions } from './_components/TopActions'
+import { WithdrawInline } from './WithdrawInline'
 // Tabs removed from hero for a minimal surface
 
 export default async function WalletPage() {
@@ -75,11 +76,7 @@ export default async function WalletPage() {
                 </details>
               </div>
             </div>
-            <Link
-              href="/app/user/withdraw"
-              prefetch
-              className="flex min-h-[128px] flex-col justify-between rounded-[28px] border border-border/40 bg-card/70 p-5 text-left text-foreground shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl transition-transform duration-300 hover:-translate-y-1"
-            >
+            <div className="flex min-h-[128px] flex-col justify-between rounded-[28px] border border-border/40 bg-card/70 p-5 text-left text-foreground shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-background/40">
                 <svg className="h-5 w-5 text-foreground/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
@@ -87,11 +84,13 @@ export default async function WalletPage() {
               </div>
               <div>
                 <p className="text-lg font-semibold">Withdraw TZS</p>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Move funds out of your wallet when you are ready.</p>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Use the top actions to withdraw anytime.</p>
               </div>
-            </Link>
+            </div>
           </div>
         </div>
+        {/* Withdraw modal instance (opened via TopActions) */}
+        <WithdrawInline userPhone={dbUser.phone} />
       </div>
     </div>
   )

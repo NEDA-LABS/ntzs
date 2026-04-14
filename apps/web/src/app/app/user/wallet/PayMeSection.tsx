@@ -1,7 +1,7 @@
 'use client'
 
 import type React from 'react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AnimatePresence,
   motion,
@@ -107,6 +107,20 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
   }
 
   const expandedHeight = editing ? 280 : activeAlias ? 440 : 280
+
+  // Open QR via TopActions event
+  useEffect(() => {
+    const onOpen = () => {
+      if (activeAlias) {
+        setQrOpen(true)
+      } else {
+        setIsExpanded(true)
+        setEditing(true)
+      }
+    }
+    window.addEventListener('wallet:openReceive', onOpen)
+    return () => window.removeEventListener('wallet:openReceive', onOpen)
+  }, [])
 
   return (
     <motion.div

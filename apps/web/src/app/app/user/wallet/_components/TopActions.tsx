@@ -1,27 +1,33 @@
 "use client"
 
-import Link from "next/link"
 import { IconSend, IconTrendingUp, IconWithdraw, IconWallet } from "@/app/app/_components/icons"
+
+function emit(name: string) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(name))
+  }
+}
 
 export function TopActions() {
   const items = [
-    { label: "Receive", href: "#receive", icon: IconWallet },
-    { label: "Send", href: "#send", icon: IconSend },
-    { label: "Swap", href: "#swap", icon: IconTrendingUp },
-    { label: "Withdraw", href: "/app/user/withdraw", icon: IconWithdraw },
-  ]
+    { label: "Receive", icon: IconWallet, onClick: () => emit('wallet:openReceive') },
+    { label: "Send", icon: IconSend, onClick: () => emit('wallet:openSend') },
+    { label: "Swap", icon: IconTrendingUp, onClick: () => emit('wallet:openSwap') },
+    { label: "Withdraw", icon: IconWithdraw, onClick: () => emit('wallet:openWithdraw') },
+  ] as const
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((it) => (
-        <Link
+        <button
           key={it.label}
-          href={it.href}
-          prefetch
+          type="button"
+          onClick={it.onClick}
           className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-background/35 px-4 py-2 text-sm font-semibold text-foreground/90 backdrop-blur-xl transition-colors hover:bg-background/45 focus-visible:outline-none focus:ring-2 focus:ring-ring"
+          aria-label={it.label}
         >
           <it.icon className="h-4 w-4 text-muted-foreground" />
           {it.label}
-        </Link>
+        </button>
       ))}
     </div>
   )
