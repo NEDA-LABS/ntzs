@@ -78,28 +78,28 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
 
   const usdcBalance = parseFloat(balances.USDC || '0')
   const hasUsdc = usdcBalance > 0
+  const subtitle = active === 'NTZS' ? 'Spendable TZS balance' : 'USD stablecoin balance'
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      {/* Toggle pill */}
-      <div className="flex items-center rounded-xl bg-black/30 p-0.5 ring-1 ring-white/[0.08]">
+    <div className="space-y-5">
+      <div className="inline-flex items-center rounded-full border border-border/40 bg-background/40 p-1 backdrop-blur-xl">
         {(Object.keys(TOKENS) as TokenKey[]).map(key => (
           <button
             key={key}
             type="button"
             onClick={() => setActive(key)}
-            className={`relative px-2.5 py-1 rounded-[10px] text-[11px] font-semibold transition-colors duration-150 ${
-              active === key ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
+            className={`relative rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-colors duration-150 ${
+              active === key ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80'
             }`}
           >
             {active === key && (
               <motion.span
                 layoutId="balance-pill"
-                className="absolute inset-0 rounded-[10px] bg-blue-600/30 ring-1 ring-blue-500/30"
+                className="absolute inset-0 rounded-full bg-foreground text-background"
                 transition={{ type: 'spring', stiffness: 500, damping: 40 }}
               />
             )}
-            <span className="relative">
+            <span className="relative flex items-center gap-1.5">
               {TOKENS[key].label}
               {key === 'USDC' && hasUsdc && active !== 'USDC' && (
                 <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" />
@@ -109,23 +109,26 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
         ))}
       </div>
 
-      {/* Balance display */}
-      <div className="text-right">
+      <div>
         <AnimatePresence mode="wait">
-          <motion.p
+          <motion.div
             key={active}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
-            className={`text-sm font-bold ${loading ? 'text-white/40 animate-pulse' : 'text-white'}`}
+            className="space-y-2"
           >
-            {loading ? `-- ${token.symbol}` : `${formatted} ${token.symbol}`}
-          </motion.p>
+            <p className={`text-4xl font-semibold tracking-tight md:text-5xl ${loading ? 'text-foreground/40 animate-pulse' : 'text-foreground'}`}>
+              {loading ? `-- ${token.symbol}` : `${formatted} ${token.symbol}`}
+            </p>
+            <p className="text-sm text-muted-foreground">{subtitle}</p>
+          </motion.div>
         </AnimatePresence>
-        <p className="text-[10px] font-medium uppercase tracking-wide text-blue-400 mt-0.5">
-          Balance
-        </p>
+        <div className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+          Updated from Base mainnet
+        </div>
       </div>
     </div>
   )

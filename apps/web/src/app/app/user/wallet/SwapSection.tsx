@@ -182,22 +182,25 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
 
   return (
     <>
-      {/* Swap button */}
       <button
         type="button"
         onClick={() => { reset(); setOpen(true) }}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-[#12121e] px-5 py-4 text-sm font-semibold text-white ring-1 ring-white/[0.06] transition-all duration-75 hover:bg-white/[0.04] active:scale-[0.98]"
+        className="flex min-h-[128px] w-full flex-col items-start justify-between rounded-[28px] border border-border/40 bg-card/70 p-5 text-left text-foreground shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl transition-transform duration-300 hover:-translate-y-1"
       >
-        <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-        Swap
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-background/40">
+          <svg className="h-5 w-5 text-foreground/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-lg font-semibold">Swap assets</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Exchange nTZS and USDC with live quote previews.</p>
+        </div>
       </button>
 
       <AnimatePresence>
         {open && (
           <>
-            {/* Backdrop */}
             <motion.div
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
               initial={{ opacity: 0 }}
@@ -207,27 +210,24 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
               onClick={handleClose}
             />
 
-            {/* Bottom sheet */}
             <motion.div
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-3xl bg-[#0f0f1a] ring-1 ring-white/[0.07] pb-safe overflow-hidden"
+              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg overflow-hidden rounded-t-[32px] border border-border/40 bg-card/85 shadow-[0_30px_90px_rgba(3,7,18,0.4)] backdrop-blur-2xl pb-safe"
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', stiffness: 380, damping: 38 }}
             >
-              {/* Drag handle */}
               <div className="flex justify-center pt-3 pb-1">
-                <div className="h-1 w-10 rounded-full bg-white/10" />
+                <div className="h-1 w-10 rounded-full bg-border" />
               </div>
 
               <div className="px-6 pb-6 space-y-4 max-h-[85vh] overflow-y-auto">
-                {/* Header */}
                 <div className="flex items-center justify-between">
-                  <h2 className="text-base font-bold text-white">Swap</h2>
+                  <h2 className="text-base font-bold text-foreground">Swap</h2>
                   <button
                     type="button"
                     onClick={handleClose}
-                    className="rounded-full p-1.5 text-zinc-500 hover:bg-white/5 hover:text-white transition-colors"
+                    className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-background/40 hover:text-foreground"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -236,7 +236,6 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                 </div>
 
                 {isFilled ? (
-                  /* ── Success state ── */
                   <div className="space-y-5 text-center py-4">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/25">
                       <svg className="h-7 w-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -244,8 +243,8 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-white">Swap complete!</p>
-                      <p className="mt-1 text-sm text-zinc-400">
+                      <p className="text-lg font-bold text-foreground">Swap complete!</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {amount} {fromLabel} → {toLabel}
                       </p>
                     </div>
@@ -254,7 +253,7 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                         href={`https://basescan.org/tx/${logs[logs.length - 1].txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-mono text-blue-400 hover:bg-white/10 transition-colors"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-border/40 bg-background/35 px-3 py-2 text-xs font-mono text-foreground/80 backdrop-blur-xl transition-colors hover:bg-background/45"
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -265,19 +264,17 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                     <button
                       type="button"
                       onClick={handleClose}
-                      className="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all active:scale-[0.98]"
+                      className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:scale-[0.98] hover:opacity-90"
                     >
                       Done
                     </button>
                   </div>
                 ) : (
                   <>
-                    {/* ── Swap form ── */}
-                    {/* You pay */}
-                    <div className="rounded-2xl border border-white/[0.07] bg-black/30 p-4 space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">You pay</p>
+                    <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You pay</p>
                       <div className="flex items-center gap-3">
-                        <div className="flex-none rounded-xl bg-zinc-800 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/10">
+                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground">
                           {fromLabel}
                         </div>
                         <input
@@ -288,54 +285,51 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                           value={amount}
                           onChange={(e) => handleAmountChange(e.target.value)}
                           disabled={swapping}
-                          className="flex-1 bg-transparent text-right text-2xl font-light text-white placeholder:text-zinc-700 focus:outline-none disabled:opacity-50"
+                          className="flex-1 bg-transparent text-right text-2xl font-light text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
                         />
                       </div>
                     </div>
 
-                    {/* Flip button */}
                     <div className="flex justify-center -my-1">
                       <button
                         type="button"
                         onClick={flip}
                         disabled={swapping}
-                        className="p-2 rounded-full border border-white/[0.08] bg-[#0f0f1a] hover:border-blue-500/30 hover:bg-blue-600/5 transition-all disabled:opacity-40"
+                        className="rounded-full border border-border/40 bg-background/40 p-2 transition-all hover:bg-background/55 disabled:opacity-40"
                       >
-                        <svg className="h-4 w-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                         </svg>
                       </button>
                     </div>
 
-                    {/* You receive */}
-                    <div className="rounded-2xl border border-white/[0.07] bg-black/30 p-4 space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">You receive</p>
+                    <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You receive</p>
                       <div className="flex items-center gap-3">
-                        <div className="flex-none rounded-xl bg-zinc-800 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/10">
+                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground">
                           {toLabel}
                         </div>
                         <div className="flex-1 text-right">
                           {rateLoading ? (
-                            <Spinner className="h-5 w-5 text-zinc-600 ml-auto" />
+                            <Spinner className="ml-auto h-5 w-5 text-muted-foreground" />
                           ) : rate ? (
                             <div>
-                              <p className="text-2xl font-light text-white">
+                              <p className="text-2xl font-light text-foreground">
                                 ≈ {rate.expectedOutput.toLocaleString('en-US', { maximumFractionDigits: 4 })}
                               </p>
-                              <p className="text-[11px] text-zinc-600 mt-0.5">
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 min {rate.minOutput.toLocaleString('en-US', { maximumFractionDigits: 4 })} · mid {rate.midRate.toLocaleString()}
                               </p>
                             </div>
                           ) : (
-                            <p className="text-2xl font-light text-zinc-700">—</p>
+                            <p className="text-2xl font-light text-muted-foreground">—</p>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Slippage */}
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-zinc-600">Slippage tolerance</p>
+                      <p className="text-xs text-muted-foreground">Slippage tolerance</p>
                       <div className="flex gap-1.5">
                         {[50, 100, 200].map(bps => (
                           <button
@@ -344,8 +338,8 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                             onClick={() => setSlippageBps(bps)}
                             className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
                               slippageBps === bps
-                                ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/30'
-                                : 'bg-zinc-900 text-zinc-500 ring-1 ring-white/5 hover:text-zinc-300'
+                                ? 'bg-foreground text-background'
+                                : 'border border-border/40 bg-background/35 text-muted-foreground hover:text-foreground/80'
                             }`}
                           >
                             {bps / 100}%
@@ -354,7 +348,6 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                       </div>
                     </div>
 
-                    {/* Low liquidity warning */}
                     {rate?.lowLiquidity && !swapping && !done && (
                       <motion.div
                         initial={{ opacity: 0, y: -4 }}
@@ -365,7 +358,6 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                       </motion.div>
                     )}
 
-                    {/* Error state */}
                     {isFailed && (
                       <motion.div
                         initial={{ opacity: 0, y: -4 }}
@@ -376,7 +368,6 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                       </motion.div>
                     )}
 
-                    {/* Swap / Cancel button */}
                     <button
                       type="button"
                       onClick={swapping ? () => { abortRef.current?.abort(); setSwapping(false); setDone(true) } : startSwap}
@@ -384,7 +375,7 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                       className={`w-full py-3.5 rounded-2xl text-sm font-semibold transition-all active:scale-[0.98] ${
                         swapping
                           ? 'bg-rose-600/10 text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-600/20'
-                          : 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/25 disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-blue-500/40'
+                          : 'rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40'
                       }`}
                     >
                       {swapping ? (
@@ -395,18 +386,17 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                       ) : isFailed ? 'Try again' : 'Swap'}
                     </button>
 
-                    {/* Live status log */}
                     <AnimatePresence>
                       {logs.length > 0 && (
                         <motion.div
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="rounded-2xl border border-white/[0.06] bg-black/20 overflow-hidden"
+                          className="overflow-hidden rounded-2xl border border-border/40 bg-background/25"
                         >
-                          <div className="px-4 py-2.5 border-b border-white/[0.05]">
-                            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Order status</p>
+                          <div className="border-b border-border/40 px-4 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Order status</p>
                           </div>
-                          <div className="divide-y divide-white/[0.04] max-h-48 overflow-y-auto">
+                          <div className="max-h-48 divide-y divide-border/30 overflow-y-auto">
                             {logs.map((log, i) => (
                               <div key={i} className="px-4 py-2.5 flex items-start gap-3">
                                 <div className="mt-0.5 flex-none">
@@ -429,7 +419,7 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                                       href={`https://basescan.org/tx/${log.txHash}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-[10px] font-mono text-zinc-600 hover:text-zinc-400 truncate block mt-0.5"
+                                      className="mt-0.5 block truncate text-[10px] font-mono text-muted-foreground hover:text-foreground/80"
                                     >
                                       {log.txHash.slice(0, 18)}…{log.txHash.slice(-6)}
                                     </a>
