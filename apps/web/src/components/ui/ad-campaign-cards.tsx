@@ -97,47 +97,54 @@ export function AdCampaignCards() {
         />
       </AnimatePresence>
 
-      {/* ── Dark scrim so text is always legible ── */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/50 to-black/20 pointer-events-none" />
+      {/* ── Dark scrim — heavier at bottom so text always pops ── */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/92 via-black/60 to-black/10 pointer-events-none" />
 
       {/* ── Content ── */}
-      <div className="relative z-10 flex min-h-[220px] flex-col justify-end p-5 sm:min-h-[240px] sm:p-6">
+      <div className="relative z-10 flex min-h-[260px] flex-col justify-end gap-3 p-5 sm:min-h-[280px] sm:p-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={slide.id}
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="space-y-2"
+            className="space-y-3"
           >
-            <p className={`text-[11px] font-semibold uppercase tracking-widest ${slide.accent}`}>
+            {/* Eyebrow — pill badge so it reads over any video frame */}
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${slide.accentBg} ${slide.accent} ring-1 ${slide.accentRing}`}
+            >
               {slide.eyebrow}
-            </p>
-            <h3 className="text-base font-bold leading-snug text-white sm:text-lg">
+            </span>
+
+            {/* Headline — larger, tight leading */}
+            <h3 className="text-xl font-extrabold leading-tight text-white sm:text-2xl">
               {slide.headline}
             </h3>
-            <p className="text-xs text-white/70 leading-relaxed max-w-xs">
+
+            {/* Sub copy — one step larger, slightly more opaque */}
+            <p className="text-sm text-white/80 leading-relaxed max-w-sm">
               {slide.sub}
             </p>
 
-            <div className="flex items-center gap-3 pt-1">
+            {/* CTA + dots */}
+            <div className="flex items-center gap-3 pt-0.5">
               <Link
                 href={slide.ctaHref}
-                className={`inline-flex items-center rounded-full px-4 py-1.5 text-xs font-semibold ${slide.accentBg} ${slide.accent} ring-1 ${slide.accentRing} transition-all hover:brightness-125`}
+                className={`inline-flex items-center rounded-full px-4 py-2 text-xs font-bold ${slide.accentBg} ${slide.accent} ring-1 ${slide.accentRing} transition-all hover:brightness-125`}
               >
                 {slide.ctaLabel}
               </Link>
 
-              {/* ── Dot indicators ── */}
               <div className="flex items-center gap-1.5 ml-auto">
                 {slides.map((s, i) => (
                   <button
                     key={s.id}
                     onClick={() => setCurrent(i)}
                     aria-label={`Go to slide ${i + 1}`}
-                    className={`h-1.5 rounded-full transition-all ${
-                      i === current ? "w-5 bg-white" : "w-1.5 bg-white/35"
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      i === current ? "w-5 bg-white" : "w-1.5 bg-white/35 hover:bg-white/60"
                     }`}
                   />
                 ))}
