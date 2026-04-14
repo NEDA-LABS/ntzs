@@ -99,27 +99,21 @@ export default async function ActivityPage() {
             </p>
           </div>
 
-          {/* Summary stats */}
-          <div className="mb-6 grid grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-border/40 bg-card/60 p-4 backdrop-blur-2xl">
+          {/* Summary stats — single card */}
+          <div className="mb-6 rounded-2xl border border-border/40 bg-card/60 backdrop-blur-2xl divide-x divide-border/40 flex">
+            <div className="flex-1 px-5 py-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Total In</p>
-              <p className="mt-3 text-2xl font-bold text-emerald-400">
-                {totalIn.toLocaleString()}
-              </p>
+              <p className="mt-2 text-xl font-bold text-emerald-400 truncate">{totalIn.toLocaleString()}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">TZS</p>
             </div>
-            <div className="rounded-2xl border border-border/40 bg-card/60 p-4 backdrop-blur-2xl">
+            <div className="flex-1 px-5 py-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Total Out</p>
-              <p className="mt-3 text-2xl font-bold text-rose-300">
-                {totalOut.toLocaleString()}
-              </p>
+              <p className="mt-2 text-xl font-bold text-rose-300 truncate">{totalOut.toLocaleString()}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">TZS</p>
             </div>
-            <div className="rounded-2xl border border-border/40 bg-card/60 p-4 backdrop-blur-2xl">
+            <div className="flex-1 px-5 py-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Pending</p>
-              <p className="mt-3 text-2xl font-bold text-amber-400">
-                {pendingCount}
-              </p>
+              <p className="mt-2 text-xl font-bold text-amber-400">{pendingCount}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">deposits</p>
             </div>
           </div>
