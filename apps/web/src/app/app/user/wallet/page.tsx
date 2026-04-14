@@ -2,9 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { GlassCard } from '@/components/ui/glass-card'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
-import { BalanceToggle } from '../_components/BalanceToggle'
 import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
@@ -29,19 +27,10 @@ export default async function WalletPage() {
     .replace(/[^a-z0-9_-]/g, '')
     .slice(0, 30) || 'user'
 
-  const displayName = dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email
-
   return (
     <div className="ntzs-wallet-shell min-h-screen px-4 py-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="p-0 md:p-0 space-y-4">
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">Base network wallet</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
-              {displayName}
-            </h1>
-          </div>
-
           <div id="receive">
             <PayMeSection
               currentAlias={dbUser.payAlias ?? null}
