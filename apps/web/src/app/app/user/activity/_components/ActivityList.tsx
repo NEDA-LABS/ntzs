@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Link2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Link2, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface Txn {
@@ -24,6 +24,24 @@ export interface Txn {
 const FILTERS = ['All', 'Deposits', 'Sent', 'Swaps', 'Withdrawals'] as const
 type Filter = (typeof FILTERS)[number]
 
+const BASESCAN = 'https://basescan.org/tx/'
+
+/** Shorten a hex address or return the symbol as-is */
+function shortToken(raw?: string): string {
+  if (!raw) return '—'
+  if (/^0x[0-9a-fA-F]{10,}$/.test(raw)) {
+    return `${raw.slice(0, 6)}…${raw.slice(-4)}`
+  }
+  return raw.toUpperCase()
+}
+
+/** Make amount readable — strip trailing zeros */
+function fmt(val?: string, decimals = 4) {
+  const n = parseFloat(val || '0')
+  if (!n) return '—'
+  return n.toLocaleString('en-US', { maximumFractionDigits: decimals })
+}
+
 function StatusBadge({ status, type }: { status: string; type: Txn['type'] }) {
   const s = status.toLowerCase().replace(/_/g, ' ')
   const color =
@@ -32,12 +50,16 @@ function StatusBadge({ status, type }: { status: string; type: Txn['type'] }) {
       : type === 'send'
       ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/20'
       : type === 'deposit'
-        ? s === 'minted' ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20'
-          : s === 'rejected' || s === 'cancelled' ? 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/20'
+        ? s === 'minted'
+          ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20'
+          : s === 'rejected' || s === 'cancelled'
+          ? 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/20'
           : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20'
-        : s === 'burned' ? 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/20'
-          : s === 'failed' ? 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/20'
-          : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20'
+        : s === 'burned'
+        ? 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/20'
+        : s === 'failed'
+        ? 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/20'
+        : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20'
 
   return (
     <span className={cn('rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize tracking-wide', color)}>
@@ -81,7 +103,7 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
         </span>
       </div>
 
-      {/* Card */}
+      {/* List card */}
       <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-2xl">
         {filtered.length === 0 ? (
           <div className="py-16 text-center">
@@ -95,16 +117,7 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
               const isDeposit = t.type === 'deposit'
               const isCollection = t.source === 'pay_link'
 
-              const label = isSwap
-                ? `Swap · ${t.fromSymbol} → ${t.toSymbol}`
-                : isSend
-                ? `Send · ${t.toAddress ? `${t.toAddress.slice(0, 6)}…${t.toAddress.slice(-4)}` : ''}`
-                : isDeposit
-                  ? isCollection
-                    ? t.payerName ? `Collection · ${t.payerName}` : 'Collection'
-                    : 'Deposit'
-                  : 'Withdrawal'
-
+              /* ── Icon colours ── */
               const iconBg = isSwap
                 ? 'bg-violet-500/12'
                 : isSend
@@ -121,51 +134,85 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
                 ? 'text-emerald-400'
                 : 'text-rose-300'
 
+              /* ── Swap token labels (handles raw addresses gracefully) ── */
+              const fromLabel = shortToken(t.fromSymbol)
+              const toLabel = shortToken(t.toSymbol)
+
+              /* ── Primary row label ── */
+              const label = isSwap
+                ? 'Swap'
+                : isSend
+                ? 'Send'
+                : isDeposit
+                ? isCollection
+                  ? t.payerName ? `Collection · ${t.payerName}` : 'Collection'
+                  : 'Deposit'
+                : 'Withdrawal'
+
+              /* ── Secondary detail line ── */
+              const detail = isSwap
+                ? `${fromLabel} → ${toLabel}`
+                : isSend && t.toAddress
+                ? `${t.toAddress.slice(0, 8)}…${t.toAddress.slice(-6)}`
+                : null
+
               const amountPrefix = isDeposit ? '+' : isSwap ? '' : '-'
+              const txHash = t.mintTxHash
 
               return (
                 <div
                   key={t.id}
-                  className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-white/[0.02]"
+                  className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-white/[0.02]"
                 >
-                  {/* Icon + label */}
-                  <div className="flex items-center gap-3.5">
-                    <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', iconBg)}>
-                      {isSwap ? (
-                        <ArrowLeftRight className="h-4 w-4 text-violet-400" />
-                      ) : isSend ? (
-                        <ArrowUpRight className="h-4 w-4 text-blue-400" />
-                      ) : isDeposit ? (
-                        isCollection
-                          ? <Link2 className="h-4 w-4 text-blue-400" />
-                          : <ArrowDownLeft className="h-4 w-4 text-emerald-400" />
-                      ) : (
-                        <ArrowUpRight className="h-4 w-4 text-rose-300" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{label}</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">{t.formattedDate}</p>
-                    </div>
+                  {/* Icon */}
+                  <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', iconBg)}>
+                    {isSwap ? (
+                      <ArrowLeftRight className="h-4 w-4 text-violet-400" />
+                    ) : isSend ? (
+                      <ArrowUpRight className="h-4 w-4 text-blue-400" />
+                    ) : isDeposit ? (
+                      isCollection
+                        ? <Link2 className="h-4 w-4 text-blue-400" />
+                        : <ArrowDownLeft className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                      <ArrowUpRight className="h-4 w-4 text-rose-300" />
+                    )}
                   </div>
 
-                  {/* Amount + status */}
-                  <div className="text-right">
+                  {/* Label + detail + date */}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">{label}</p>
+                    {detail && (
+                      <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{detail}</p>
+                    )}
+                    <p className="mt-0.5 text-[11px] text-muted-foreground/60">{t.formattedDate}</p>
+                  </div>
+
+                  {/* Amount + status + hash link */}
+                  <div className="shrink-0 text-right">
                     {isSwap ? (
                       <p className={cn('text-sm font-semibold font-mono', amountColor)}>
-                        {parseFloat(t.amountIn || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
-                        {t.fromSymbol}
-                        {' → '}
-                        {parseFloat(t.amountOut || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
-                        {t.toSymbol}
+                        {fmt(t.amountIn)} → {fmt(t.amountOut)}
                       </p>
                     ) : (
                       <p className={cn('text-sm font-semibold font-mono', amountColor)}>
                         {amountPrefix}{t.amountTzs.toLocaleString()} TZS
                       </p>
                     )}
-                    <div className="mt-1.5 flex justify-end">
+
+                    <div className="mt-1.5 flex items-center justify-end gap-2">
                       <StatusBadge status={t.status} type={t.type} />
+                      {txHash && (
+                        <a
+                          href={`${BASESCAN}${txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View on BaseScan"
+                          className="text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>
