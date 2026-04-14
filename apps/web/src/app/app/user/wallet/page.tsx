@@ -8,6 +8,7 @@ import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
 import { TopActions } from './_components/TopActions'
+import { ActionQueryBridge } from './ActionQueryBridge'
 import { WithdrawInline } from './WithdrawInline'
 // Tabs removed from hero for a minimal surface
 
@@ -40,6 +41,8 @@ export default async function WalletPage() {
             />
           </div>
           <TopActions />
+          {/* Bridge query ?action=... to modal open events */}
+          <ActionQueryBridge />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
