@@ -22,7 +22,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 hover:shadow-blue-500/40"
+      className="w-full rounded-2xl bg-primary px-6 py-4 text-base font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100 hover:opacity-90"
     >
       {pending ? (
         <span className="flex items-center justify-center gap-2">
@@ -57,7 +57,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
 
   if (submitted) {
     return (
-      <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+      <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/35 backdrop-blur-xl">
         <div className="px-6 py-10 text-center">
           <div className="relative mx-auto flex h-20 w-20 items-center justify-center">
             <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" style={{ animationDuration: '1.4s', animationIterationCount: '1' as unknown as number }} />
@@ -70,8 +70,8 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
 
           {requiresApproval ? (
             <>
-              <h2 className="mt-5 text-xl font-bold text-white">Queued for approval</h2>
-              <p className="mt-1.5 text-sm text-zinc-400">Large withdrawals require admin review. You will receive a mobile money payout once approved.</p>
+              <h2 className="mt-5 text-xl font-bold text-foreground">Queued for approval</h2>
+              <p className="mt-1.5 text-sm text-muted-foreground">Large withdrawals require admin review. You will receive a mobile money payout once approved.</p>
               <div className="mx-auto mt-5 w-fit rounded-2xl bg-amber-500/10 px-6 py-3 ring-1 ring-amber-500/20">
                 <p className="text-2xl font-bold tabular-nums text-amber-300">{Number(amount).toLocaleString()} TZS</p>
                 <p className="mt-0.5 text-xs text-amber-400/60">pending approval</p>
@@ -79,8 +79,8 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
             </>
           ) : (
             <>
-              <h2 className="mt-5 text-xl font-bold text-white">Withdrawal submitted</h2>
-              <p className="mt-1.5 text-sm text-zinc-400">Your nTZS has been burned. The TZS payout will arrive on your mobile money shortly.</p>
+              <h2 className="mt-5 text-xl font-bold text-foreground">Withdrawal submitted</h2>
+              <p className="mt-1.5 text-sm text-muted-foreground">Your nTZS has been burned. The TZS payout will arrive on your mobile money shortly.</p>
               <div className="mx-auto mt-5 w-fit rounded-2xl bg-emerald-500/10 px-6 py-3 ring-1 ring-emerald-500/20">
                 <p className="text-2xl font-bold tabular-nums text-emerald-400">{Number(amount).toLocaleString()} TZS</p>
                 <p className="mt-0.5 text-xs text-emerald-400/60">arriving on mobile money</p>
@@ -91,14 +91,14 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
           <div className="mt-7 flex flex-col gap-3">
             <Link
               href="/app/user"
-              className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+              className="w-full rounded-2xl bg-primary px-6 py-4 text-center text-base font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.98] hover:opacity-90"
             >
               Go to Dashboard
             </Link>
             <button
               type="button"
               onClick={() => setSubmitted(false)}
-              className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-6 py-4 text-base font-medium text-white transition-all duration-75 active:scale-[0.98] hover:bg-white/[0.06]"
+              className="w-full rounded-2xl border border-border/40 bg-background/35 px-6 py-4 text-base font-medium text-foreground backdrop-blur-xl transition-all duration-75 active:scale-[0.98] hover:bg-background/45"
             >
               Make another withdrawal
             </button>
@@ -109,7 +109,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-[#12121e] p-6 ring-1 ring-white/[0.06]">
+    <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/35 p-6 backdrop-blur-xl">
 
       <form
         action={async (formData: FormData) => {
@@ -124,10 +124,10 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         className="space-y-5"
       >
         {/* Receive amount */}
-        <div className="rounded-2xl border border-white/[0.06] bg-black/40 p-5">
+        <div className="rounded-2xl border border-border/40 bg-background/35 p-5 backdrop-blur-xl">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">You receive</span>
-            <span className="text-xs text-zinc-600">on mobile money</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">You receive</span>
+            <span className="text-xs text-muted-foreground">on mobile money</span>
           </div>
           <div className="mt-3 flex items-end justify-between gap-4">
             <input
@@ -140,13 +140,13 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
               inputMode="numeric"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full bg-transparent text-4xl font-semibold tracking-tight text-white outline-none placeholder:text-zinc-700"
+              className="w-full bg-transparent text-4xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
             />
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl border border-border/40 bg-background/35 px-3 py-2 backdrop-blur-xl">
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20">
                 <span className="text-sm font-semibold">T</span>
               </div>
-              <span className="text-sm font-semibold text-white">TZS</span>
+              <span className="text-sm font-semibold text-foreground">TZS</span>
             </div>
           </div>
           {receiveNum > 0 && receiveNum < 5000 && (
@@ -156,13 +156,13 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
 
         {/* Payout method */}
         <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Payout method</p>
-          <div className="flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-600/10 px-4 py-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Payout method</p>
+          <div className="flex items-center gap-3 rounded-2xl border border-blue-500/30 bg-blue-600/10 px-4 py-4">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/20">
               <IconPhone className="h-5 w-5 text-blue-300" />
             </span>
             <span>
-              <span className="block font-semibold text-white">Snippe</span>
+              <span className="block font-semibold text-foreground">Snippe</span>
               <span className="block text-xs text-blue-300/70">Mobile Money</span>
             </span>
           </div>
@@ -170,7 +170,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
 
         {/* Phone */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-400">Mobile Money Number</label>
+          <label className="text-sm font-medium text-muted-foreground">Mobile Money Number</label>
           <input
             name="phone"
             type="tel"
@@ -178,9 +178,9 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="07XXXXXXXX"
-            className="w-full rounded-2xl border border-white/[0.08] bg-black/50 px-4 py-3.5 text-base text-white outline-none placeholder:text-zinc-600 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+            className="w-full rounded-2xl border border-border/40 bg-background/35 px-4 py-3.5 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-transparent focus:ring-2 focus:ring-ring backdrop-blur-xl"
           />
-          <p className="text-xs text-zinc-500">TZS will be sent to this number via Snippe</p>
+          <p className="text-xs text-muted-foreground">TZS will be sent to this number via Snippe</p>
         </div>
 
         {error && (
@@ -199,25 +199,25 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         )}
 
         {showFees && (
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-2.5">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Cost breakdown</p>
+          <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-2.5 backdrop-blur-xl">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cost breakdown</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">You receive</span>
+                <span className="text-muted-foreground">You receive</span>
                 <span className="font-mono font-semibold text-emerald-400">{receiveNum.toLocaleString()} TZS</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Network fee (Snippe)</span>
-                <span className="font-mono text-zinc-500">+{SNIPPE_FLAT_FEE_TZS.toLocaleString()} TZS</span>
+                <span className="text-muted-foreground">Network fee (Snippe)</span>
+                <span className="font-mono text-muted-foreground">+{SNIPPE_FLAT_FEE_TZS.toLocaleString()} TZS</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Platform fee ({PLATFORM_FEE_PERCENT}%)</span>
-                <span className="font-mono text-zinc-500">+{platformFee.toLocaleString()} TZS</span>
+                <span className="text-muted-foreground">Platform fee ({PLATFORM_FEE_PERCENT}%)</span>
+                <span className="font-mono text-muted-foreground">+{platformFee.toLocaleString()} TZS</span>
               </div>
-              <div className="h-px bg-white/10" />
+              <div className="h-px bg-border/60" />
               <div className="flex items-center justify-between">
-                <span className="font-medium text-white">nTZS to burn</span>
-                <span className="font-mono font-semibold text-white">{burnAmount.toLocaleString()} TZS</span>
+                <span className="font-medium text-foreground">nTZS to burn</span>
+                <span className="font-mono font-semibold text-foreground">{burnAmount.toLocaleString()} TZS</span>
               </div>
             </div>
           </div>
@@ -226,9 +226,9 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         <SubmitButton />
 
         {!showFees && (
-          <div className="flex items-start gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <IconInfo className="mt-0.5 h-4 w-4 text-zinc-400 shrink-0" />
-            <p className="text-sm text-zinc-400">
+          <div className="flex items-start gap-2 rounded-2xl border border-border/40 bg-background/35 p-4 backdrop-blur-xl">
+            <IconInfo className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
+            <p className="text-sm text-muted-foreground">
               Your nTZS is burned (1:1) and the equivalent TZS is sent to your mobile money account. Minimum withdrawal is 5,000 TZS.
             </p>
           </div>
