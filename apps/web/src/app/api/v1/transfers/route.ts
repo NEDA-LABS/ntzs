@@ -23,21 +23,53 @@ export async function POST(request: NextRequest) {
 
   const { partner } = authResult
 
-  let body: { fromUserId: string; toUserId: string; amountTzs: number; metadata?: Record<string, unknown> }
+  let body: { fromUserId: string; toUserId?: string; toAddress?: string; amountTzs: number; metadata?: Record<string, unknown> }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { fromUserId, toUserId, amountTzs, metadata } = body
+  const { fromUserId, toUserId, toAddress, amountTzs, metadata } = body
 
-  if (!fromUserId || !toUserId || !amountTzs) {
+  if (!fromUserId || !amountTzs) {
     return NextResponse.json(
       {
         error: 'missing_required_fields',
-        message: 'fromUserId, toUserId, and amountTzs are required',
-        details: { fromUserId: !!fromUserId, toUserId: !!toUserId, amountTzs: !!amountTzs }
+        message: 'fromUserId and amountTzs are required',
+        details: { fromUserId: !!fromUserId, amountTzs: !!amountTzs }
+      },
+      { status: 400 }
+    )
+  }
+
+  if (!toUserId && !toAddress) {
+    return NextResponse.json(
+      {
+        error: 'missing_required_fields',
+        message: 'Either toUserId or toAddress is required',
+        details: { toUserId: !!toUserId, toAddress: !!toAddress }
+      },
+      { status: 400 }
+    )
+  }
+
+  if (toUserId && toAddress) {
+    return NextResponse.json(
+      {
+        error: 'invalid_transfer',
+        message: 'Provide either toUserId or toAddress, not both',
+      },
+      { status: 400 }
+    )
+  }
+
+  if (toAddress && !ethers.isAddress(toAddress)) {
+    return NextResponse.json(
+      {
+        error: 'invalid_address',
+        message: 'toAddress is not a valid Ethereum address',
+        details: { toAddress }
       },
       { status: 400 }
     )
@@ -54,7 +86,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (fromUserId === toUserId) {
+  if (toUserId && fromUserId === toUserId) {
     return NextResponse.json(
       {
         error: 'invalid_transfer',
@@ -64,6 +96,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
+
+  // Determine if this is a send-to-address transfer
+  const isAddressTransfer = !!toAddress && !toUserId
 
   const { db } = getDb()
 
@@ -81,17 +116,11 @@ export async function POST(request: NextRequest) {
   const feePercent = partnerRow ? parseFloat(String(partnerRow.feePercent ?? '0')) : 0
   const treasuryWalletAddress = partnerRow?.treasuryWalletAddress ?? null
 
-  // Verify both users belong to this partner and get wallet indexes
+  // Verify sender belongs to this partner and get wallet index
   const [fromMapping] = await db
     .select({ userId: partnerUsers.userId, walletIndex: partnerUsers.walletIndex })
     .from(partnerUsers)
     .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, fromUserId)))
-    .limit(1)
-
-  const [toMapping] = await db
-    .select({ userId: partnerUsers.userId })
-    .from(partnerUsers)
-    .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, toUserId)))
     .limit(1)
 
   if (!fromMapping) {
@@ -104,28 +133,32 @@ export async function POST(request: NextRequest) {
       { status: 404 }
     )
   }
-  if (!toMapping) {
-    return NextResponse.json(
-      {
-        error: 'user_not_found',
-        message: 'Recipient user not found',
-        details: { userId: toUserId, role: 'recipient' }
-      },
-      { status: 404 }
-    )
+
+  // For user-to-user transfers, verify the recipient too
+  if (!isAddressTransfer) {
+    const [toMapping] = await db
+      .select({ userId: partnerUsers.userId })
+      .from(partnerUsers)
+      .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, toUserId!)))
+      .limit(1)
+
+    if (!toMapping) {
+      return NextResponse.json(
+        {
+          error: 'user_not_found',
+          message: 'Recipient user not found',
+          details: { userId: toUserId, role: 'recipient' }
+        },
+        { status: 404 }
+      )
+    }
   }
 
-  // Get wallets
+  // Get sender wallet
   const [fromWallet] = await db
     .select({ id: wallets.id, address: wallets.address, provider: wallets.provider })
     .from(wallets)
     .where(and(eq(wallets.userId, fromUserId), eq(wallets.chain, 'base')))
-    .limit(1)
-
-  const [toWallet] = await db
-    .select({ id: wallets.id, address: wallets.address, provider: wallets.provider })
-    .from(wallets)
-    .where(and(eq(wallets.userId, toUserId), eq(wallets.chain, 'base')))
     .limit(1)
 
   if (!fromWallet || fromWallet.address.startsWith('0x_pending_')) {
@@ -138,12 +171,38 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
-  if (!toWallet || toWallet.address.startsWith('0x_pending_')) {
+
+  // Resolve destination address
+  let destinationAddress: string
+
+  if (isAddressTransfer) {
+    destinationAddress = toAddress!
+  } else {
+    const [toWallet] = await db
+      .select({ id: wallets.id, address: wallets.address, provider: wallets.provider })
+      .from(wallets)
+      .where(and(eq(wallets.userId, toUserId!), eq(wallets.chain, 'base')))
+      .limit(1)
+
+    if (!toWallet || toWallet.address.startsWith('0x_pending_')) {
+      return NextResponse.json(
+        {
+          error: 'wallet_not_provisioned',
+          message: 'Recipient wallet is not provisioned yet',
+          details: { userId: toUserId, role: 'recipient' }
+        },
+        { status: 400 }
+      )
+    }
+    destinationAddress = toWallet.address
+  }
+
+  if (fromWallet.address.toLowerCase() === destinationAddress.toLowerCase()) {
     return NextResponse.json(
       {
-        error: 'wallet_not_provisioned',
-        message: 'Recipient wallet is not provisioned yet',
-        details: { userId: toUserId, role: 'recipient' }
+        error: 'invalid_transfer',
+        message: 'Cannot transfer to the same wallet address',
+        details: { fromAddress: fromWallet.address, toAddress: destinationAddress }
       },
       { status: 400 }
     )
@@ -155,7 +214,8 @@ export async function POST(request: NextRequest) {
     .values({
       partnerId: partner.id,
       fromUserId,
-      toUserId,
+      toUserId: toUserId || null,
+      toAddress: destinationAddress,
       amountTzs,
       status: 'pending',
       metadata: metadata || null,
@@ -253,7 +313,7 @@ export async function POST(request: NextRequest) {
       const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)'])
       const cdpResult = await sendCdpTransaction(fromUserId, senderUser.email, {
         destination: contractAddress,
-        data: iface.encodeFunctionData('transfer', [toWallet.address, recipientAmountWei]),
+        data: iface.encodeFunctionData('transfer', [destinationAddress, recipientAmountWei]),
       } as any)
 
       if ('error' in cdpResult) {
@@ -310,7 +370,7 @@ export async function POST(request: NextRequest) {
         encryptedSeed: partner.encryptedHdSeed,
         walletIndex: fromMapping.walletIndex,
         contractAddress,
-        toAddress: toWallet.address,
+        toAddress: destinationAddress,
         amountWei: recipientAmountWei,
         rpcUrl,
       })
@@ -379,7 +439,7 @@ export async function POST(request: NextRequest) {
         feeAmountTzs,
         feePercent,
         fromWallet: fromWallet.address,
-        toWallet: toWallet.address,
+        toWallet: destinationAddress,
         txHash,
         feeTxHash,
         partnerId: partner.id,
@@ -395,6 +455,7 @@ export async function POST(request: NextRequest) {
         recipientAmountTzs,
         feeAmountTzs,
         feeTxHash,
+        toAddress: destinationAddress,
       },
       { status: 201 }
     )

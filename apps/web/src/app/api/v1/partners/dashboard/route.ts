@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { eq, and, desc, inArray, or, sql } from 'drizzle-orm'
+import { eq, and, desc, inArray, or, sql, isNotNull } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
@@ -225,9 +225,9 @@ export async function GET(request: NextRequest) {
             lastReceivedAt: sql<string | null>`max(${transfers.createdAt})`,
           })
           .from(transfers)
-          .where(inArray(transfers.toUserId, userIds))
+          .where(and(isNotNull(transfers.toUserId), inArray(transfers.toUserId, userIds)))
           .groupBy(transfers.toUserId)
-      : Promise.resolve([] as { userId: string; totalReceived: number; lastReceivedAt: string | null }[]),
+      : Promise.resolve([] as { userId: string | null; totalReceived: number; lastReceivedAt: string | null }[]),
 
     // Deposit totals per user (minted only = successfully on-chain)
     userIds.length > 0
@@ -248,6 +248,7 @@ export async function GET(request: NextRequest) {
         id: transfers.id,
         fromUserId: transfers.fromUserId,
         toUserId: transfers.toUserId,
+        toAddress: transfers.toAddress,
         amountTzs: transfers.amountTzs,
         status: transfers.status,
         txHash: transfers.txHash,
@@ -286,6 +287,7 @@ export async function GET(request: NextRequest) {
         id: transfers.id,
         fromUserId: transfers.fromUserId,
         toUserId: transfers.toUserId,
+        toAddress: transfers.toAddress,
         amountTzs: transfers.amountTzs,
         status: transfers.status,
         txHash: transfers.txHash,
@@ -319,7 +321,9 @@ export async function GET(request: NextRequest) {
   for (const s of sentAggRows) userSentMap[s.userId] = { total: s.totalSent, lastAt: s.lastSentAt }
 
   const userReceivedMap: Record<string, { total: number; lastAt: string | null }> = {}
-  for (const r of receivedAggRows) userReceivedMap[r.userId] = { total: r.totalReceived, lastAt: r.lastReceivedAt }
+  for (const r of receivedAggRows) {
+    if (r.userId) userReceivedMap[r.userId] = { total: r.totalReceived, lastAt: r.lastReceivedAt }
+  }
 
   const userDepositMap: Record<string, { totalDeposited: number; count: number }> = {}
   for (const d of depositAggRows) userDepositMap[d.userId] = { totalDeposited: Number(d.totalDeposited), count: d.totalDepositCount }
@@ -402,7 +406,7 @@ export async function GET(request: NextRequest) {
   const missingIds = new Set<string>()
   for (const t of [...rawTransfers, ...rawPendingTransfers]) {
     if (!userLookup[t.fromUserId]) missingIds.add(t.fromUserId)
-    if (!userLookup[t.toUserId]) missingIds.add(t.toUserId)
+    if (t.toUserId && !userLookup[t.toUserId]) missingIds.add(t.toUserId)
   }
   for (const d of [...rawDeposits, ...rawPendingDeposits]) {
     if (!userLookup[d.userId]) missingIds.add(d.userId)
@@ -422,16 +426,18 @@ export async function GET(request: NextRequest) {
     ...t,
     fromEmail: userLookup[t.fromUserId]?.email || null,
     fromName: userLookup[t.fromUserId]?.name || null,
-    toEmail: userLookup[t.toUserId]?.email || null,
-    toName: userLookup[t.toUserId]?.name || null,
+    toEmail: t.toUserId ? (userLookup[t.toUserId]?.email || null) : null,
+    toName: t.toUserId ? (userLookup[t.toUserId]?.name || null) : null,
+    toAddress: t.toAddress || null,
   }))
 
   const pendingTransferRows = rawPendingTransfers.map((t) => ({
     ...t,
     fromEmail: userLookup[t.fromUserId]?.email || null,
     fromName: userLookup[t.fromUserId]?.name || null,
-    toEmail: userLookup[t.toUserId]?.email || null,
-    toName: userLookup[t.toUserId]?.name || null,
+    toEmail: t.toUserId ? (userLookup[t.toUserId]?.email || null) : null,
+    toName: t.toUserId ? (userLookup[t.toUserId]?.name || null) : null,
+    toAddress: t.toAddress || null,
   }))
 
   // 13. Enrich deposit rows

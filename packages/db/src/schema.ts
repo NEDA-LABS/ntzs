@@ -548,8 +548,8 @@ export const transfers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     toUserId: uuid('to_user_id')
-      .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
+    toAddress: text('to_address'),
     amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
     txHash: text('tx_hash'),
     status: transferStatus('status').notNull().default('pending'),

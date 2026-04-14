@@ -450,11 +450,11 @@ body: JSON.stringify({
             id="transfers"
             isActive={activeSection === 'transfers'}
             step="Step 5"
-            title="Transfer between users"
-            description="Move nTZS between any two users on your platform. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
+            title="Transfers"
+            description="Move nTZS between platform users or to any external wallet address. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
           >
             <CodeBlock
-              title="POST /api/v1/transfers"
+              title="POST /api/v1/transfers — user to user"
               code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/transfers', {
   method: 'POST',
   headers: {
@@ -463,7 +463,7 @@ body: JSON.stringify({
   },
   body: JSON.stringify({
     fromUserId: 'uuid-of-sender',
-    toUserId:   'uuid-of-recipient',
+    toUserId:   'uuid-of-recipient',   // nTZS user on your platform
     amountTzs:  5000,
     metadata: { orderId: 'ord_123', note: 'Payment for order' }, // optional
   }),
@@ -476,18 +476,55 @@ const transfer = await res.json()
 //   amountTzs: 5000,
 //   recipientAmountTzs: 4975,  // after platform fee
 //   feeAmountTzs: 25,
-//   feeTxHash: "0xdef..."      // fee tx to your treasury, if fee > 0
+//   feeTxHash: "0xdef...",     // fee tx to your treasury, if fee > 0
+//   toAddress: "0x531B..."     // resolved destination wallet
 // }`}
             />
-            <Note variant="neutral">
-              <span className="font-semibold text-white/90">Platform fee:</span> Configure your fee percentage
-              and treasury wallet address in the{' '}
-              <Link href="/developers/dashboard" className="text-blue-400 hover:underline">dashboard</Link>.
-              The fee is deducted from the sender and sent to your treasury in the same atomic operation.
-            </Note>
+            <CodeBlock
+              title="POST /api/v1/transfers — send to external address"
+              code={`// Send nTZS to ANY wallet address — no recipient user required.
+// Use toAddress instead of toUserId.
+const res = await fetch('https://www.ntzs.co.tz/api/v1/transfers', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    fromUserId: 'uuid-of-sender',
+    toAddress:  '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18', // any valid EVM address
+    amountTzs:  10000,
+  }),
+})
+const transfer = await res.json()
+// {
+//   id: "uuid...",
+//   status: "completed",
+//   txHash: "0xabc...",
+//   amountTzs: 10000,
+//   recipientAmountTzs: 9950,
+//   feeAmountTzs: 50,
+//   toAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+// }`}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Note variant="info">
+                <span className="font-semibold text-blue-200">toUserId vs toAddress:</span>{' '}
+                Provide exactly one. <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">toUserId</code>{' '}
+                sends to a platform user&apos;s wallet. <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">toAddress</code>{' '}
+                sends to any Ethereum-compatible address on Base. Both fields cannot be set at the same time.
+              </Note>
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Platform fee:</span> Configure your fee percentage
+                and treasury wallet address in the{' '}
+                <Link href="/developers/dashboard" className="text-blue-400 hover:underline">dashboard</Link>.
+                The fee is deducted from the sender and sent to your treasury in the same atomic operation.
+              </Note>
+            </div>
             <Note variant="warning">
-              <span className="font-semibold text-amber-300">Requirements:</span> Both users must belong to
-              your platform, both wallets must be provisioned, and the sender must have sufficient balance.
+              <span className="font-semibold text-amber-300">Requirements:</span> The sender must belong to
+              your platform, their wallet must be provisioned, and they must have sufficient balance.
+              For user-to-user transfers, the recipient must also belong to your platform.
               Gas is auto-managed — if the sender wallet is low on ETH, the relayer tops it up before
               sending.
             </Note>
