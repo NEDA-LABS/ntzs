@@ -33,25 +33,22 @@ export default async function WalletPage() {
   return (
     <div className="ntzs-wallet-shell min-h-screen px-4 py-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        <GlassCard className="rounded-[32px]">
-          <div className="absolute inset-0 ntzs-wallet-glow" />
-          <div className="p-6 md:p-8 space-y-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Base network wallet</p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
-                {displayName}
-              </h1>
-            </div>
-
-            <div id="receive" className="rounded-[28px] border border-border/40 bg-background/50 p-5 shadow-[0_25px_80px_rgba(15,23,42,0.35)] backdrop-blur-2xl md:p-6">
-              <PayMeSection
-                currentAlias={dbUser.payAlias ?? null}
-                suggestedAlias={suggestedAlias}
-                walletAddress={wallet.address}
-              />
-            </div>
+        <div className="p-0 md:p-0 space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">Base network wallet</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
+              {displayName}
+            </h1>
           </div>
-        </GlassCard>
+
+          <div id="receive">
+            <PayMeSection
+              currentAlias={dbUser.payAlias ?? null}
+              suggestedAlias={suggestedAlias}
+              walletAddress={wallet.address}
+            />
+          </div>
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
