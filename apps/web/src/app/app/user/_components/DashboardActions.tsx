@@ -5,14 +5,12 @@ import { ArrowUp, Wallet, Link2 } from 'lucide-react'
 
 const glassBtn = [
   'group relative flex items-center justify-center gap-2',
-  'h-12 w-full rounded-xl px-4',
-  'bg-blue-950/50 backdrop-blur-md',
-  'border border-t-white/20 border-x-white/[0.06] border-b-white/[0.04]',
-  'text-sm font-semibold text-white/90',
-  'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]',
+  'h-12 w-full rounded-full px-4',
+  'ntzs-wallet-pill border border-border/40 bg-background/35 backdrop-blur-2xl',
+  'text-sm font-semibold text-foreground',
   'transition-all duration-200',
-  'hover:bg-blue-900/60 hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_0_20px_rgba(59,130,246,0.15)]',
-  'active:scale-[0.97] active:bg-blue-950/70',
+  'hover:opacity-90 active:scale-[0.97]',
+  'focus-visible:outline-none focus:ring-2 focus:ring-ring',
   'overflow-hidden',
 ].join(' ')
 

@@ -58,9 +58,9 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
   })
 
   return (
-    <div className="rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06] overflow-hidden">
+    <div className="rounded-2xl border border-border/40 bg-card/60 backdrop-blur-2xl overflow-hidden">
       {/* Filter tabs */}
-      <div className="flex items-center gap-1 border-b border-white/[0.05] px-4 py-3">
+      <div className="flex items-center gap-1 border-b border-border/40 px-4 py-3">
         {FILTERS.map((f) => (
           <button
             key={f}
@@ -69,14 +69,14 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
             className={cn(
               'rounded-full px-3 py-1 text-xs font-medium transition-colors',
               filter === f
-                ? 'bg-white/[0.08] text-white'
-                : 'text-zinc-500 hover:text-zinc-300',
+                ? 'bg-primary/10 text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {f}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-zinc-600">
+        <span className="ml-auto text-[11px] text-muted-foreground">
           {filtered.length} {filtered.length === 1 ? 'transaction' : 'transactions'}
         </span>
       </div>
@@ -84,10 +84,10 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
       {/* List */}
       {filtered.length === 0 ? (
         <div className="py-16 text-center">
-          <p className="text-sm text-zinc-500">No transactions found</p>
+          <p className="text-sm text-muted-foreground">No transactions found</p>
         </div>
       ) : (
-        <div className="divide-y divide-white/[0.04]">
+        <div className="divide-y divide-border/40">
           {filtered.map((t) => {
             const isSwap = t.type === 'swap'
             const isSend = t.type === 'send'
@@ -110,7 +110,7 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
             return (
               <div
                 key={t.id}
-                className="flex items-center justify-between px-4 py-4 transition-colors hover:bg-white/[0.02]"
+                className="flex items-center justify-between px-4 py-4 transition-colors hover:bg-card/40"
               >
                 <div className="flex items-center gap-3.5">
                   <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', iconBg)}>
@@ -125,8 +125,8 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
                     )}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">{label}</p>
-                    <p className="mt-0.5 text-xs text-zinc-600">{t.formattedDate}</p>
+                    <p className="text-sm font-medium text-foreground">{label}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{t.formattedDate}</p>
                   </div>
                 </div>
 
