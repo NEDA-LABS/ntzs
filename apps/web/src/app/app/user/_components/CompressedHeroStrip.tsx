@@ -71,7 +71,7 @@ export function CompressedHeroStrip({ displayName }: CompressedHeroStripProps) {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); router.push('/app/user/wallet') }}
                 className="flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.07] text-white/60 transition-colors active:bg-white/[0.14]"
-                aria-label="Pay Me"
+                aria-label="Nilipe"
               >
                 <Link2 className="h-3 w-3" />
               </button>

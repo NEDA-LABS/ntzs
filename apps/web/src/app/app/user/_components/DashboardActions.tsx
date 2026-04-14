@@ -33,11 +33,11 @@ export function DashboardActions() {
         Save
       </button>
 
-      {/* Pay Me */}
+      {/* Nilipe */}
       <button type="button" onClick={() => router.push('/app/user/wallet')} className={glassBtn}>
         <span className="pointer-events-none absolute inset-0 translate-x-[-100%] bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.06)_50%,transparent_75%)] transition-transform duration-500 group-hover:translate-x-[100%]" />
         <Link2 className="h-4 w-4 text-blue-300" />
-        Pay Me
+        Nilipe
       </button>
     </div>
   )

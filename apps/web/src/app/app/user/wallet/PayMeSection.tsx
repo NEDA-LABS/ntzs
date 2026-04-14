@@ -156,7 +156,7 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
 
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Pay Me
+              Nilipe
             </span>
             <div className="flex items-center gap-1.5 rounded-full border border-border/40 bg-background/40 px-2.5 py-1 backdrop-blur">
               <span className={`h-1.5 w-1.5 rounded-full bg-emerald-400 ${prefersReducedMotion ? '' : 'animate-pulse'}`} />
