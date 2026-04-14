@@ -28,19 +28,19 @@ function StatusBadge({ status, type }: { status: string; type: Txn['type'] }) {
   const s = status.toLowerCase().replace(/_/g, ' ')
   const color =
     type === 'swap'
-      ? 'bg-violet-500/12 text-violet-400'
+      ? 'bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/20'
       : type === 'send'
-      ? 'bg-blue-500/12 text-blue-400'
+      ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/20'
       : type === 'deposit'
-        ? s === 'minted' ? 'bg-emerald-500/12 text-emerald-400'
-          : s === 'rejected' || s === 'cancelled' ? 'bg-rose-500/12 text-rose-400'
-          : 'bg-amber-500/12 text-amber-400'
-        : s === 'burned' ? 'bg-rose-500/12 text-rose-300'
-          : s === 'failed' ? 'bg-rose-500/12 text-rose-400'
-          : 'bg-amber-500/12 text-amber-400'
+        ? s === 'minted' ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20'
+          : s === 'rejected' || s === 'cancelled' ? 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/20'
+          : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20'
+        : s === 'burned' ? 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/20'
+          : s === 'failed' ? 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/20'
+          : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20'
 
   return (
-    <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium capitalize', color)}>
+    <span className={cn('rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize tracking-wide', color)}>
       {s}
     </span>
   )
@@ -58,97 +58,122 @@ export function ActivityList({ txns }: { txns: Txn[] }) {
   })
 
   return (
-    <div className="rounded-2xl border border-border/40 bg-card/60 backdrop-blur-2xl overflow-hidden">
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1 border-b border-border/40 px-4 py-3">
+    <div className="space-y-3">
+      {/* Filter pill row */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {FILTERS.map((f) => (
           <button
             key={f}
             type="button"
             onClick={() => setFilter(f)}
             className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              'shrink-0 rounded-full px-4 py-1.5 text-xs font-medium transition-all',
               filter === f
-                ? 'bg-primary/10 text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
+                ? 'bg-foreground text-background shadow-sm'
+                : 'border border-border/40 bg-card/60 text-muted-foreground hover:text-foreground hover:bg-card/80 backdrop-blur-xl',
             )}
           >
             {f}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-muted-foreground">
-          {filtered.length} {filtered.length === 1 ? 'transaction' : 'transactions'}
+        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground whitespace-nowrap pl-2">
+          {filtered.length} {filtered.length === 1 ? 'record' : 'records'}
         </span>
       </div>
 
-      {/* List */}
-      {filtered.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground">No transactions found</p>
-        </div>
-      ) : (
-        <div className="divide-y divide-border/40">
-          {filtered.map((t) => {
-            const isSwap = t.type === 'swap'
-            const isSend = t.type === 'send'
-            const isDeposit = t.type === 'deposit'
-            const isCollection = t.source === 'pay_link'
-            const label = isSwap
-              ? `Swap · ${t.fromSymbol} → ${t.toSymbol}`
-              : isSend
-              ? `Send · ${t.toAddress ? `${t.toAddress.slice(0, 6)}…${t.toAddress.slice(-4)}` : ''}`
-              : isDeposit
-                ? isCollection
-                  ? t.payerName ? `Collection · ${t.payerName}` : 'Collection'
-                  : 'Deposit'
-                : 'Withdrawal'
+      {/* Card */}
+      <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-2xl">
+        {filtered.length === 0 ? (
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground">No transactions found</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/40">
+            {filtered.map((t) => {
+              const isSwap = t.type === 'swap'
+              const isSend = t.type === 'send'
+              const isDeposit = t.type === 'deposit'
+              const isCollection = t.source === 'pay_link'
 
-            const iconBg = isSwap ? 'bg-violet-500/12' : isSend ? 'bg-blue-500/12' : isDeposit ? (isCollection ? 'bg-blue-500/12' : 'bg-emerald-500/12') : 'bg-rose-500/12'
-            const amountColor = isSwap ? 'text-violet-400' : isSend ? 'text-blue-400' : isDeposit ? 'text-emerald-400' : 'text-rose-300'
-            const amountPrefix = isDeposit ? '+' : isSwap ? '' : '-'
+              const label = isSwap
+                ? `Swap · ${t.fromSymbol} → ${t.toSymbol}`
+                : isSend
+                ? `Send · ${t.toAddress ? `${t.toAddress.slice(0, 6)}…${t.toAddress.slice(-4)}` : ''}`
+                : isDeposit
+                  ? isCollection
+                    ? t.payerName ? `Collection · ${t.payerName}` : 'Collection'
+                    : 'Deposit'
+                  : 'Withdrawal'
 
-            return (
-              <div
-                key={t.id}
-                className="flex items-center justify-between px-4 py-4 transition-colors hover:bg-card/40"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', iconBg)}>
+              const iconBg = isSwap
+                ? 'bg-violet-500/12'
+                : isSend
+                ? 'bg-blue-500/12'
+                : isDeposit
+                ? isCollection ? 'bg-blue-500/12' : 'bg-emerald-500/12'
+                : 'bg-rose-500/12'
+
+              const amountColor = isSwap
+                ? 'text-violet-400'
+                : isSend
+                ? 'text-blue-400'
+                : isDeposit
+                ? 'text-emerald-400'
+                : 'text-rose-300'
+
+              const amountPrefix = isDeposit ? '+' : isSwap ? '' : '-'
+
+              return (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-white/[0.02]"
+                >
+                  {/* Icon + label */}
+                  <div className="flex items-center gap-3.5">
+                    <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', iconBg)}>
+                      {isSwap ? (
+                        <ArrowLeftRight className="h-4 w-4 text-violet-400" />
+                      ) : isSend ? (
+                        <ArrowUpRight className="h-4 w-4 text-blue-400" />
+                      ) : isDeposit ? (
+                        isCollection
+                          ? <Link2 className="h-4 w-4 text-blue-400" />
+                          : <ArrowDownLeft className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <ArrowUpRight className="h-4 w-4 text-rose-300" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{label}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{t.formattedDate}</p>
+                    </div>
+                  </div>
+
+                  {/* Amount + status */}
+                  <div className="text-right">
                     {isSwap ? (
-                      <ArrowLeftRight className="h-4 w-4 text-violet-400" />
-                    ) : isSend ? (
-                      <ArrowUpRight className="h-4 w-4 text-blue-400" />
-                    ) : isDeposit ? (
-                      isCollection ? <Link2 className="h-4 w-4 text-blue-400" /> : <ArrowDownLeft className="h-4 w-4 text-emerald-400" />
+                      <p className={cn('text-sm font-semibold font-mono', amountColor)}>
+                        {parseFloat(t.amountIn || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                        {t.fromSymbol}
+                        {' → '}
+                        {parseFloat(t.amountOut || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                        {t.toSymbol}
+                      </p>
                     ) : (
-                      <ArrowUpRight className="h-4 w-4 text-rose-300" />
+                      <p className={cn('text-sm font-semibold font-mono', amountColor)}>
+                        {amountPrefix}{t.amountTzs.toLocaleString()} TZS
+                      </p>
                     )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{t.formattedDate}</p>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  {isSwap ? (
-                    <p className={cn('text-sm font-semibold font-mono', amountColor)}>
-                      {parseFloat(t.amountIn || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} {t.fromSymbol} → {parseFloat(t.amountOut || '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} {t.toSymbol}
-                    </p>
-                  ) : (
-                    <p className={cn('text-sm font-semibold font-mono', amountColor)}>
-                      {amountPrefix}{t.amountTzs.toLocaleString()} TZS
-                    </p>
-                  )}
-                  <div className="mt-1 flex justify-end">
-                    <StatusBadge status={t.status} type={t.type} />
+                    <div className="mt-1.5 flex justify-end">
+                      <StatusBadge status={t.status} type={t.type} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
