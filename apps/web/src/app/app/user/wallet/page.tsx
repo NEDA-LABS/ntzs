@@ -9,7 +9,7 @@ import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
-import { WalletTabsPanel } from './WalletTabsPanel'
+// Tabs removed from hero for a minimal surface
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -35,40 +35,16 @@ export default async function WalletPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <GlassCard className="rounded-[32px]">
           <div className="absolute inset-0 ntzs-wallet-glow" />
-          <div className="grid gap-6 p-6 md:p-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8">
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Base network wallet</p>
-                <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
-                  {displayName}
-                </h1>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href="/app/user/deposits/new"
-                  prefetch
-                  className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-8 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-                >
-                  Add funds
-                </Link>
-                <Link
-                  href="/app/user/activity"
-                  prefetch
-                  className="inline-flex h-12 items-center justify-center rounded-full border border-border/50 bg-background/30 px-8 text-sm font-semibold text-foreground backdrop-blur transition-colors hover:bg-background/40"
-                >
-                  View activity
-                </Link>
-              </div>
-
-              {/* Inline tiles removed in favor of compact info row in tabs */}
+          <div className="p-6 md:p-8 space-y-6">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Base network wallet</p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
+                {displayName}
+              </h1>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-[28px] border border-border/40 bg-background/50 p-5 shadow-[0_25px_80px_rgba(15,23,42,0.35)] backdrop-blur-2xl md:p-6">
-                <BalanceToggle walletAddress={wallet.address} />
-                <WalletTabsPanel walletAddress={wallet.address} payAlias={dbUser.payAlias ?? null} suggestedAlias={suggestedAlias} />
-              </div>
+            <div className="rounded-[28px] border border-border/40 bg-background/50 p-5 shadow-[0_25px_80px_rgba(15,23,42,0.35)] backdrop-blur-2xl md:p-6">
+              <BalanceToggle walletAddress={wallet.address} />
             </div>
           </div>
         </GlassCard>
