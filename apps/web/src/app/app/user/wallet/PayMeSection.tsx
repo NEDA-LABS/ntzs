@@ -12,15 +12,17 @@ import {
 } from 'framer-motion'
 
 import { updatePayAlias } from './actions'
+import { BalanceToggle } from '../_components/BalanceToggle'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 interface PayMeSectionProps {
   currentAlias: string | null
   suggestedAlias: string
+  walletAddress: string
 }
 
-export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps) {
+export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: PayMeSectionProps) {
   const [alias, setAlias] = useState(currentAlias ?? '')
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -34,7 +36,7 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
   const activeAlias = currentAlias ?? ''
   const payUrl = activeAlias ? `${APP_URL}/pay/${activeAlias}` : ''
   const qrUrl = payUrl
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(payUrl)}`
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&format=svg&data=${encodeURIComponent(payUrl)}`
     : ''
 
   const mouseX = useMotionValue(0)
@@ -182,6 +184,11 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, delay: 0.04 }}
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
               >
+                {/* Balance inside reveal */}
+                <div className="rounded-[24px] border border-border/40 bg-background/40 p-4 backdrop-blur-xl">
+                  <BalanceToggle walletAddress={walletAddress} />
+                </div>
+
                 {editing ? (
                   <div className="space-y-3">
                     <div>
@@ -236,13 +243,13 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
                 ) : (
                   <>
                     <div className="flex justify-center">
-                      <div className="rounded-[28px] border border-border/40 bg-white p-4 shadow-[0_20px_60px_rgba(15,23,42,0.35)]">
+                      <div className="rounded-2xl border border-border/40 bg-background/50 p-3 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
                         <img
                           src={qrUrl}
                           alt="Pay Me QR"
-                          width={180}
-                          height={180}
-                          className="block rounded-lg"
+                          width={184}
+                          height={184}
+                          className="block rounded-xl"
                         />
                       </div>
                     </div>

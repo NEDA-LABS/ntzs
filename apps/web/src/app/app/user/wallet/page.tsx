@@ -43,20 +43,18 @@ export default async function WalletPage() {
               </h1>
             </div>
 
-            <div className="rounded-[28px] border border-border/40 bg-background/50 p-5 shadow-[0_25px_80px_rgba(15,23,42,0.35)] backdrop-blur-2xl md:p-6">
-              <BalanceToggle walletAddress={wallet.address} />
+            <div id="receive" className="rounded-[28px] border border-border/40 bg-background/50 p-5 shadow-[0_25px_80px_rgba(15,23,42,0.35)] backdrop-blur-2xl md:p-6">
+              <PayMeSection
+                currentAlias={dbUser.payAlias ?? null}
+                suggestedAlias={suggestedAlias}
+                walletAddress={wallet.address}
+              />
             </div>
           </div>
         </GlassCard>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <div id="receive">
-              <PayMeSection
-                currentAlias={dbUser.payAlias ?? null}
-                suggestedAlias={suggestedAlias}
-              />
-            </div>
             <GlassCard>
               <div className="p-4 md:p-5">
                 <SwapHistory />
