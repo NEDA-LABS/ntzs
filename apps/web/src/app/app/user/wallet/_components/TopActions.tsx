@@ -1,6 +1,6 @@
 "use client"
 
-import { IconSend, IconTrendingUp, IconWithdraw, IconWallet } from "@/app/app/_components/icons"
+import { IconTrendingUp, IconWithdraw } from "@/app/app/_components/icons"
 
 function emit(name: string) {
   if (typeof window !== 'undefined') {
@@ -10,8 +10,6 @@ function emit(name: string) {
 
 export function TopActions() {
   const items = [
-    { label: "Receive", icon: IconWallet, onClick: () => emit('wallet:openReceive') },
-    { label: "Send", icon: IconSend, onClick: () => emit('wallet:openSend') },
     { label: "Swap", icon: IconTrendingUp, onClick: () => emit('wallet:openSwap') },
     { label: "Withdraw", icon: IconWithdraw, onClick: () => emit('wallet:openWithdraw') },
   ] as const
