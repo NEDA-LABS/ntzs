@@ -30,6 +30,7 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
   const [copied, setCopied] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const prefersReducedMotion = useReducedMotion()
 
@@ -93,6 +94,16 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
     await navigator.clipboard.writeText(payUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleShare(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!payUrl) return
+    if (navigator.share) {
+      navigator.share({ title: `Pay @${activeAlias}`, url: payUrl }).catch(() => {})
+    } else {
+      window.open(payUrl, '_blank')
+    }
   }
 
   const expandedHeight = editing ? 280 : activeAlias ? 440 : 280
@@ -242,60 +253,28 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
                   </div>
                 ) : (
                   <>
-                    <div className="flex justify-center">
-                      <div className="rounded-2xl border border-border/40 bg-background/50 p-3 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
-                        <img
-                          src={qrUrl}
-                          alt="Pay Me QR"
-                          width={184}
-                          height={184}
-                          className="block rounded-xl"
-                        />
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-[11px] text-muted-foreground">{payUrl}</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setQrOpen(true) }}
+                          className="rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground focus-visible:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          Show QR & Share
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyLink}
+                          className={`rounded-2xl px-4 py-2.5 text-sm font-medium transition-all duration-150 active:scale-[0.98] ${
+                            copied
+                              ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
+                              : 'border border-border/40 bg-background/35 text-foreground backdrop-blur-xl hover:bg-background/45'
+                          }`}
+                        >
+                          {copied ? 'Copied' : 'Copy link'}
+                        </button>
                       </div>
-                    </div>
-
-                    <p className="text-center text-[11px] break-all text-muted-foreground">{payUrl}</p>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={handleCopyLink}
-                        className={`flex-1 inline-flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-medium transition-all duration-150 active:scale-[0.98] ${
-                          copied
-                            ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
-                            : 'border border-border/40 bg-background/35 text-foreground backdrop-blur-xl hover:bg-background/45'
-                        }`}
-                      >
-                        {copied ? (
-                          <>
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
-                            </svg>
-                            Copy link
-                          </>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (navigator.share) navigator.share({ title: `Pay @${activeAlias}`, url: payUrl })
-                        }}
-                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.97] hover:opacity-90"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                        </svg>
-                        Share
-                      </button>
                     </div>
 
                     <button
@@ -321,6 +300,44 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
       >
         Tap to reveal QR
       </motion.p>
+
+      {/* QR + Share Modal */}
+      {qrOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setQrOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-border/50 bg-card/90 p-5 shadow-2xl backdrop-blur-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold text-foreground">Pay @{activeAlias}</div>
+              <button onClick={() => setQrOpen(false)} className="rounded-lg border border-border/40 bg-background/35 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-background/45 focus-visible:outline-none focus:ring-2 focus:ring-ring">Close</button>
+            </div>
+            <div className="flex justify-center">
+              <div className="rounded-2xl border border-border/40 bg-background/50 p-3 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
+                <img src={qrUrl} alt="Pay QR" width={240} height={240} className="block rounded-xl" />
+              </div>
+            </div>
+            <p className="mt-3 break-all text-center text-[11px] text-muted-foreground">{payUrl}</p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-medium transition-all duration-150 active:scale-[0.98] ${
+                  copied
+                    ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
+                    : 'border border-border/40 bg-background/35 text-foreground backdrop-blur-xl hover:bg-background/45'
+                }`}
+              >
+                {copied ? 'Copied' : 'Copy link'}
+              </button>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="flex-1 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground focus-visible:outline-none focus:ring-2 focus:ring-ring"
+              >
+                Share
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }
