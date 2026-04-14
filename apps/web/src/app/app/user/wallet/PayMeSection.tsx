@@ -275,7 +275,7 @@ export function PayMeSection({ currentAlias, suggestedAlias, walletAddress }: Pa
                           onClick={(e) => { e.stopPropagation(); setQrOpen(true) }}
                           className="rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground focus-visible:outline-none focus:ring-2 focus:ring-ring"
                         >
-                          Show QR & Share
+                          Nilipe
                         </button>
                         <button
                           type="button"
