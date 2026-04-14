@@ -35,13 +35,13 @@ export function WithdrawInline({ userPhone }: WithdrawInlineProps) {
           />
 
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-[32px] border border-border/40 bg-card/85 p-6 shadow-[0_30px_90px_rgba(3,7,18,0.4)] backdrop-blur-2xl pb-safe"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
           >
-            <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-border" />
+            <div className="w-full max-w-lg rounded-[28px] border border-border/40 bg-card/90 p-6 shadow-[0_30px_90px_rgba(3,7,18,0.4)] backdrop-blur-2xl" role="dialog" aria-modal="true">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-bold text-foreground">Withdraw TZS</h2>
               <button type="button" onClick={handleClose} className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-background/40 hover:text-foreground">
@@ -51,6 +51,7 @@ export function WithdrawInline({ userPhone }: WithdrawInlineProps) {
               </button>
             </div>
             <WithdrawForm userPhone={userPhone} />
+            </div>
           </motion.div>
         </>
       )}

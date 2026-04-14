@@ -219,17 +219,14 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
             />
 
             <motion.div
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg overflow-hidden rounded-t-[32px] border border-border/40 bg-card/85 shadow-[0_30px_90px_rgba(3,7,18,0.4)] backdrop-blur-2xl pb-safe"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
             >
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="h-1 w-10 rounded-full bg-border" />
-              </div>
-
-              <div className="px-6 pb-6 space-y-4 max-h-[85vh] overflow-y-auto">
+              <div className="w-full max-w-lg overflow-hidden rounded-[28px] border border-border/40 bg-card/90 shadow-[0_30px_90px_rgba(3,7,18,0.4)] backdrop-blur-2xl" role="dialog" aria-modal="true">
+              <div className="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-bold text-foreground">Swap</h2>
                   <button
@@ -444,6 +441,7 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                     </AnimatePresence>
                   </>
                 )}
+              </div>
               </div>
             </motion.div>
           </>
