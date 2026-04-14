@@ -9,6 +9,7 @@ import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
+import { TopActions } from './_components/TopActions'
 // Tabs removed from hero for a minimal surface
 
 export default async function WalletPage() {
@@ -48,15 +49,16 @@ export default async function WalletPage() {
               walletAddress={wallet.address}
             />
           </div>
+          <TopActions />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <GlassCard>
-              <div className="p-4 md:p-5">
+            <div className="rounded-[28px] border border-border/40 bg-card/60 p-5 backdrop-blur-2xl">
+              <div className="p-0 md:p-0">
                 <SwapHistory />
               </div>
-            </GlassCard>
+            </div>
           </div>
 
           <div className="space-y-4">
