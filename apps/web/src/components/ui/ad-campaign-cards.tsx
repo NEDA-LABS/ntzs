@@ -111,20 +111,18 @@ export function AdCampaignCards() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="space-y-3"
           >
-            {/* Eyebrow — pill badge so it reads over any video frame */}
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${slide.accentBg} ${slide.accent} ring-1 ${slide.accentRing}`}
-            >
+            {/* Eyebrow */}
+            <p className={`text-[11px] font-medium italic tracking-wide ${slide.accent}`}>
               {slide.eyebrow}
-            </span>
+            </p>
 
-            {/* Headline — larger, tight leading */}
-            <h3 className="text-xl font-extrabold leading-tight text-white sm:text-2xl">
+            {/* Headline */}
+            <h3 className="text-xl font-black leading-tight tracking-tight text-white sm:text-2xl">
               {slide.headline}
             </h3>
 
-            {/* Sub copy — one step larger, slightly more opaque */}
-            <p className="text-sm text-white/80 leading-relaxed max-w-sm">
+            {/* Sub copy */}
+            <p className="text-sm font-light text-white/75 leading-relaxed max-w-sm">
               {slide.sub}
             </p>
 
