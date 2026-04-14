@@ -12,9 +12,6 @@ export default async function AuthPage({
   const { path } = await params
 
   const isSignUp = path === 'sign-up'
-  const subtitle = isSignUp
-    ? 'Get started with secure digital asset infrastructure.'
-    : "Don't have an account yet?"
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-white">
@@ -84,20 +81,6 @@ export default async function AuthPage({
               <div className="pointer-events-none absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
 
               <div className="relative">
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold tracking-tight text-white">
-                    {isSignUp ? 'Create account' : 'Sign in'}
-                  </h2>
-                  <p className="mt-1.5 text-sm text-white/50">
-                    {subtitle}{' '}
-                    {!isSignUp && (
-                      <Link href="/auth/sign-up" className="text-white/80 underline underline-offset-4 hover:text-white">
-                        Sign up
-                      </Link>
-                    )}
-                  </p>
-                </div>
-
                 <AuthView path={path} />
 
                 <div className="mt-6 flex items-center justify-between text-xs text-white/40">
