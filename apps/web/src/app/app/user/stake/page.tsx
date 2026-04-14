@@ -76,14 +76,14 @@ export default async function StakePage() {
 
           {/* Page header */}
           <div className="mb-10">
-            <h1 className="text-2xl font-bold tracking-tight text-white">Savings</h1>
-            <p className="mt-1.5 text-sm text-white/40">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Savings</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
               Your TZS working for you — {ratePercent}% per annum, accrued daily
             </p>
           </div>
 
           {/* Animated savings card — hero, sticky on scroll */}
-          <div className="sticky top-14 z-20 bg-[#0d0d14] pb-4 pt-1 lg:top-0">
+          <div className="sticky top-14 z-20 pb-4 pt-1 lg:top-0">
             <SavingsDeposit
               product={product}
               position={serialisedPosition}
@@ -93,28 +93,28 @@ export default async function StakePage() {
           {/* Stats — only when user has an active position */}
           {hasFunds && position && (
             <div className="mb-8 grid grid-cols-3 gap-3">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center">
+              <div className="rounded-2xl border border-border/40 bg-card/60 p-4 text-center backdrop-blur-2xl">
                 <div className="text-xl font-bold text-emerald-400">
                   +{dailyYield?.toLocaleString()}
                 </div>
-                <div className="mt-1 text-[11px] text-white/35">Daily TZS</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">Daily TZS</div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center">
+              <div className="rounded-2xl border border-border/40 bg-card/60 p-4 text-center backdrop-blur-2xl">
                 <div className="text-xl font-bold text-white">
                   {annualProjection?.toLocaleString()}
                 </div>
-                <div className="mt-1 text-[11px] text-white/35">Annual TZS</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">Annual TZS</div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center">
+              <div className="rounded-2xl border border-border/40 bg-card/60 p-4 text-center backdrop-blur-2xl">
                 <div className="text-xl font-bold text-violet-400">{ratePercent}%</div>
-                <div className="mt-1 text-[11px] text-white/35">Rate p.a.</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">Rate p.a.</div>
               </div>
             </div>
           )}
 
           {/* How it works */}
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
+          <div className="rounded-2xl border border-border/40 bg-card/60 p-6 backdrop-blur-2xl">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               How it works
             </h3>
             <div className="mt-5 space-y-5">
@@ -140,8 +140,8 @@ export default async function StakePage() {
                     {step}
                   </div>
                   <div>
-                    <div className="text-sm font-medium text-white">{title}</div>
-                    <div className="mt-1 text-xs leading-relaxed text-white/35">{body}</div>
+                    <div className="text-sm font-medium text-foreground">{title}</div>
+                    <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</div>
                   </div>
                 </div>
               ))}
@@ -149,11 +149,11 @@ export default async function StakePage() {
           </div>
 
           {/* Product details */}
-          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
+          <div className="mt-3 rounded-2xl border border-border/40 bg-card/60 p-6 backdrop-blur-2xl">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               Product details
             </h3>
-            <div className="mt-4 divide-y divide-white/5">
+            <div className="mt-4 divide-y divide-border/40">
               {[
                 { label: 'Annual rate', value: `${ratePercent}% p.a.` },
                 {

@@ -8,6 +8,7 @@ import {
   useMotionValue,
   useSpring,
   useTransform,
+  useReducedMotion,
 } from 'framer-motion'
 
 import { updatePayAlias } from './actions'
@@ -28,6 +29,7 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const prefersReducedMotion = useReducedMotion()
 
   const activeAlias = currentAlias ?? ''
   const payUrl = activeAlias ? `${APP_URL}/pay/${activeAlias}` : ''
@@ -106,20 +108,21 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
       <motion.div
         className="relative overflow-hidden rounded-[32px] border border-border/40 bg-card/70 shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl"
         style={{
-          rotateX: springRotateX,
-          rotateY: springRotateY,
+          rotateX: prefersReducedMotion ? 0 : springRotateX,
+          rotateY: prefersReducedMotion ? 0 : springRotateY,
           transformStyle: 'preserve-3d',
         }}
         animate={{ height: isExpanded ? expandedHeight : 210 }}
-        transition={{ type: 'spring', stiffness: 350, damping: 32 }}
+        transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 350, damping: 32 }}
       >
         {/* Background radial gradients */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(255,255,255,0.08),transparent_34%),radial-gradient(circle_at_85%_100%,rgba(96,165,250,0.14),transparent_48%)]" />
 
         <motion.div
           className="pointer-events-none absolute inset-0 bg-[linear-gradient(110deg,transparent_35%,rgba(255,255,255,0.08)_50%,transparent_65%)]"
-          animate={{ opacity: isHovered ? 1 : 0 }}
-          transition={{ duration: 0.3 }}
+          animate={prefersReducedMotion ? undefined : { opacity: isHovered ? 1 : 0 }}
+          style={prefersReducedMotion ? { opacity: 0 } : undefined}
+          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.3 }}
         />
 
         <div className="relative z-10 flex h-full flex-col p-6">
@@ -129,7 +132,7 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
               Pay Me
             </span>
             <div className="flex items-center gap-1.5 rounded-full border border-border/40 bg-background/40 px-2.5 py-1 backdrop-blur">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span className={`h-1.5 w-1.5 rounded-full bg-emerald-400 ${prefersReducedMotion ? '' : 'animate-pulse'}`} />
               <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
                 Link
               </span>
@@ -138,16 +141,17 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
 
           <motion.div
             className="mt-auto"
-            animate={{ y: isExpanded ? -4 : 0 }}
-            transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+            animate={{ y: prefersReducedMotion ? 0 : (isExpanded ? -4 : 0) }}
+            transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 350, damping: 30 }}
           >
             {activeAlias ? (
               <>
                 <div className="flex items-end gap-1">
                   <motion.span
                     className="font-semibold leading-none text-foreground"
-                    animate={{ fontSize: isExpanded ? '1.75rem' : '2.75rem' }}
-                    transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                    style={{ fontSize: isExpanded ? '1.75rem' : '2.75rem' }}
+                    animate={prefersReducedMotion ? undefined : { fontSize: isExpanded ? '1.75rem' : '2.75rem' }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 350, damping: 30 }}
                   >
                     @{activeAlias}
                   </motion.span>
@@ -163,8 +167,8 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
 
             <motion.div
               className="mt-3 h-px bg-gradient-to-r from-foreground/60 via-foreground/20 to-transparent"
-              animate={{ scaleX: isHovered || isExpanded ? 1 : 0.2, originX: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
+              animate={prefersReducedMotion ? { scaleX: 1, originX: 0 } : { scaleX: isHovered || isExpanded ? 1 : 0.2, originX: 0 }}
+              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.4, ease: 'easeOut' }}
             />
           </motion.div>
 
@@ -172,10 +176,10 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
             {isExpanded && (
               <motion.div
                 className="mt-5 space-y-3"
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                transition={{ duration: 0.22, delay: 0.04 }}
+                initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: prefersReducedMotion ? 0 : 0 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, delay: 0.04 }}
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
               >
                 {editing ? (
@@ -305,8 +309,8 @@ export function PayMeSection({ currentAlias, suggestedAlias }: PayMeSectionProps
       {/* Tap hint */}
       <motion.p
         className="absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground"
-        animate={{ opacity: isHovered && !isExpanded ? 1 : 0, y: isHovered ? 0 : 4 }}
-        transition={{ duration: 0.2 }}
+        animate={prefersReducedMotion ? { opacity: isHovered && !isExpanded ? 1 : 0 } : { opacity: isHovered && !isExpanded ? 1 : 0, y: isHovered ? 0 : 4 }}
+        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2 }}
       >
         Tap to reveal QR
       </motion.p>

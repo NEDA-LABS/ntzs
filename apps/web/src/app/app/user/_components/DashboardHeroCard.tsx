@@ -7,6 +7,7 @@ import {
   useMotionValue,
   useSpring,
   useTransform,
+  useReducedMotion,
 } from 'framer-motion'
 
 import { TokenBalance } from './TokenBalance'
@@ -21,6 +22,7 @@ interface DashboardHeroCardProps {
 export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardHeroCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const prefersReducedMotion = useReducedMotion()
 
   const mouseX = useMotionValue(0)
   const mouseY = useMotionValue(0)
@@ -55,8 +57,8 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
     >
       <motion.div
         style={{
-          rotateX: springRotateX,
-          rotateY: springRotateY,
+          rotateX: prefersReducedMotion ? 0 : springRotateX,
+          rotateY: prefersReducedMotion ? 0 : springRotateY,
           transformStyle: 'preserve-3d',
         }}
       >
@@ -64,8 +66,9 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:44px_44px] opacity-[0.06]" />
           <motion.div
             className="pointer-events-none absolute inset-0 bg-[linear-gradient(110deg,transparent_35%,rgba(255,255,255,0.06)_50%,transparent_65%)]"
-            animate={{ opacity: isHovered ? 1 : 0 }}
-            transition={{ duration: 0.3 }}
+            animate={prefersReducedMotion ? undefined : { opacity: isHovered ? 1 : 0 }}
+            transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.3 }}
+            style={prefersReducedMotion ? { opacity: 0 } : undefined}
           />
 
           <div className="relative z-10">
@@ -78,8 +81,8 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
             <div className="relative mt-5 h-10">
               <motion.div
                 className="absolute inset-0 flex items-center gap-1.5"
-                animate={{ opacity: isHovered ? 0 : 1 }}
-                transition={{ duration: 0.2 }}
+                animate={prefersReducedMotion ? undefined : { opacity: isHovered ? 0 : 1 }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2 }}
               >
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="h-2 w-2 rounded-full bg-foreground/15" />
@@ -89,8 +92,8 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
 
               <motion.div
                 className="absolute inset-0 flex items-center"
-                animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 6 }}
-                transition={{ duration: 0.25, delay: isHovered ? 0.05 : 0 }}
+                animate={prefersReducedMotion ? undefined : { opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 6 }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.25, delay: isHovered ? 0.05 : 0 }}
               >
                 {walletAddress ? (
                   <TokenBalance walletAddress={walletAddress} compact className="text-2xl" />
@@ -103,8 +106,8 @@ export function DashboardHeroCard({ payAlias, email, walletAddress }: DashboardH
 
           <motion.div
             className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"
-            animate={{ opacity: isHovered ? 1 : 0 }}
-            transition={{ duration: 0.3 }}
+            animate={prefersReducedMotion ? undefined : { opacity: isHovered ? 1 : 0 }}
+            transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.3 }}
           />
         </GlassCard>
       </motion.div>
