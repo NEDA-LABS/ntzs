@@ -22,7 +22,7 @@ const slides: AdSlide[] = [
     id: 1,
     video: "/Fintech_Video_With_NTZS_Logo.mp4",
     eyebrow: "Digital Money. Real Value.",
-    headline: "Tanzania's first on-chain shilling — spend, save, grow.",
+    headline: "Tanzania's first on-chain shilling. Spend, save, grow.",
     sub: "nTZS is pegged 1:1 to the Tanzanian Shilling. No volatility, full control.",
     ctaLabel: "Get started →",
     ctaHref: "/app/user/deposits/new",
@@ -47,7 +47,7 @@ const slides: AdSlide[] = [
     video: "/Stablecoin_Image_To_Video_Generation.mp4",
     eyebrow: "Put your money to work.",
     headline: "Earn up to 8% APY just by holding.",
-    sub: "Stake your nTZS and watch it grow — no lock-in, withdraw anytime.",
+    sub: "Stake your nTZS and watch it grow. No lock-in, withdraw anytime.",
     ctaLabel: "Stake to earn →",
     ctaHref: "/app/user/stake",
     accent: "text-violet-300",
@@ -117,7 +117,7 @@ export function AdCampaignCards() {
             </p>
 
             {/* Headline */}
-            <h3 className="text-xl font-black leading-tight tracking-tight text-white sm:text-2xl">
+            <h3 className="text-xl font-thin leading-tight tracking-tight text-white sm:text-2xl">
               {slide.headline}
             </h3>
 
