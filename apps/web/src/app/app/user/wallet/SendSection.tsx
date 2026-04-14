@@ -118,7 +118,13 @@ export function SendSection({ walletAddress }: SendSectionProps) {
               ) : (
                 <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-bold text-foreground">Send nTZS</h2>
+                    <h2 className="text-base font-bold text-foreground inline-flex items-center gap-2">
+                      Send
+                      <span className="inline-flex items-center gap-1">
+                        <img src="/ntzs-icon.svg" alt="nTZS icon" className="h-4 w-4" />
+                        nTZS
+                      </span>
+                    </h2>
                     <button type="button" onClick={handleClose} className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-background/40 hover:text-foreground">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -158,7 +164,10 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                         required
                         className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                       />
-                      <span className="text-xs font-semibold text-muted-foreground">nTZS</span>
+                      <span className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
+                        <img src="/ntzs-icon.svg" alt="nTZS icon" className="h-3.5 w-3.5" />
+                        nTZS
+                      </span>
                     </div>
                   </div>
 

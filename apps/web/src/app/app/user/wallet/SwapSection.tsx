@@ -179,6 +179,7 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
 
   const fromLabel = fromToken === 'NTZS' ? 'nTZS' : 'USDC'
   const toLabel = toToken === 'NTZS' ? 'nTZS' : 'USDC'
+  const ICONS: Record<TokenSymbol, string> = { NTZS: '/ntzs-icon.svg', USDC: '/usdc-logo.svg' }
 
   return (
     <>
@@ -274,7 +275,8 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                     <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You pay</p>
                       <div className="flex items-center gap-3">
-                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground">
+                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground inline-flex items-center gap-2">
+                          <img src={ICONS[fromToken]} alt={`${fromLabel} icon`} className="h-4 w-4" />
                           {fromLabel}
                         </div>
                         <input
@@ -306,7 +308,8 @@ export function SwapSection({ walletAddress }: SwapSectionProps) {
                     <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You receive</p>
                       <div className="flex items-center gap-3">
-                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground">
+                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground inline-flex items-center gap-2">
+                          <img src={ICONS[toToken]} alt={`${toLabel} icon`} className="h-4 w-4" />
                           {toLabel}
                         </div>
                         <div className="flex-1 text-right">

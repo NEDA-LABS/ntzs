@@ -12,12 +12,14 @@ const TOKENS = {
     decimals: 18,
     symbol: 'TZS',
     label: 'nTZS',
+    icon: '/ntzs-icon.svg',
   },
   USDC: {
     address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     decimals: 6,
     symbol: 'USDC',
     label: 'USDC',
+    icon: '/usdc-logo.svg',
   },
 } as const
 
@@ -110,6 +112,7 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
               />
             )}
             <span className="relative flex items-center gap-1.5">
+              <img src={TOKENS[key].icon} alt={`${TOKENS[key].label} icon`} className="h-4 w-4" />
               {TOKENS[key].label}
               {key === 'USDC' && hasUsdc && active !== 'USDC' && (
                 <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" />
@@ -130,7 +133,17 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
             className="space-y-2"
           >
             <p className={`text-4xl font-semibold tracking-tight md:text-5xl ${loading ? 'text-foreground/40 animate-pulse' : 'text-foreground'}`}>
-              {loading ? `-- ${token.symbol}` : `${formatted} ${token.symbol}`}
+              {loading ? (
+                `-- ${token.symbol}`
+              ) : (
+                <>
+                  {formatted}
+                  <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                    <img src={token.icon} alt={`${token.label} icon`} className="h-5 w-5" />
+                    {token.symbol}
+                  </span>
+                </>
+              )}
             </p>
             <p className="text-sm text-muted-foreground">{subtitle}</p>
           </motion.div>
