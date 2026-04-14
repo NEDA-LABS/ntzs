@@ -20,9 +20,8 @@ import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
 import { PendingDepositPoller } from './_components/PendingDepositPoller'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
 import { formatDateEAT } from '@/lib/format-date'
-import { AssistantBar } from './_components/AssistantBar'
-import { QuickIntentsGrid } from './_components/QuickIntentsGrid'
 import { ContextChips } from './_components/ContextChips'
+import { AdCampaignCards } from '@/components/ui/ad-campaign-cards'
 
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -164,11 +163,10 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* Assistant Section */}
+          {/* Campaign / Ad Section */}
           <div className="mt-6 space-y-4">
             <ContextChips walletAddress={wallet?.address ?? null} kycApproved={kycApproved} pendingCount={pendingCount} />
-            <AssistantBar />
-            <QuickIntentsGrid />
+            <AdCampaignCards />
           </div>
         </div>
 
