@@ -55,7 +55,7 @@ export default async function WalletPage() {
           </div>
         </div>
         {/* Swap modal instance (opened via TopActions) */}
-        <SwapSection walletAddress={wallet.address} renderLauncher={false} />
+        <SwapSection renderLauncher={false} />
         {/* Withdraw modal instance (opened via TopActions) */}
         <WithdrawInline userPhone={dbUser.phone} />
       </div>

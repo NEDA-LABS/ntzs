@@ -48,11 +48,10 @@ function Spinner({ className = '' }: { className?: string }) {
 }
 
 interface SwapSectionProps {
-  walletAddress: string
   renderLauncher?: boolean
 }
 
-export function SwapSection({ walletAddress, renderLauncher = true }: SwapSectionProps) {
+export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const [open, setOpen] = useState(false)
   const [fromToken, setFromToken] = useState<TokenSymbol>('NTZS')
   const [toToken, setToToken] = useState<TokenSymbol>('USDC')
@@ -294,7 +293,7 @@ export function SwapSection({ walletAddress, renderLauncher = true }: SwapSectio
                           value={amount}
                           onChange={(e) => handleAmountChange(e.target.value)}
                           disabled={swapping}
-                          className="flex-1 bg-transparent text-right text-2xl font-light text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+                          className="min-w-0 flex-1 bg-transparent text-right text-xl font-light text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
                         />
                       </div>
                     </div>
@@ -319,20 +318,20 @@ export function SwapSection({ walletAddress, renderLauncher = true }: SwapSectio
                           <img src={ICONS[toToken]} alt={`${toLabel} icon`} className="h-4 w-4" />
                           {toLabel}
                         </div>
-                        <div className="flex-1 text-right">
+                        <div className="min-w-0 flex-1 text-right">
                           {rateLoading ? (
                             <Spinner className="ml-auto h-5 w-5 text-muted-foreground" />
                           ) : rate ? (
-                            <div>
-                              <p className="text-2xl font-light text-foreground">
+                            <div className="min-w-0">
+                              <p className="truncate text-xl font-light text-foreground">
                                 ≈ {rate.expectedOutput.toLocaleString('en-US', { maximumFractionDigits: 4 })}
                               </p>
-                              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                                 min {rate.minOutput.toLocaleString('en-US', { maximumFractionDigits: 4 })} · mid {rate.midRate.toLocaleString()}
                               </p>
                             </div>
                           ) : (
-                            <p className="text-2xl font-light text-muted-foreground">—</p>
+                            <p className="text-xl font-light text-muted-foreground">—</p>
                           )}
                         </div>
                       </div>
