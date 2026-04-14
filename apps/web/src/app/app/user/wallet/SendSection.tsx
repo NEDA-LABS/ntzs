@@ -6,9 +6,10 @@ import { sendNtzsAction, type SendNtzsResult } from './actions'
 
 interface SendSectionProps {
   walletAddress: string
+  renderLauncher?: boolean
 }
 
-export function SendSection({ walletAddress }: SendSectionProps) {
+export function SendSection({ walletAddress, renderLauncher = true }: SendSectionProps) {
   const [open, setOpen] = useState(false)
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
@@ -49,21 +50,23 @@ export function SendSection({ walletAddress }: SendSectionProps) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => { reset(); setOpen(true) }}
-        className="flex min-h-[128px] w-full flex-col items-start justify-between rounded-[28px] border border-border/40 bg-card/70 p-5 text-left text-foreground shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl transition-transform duration-300 hover:-translate-y-1"
-      >
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-background/40">
-          <svg className="h-5 w-5 text-foreground/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-          </svg>
-        </div>
-        <div>
-          <p className="text-lg font-semibold">Send TZS</p>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Transfer funds to a wallet address or an alias.</p>
-        </div>
-      </button>
+      {renderLauncher && (
+        <button
+          type="button"
+          onClick={() => { reset(); setOpen(true) }}
+          className="flex min-h-[128px] w-full flex-col items-start justify-between rounded-[28px] border border-border/40 bg-card/70 p-5 text-left text-foreground shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl transition-transform duration-300 hover:-translate-y-1"
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-background/40">
+            <svg className="h-5 w-5 text-foreground/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-lg font-semibold">Send TZS</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Transfer funds to a wallet address or an alias.</p>
+          </div>
+        </button>
+      )}
 
       <AnimatePresence>
         {open && (
