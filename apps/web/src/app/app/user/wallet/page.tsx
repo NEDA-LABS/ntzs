@@ -9,6 +9,7 @@ import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
+import { WalletTabsPanel } from './WalletTabsPanel'
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -29,8 +30,6 @@ export default async function WalletPage() {
 
   const displayName = dbUser.payAlias ? `@${dbUser.payAlias}` : dbUser.email
 
-  const shortAddress = `${wallet.address.slice(0, 8)}...${wallet.address.slice(-6)}`
-
   return (
     <div className="ntzs-wallet-shell min-h-screen px-4 py-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -38,21 +37,11 @@ export default async function WalletPage() {
           <div className="absolute inset-0 ntzs-wallet-glow" />
           <div className="grid gap-6 p-6 md:p-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8">
             <div className="space-y-6">
-              <div className="space-y-4">
-                <div className="inline-flex items-center rounded-full border border-border/50 bg-background/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground backdrop-blur">
-                  Wallet overview
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Base network wallet</p>
-                    <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
-                      {displayName}
-                    </h1>
-                  </div>
-                  <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base">
-                    Manage your TZS balance, receive payments, send funds to aliases or addresses, and swap between nTZS and USDC from one wallet surface.
-                  </p>
-                </div>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Base network wallet</p>
+                <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
+                  {displayName}
+                </h1>
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
@@ -72,48 +61,13 @@ export default async function WalletPage() {
                 </Link>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-3xl border border-border/40 bg-background/40 p-5 backdrop-blur-xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Wallet address</p>
-                  <p className="mt-3 font-mono text-sm text-foreground/90">{shortAddress}</p>
-                </div>
-                <div className="rounded-3xl border border-border/40 bg-background/40 p-5 backdrop-blur-xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Status</p>
-                  <p className="mt-3 text-sm font-semibold text-foreground">Active</p>
-                </div>
-                <div className="rounded-3xl border border-border/40 bg-background/40 p-5 backdrop-blur-xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Network</p>
-                  <p className="mt-3 text-sm font-semibold text-foreground">Base mainnet</p>
-                </div>
-              </div>
+              {/* Inline tiles removed in favor of compact info row in tabs */}
             </div>
 
             <div className="space-y-4">
               <div className="rounded-[28px] border border-border/40 bg-background/50 p-5 shadow-[0_25px_80px_rgba(15,23,42,0.35)] backdrop-blur-2xl md:p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.3em] text-muted-foreground">Available balance</p>
-                    <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">Wallet totals</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Switch between your nTZS and USDC balances.</p>
-                  </div>
-                  <div className="rounded-full border border-border/40 bg-background/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                    Live
-                  </div>
-                </div>
-                <div className="mt-8">
-                  <BalanceToggle walletAddress={wallet.address} />
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-3xl border border-border/40 bg-background/35 p-5 backdrop-blur-xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Receive</p>
-                  <p className="mt-2 text-sm leading-relaxed text-foreground/85">Use your alias or QR code to collect TZS instantly.</p>
-                </div>
-                <div className="rounded-3xl border border-border/40 bg-background/35 p-5 backdrop-blur-xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Exchange</p>
-                  <p className="mt-2 text-sm leading-relaxed text-foreground/85">Swap nTZS and USDC directly from your wallet.</p>
-                </div>
+                <BalanceToggle walletAddress={wallet.address} />
+                <WalletTabsPanel walletAddress={wallet.address} payAlias={dbUser.payAlias ?? null} suggestedAlias={suggestedAlias} />
               </div>
             </div>
           </div>
@@ -121,10 +75,12 @@ export default async function WalletPage() {
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <PayMeSection
-              currentAlias={dbUser.payAlias ?? null}
-              suggestedAlias={suggestedAlias}
-            />
+            <div id="receive">
+              <PayMeSection
+                currentAlias={dbUser.payAlias ?? null}
+                suggestedAlias={suggestedAlias}
+              />
+            </div>
             <GlassCard>
               <div className="p-4 md:p-5">
                 <SwapHistory />
@@ -134,8 +90,28 @@ export default async function WalletPage() {
 
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
-              <SendSection walletAddress={wallet.address} />
-              <SwapSection walletAddress={wallet.address} />
+              <div id="send">
+                <details className="group lg:open">
+                  <summary className="flex cursor-pointer list-none items-center justify-between rounded-[18px] border border-border/40 bg-background/35 px-4 py-3 text-sm font-semibold text-foreground backdrop-blur-xl">
+                    Full Send
+                    <span className="text-xs font-normal text-muted-foreground group-open:rotate-180 transition-transform">▾</span>
+                  </summary>
+                  <div className="mt-3">
+                    <SendSection walletAddress={wallet.address} />
+                  </div>
+                </details>
+              </div>
+              <div id="swap">
+                <details className="group lg:open">
+                  <summary className="flex cursor-pointer list-none items-center justify-between rounded-[18px] border border-border/40 bg-background/35 px-4 py-3 text-sm font-semibold text-foreground backdrop-blur-xl">
+                    Full Swap
+                    <span className="text-xs font-normal text-muted-foreground group-open:rotate-180 transition-transform">▾</span>
+                  </summary>
+                  <div className="mt-3">
+                    <SwapSection walletAddress={wallet.address} />
+                  </div>
+                </details>
+              </div>
             </div>
             <Link
               href="/app/user/withdraw"

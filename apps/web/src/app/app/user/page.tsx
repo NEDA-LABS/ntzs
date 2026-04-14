@@ -19,8 +19,10 @@ import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
 import { PendingDepositPoller } from './_components/PendingDepositPoller'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
-import { AIOrbit } from '@/components/ui/ai-orbital'
 import { formatDateEAT } from '@/lib/format-date'
+import { AssistantBar } from './_components/AssistantBar'
+import { QuickIntentsGrid } from './_components/QuickIntentsGrid'
+import { ContextChips } from './_components/ContextChips'
 
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -162,14 +164,12 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* AI Assistant Orbital */}
-          <AIOrbit
-            walletBalance={recentDeposits
-              .filter((d) => d.status === 'minted')
-              .reduce((sum, d) => sum + (d.amountTzs ?? 0), 0)}
-            recentTxCount={recentTxns.length}
-            lastTxAmountTzs={recentTxns[0]?.amountTzs ?? 0}
-          />
+          {/* Assistant Section */}
+          <div className="mt-6 space-y-4">
+            <ContextChips walletAddress={wallet?.address ?? null} kycApproved={kycApproved} pendingCount={pendingCount} />
+            <AssistantBar />
+            <QuickIntentsGrid />
+          </div>
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
