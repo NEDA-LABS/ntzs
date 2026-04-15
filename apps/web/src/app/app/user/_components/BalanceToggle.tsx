@@ -38,16 +38,19 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
   useEffect(() => {
     if (!walletAddress) return
 
+    // Base mainnet — static network avoids an extra eth_chainId round-trip
+    const network = ethers.Network.from(8453)
+    const abi = ['function balanceOf(address) view returns (uint256)']
+
     const fetch = async () => {
       try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL)
-        const abi = ['function balanceOf(address) view returns (uint256)']
+        const provider = new ethers.JsonRpcProvider(RPC_URL, network, { staticNetwork: network })
 
         const [ntzsRaw, usdcRaw] = await Promise.all([
           TOKENS.NTZS.address
-            ? new ethers.Contract(TOKENS.NTZS.address, abi, provider).balanceOf(walletAddress)
+            ? new ethers.Contract(TOKENS.NTZS.address, abi, provider).balanceOf(walletAddress, { blockTag: 'latest' })
             : Promise.resolve(BigInt(0)),
-          new ethers.Contract(TOKENS.USDC.address, abi, provider).balanceOf(walletAddress),
+          new ethers.Contract(TOKENS.USDC.address, abi, provider).balanceOf(walletAddress, { blockTag: 'latest' }),
         ])
 
         setBalances({
@@ -55,7 +58,7 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
           USDC: ethers.formatUnits(usdcRaw, TOKENS.USDC.decimals),
         })
       } catch {
-        setBalances({ NTZS: '0', USDC: '0' })
+        // keep previous balances on transient RPC errors
       } finally {
         setLoading(false)
       }
