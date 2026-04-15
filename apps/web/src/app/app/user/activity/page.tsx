@@ -3,6 +3,7 @@ import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends, ge
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ActivityList } from './_components/ActivityList'
 import { PendingDepositPoller } from '../_components/PendingDepositPoller'
+import { ActivityRefreshListener } from './_components/ActivityRefreshListener'
 
 export default async function ActivityPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -86,6 +87,9 @@ export default async function ActivityPage() {
 
   return (
     <div className="min-h-screen bg-[#0d0d14]">
+      {/* Always-on: re-renders on any deposit/swap event + 15s background poll */}
+      <ActivityRefreshListener />
+      {/* Smart status poller — emits events when deposits transition */}
       <PendingDepositPoller hasPending={pendingCount > 0} />
 
       <div className="px-4 py-8 sm:px-8">

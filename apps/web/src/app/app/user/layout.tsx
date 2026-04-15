@@ -2,10 +2,10 @@ import type { ReactNode } from 'react'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { UserTopBar } from '@/app/app/_components/UserTopBar'
-import { DepositSuccessToast } from '@/app/app/_components/DepositSuccessToast'
 import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
 import { getCachedWallet, invalidateWalletCache } from '@/lib/user/cachedWallet'
 
+import { NotificationCenter } from '@/app/app/_components/NotificationCenter'
 import { MobileSidebar } from './_components/MobileSidebar'
 
 export default async function UserLayout({ children }: { children: ReactNode }) {
@@ -34,7 +34,7 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
           {children}
         </div>
       </main>
-      <DepositSuccessToast />
+      <NotificationCenter />
     </div>
   )
 }

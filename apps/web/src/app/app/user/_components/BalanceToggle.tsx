@@ -64,12 +64,14 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
     fetch()
     const interval = setInterval(fetch, 30_000)
 
-    const onSwapComplete = () => fetch()
-    window.addEventListener('swap:complete', onSwapComplete)
+    const onUpdate = () => fetch()
+    window.addEventListener('swap:complete',    onUpdate)
+    window.addEventListener('deposit:complete', onUpdate)
 
     return () => {
       clearInterval(interval)
-      window.removeEventListener('swap:complete', onSwapComplete)
+      window.removeEventListener('swap:complete',    onUpdate)
+      window.removeEventListener('deposit:complete', onUpdate)
     }
   }, [walletAddress])
 
