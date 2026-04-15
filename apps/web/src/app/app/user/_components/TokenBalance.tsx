@@ -47,8 +47,16 @@ export function TokenBalance({ walletAddress, compact = false, className }: Toke
     }
 
     fetchBalance()
-    const interval = setInterval(fetchBalance, 30000)
-    return () => clearInterval(interval)
+    const interval = setInterval(fetchBalance, 30_000)
+
+    window.addEventListener('deposit:complete', fetchBalance)
+    window.addEventListener('swap:complete', fetchBalance)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('deposit:complete', fetchBalance)
+      window.removeEventListener('swap:complete', fetchBalance)
+    }
   }, [walletAddress])
 
   const numBalance = parseFloat(balance || '0')

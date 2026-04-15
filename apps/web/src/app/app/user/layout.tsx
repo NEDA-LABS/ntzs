@@ -7,6 +7,7 @@ import { getCachedWallet, invalidateWalletCache } from '@/lib/user/cachedWallet'
 
 import { NotificationCenter } from '@/app/app/_components/NotificationCenter'
 import { MobileSidebar } from './_components/MobileSidebar'
+import { PendingDepositPoller } from './_components/PendingDepositPoller'
 
 export default async function UserLayout({ children }: { children: ReactNode }) {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
@@ -34,6 +35,8 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
           {children}
         </div>
       </main>
+      {/* Always-on poller — detects deposit status transitions on every page */}
+      <PendingDepositPoller hasPending={true} />
       <NotificationCenter />
     </div>
   )

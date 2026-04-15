@@ -17,7 +17,6 @@ import {
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
-import { PendingDepositPoller } from './_components/PendingDepositPoller'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
 import { formatDateEAT } from '@/lib/format-date'
 import { ContextChips } from './_components/ContextChips'
@@ -63,8 +62,6 @@ export default async function UserDashboard() {
 
   return (
     <div className="bg-[#0d0d14]">
-      <PendingDepositPoller hasPending={pendingCount > 0} />
-
       {/* ── KYC Prompt Banner ── */}
       {!kycApproved && (
         <div className="mx-4 mt-4 lg:mx-8 lg:mt-6">
