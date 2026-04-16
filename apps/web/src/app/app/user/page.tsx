@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
-import { getCachedRecentDeposits, getCachedRecentBurns, getCachedApprovedKyc } from '@/lib/user/cachedQueries'
+import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends, getCachedRecentSwaps, getCachedApprovedKyc } from '@/lib/user/cachedQueries'
 
 import {
   IconCheckCircle,
@@ -13,6 +13,8 @@ import {
   IconUsers,
   IconWallet,
   IconWithdraw,
+  IconSend,
+  IconCoins,
 } from '@/app/app/_components/icons'
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
@@ -25,10 +27,12 @@ import { AdCampaignCards } from '@/components/ui/ad-campaign-cards'
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, recentDeposits, recentBurns, approvedKyc] = await Promise.all([
+  const [wallet, recentDeposits, recentBurns, recentSends, recentSwaps, approvedKyc] = await Promise.all([
     getCachedWallet(dbUser.id),
     getCachedRecentDeposits(dbUser.id, 5),
     getCachedRecentBurns(dbUser.id, 5),
+    getCachedRecentSends(dbUser.id, 5),
+    getCachedRecentSwaps(dbUser.id, 5),
     getCachedApprovedKyc(dbUser.id),
   ])
 
@@ -52,6 +56,28 @@ export default async function UserDashboard() {
       amountTzs: b.amountTzs,
       status: b.status,
       createdAt: b.createdAt,
+    })),
+    ...recentSends.map((s) => ({
+      type: 'send' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
+      id: s.id,
+      amountTzs: s.amountTzs,
+      status: 'sent',
+      createdAt: s.createdAt,
+      toAddress: s.toAddress,
+    })),
+    ...recentSwaps.map((sw) => ({
+      type: 'swap' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
+      id: sw.id,
+      amountTzs: Number(sw.amountIn || 0),
+      status: 'filled',
+      createdAt: sw.createdAt,
+      fromSymbol: sw.fromToken,
+      toSymbol: sw.toToken,
+      amountOut: sw.amountOut,
     })),
   ]
     .filter((t) => t.createdAt)
@@ -131,24 +157,32 @@ export default async function UserDashboard() {
                     ? tx.source === 'pay_link'
                       ? tx.payerName ? `Collection · ${tx.payerName}` : 'Collection'
                       : 'Deposit'
-                    : 'Withdraw'
+                    : tx.type === 'send'
+                      ? `Sent to ${(tx as { toAddress?: string }).toAddress?.slice(0, 6) ?? ''}...`
+                      : tx.type === 'swap'
+                        ? `Swap ${(tx as { fromSymbol?: string }).fromSymbol ?? ''} → ${(tx as { toSymbol?: string }).toSymbol ?? ''}`
+                        : 'Withdraw'
 
                 const statusColor =
                   tx.type === 'deposit'
                     ? tx.status === 'minted' ? 'text-emerald-400'
                       : tx.status === 'rejected' || tx.status === 'cancelled' ? 'text-rose-400'
                       : 'text-amber-400'
+                    : tx.type === 'send' ? 'text-blue-400'
+                    : tx.type === 'swap' ? 'text-violet-400'
                     : tx.status === 'burned' ? 'text-rose-300'
                       : tx.status === 'failed' ? 'text-rose-400'
                       : 'text-amber-400'
 
+                const icon =
+                  tx.type === 'deposit' ? <IconPlus className="h-4 w-4 text-emerald-400" />
+                  : tx.type === 'send' ? <IconSend className="h-4 w-4 text-blue-400" />
+                  : tx.type === 'swap' ? <IconCoins className="h-4 w-4 text-violet-400" />
+                  : <IconWithdraw className="h-4 w-4 text-rose-300" />
+
                 return {
                   id: tx.id,
-                  icon: tx.type === 'deposit' ? (
-                    <IconPlus className="h-4 w-4 text-emerald-400" />
-                  ) : (
-                    <IconWithdraw className="h-4 w-4 text-rose-300" />
-                  ),
+                  icon,
                   label,
                   amount: tx.amountTzs,
                   status: String(tx.status).replace(/_/g, ' '),
