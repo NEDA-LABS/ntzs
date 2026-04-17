@@ -1,10 +1,11 @@
 'use server'
 
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 import { getDb } from '@/lib/db'
-import { depositRequests, users, wallets, banks } from '@ntzs/db'
+import { depositRequests, users, banks } from '@ntzs/db'
+import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import {
   initiatePayment,
   normalizePhone,
@@ -49,10 +50,8 @@ export async function createPayLinkDeposit(
     return { success: false, error: 'Payment link is not active' }
   }
 
-  // Get recipient's wallet
-  const wallet = await db.query.wallets.findFirst({
-    where: and(eq(wallets.userId, recipient.id), eq(wallets.chain, 'base')),
-  })
+  // Get recipient's primary wallet (same one shown on their dashboard)
+  const wallet = await getUserPrimaryWallet(recipient.id)
 
   if (!wallet) {
     return { success: false, error: 'Recipient wallet not available' }

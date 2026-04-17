@@ -6,7 +6,8 @@ import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { depositRequests, kycCases, wallets, banks } from '@ntzs/db'
+import { depositRequests, kycCases, banks } from '@ntzs/db'
+import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import {
   initiatePayment,
   initiateCardPayment,
@@ -46,9 +47,7 @@ export async function createDepositRequestAction(formData: FormData) {
 
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
-    where: and(eq(wallets.userId, dbUser.id), eq(wallets.chain, 'base')),
-  })
+  const wallet = await getUserPrimaryWallet(dbUser.id)
 
   if (!wallet) {
     redirect('/app/user/wallet')
@@ -138,9 +137,7 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
 
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
-    where: and(eq(wallets.userId, dbUser.id), eq(wallets.chain, 'base')),
-  })
+  const wallet = await getUserPrimaryWallet(dbUser.id)
   if (!wallet) throw new Error('No wallet found. Please set up your wallet first.')
 
   const approvedKyc = await db
