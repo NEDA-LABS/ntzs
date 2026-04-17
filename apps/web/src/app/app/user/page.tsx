@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends, getCachedRecentSwaps, getCachedApprovedKyc } from '@/lib/user/cachedQueries'
+import { getLegacyWalletBalance } from './wallet/actions'
+import { LegacyWalletMigrationBanner } from './_components/LegacyWalletMigrationBanner'
 
 import {
   IconCheckCircle,
@@ -27,13 +29,14 @@ import { AdCampaignCards } from '@/components/ui/ad-campaign-cards'
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, recentDeposits, recentBurns, recentSends, recentSwaps, approvedKyc] = await Promise.all([
+  const [wallet, recentDeposits, recentBurns, recentSends, recentSwaps, approvedKyc, legacyBalance] = await Promise.all([
     getCachedWallet(dbUser.id),
     getCachedRecentDeposits(dbUser.id, 5),
     getCachedRecentBurns(dbUser.id, 5),
     getCachedRecentSends(dbUser.id, 5),
     getCachedRecentSwaps(dbUser.id, 5),
     getCachedApprovedKyc(dbUser.id),
+    getLegacyWalletBalance().catch(() => null),
   ])
 
   const kycApproved = approvedKyc.length > 0
@@ -88,6 +91,14 @@ export default async function UserDashboard() {
 
   return (
     <div className="bg-[#0d0d14]">
+      {/* ── Legacy Wallet Migration Banner ── */}
+      {legacyBalance && legacyBalance.amountTzs > 0 && (
+        <LegacyWalletMigrationBanner
+          amountTzs={legacyBalance.amountTzs}
+          fromAddress={legacyBalance.fromAddress}
+        />
+      )}
+
       {/* ── KYC Prompt Banner ── */}
       {!kycApproved && (
         <div className="mx-4 mt-4 lg:mx-8 lg:mt-6">
