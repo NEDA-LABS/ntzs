@@ -45,12 +45,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  // 2. Find wallet
-  const [wallet] = await db
-    .select({ id: wallets.id, address: wallets.address, chain: wallets.chain })
+  // 2. Find ALL wallets for this user
+  const allWallets = await db
+    .select({ id: wallets.id, address: wallets.address, chain: wallets.chain, provider: wallets.provider, createdAt: wallets.createdAt })
     .from(wallets)
-    .where(and(eq(wallets.userId, user.id), eq(wallets.chain, 'base')))
-    .limit(1)
+    .where(eq(wallets.userId, user.id))
+
+  // The dashboard uses getCachedWallet which prefers platform_hd
+  const dashboardWallet = allWallets.find(w => w.provider === 'platform_hd') ?? allWallets[0] ?? null
+  const wallet = dashboardWallet
 
   // 3. Deposits + mint tx hashes
   const deposits = await db
@@ -140,9 +143,10 @@ export async function GET(request: NextRequest) {
       .limit(50)
   }
 
-  // 7. On-chain balance
+  // 7. On-chain balance for ALL wallets
   let onChainBalance: number | null = null
-  if (wallet?.address && BASE_RPC_URL && NTZS_CONTRACT_ADDRESS_BASE) {
+  const walletBalances: Array<{ id: string; address: string; provider: string | null; balance: number }> = []
+  if (BASE_RPC_URL && NTZS_CONTRACT_ADDRESS_BASE) {
     try {
       const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
       const token = new ethers.Contract(
@@ -150,8 +154,14 @@ export async function GET(request: NextRequest) {
         ['function balanceOf(address) view returns (uint256)'],
         provider
       )
-      const raw = await token.balanceOf(wallet.address) as bigint
-      onChainBalance = Number(raw / BigInt(10) ** BigInt(18))
+      for (const w of allWallets) {
+        try {
+          const raw = await token.balanceOf(w.address) as bigint
+          const bal = Number(raw / BigInt(10) ** BigInt(18))
+          walletBalances.push({ id: w.id, address: w.address, provider: w.provider, balance: bal })
+          if (w.id === wallet?.id) onChainBalance = bal
+        } catch {}
+      }
     } catch {}
   }
 
@@ -172,9 +182,18 @@ export async function GET(request: NextRequest) {
     .filter((d) => d.walletId && d.walletId !== wallet?.id)
     .map((d) => ({ depositId: d.id, expectedWalletId: wallet?.id, actualWalletId: d.walletId, amountTzs: d.amountTzs }))
 
+  // Detect mismatch: dashboard wallet vs deposit wallet
+  const depositWalletIds = [...new Set(deposits.filter(d => d.walletId).map(d => d.walletId))]
+  const mintWalletMismatch = wallet && depositWalletIds.length > 0 && !depositWalletIds.includes(wallet.id)
+    ? { dashboardWalletId: wallet.id, dashboardAddress: wallet.address, depositWalletIds, note: 'Dashboard shows a different wallet than where tokens are minted!' }
+    : null
+
   return NextResponse.json({
     user: { id: user.id, email: user.email, alias: user.payAlias },
-    wallet: wallet ? { id: wallet.id, address: wallet.address, chain: wallet.chain } : null,
+    dashboardWallet: wallet ? { id: wallet.id, address: wallet.address, chain: wallet.chain, provider: wallet.provider } : null,
+    allWallets,
+    walletBalances,
+    mintWalletMismatch,
     onChainBalance,
     summary: {
       totalMinted,
