@@ -450,7 +450,8 @@ async function main() {
       const rpcUrl = requiredEnv('BASE_RPC_URL')
       const privateKey = process.env.BURNER_PRIVATE_KEY || requiredEnv('MINTER_PRIVATE_KEY')
       const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
-      await processBurnJob(databaseUrl, rpcUrl, privateKey, SNIPPE_API_KEY, apiBaseUrl)
+      const platformTreasury = (process.env.PLATFORM_TREASURY_ADDRESS || '').replace(/^["']|["']$/g, '')
+      await processBurnJob(databaseUrl, rpcUrl, privateKey, SNIPPE_API_KEY, apiBaseUrl, platformTreasury)
     } catch (err) {
       console.error('[worker] processBurnJob error:', err instanceof Error ? err.message : err)
     }

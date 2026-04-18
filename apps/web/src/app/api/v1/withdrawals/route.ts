@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY } from '@/lib/env'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone } from '@/lib/psp/snippe'
-import { wallets, partnerUsers, burnRequests } from '@ntzs/db'
+import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
+const SNIPPE_FLAT_FEE_TZS = 1500
+const DEFAULT_PLATFORM_FEE_PERCENT = 0.5
 const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
 const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
@@ -16,7 +18,9 @@ const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 const NTZS_BURN_ABI = [
   'function burn(address from, uint256 amount)',
+  'function mint(address to, uint256 amount)',
   'function BURNER_ROLE() view returns (bytes32)',
+  'function MINTER_ROLE() view returns (bytes32)',
   'function hasRole(bytes32 role, address account) view returns (bool)',
 ] as const
 
@@ -36,18 +40,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, amountTzs, phoneNumber } = body
+  const { userId, amountTzs: receiveAmountRaw, phoneNumber } = body
 
-  if (!userId || !amountTzs || !phoneNumber) {
+  if (!userId || !receiveAmountRaw || !phoneNumber) {
     return NextResponse.json(
       { error: 'userId, amountTzs, and phoneNumber are required' },
       { status: 400 }
     )
   }
 
-  if (amountTzs < 5000) {
+  // amountTzs in the request is the amount the recipient should RECEIVE on mobile money.
+  const receiveAmountTzs = Math.trunc(Number(receiveAmountRaw))
+  if (!Number.isFinite(receiveAmountTzs) || receiveAmountTzs < 5000) {
     return NextResponse.json(
-      { error: 'Minimum withdrawal amount is 5,000 TZS' },
+      { error: 'Minimum withdrawal amount is 5,000 TZS (recipient net)' },
       { status: 400 }
     )
   }
@@ -71,6 +77,25 @@ export async function POST(request: NextRequest) {
   if (!mapping) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
+
+  // Load partner fee config + treasury
+  const [partnerRow] = await db
+    .select({ feePercent: partners.feePercent, treasuryWalletAddress: partners.treasuryWalletAddress })
+    .from(partners)
+    .where(eq(partners.id, partner.id))
+    .limit(1)
+
+  const partnerFeePercentRaw = partnerRow ? parseFloat(String(partnerRow.feePercent ?? '0')) : 0
+  const feePercent = partnerFeePercentRaw > 0 ? partnerFeePercentRaw : DEFAULT_PLATFORM_FEE_PERCENT
+  const feeRecipient = ethers.isAddress(partnerRow?.treasuryWalletAddress ?? '')
+    ? partnerRow!.treasuryWalletAddress!
+    : ethers.isAddress(PLATFORM_TREASURY_ADDRESS)
+      ? PLATFORM_TREASURY_ADDRESS
+      : null
+
+  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate))
+  const burnAmountTzs = Math.ceil((receiveAmountTzs + SNIPPE_FLAT_FEE_TZS) / (1 - feePercent / 100))
+  const platformFeeTzs = burnAmountTzs - receiveAmountTzs - SNIPPE_FLAT_FEE_TZS
 
   // Get wallet
   const [wallet] = await db
@@ -100,9 +125,13 @@ export async function POST(request: NextRequest) {
     const balanceWei: bigint = await token.balanceOf(wallet.address)
     const balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
 
-    if (balanceTzs < amountTzs) {
+    if (balanceTzs < burnAmountTzs) {
       return NextResponse.json(
-        { error: `Insufficient balance. Available: ${balanceTzs} TZS, requested: ${amountTzs} TZS` },
+        {
+          error: 'insufficient_balance',
+          message: `Insufficient balance. Available: ${balanceTzs} TZS, need ${burnAmountTzs} TZS to pay out ${receiveAmountTzs} TZS (incl. fees).`,
+          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, snippeFeeTzs: SNIPPE_FLAT_FEE_TZS },
+        },
         { status: 400 }
       )
     }
@@ -112,7 +141,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Large amounts require admin approval — queue and return
-  if (amountTzs >= SAFE_MINT_THRESHOLD_TZS) {
+  if (burnAmountTzs >= SAFE_MINT_THRESHOLD_TZS) {
     const [burn] = await db
       .insert(burnRequests)
       .values({
@@ -120,11 +149,12 @@ export async function POST(request: NextRequest) {
         walletId: wallet.id,
         chain: 'base',
         contractAddress,
-        amountTzs,
+        amountTzs: burnAmountTzs,
         reason: 'WaaS withdrawal',
         status: 'requested',
         requestedByUserId: userId,
         recipientPhone: phoneNumber,
+        platformFeeTzs,
       })
       .returning({ id: burnRequests.id, status: burnRequests.status, amountTzs: burnRequests.amountTzs })
 
@@ -133,7 +163,15 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { id: burn.id, status: burn.status, amountTzs: burn.amountTzs, message: 'Withdrawal requires admin approval for amounts >= 100,000 TZS.' },
+      {
+        id: burn.id,
+        status: burn.status,
+        amountTzs: burn.amountTzs,
+        receiveAmountTzs,
+        platformFeeTzs,
+        snippeFeeTzs: SNIPPE_FLAT_FEE_TZS,
+        message: 'Withdrawal requires admin approval for amounts >= 100,000 TZS.',
+      },
       { status: 201 }
     )
   }
@@ -152,11 +190,12 @@ export async function POST(request: NextRequest) {
       walletId: wallet.id,
       chain: 'base',
       contractAddress,
-      amountTzs,
+      amountTzs: burnAmountTzs,
       reason: 'WaaS withdrawal',
       status: 'burn_submitted',
       requestedByUserId: userId,
       recipientPhone: phoneNumber,
+      platformFeeTzs,
     })
     .returning({ id: burnRequests.id, amountTzs: burnRequests.amountTzs })
 
@@ -179,7 +218,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Burn executor not configured correctly' }, { status: 500 })
     }
 
-    const amountWei = BigInt(String(amountTzs)) * BigInt(10) ** BigInt(18)
+    const amountWei = BigInt(String(burnAmountTzs)) * BigInt(10) ** BigInt(18)
     const tx = await token.burn(wallet.address, amountWei)
 
     await db.update(burnRequests).set({ txHash: tx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
@@ -187,6 +226,24 @@ export async function POST(request: NextRequest) {
     await tx.wait(1)
 
     await db.update(burnRequests).set({ status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+
+    // ── Mint platform fee to partner-or-global treasury (best-effort) ──────
+    if (platformFeeTzs > 0 && feeRecipient) {
+      try {
+        const feeAmountWei = BigInt(platformFeeTzs) * BigInt(10) ** BigInt(18)
+        const feeTx = await token.mint(feeRecipient, feeAmountWei)
+        await feeTx.wait(1)
+        await db
+          .update(burnRequests)
+          .set({ feeTxHash: feeTx.hash, feeRecipientAddress: feeRecipient, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+      } catch (feeErr) {
+        const msg = feeErr instanceof Error ? feeErr.message : String(feeErr)
+        console.error('[v1/withdrawals] fee mint failed (non-fatal):', msg)
+      }
+    } else if (platformFeeTzs > 0) {
+      console.warn('[v1/withdrawals] no treasury address configured — platform fee kept as implicit reserve surplus', { burnRequestId, platformFeeTzs })
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     await db.update(burnRequests).set({ status: 'failed', error: errorMessage, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
@@ -207,7 +264,8 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: amountTzs,
+          // Snippe `amount` = net to recipient; Snippe debits its flat fee separately.
+          amount: receiveAmountTzs,
           channel: 'mobile',
           recipient_phone: phone,
           recipient_name: 'nTZS User',
@@ -262,7 +320,16 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { id: burnRequestId, status: 'burned', amountTzs: burn.amountTzs, message: 'Withdrawal processed successfully.' },
+    {
+      id: burnRequestId,
+      status: 'burned',
+      amountTzs: burn.amountTzs,
+      receiveAmountTzs,
+      platformFeeTzs,
+      snippeFeeTzs: SNIPPE_FLAT_FEE_TZS,
+      feeRecipient,
+      message: 'Withdrawal processed successfully.',
+    },
     { status: 201 }
   )
 }

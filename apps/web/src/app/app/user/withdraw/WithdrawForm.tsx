@@ -115,8 +115,12 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         action={async (formData: FormData) => {
           setError('')
           try {
-            await createWithdrawRequestAction(formData)
-            setSubmitted(true)
+            const result = await createWithdrawRequestAction(formData)
+            if (result.success) {
+              setSubmitted(true)
+            } else {
+              setError(result.error)
+            }
           } catch (err) {
             setError(err instanceof Error ? err.message : 'Something went wrong')
           }

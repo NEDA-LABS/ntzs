@@ -270,6 +270,9 @@ export const burnRequests = pgTable(
     payoutStatus: text('payout_status'),
     payoutError: text('payout_error'),
     platformFeeTzs: bigint('platform_fee_tzs', { mode: 'number' }),
+    // On-chain tx hash for the mint-to-treasury of the platform fee (nullable: legacy / zero-fee rows)
+    feeTxHash: text('fee_tx_hash'),
+    feeRecipientAddress: text('fee_recipient_address'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -23,7 +23,6 @@ import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
 import { formatDateEAT } from '@/lib/format-date'
-import { ContextChips } from './_components/ContextChips'
 import { AdCampaignCards } from '@/components/ui/ad-campaign-cards'
 
 export default async function UserDashboard() {
@@ -207,7 +206,6 @@ export default async function UserDashboard() {
 
           {/* Campaign / Ad Section */}
           <div className="mt-6 space-y-4">
-            <ContextChips walletAddress={wallet?.address ?? null} kycApproved={kycApproved} pendingCount={pendingCount} />
             <AdCampaignCards />
           </div>
         </div>

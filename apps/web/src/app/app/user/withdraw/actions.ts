@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/lib/env'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp/snippe'
 import { writeAuditLog } from '@/lib/audit'
@@ -18,12 +18,19 @@ const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BURN_ABI = [
   'function burn(address from, uint256 amount)',
+  'function mint(address to, uint256 amount)',
+  'function balanceOf(address) view returns (uint256)',
   'function BURNER_ROLE() view returns (bytes32)',
+  'function MINTER_ROLE() view returns (bytes32)',
   'function hasRole(bytes32 role, address account) view returns (bool)',
   'function paused() view returns (bool)',
 ] as const
 
-export async function createWithdrawRequestAction(formData: FormData) {
+export type WithdrawActionResult =
+  | { success: true; requiresApproval: boolean }
+  | { success: false; error: string }
+
+export async function createWithdrawRequestAction(formData: FormData): Promise<WithdrawActionResult> {
   await requireAnyRole(['end_user', 'super_admin'])
   const dbUser = await requireDbUser()
 
@@ -33,14 +40,14 @@ export async function createWithdrawRequestAction(formData: FormData) {
   // amountTzsRaw is the amount the user wants to RECEIVE on mobile money
   const receiveAmountTzs = Number(amountTzsRaw)
   if (!Number.isFinite(receiveAmountTzs) || receiveAmountTzs < 5000) {
-    throw new Error('Minimum receive amount is 5,000 TZS')
+    return { success: false, error: 'Minimum receive amount is 5,000 TZS' }
   }
 
   if (!phone) {
-    throw new Error('Phone number is required for mobile money payout')
+    return { success: false, error: 'Phone number is required for mobile money payout' }
   }
   if (!isValidTanzanianPhone(phone)) {
-    throw new Error('Invalid Tanzanian mobile number')
+    return { success: false, error: 'Invalid Tanzanian mobile number' }
   }
 
   const { db } = getDb()
@@ -58,7 +65,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
   if (!approvedKyc.length) redirect('/app/user/kyc')
 
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
-  if (!contractAddress) throw new Error('Contract not configured')
+  if (!contractAddress) return { success: false, error: 'Contract not configured' }
 
   const recipientPhone = normalizePhone(phone)
 
@@ -67,8 +74,9 @@ export async function createWithdrawRequestAction(formData: FormData) {
   const receiveAmountTrunc = Math.trunc(receiveAmountTzs)
   const amountTzsTrunc = Math.ceil((receiveAmountTrunc + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
   const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - SNIPPE_FLAT_FEE_TZS
-  // User receives exactly what they asked for; Snippe deducts their fee from the payout
-  const payoutAmountTzs = receiveAmountTrunc + SNIPPE_FLAT_FEE_TZS
+  // Snippe's `amount` = net amount the recipient receives; Snippe debits its flat fee
+  // separately on top of this from our Snippe balance. So we pass the exact receive amount.
+  const payoutAmountTzs = receiveAmountTrunc
 
   // Large amounts require admin approval — queue and exit
   if (amountTzsTrunc >= SAFE_BURN_THRESHOLD_TZS) {
@@ -88,11 +96,29 @@ export async function createWithdrawRequestAction(formData: FormData) {
     return { success: true as const, requiresApproval: true }
   }
 
+
   // ── Small amounts: execute burn + payout inline ──────────────────────────
 
   const rpcUrl = BASE_RPC_URL
   const privateKey = MINTER_PRIVATE_KEY
-  if (!rpcUrl || !privateKey) throw new Error('Burn executor not configured')
+  if (!rpcUrl || !privateKey) return { success: false, error: 'Burn executor not configured' }
+
+  // Pre-flight on-chain balance check — avoids cryptic revert messages
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
+    const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, provider)
+    const balanceWei: bigint = await token.balanceOf(wallet.address)
+    const balanceTzs = balanceWei / (BigInt(10) ** BigInt(18))
+    if (balanceTzs < BigInt(amountTzsTrunc)) {
+      return {
+        success: false,
+        error: `Insufficient balance. You have ${balanceTzs.toString()} nTZS but need ${amountTzsTrunc.toLocaleString()} nTZS to withdraw ${receiveAmountTrunc.toLocaleString()} TZS (including fees).`,
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: `Could not verify balance: ${msg}` }
+  }
 
   // Create burn request record first (so we have an ID for the audit trail)
   const [burnReq] = await db
@@ -123,7 +149,7 @@ export async function createWithdrawRequestAction(formData: FormData) {
 
     const burnerRole: string = await token.BURNER_ROLE()
     const hasBurner: boolean = await token.hasRole(burnerRole, await signer.getAddress())
-    if (!hasBurner) throw new Error('Burn key not configured correctly — contact support')
+    if (!hasBurner) throw new Error('Burn key lacks BURNER_ROLE — contact support')
 
     const amountWei = BigInt(amountTzsTrunc) * BigInt(10) ** BigInt(18)
     const tx = await token.burn(wallet.address, amountWei)
@@ -139,13 +165,39 @@ export async function createWithdrawRequestAction(formData: FormData) {
       .update(burnRequests)
       .set({ status: 'burned', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
+
+    // ── Mint platform fee to treasury (best-effort, non-fatal) ────────────
+    // Preserves 1:1 backing: net supply change = -(burn - feeMint) = -payoutAmount
+    if (platformFeeTzs > 0 && ethers.isAddress(PLATFORM_TREASURY_ADDRESS)) {
+      try {
+        const feeAmountWei = BigInt(platformFeeTzs) * BigInt(10) ** BigInt(18)
+        const feeTx = await token.mint(PLATFORM_TREASURY_ADDRESS, feeAmountWei)
+        await feeTx.wait(1)
+        await db
+          .update(burnRequests)
+          .set({
+            feeTxHash: feeTx.hash,
+            feeRecipientAddress: PLATFORM_TREASURY_ADDRESS,
+            updatedAt: new Date(),
+          })
+          .where(eq(burnRequests.id, burnRequestId))
+      } catch (feeErr) {
+        // Fee-mint failure must not block the withdrawal — log and continue
+        const feeErrMsg = feeErr instanceof Error ? feeErr.message : String(feeErr)
+        console.error('[withdraw] fee mint failed (non-fatal)', { burnRequestId, error: feeErrMsg })
+        await writeAuditLog('burn.fee_mint_failed', 'burn_request', burnRequestId, { platformFeeTzs, treasury: PLATFORM_TREASURY_ADDRESS, error: feeErrMsg }, dbUser.id)
+      }
+    } else if (platformFeeTzs > 0) {
+      console.warn('[withdraw] PLATFORM_TREASURY_ADDRESS not configured — platform fee kept as implicit reserve surplus', { burnRequestId, platformFeeTzs })
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     await db
       .update(burnRequests)
       .set({ status: 'failed', error: errorMessage, updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
-    throw new Error(`Burn failed: ${errorMessage}`)
+    console.error('[withdraw] burn failed', { burnRequestId, error: errorMessage })
+    return { success: false, error: `Burn failed: ${errorMessage}` }
   }
 
   // ── Burn confirmed — now trigger Snippe payout ───────────────────────────
@@ -165,11 +217,13 @@ export async function createWithdrawRequestAction(formData: FormData) {
       .where(eq(burnRequests.id, burnRequestId))
     await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutReference: payoutResult.reference, recipientPhone }, dbUser.id)
   } else {
+    const payoutErr = payoutResult.error ?? 'Payout initiation failed'
     await db
       .update(burnRequests)
-      .set({ payoutStatus: 'failed', payoutError: payoutResult.error ?? 'Payout initiation failed', updatedAt: new Date() })
+      .set({ payoutStatus: 'failed', payoutError: payoutErr, updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
-    throw new Error(`Payout failed: ${payoutResult.error ?? 'Payout initiation failed'}`)
+    console.error('[withdraw] payout failed', { burnRequestId, error: payoutErr })
+    return { success: false, error: `Payout failed: ${payoutErr}` }
   }
 
   return { success: true as const, requiresApproval: false }
