@@ -113,15 +113,10 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
     return { success: false, error: 'Invalid address — must be a valid 0x… address or @alias' }
   }
 
-  // Get sender wallet — must be the same wallet the dashboard displays
-  const fromWallet = await getUserPrimaryWallet(dbUser.id)
-
-  if (!fromWallet || fromWallet.address.startsWith('0x_pending_')) {
+  // Preflight wallet check against the primary (for pending / self-send guards)
+  const primaryWallet = await getUserPrimaryWallet(dbUser.id)
+  if (!primaryWallet || primaryWallet.address.startsWith('0x_pending_')) {
     return { success: false, error: 'Your wallet is not ready yet' }
-  }
-
-  if (toAddress.toLowerCase() === fromWallet.address.toLowerCase()) {
-    return { success: false, error: 'Cannot send to your own wallet' }
   }
 
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
@@ -143,16 +138,43 @@ export async function sendNtzsAction(formData: FormData): Promise<SendNtzsResult
     return { success: false, error: 'Transfers are temporarily paused — try again later' }
   }
 
-  // Check sender balance
+  // Scan ALL user base wallets for balance — handles CDP/HD provider mismatch
+  // where tokens may have been minted to a different address than the current
+  // primary wallet. Burn from whichever address actually holds the funds.
   const amountWei = ethers.parseUnits(amountTzs.toFixed(18), 18)
-  const balanceWei: bigint = await token.balanceOf(fromWallet.address)
+  const userWallets = await db.query.wallets.findMany({
+    where: and(
+      eq(wallets.userId, dbUser.id),
+      eq(wallets.chain, 'base'),
+      eq(wallets.frozen, false),
+    ),
+  })
+  if (!userWallets.length) {
+    return { success: false, error: 'Your wallet is not ready yet' }
+  }
 
-  if (balanceWei < amountWei) {
-    const available = parseFloat(ethers.formatUnits(balanceWei, 18))
+  let fromWallet: (typeof userWallets)[0] | null = null
+  let maxBalanceWei = BigInt(0)
+  for (const w of userWallets) {
+    if (w.address.startsWith('0x_pending_')) continue
+    const balWei: bigint = await token.balanceOf(w.address)
+    if (balWei >= amountWei) {
+      fromWallet = w
+      break
+    }
+    if (balWei > maxBalanceWei) maxBalanceWei = balWei
+  }
+
+  if (!fromWallet) {
+    const available = parseFloat(ethers.formatUnits(maxBalanceWei, 18))
     return {
       success: false,
       error: `Insufficient balance — you have ${available.toLocaleString(undefined, { maximumFractionDigits: 2 })} nTZS`,
     }
+  }
+
+  if (toAddress.toLowerCase() === fromWallet.address.toLowerCase()) {
+    return { success: false, error: 'Cannot send to your own wallet' }
   }
 
   // Step 1: burn from sender — submit only, no confirmation wait

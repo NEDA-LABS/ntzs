@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { ArrowUp, Wallet, Link2 } from 'lucide-react'
+import { ArrowUp, Send, Link2 } from 'lucide-react'
 
 const glassBtn = [
   'group relative flex items-center justify-center gap-2',
@@ -26,11 +26,11 @@ export function DashboardActions() {
         Deposit
       </button>
 
-      {/* Save */}
-      <button type="button" onClick={() => router.push('/app/user/stake')} className={glassBtn}>
+      {/* Send */}
+      <button type="button" onClick={() => router.push('/app/user/wallet?action=send')} className={glassBtn}>
         <span className="pointer-events-none absolute inset-0 translate-x-[-100%] bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.06)_50%,transparent_75%)] transition-transform duration-500 group-hover:translate-x-[100%]" />
-        <Wallet className="h-4 w-4 text-emerald-400" />
-        Save
+        <Send className="h-4 w-4 text-emerald-400" />
+        Send
       </button>
 
       {/* Nilipe */}
