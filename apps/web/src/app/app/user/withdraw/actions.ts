@@ -66,10 +66,18 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
 
   const { db } = getDb()
 
-  const wallet = await db.query.wallets.findFirst({
-    where: and(eq(wallets.userId, dbUser.id), eq(wallets.chain, 'base')),
+  const allWallets = await db.query.wallets.findMany({
+    where: and(
+      eq(wallets.userId, dbUser.id),
+      eq(wallets.chain, 'base'),
+      eq(wallets.frozen, false),
+    ),
   })
-  if (!wallet) redirect('/app/user/wallet')
+  if (!allWallets.length) redirect('/app/user/wallet')
+
+  // Default selection: prefer platform_hd (most recently provisioned active wallet).
+  // Will be overridden below if a different wallet holds the actual balance.
+  let wallet = allWallets.find(w => w.provider === 'platform_hd') ?? allWallets[0]!
 
   const approvedKyc = await db
     .select({ id: kycCases.id })
@@ -117,18 +125,35 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   const privateKey = MINTER_PRIVATE_KEY
   if (!rpcUrl || !privateKey) return { success: false, error: 'Burn executor not configured' }
 
-  // Pre-flight on-chain balance check — avoids cryptic revert messages
+  // Pre-flight on-chain balance check — avoids cryptic revert messages.
+  // Iterates ALL user wallets so that a CDP/HD provider mismatch (tokens minted
+  // to the CDP address before migration) is handled transparently: we burn from
+  // whichever address actually holds the balance.
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
     const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, provider)
-    const balanceWei: bigint = await token.balanceOf(wallet.address)
-    const balanceTzs = balanceWei / (BigInt(10) ** BigInt(18))
-    if (balanceTzs < BigInt(amountTzsTrunc)) {
+
+    let fundedWallet: (typeof allWallets)[0] | null = null
+    let maxBalanceTzs = BigInt(0)
+
+    for (const w of allWallets) {
+      const balWei: bigint = await token.balanceOf(w.address)
+      const balTzs = balWei / (BigInt(10) ** BigInt(18))
+      if (balTzs >= BigInt(amountTzsTrunc)) {
+        fundedWallet = w
+        break
+      }
+      if (balTzs > maxBalanceTzs) maxBalanceTzs = balTzs
+    }
+
+    if (!fundedWallet) {
       return {
         success: false,
-        error: `Insufficient balance. You have ${balanceTzs.toString()} nTZS but need ${amountTzsTrunc.toLocaleString()} nTZS to withdraw ${receiveAmountTrunc.toLocaleString()} TZS (including fees).`,
+        error: `Insufficient balance. You have ${maxBalanceTzs.toString()} nTZS but need ${amountTzsTrunc.toLocaleString()} nTZS to withdraw ${receiveAmountTrunc.toLocaleString()} TZS (including fees).`,
       }
     }
+
+    wallet = fundedWallet
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: `Could not verify balance: ${msg}` }
