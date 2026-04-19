@@ -31,6 +31,20 @@ export type WithdrawActionResult =
   | { success: false; error: string }
 
 export async function createWithdrawRequestAction(formData: FormData): Promise<WithdrawActionResult> {
+  try {
+    return await _createWithdrawRequestAction(formData)
+  } catch (err) {
+    // Next.js redirect() and notFound() throw special errors — let them propagate
+    if (err instanceof Error && 'digest' in err && typeof (err as { digest?: string }).digest === 'string') {
+      throw err
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[withdraw] unhandled error in createWithdrawRequestAction', msg)
+    return { success: false, error: `Withdrawal failed: ${msg}` }
+  }
+}
+
+async function _createWithdrawRequestAction(formData: FormData): Promise<WithdrawActionResult> {
   await requireAnyRole(['end_user', 'super_admin'])
   const dbUser = await requireDbUser()
 
@@ -168,11 +182,14 @@ export async function createWithdrawRequestAction(formData: FormData): Promise<W
 
     // ── Mint platform fee to treasury (best-effort, non-fatal) ────────────
     // Preserves 1:1 backing: net supply change = -(burn - feeMint) = -payoutAmount
+    // NOTE: we submit the TX but do NOT await feeTx.wait(1) — waiting for
+    // on-chain confirmation inside a Vercel serverless function risks a timeout
+    // (Base blocks every ~2 s but slot inclusion can take 5–15 s under load).
+    // The TX hash is recorded immediately; on-chain finality is eventual.
     if (platformFeeTzs > 0 && ethers.isAddress(PLATFORM_TREASURY_ADDRESS)) {
       try {
         const feeAmountWei = BigInt(platformFeeTzs) * BigInt(10) ** BigInt(18)
         const feeTx = await token.mint(PLATFORM_TREASURY_ADDRESS, feeAmountWei)
-        await feeTx.wait(1)
         await db
           .update(burnRequests)
           .set({
