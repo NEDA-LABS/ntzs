@@ -451,7 +451,7 @@ body: JSON.stringify({
             isActive={activeSection === 'transfers'}
             step="Step 5"
             title="Transfers"
-            description="Move nTZS between platform users or to any external wallet address. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
+            description="Move nTZS or USDC between platform users or to any external wallet address. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
           >
             <CodeBlock
               title="POST /api/v1/transfers — user to user"
@@ -505,6 +505,37 @@ const transfer = await res.json()
 //   recipientAmountTzs: 9950,
 //   feeAmountTzs: 50,
 //   toAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+// }`}
+            />
+            <CodeBlock
+              title="POST /api/v1/transfers — USDC transfer"
+              code={`// Same endpoint — add token: 'USDC' and use the token-agnostic amount field.
+// USDC uses 6 decimals — fractional amounts are supported.
+const res = await fetch('https://www.ntzs.co.tz/api/v1/transfers', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    fromUserId: 'uuid-of-sender',
+    toAddress:  '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18',
+    token:  'USDC',
+    amount: 12.5,   // 12.5 USDC
+  }),
+})
+const transfer = await res.json()
+// {
+//   id: "uuid...",
+//   status: "completed",
+//   txHash: "0xabc...",
+//   token: "usdc",
+//   amount: 12.5,
+//   recipientAmount: 12.4375,   // after platform fee
+//   feeAmount: 0.0625,
+//   feeTxHash: "0xdef...",
+//   toAddress: "0x742d35..."
+//   // Legacy amountTzs / recipientAmountTzs / feeAmountTzs are omitted for non-nTZS tokens.
 // }`}
             />
             <div className="grid gap-3 sm:grid-cols-2">

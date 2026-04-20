@@ -67,17 +67,37 @@ export interface CreateWithdrawalParams {
 
 // ─── Transfer Types ─────────────────────────────────────────────────────────
 
+export type TransferToken = 'NTZS' | 'USDC'
+
 export interface NtzsTransfer {
   id: string
   status: string
   txHash?: string | null
-  amountTzs: number
+  token?: TransferToken | 'ntzs' | 'usdc'
+  amount?: number
+  recipientAmount?: number
+  feeAmount?: number
+  feeTxHash?: string | null
+  toAddress?: string
+  /** Legacy alias — populated for nTZS transfers only */
+  amountTzs?: number
+  /** Legacy alias — populated for nTZS transfers only */
+  recipientAmountTzs?: number
+  /** Legacy alias — populated for nTZS transfers only */
+  feeAmountTzs?: number
 }
 
 export interface CreateTransferParams {
   fromUserId: string
-  toUserId: string
-  amountTzs: number
+  /** Either toUserId (platform user) or toAddress (external wallet) */
+  toUserId?: string
+  toAddress?: string
+  /** Token to transfer — defaults to NTZS when omitted */
+  token?: TransferToken
+  /** Token-agnostic amount. Preferred over amountTzs. */
+  amount?: number
+  /** Legacy field — only valid when token is NTZS (or omitted) */
+  amountTzs?: number
   metadata?: Record<string, unknown>
 }
 

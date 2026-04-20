@@ -61,6 +61,8 @@ export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', '
 
 export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
 
+export const transferToken = pgEnum('transfer_token', ['ntzs', 'usdc'])
+
 export const webhookEventStatus = pgEnum('webhook_event_status', ['pending', 'delivered', 'failed'])
 
 export const burnStatus = pgEnum('burn_status', [
@@ -553,6 +555,7 @@ export const transfers = pgTable(
     toUserId: uuid('to_user_id')
       .references(() => users.id, { onDelete: 'restrict' }),
     toAddress: text('to_address'),
+    token: transferToken('token').notNull().default('ntzs'),
     amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
     txHash: text('tx_hash'),
     status: transferStatus('status').notNull().default('pending'),

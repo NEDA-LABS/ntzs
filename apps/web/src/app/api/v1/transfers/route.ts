@@ -9,13 +9,28 @@ import { signAndSendTransfer, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { wallets, partnerUsers, transfers, auditLogs, partners, users } from '@ntzs/db'
 
-const NTZS_TRANSFER_ABI = [
+const TRANSFER_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address to, uint256 amount) returns (bool)',
 ] as const
 
+// Base USDC (6 decimals)
+const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const USDC_DECIMALS = 6
+const NTZS_DECIMALS = 18
+
+type TransferToken = 'ntzs' | 'usdc'
+
+function resolveToken(raw: unknown): TransferToken | { error: string } {
+  if (raw == null) return 'ntzs'
+  if (typeof raw !== 'string') return { error: 'token must be a string' }
+  const norm = raw.toLowerCase()
+  if (norm === 'ntzs' || norm === 'usdc') return norm
+  return { error: `Unsupported token "${raw}" — must be NTZS or USDC` }
+}
+
 /**
- * POST /api/v1/transfers — Transfer nTZS between two users
+ * POST /api/v1/transfers — Transfer nTZS or USDC between two users / to an address
  */
 export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
@@ -23,21 +38,45 @@ export async function POST(request: NextRequest) {
 
   const { partner } = authResult
 
-  let body: { fromUserId: string; toUserId?: string; toAddress?: string; amountTzs: number; metadata?: Record<string, unknown> }
+  let body: {
+    fromUserId: string
+    toUserId?: string
+    toAddress?: string
+    token?: string
+    amount?: number | string
+    amountTzs?: number | string
+    metadata?: Record<string, unknown>
+  }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { fromUserId, toUserId, toAddress, amountTzs, metadata } = body
+  const { fromUserId, toUserId, toAddress, metadata } = body
 
-  if (!fromUserId || !amountTzs) {
+  // Resolve token (default: nTZS for backward compat)
+  const tokenResult = resolveToken(body.token)
+  if (typeof tokenResult !== 'string') {
+    return NextResponse.json(
+      { error: 'invalid_token', message: tokenResult.error, details: { token: body.token } },
+      { status: 400 }
+    )
+  }
+  const token: TransferToken = tokenResult
+  const decimals = token === 'usdc' ? USDC_DECIMALS : NTZS_DECIMALS
+  const tokenContractAddress = token === 'usdc' ? USDC_CONTRACT_BASE : ENV_CONTRACT_ADDRESS
+
+  // Accept `amount` (new, token-agnostic) or fall back to `amountTzs` (legacy)
+  const rawAmount = body.amount ?? body.amountTzs
+  const amountNum = typeof rawAmount === 'string' ? parseFloat(rawAmount) : rawAmount
+
+  if (!fromUserId || amountNum == null || !Number.isFinite(amountNum)) {
     return NextResponse.json(
       {
         error: 'missing_required_fields',
-        message: 'fromUserId and amountTzs are required',
-        details: { fromUserId: !!fromUserId, amountTzs: !!amountTzs }
+        message: 'fromUserId and amount (or amountTzs) are required',
+        details: { fromUserId: !!fromUserId, amount: rawAmount ?? null }
       },
       { status: 400 }
     )
@@ -75,12 +114,27 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (amountTzs <= 0) {
+  if (amountNum <= 0) {
     return NextResponse.json(
       {
         error: 'invalid_amount',
-        message: 'amountTzs must be positive',
-        details: { amountTzs }
+        message: 'amount must be positive',
+        details: { amount: amountNum, token }
+      },
+      { status: 400 }
+    )
+  }
+
+  // Parse to base-units — validates decimal precision matches the token
+  let totalAmountWei: bigint
+  try {
+    totalAmountWei = ethers.parseUnits(amountNum.toString(), decimals)
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: 'invalid_amount',
+        message: `Amount has too many decimals for ${token.toUpperCase()} (max ${decimals})`,
+        details: { amount: amountNum, token, decimals, reason: err instanceof Error ? err.message : String(err) }
       },
       { status: 400 }
     )
@@ -208,6 +262,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Persist transfer amount in the existing amount_tzs column:
+  //   - nTZS: whole TZS integer (as before)
+  //   - USDC: base-units (µUSDC) — fits in JS number up to ~9 billion USDC
+  const storedAmount = token === 'usdc'
+    ? Number(totalAmountWei)
+    : Math.floor(amountNum)
+
   // Create transfer record
   const [transfer] = await db
     .insert(transfers)
@@ -216,7 +277,8 @@ export async function POST(request: NextRequest) {
       fromUserId,
       toUserId: toUserId || null,
       toAddress: destinationAddress,
-      amountTzs,
+      token,
+      amountTzs: storedAmount,
       status: 'pending',
       metadata: metadata || null,
     })
@@ -234,7 +296,7 @@ export async function POST(request: NextRequest) {
 
   // Execute on-chain transfer
   const rpcUrl = ENV_BASE_RPC_URL
-  const contractAddress = ENV_CONTRACT_ADDRESS
+  const contractAddress = tokenContractAddress
 
   if (!rpcUrl || !contractAddress) {
     await db
@@ -253,19 +315,20 @@ export async function POST(request: NextRequest) {
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
 
-    // Calculate fee split
-    const feeAmountTzs = feePercent > 0 ? Math.floor(amountTzs * feePercent / 100) : 0
-    const recipientAmountTzs = amountTzs - feeAmountTzs
-    const recipientAmountWei = BigInt(recipientAmountTzs) * BigInt(10) ** BigInt(18)
-    const feeAmountWei = BigInt(feeAmountTzs) * BigInt(10) ** BigInt(18)
-    const totalAmountWei = BigInt(String(amountTzs)) * BigInt(10) ** BigInt(18)
+    // Fee split — work in basis points to keep BigInt math exact
+    const feeBps = feePercent > 0 ? Math.round(feePercent * 100) : 0
+    const feeAmountWei = feeBps > 0 ? (totalAmountWei * BigInt(feeBps)) / BigInt(10000) : BigInt(0)
+    const recipientAmountWei = totalAmountWei - feeAmountWei
+
+    const feeAmount = parseFloat(ethers.formatUnits(feeAmountWei, decimals))
+    const recipientAmount = parseFloat(ethers.formatUnits(recipientAmountWei, decimals))
 
     // Check sender balance first
-    const token = new ethers.Contract(contractAddress, NTZS_TRANSFER_ABI, provider)
-    const balanceWei: bigint = await token.balanceOf(fromWallet.address)
+    const erc20 = new ethers.Contract(contractAddress, TRANSFER_ABI, provider)
+    const balanceWei: bigint = await erc20.balanceOf(fromWallet.address)
 
     if (balanceWei < totalAmountWei) {
-      const balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
+      const available = parseFloat(ethers.formatUnits(balanceWei, decimals))
       await db
         .update(transfers)
         .set({ status: 'failed', error: 'Insufficient balance', updatedAt: new Date() })
@@ -274,11 +337,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: 'insufficient_balance',
-          message: 'Sender has insufficient nTZS balance',
+          message: `Sender has insufficient ${token.toUpperCase()} balance`,
           details: {
-            available: balanceTzs,
-            requested: amountTzs,
-            shortfall: amountTzs - balanceTzs
+            token,
+            available,
+            requested: amountNum,
+            shortfall: amountNum - available,
           }
         },
         { status: 400 }
@@ -380,7 +444,7 @@ export async function POST(request: NextRequest) {
 
     // If partner has a fee and a treasury wallet, send the fee split
     let feeTxHash: string | null = null
-    if (feeAmountTzs > 0 && treasuryWalletAddress) {
+    if (feeAmountWei > BigInt(0) && treasuryWalletAddress) {
       try {
         if (isCdpWallet) {
           // Use CDP for fee transfer
@@ -434,9 +498,10 @@ export async function POST(request: NextRequest) {
       metadata: {
         fromUserId,
         toUserId,
-        amountTzs,
-        recipientAmountTzs,
-        feeAmountTzs,
+        token,
+        amount: amountNum,
+        recipientAmount,
+        feeAmount,
         feePercent,
         fromWallet: fromWallet.address,
         toWallet: destinationAddress,
@@ -451,11 +516,16 @@ export async function POST(request: NextRequest) {
         id: transfer.id,
         status: 'completed',
         txHash,
-        amountTzs,
-        recipientAmountTzs,
-        feeAmountTzs,
+        token,
+        amount: amountNum,
+        recipientAmount,
+        feeAmount,
         feeTxHash,
         toAddress: destinationAddress,
+        // Legacy aliases (nTZS-only, for backward compatibility)
+        amountTzs: token === 'ntzs' ? amountNum : undefined,
+        recipientAmountTzs: token === 'ntzs' ? recipientAmount : undefined,
+        feeAmountTzs: token === 'ntzs' ? feeAmount : undefined,
       },
       { status: 201 }
     )
