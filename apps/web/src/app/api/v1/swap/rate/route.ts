@@ -98,7 +98,11 @@ export async function GET(req: NextRequest) {
     slippageBps: 100,
   })
 
-  // Check solver pool liquidity for the output token
+  // Check solver pool liquidity for the output token.
+  // Only flag lowLiquidity when the pool genuinely can't cover minOutput
+  // (expectedOutput with 1% slippage already baked in).
+  // Previously used expectedOutput * 1.1 which caused false positives for
+  // valid swaps — the actual execution only needs minOutput, not 110%.
   let lowLiquidity = false
   const solverAddress = process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646'
   const rpcUrl = process.env.BASE_RPC_URL
@@ -107,9 +111,9 @@ export async function GET(req: NextRequest) {
       const provider = new ethers.JsonRpcProvider(rpcUrl)
       const outToken = SWAP_TOKENS[to]
       const contract = new ethers.Contract(outToken.address, ['function balanceOf(address) view returns (uint256)'], provider)
-      const balance = await contract.balanceOf(solverAddress)
+      const balance: bigint = await contract.balanceOf(solverAddress)
       const balanceFormatted = parseFloat(ethers.formatUnits(balance, outToken.decimals))
-      lowLiquidity = balanceFormatted < expectedOutput * 1.1
+      lowLiquidity = balanceFormatted < minOutput
     } catch {
       // If check fails, don't block the rate — swap will catch it
     }

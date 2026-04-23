@@ -10,11 +10,11 @@ const SOLVER_PRIVATE_KEY = process.env.SOLVER_PRIVATE_KEY || ''
 const CRITICAL_THRESHOLD = 0.001
 const LOW_THRESHOLD = 0.005
 
-// Liquidity pool thresholds
-const NTZS_LOW_THRESHOLD = 50_000
-const NTZS_CRITICAL_THRESHOLD = 10_000
-const USDC_LOW_THRESHOLD = 20
-const USDC_CRITICAL_THRESHOLD = 5
+// Liquidity pool thresholds — sized to cover typical large swaps (30-50 USDC ≈ 80K-140K nTZS)
+const NTZS_LOW_THRESHOLD = 200_000    // warn when pool drops below ~1.5× a 40 USDC swap
+const NTZS_CRITICAL_THRESHOLD = 80_000 // critical: can't fill a 30 USDC swap
+const USDC_LOW_THRESHOLD = 100        // warn when USDC pool drops below $100
+const USDC_CRITICAL_THRESHOLD = 30    // critical: can't fill a meaningful nTZS→USDC swap
 
 const NTZS_CONTRACT = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
 const USDC_CONTRACT = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'

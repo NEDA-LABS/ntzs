@@ -195,8 +195,11 @@ export async function* executeSwap(params: {
     return
   }
 
-  // Check solver pool has enough output tokens
-  const amountOutUnits = parseUnits(minOutput.toFixed(to.decimals), to.decimals)
+  // Check solver pool has enough output tokens.
+  // Use toFixed(6) instead of toFixed(to.decimals) — JS floats have ~15 significant
+  // digits, so toFixed(18) on nTZS amounts inflates the last digits and can make the
+  // check fail even when the pool has plenty. 6dp is more than enough precision here.
+  const amountOutUnits = parseUnits(minOutput.toFixed(6), to.decimals)
   const solverBalance: bigint = await toContract.balanceOf(solverAddress)
   if (solverBalance < amountOutUnits) {
     yield {
