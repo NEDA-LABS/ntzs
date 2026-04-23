@@ -76,10 +76,13 @@ export function SwapHistory() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/[0.06] bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Swap history</p>
-        <div className="mt-4 flex justify-center">
-          <svg className="h-5 w-5 animate-spin text-zinc-600" viewBox="0 0 24 24" fill="none">
+      <div className="space-y-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Swap history</p>
+          <p className="mt-2 text-sm text-muted-foreground">Recent exchange activity from your wallet.</p>
+        </div>
+        <div className="flex justify-center rounded-[28px] border border-border/40 bg-background/30 p-8 backdrop-blur-xl">
+          <svg className="h-5 w-5 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
           </svg>
@@ -90,43 +93,48 @@ export function SwapHistory() {
 
   if (swaps.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/[0.06] bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Swap history</p>
-        <p className="mt-3 text-center text-xs text-zinc-600">No swaps yet</p>
+      <div className="space-y-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Swap history</p>
+          <p className="mt-2 text-sm text-muted-foreground">Recent exchange activity from your wallet.</p>
+        </div>
+        <div className="rounded-[28px] border border-border/40 bg-background/30 p-8 text-center backdrop-blur-xl">
+          <p className="text-sm text-muted-foreground">No swaps yet</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-[#12121e] ring-1 ring-white/[0.06] overflow-hidden">
-      <div className="px-5 pt-5 pb-3">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Swap history</p>
+    <div className="space-y-4">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Swap history</p>
+        <p className="mt-2 text-sm text-muted-foreground">Recent exchange activity from your wallet.</p>
       </div>
 
-      <div className="divide-y divide-white/[0.04]">
+      <div className="relative">
+        <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-2">
         {swaps.map((swap) => (
-          <div key={swap.id} className="px-5 py-3.5 flex items-center gap-3">
-            {/* Icon */}
-            <div className="flex-none flex h-8 w-8 items-center justify-center rounded-full bg-blue-600/10 ring-1 ring-blue-500/20">
-              <svg className="h-3.5 w-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <div key={swap.id} className="group flex items-center gap-4 rounded-[28px] border border-border/40 bg-background/35 p-5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-border/60">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-border/40 bg-background/70 text-foreground/70">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
               </svg>
             </div>
 
-            {/* Details */}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white">
+              <p className="text-sm font-semibold text-foreground/90">
                 {formatAmount(swap.amountIn, swap.fromSymbol)} {displaySymbol(swap.fromSymbol)}
-                <span className="text-zinc-600 mx-1.5">&rarr;</span>
+                <span className="mx-1.5 text-muted-foreground">&rarr;</span>
                 {formatAmount(swap.amountOut, swap.toSymbol)} {displaySymbol(swap.toSymbol)}
               </p>
-              <div className="mt-0.5 flex items-center gap-2">
-                <span className="text-[11px] text-zinc-600">{formatDate(swap.createdAt)}</span>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">{formatDate(swap.createdAt)}</span>
                 <a
                   href={`https://basescan.org/tx/${swap.outTxHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] font-mono text-zinc-700 hover:text-blue-400 transition-colors truncate"
+                  className="truncate text-[10px] font-mono text-muted-foreground transition-colors hover:text-foreground/80"
                 >
                   {swap.outTxHash.slice(0, 10)}...{swap.outTxHash.slice(-4)}
                 </a>
@@ -134,15 +142,18 @@ export function SwapHistory() {
             </div>
           </div>
         ))}
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-card/95 via-card/35 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card/95 via-card/35 to-transparent" />
       </div>
 
       {hasMore && (
-        <div className="px-5 py-3 border-t border-white/[0.04]">
+        <div>
           <button
             type="button"
             onClick={() => fetchPage(nextCursor)}
             disabled={loadingMore}
-            className="w-full rounded-xl bg-white/[0.03] py-2.5 text-xs font-medium text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-300 transition-colors disabled:opacity-50"
+            className="w-full rounded-full border border-border/40 bg-background/35 py-3 text-xs font-medium text-foreground/80 backdrop-blur-xl transition-colors hover:bg-background/45 disabled:opacity-50"
           >
             {loadingMore ? 'Loading...' : 'Load more'}
           </button>

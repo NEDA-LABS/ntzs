@@ -34,9 +34,6 @@ export default async function AccountLayout({
               <div className="text-sm font-semibold tracking-wide">nTZS</div>
             </Link>
 
-            <div className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 md:inline-flex">
-              Account &amp; Settings
-            </div>
           </div>
 
           <div className="flex items-center gap-3">

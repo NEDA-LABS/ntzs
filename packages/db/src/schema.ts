@@ -61,6 +61,8 @@ export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', '
 
 export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
 
+export const transferToken = pgEnum('transfer_token', ['ntzs', 'usdc'])
+
 export const webhookEventStatus = pgEnum('webhook_event_status', ['pending', 'delivered', 'failed'])
 
 export const burnStatus = pgEnum('burn_status', [
@@ -270,6 +272,9 @@ export const burnRequests = pgTable(
     payoutStatus: text('payout_status'),
     payoutError: text('payout_error'),
     platformFeeTzs: bigint('platform_fee_tzs', { mode: 'number' }),
+    // On-chain tx hash for the mint-to-treasury of the platform fee (nullable: legacy / zero-fee rows)
+    feeTxHash: text('fee_tx_hash'),
+    feeRecipientAddress: text('fee_recipient_address'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -548,8 +553,9 @@ export const transfers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     toUserId: uuid('to_user_id')
-      .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
+    toAddress: text('to_address'),
+    token: transferToken('token').notNull().default('ntzs'),
     amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
     txHash: text('tx_hash'),
     status: transferStatus('status').notNull().default('pending'),
@@ -778,6 +784,8 @@ export const lpAccounts = pgTable(
 
     kycStatus: lpKycStatus('kyc_status').notNull().default('pending'),
 
+    apiKeyHash: text('api_key_hash'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -786,6 +794,7 @@ export const lpAccounts = pgTable(
     walletIndexUq: uniqueIndex('lp_accounts_wallet_index_uq').on(t.walletIndex),
     walletAddressUq: uniqueIndex('lp_accounts_wallet_address_uq').on(t.walletAddress),
     kycIdx: index('lp_accounts_kyc_status_idx').on(t.kycStatus),
+    apiKeyHashUq: uniqueIndex('lp_accounts_api_key_hash_uq').on(t.apiKeyHash),
   })
 )
 

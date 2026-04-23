@@ -78,6 +78,13 @@ export async function initiatePayment(
   const phone = normalizePhone(request.phoneNumber)
 
   try {
+    const webhookEntry = request.webhookUrl?.startsWith('https://')
+      ? { webhook_url: request.webhookUrl }
+      : (() => {
+          console.warn('[snippe] webhook_url not sent to Snippe — must be https. Got:', request.webhookUrl)
+          return {}
+        })()
+
     const response = await fetch(`${SNIPPE_BASE_URL}/v1/payments`, {
       method: 'POST',
       headers: {
@@ -96,7 +103,7 @@ export async function initiatePayment(
           lastname: request.customerLastname || 'User',
           email: request.customerEmail,
         },
-        ...(request.webhookUrl?.startsWith('https://') ? { webhook_url: request.webhookUrl } : {}),
+        ...webhookEntry,
         metadata: request.metadata,
       }),
     })
@@ -104,7 +111,7 @@ export async function initiatePayment(
     const result = await response.json()
 
     if (result.status !== 'success' || !result.data?.reference) {
-      console.error('[snippe] payment initiation failed:', result)
+      console.error('[snippe] payment initiation failed — HTTP', response.status, result)
       
       // Detect provider outages
       const errorMsg = result.message || ''

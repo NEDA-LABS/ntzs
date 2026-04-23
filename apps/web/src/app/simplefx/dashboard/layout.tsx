@@ -19,6 +19,7 @@ export interface LpAccount {
   isActive: boolean;
   onboardingStep: number;
   kycStatus: 'pending' | 'approved' | 'rejected';
+  hasApiKey: boolean;
   createdAt: string;
 }
 

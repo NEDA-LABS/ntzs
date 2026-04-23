@@ -131,11 +131,6 @@ export default function Home() {
       <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-24 pt-8">
         <section className="grid items-center gap-10 md:grid-cols-2 md:gap-12">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 backdrop-blur-lg">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Next-generation financial infrastructure
-            </div>
-
             <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
               Tanzania's first digital asset reserve.
             </h1>
@@ -165,9 +160,6 @@ export default function Home() {
               <div className="grid gap-4 p-6">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">Start Here</div>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                    Get started
-                  </div>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">

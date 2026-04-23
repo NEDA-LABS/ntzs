@@ -2,7 +2,9 @@ import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
-import { getCachedRecentDeposits, getCachedRecentBurns, getCachedApprovedKyc } from '@/lib/user/cachedQueries'
+import { getCachedRecentDeposits, getCachedRecentBurns, getCachedRecentSends, getCachedRecentSwaps, getCachedApprovedKyc } from '@/lib/user/cachedQueries'
+import { getLegacyWalletBalance } from './wallet/actions'
+import { LegacyWalletMigrationBanner } from './_components/LegacyWalletMigrationBanner'
 
 import {
   IconCheckCircle,
@@ -13,23 +15,27 @@ import {
   IconUsers,
   IconWallet,
   IconWithdraw,
+  IconSend,
+  IconCoins,
 } from '@/app/app/_components/icons'
 import { DashboardActions } from './_components/DashboardActions'
 import { DashboardHeroCard } from './_components/DashboardHeroCard'
 import { CompressedHeroStrip } from './_components/CompressedHeroStrip'
-import { PendingDepositPoller } from './_components/PendingDepositPoller'
 import { ActivityDropdown } from '@/components/ui/activity-dropdown'
-import { AIOrbit } from '@/components/ui/ai-orbital'
 import { formatDateEAT } from '@/lib/format-date'
+import { AdCampaignCards } from '@/components/ui/ad-campaign-cards'
 
 export default async function UserDashboard() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
-  const [wallet, recentDeposits, recentBurns, approvedKyc] = await Promise.all([
+  const [wallet, recentDeposits, recentBurns, recentSends, recentSwaps, approvedKyc, legacyBalance] = await Promise.all([
     getCachedWallet(dbUser.id),
     getCachedRecentDeposits(dbUser.id, 5),
     getCachedRecentBurns(dbUser.id, 5),
+    getCachedRecentSends(dbUser.id, 5),
+    getCachedRecentSwaps(dbUser.id, 5),
     getCachedApprovedKyc(dbUser.id),
+    getLegacyWalletBalance().catch(() => null),
   ])
 
   const kycApproved = approvedKyc.length > 0
@@ -53,6 +59,28 @@ export default async function UserDashboard() {
       status: b.status,
       createdAt: b.createdAt,
     })),
+    ...recentSends.map((s) => ({
+      type: 'send' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
+      id: s.id,
+      amountTzs: s.amountTzs,
+      status: 'sent',
+      createdAt: s.createdAt,
+      toAddress: s.toAddress,
+    })),
+    ...recentSwaps.map((sw) => ({
+      type: 'swap' as const,
+      source: undefined as string | undefined,
+      payerName: undefined as string | undefined,
+      id: sw.id,
+      amountTzs: Number(sw.amountIn || 0),
+      status: 'filled',
+      createdAt: sw.createdAt,
+      fromSymbol: sw.fromToken,
+      toSymbol: sw.toToken,
+      amountOut: sw.amountOut,
+    })),
   ]
     .filter((t) => t.createdAt)
     .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
@@ -62,7 +90,13 @@ export default async function UserDashboard() {
 
   return (
     <div className="bg-[#0d0d14]">
-      <PendingDepositPoller hasPending={pendingCount > 0} />
+      {/* ── Legacy Wallet Migration Banner ── */}
+      {legacyBalance && legacyBalance.amountTzs > 0 && (
+        <LegacyWalletMigrationBanner
+          amountTzs={legacyBalance.amountTzs}
+          fromAddress={legacyBalance.fromAddress}
+        />
+      )}
 
       {/* ── KYC Prompt Banner ── */}
       {!kycApproved && (
@@ -133,24 +167,32 @@ export default async function UserDashboard() {
                     ? tx.source === 'pay_link'
                       ? tx.payerName ? `Collection · ${tx.payerName}` : 'Collection'
                       : 'Deposit'
-                    : 'Withdraw'
+                    : tx.type === 'send'
+                      ? `Sent to ${(tx as { toAddress?: string }).toAddress?.slice(0, 6) ?? ''}...`
+                      : tx.type === 'swap'
+                        ? `Swap ${(tx as { fromSymbol?: string }).fromSymbol ?? ''} → ${(tx as { toSymbol?: string }).toSymbol ?? ''}`
+                        : 'Withdraw'
 
                 const statusColor =
                   tx.type === 'deposit'
                     ? tx.status === 'minted' ? 'text-emerald-400'
                       : tx.status === 'rejected' || tx.status === 'cancelled' ? 'text-rose-400'
                       : 'text-amber-400'
+                    : tx.type === 'send' ? 'text-blue-400'
+                    : tx.type === 'swap' ? 'text-violet-400'
                     : tx.status === 'burned' ? 'text-rose-300'
                       : tx.status === 'failed' ? 'text-rose-400'
                       : 'text-amber-400'
 
+                const icon =
+                  tx.type === 'deposit' ? <IconPlus className="h-4 w-4 text-emerald-400" />
+                  : tx.type === 'send' ? <IconSend className="h-4 w-4 text-blue-400" />
+                  : tx.type === 'swap' ? <IconCoins className="h-4 w-4 text-violet-400" />
+                  : <IconWithdraw className="h-4 w-4 text-rose-300" />
+
                 return {
                   id: tx.id,
-                  icon: tx.type === 'deposit' ? (
-                    <IconPlus className="h-4 w-4 text-emerald-400" />
-                  ) : (
-                    <IconWithdraw className="h-4 w-4 text-rose-300" />
-                  ),
+                  icon,
                   label,
                   amount: tx.amountTzs,
                   status: String(tx.status).replace(/_/g, ' '),
@@ -162,25 +204,21 @@ export default async function UserDashboard() {
             />
           )}
 
-          {/* AI Assistant Orbital */}
-          <AIOrbit
-            walletBalance={recentDeposits
-              .filter((d) => d.status === 'minted')
-              .reduce((sum, d) => sum + (d.amountTzs ?? 0), 0)}
-            recentTxCount={recentTxns.length}
-            lastTxAmountTzs={recentTxns[0]?.amountTzs ?? 0}
-          />
+          {/* Campaign / Ad Section */}
+          <div className="mt-6 space-y-4">
+            <AdCampaignCards />
+          </div>
         </div>
 
         {/* Right col: Quick Links (2/5 width) */}
         <div className="hidden lg:flex lg:col-span-2 lg:flex-col lg:gap-4">
 
           {/* Quick Links card */}
-          <div className="rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06] overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/[0.05]">
-              <p className="text-sm font-semibold text-white">Quick Links</p>
+          <div className="overflow-hidden rounded-[28px] border border-border/40 bg-card/60 backdrop-blur-2xl">
+            <div className="px-5 py-4 border-b border-border/40">
+              <p className="text-sm font-semibold text-foreground">Quick Links</p>
             </div>
-            <div className="divide-y divide-white/[0.04]">
+            <div className="divide-y divide-border/40">
               {[
                 {
                   href: '/app/user/wallet',
@@ -217,18 +255,18 @@ export default async function UserDashboard() {
                   key={item.href}
                   href={item.href}
                   prefetch
-                  className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-white/[0.04] group"
+                  className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-background/35 group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.05]">
-                      <item.icon className="h-4 w-4 text-zinc-400 group-hover:text-orange-400 transition-colors" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/40 bg-background/40">
+                      <item.icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-white">{item.label}</p>
-                      <p className="text-[11px] text-zinc-600">{item.sub}</p>
+                      <p className="text-xs font-medium text-foreground">{item.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.sub}</p>
                     </div>
                   </div>
-                  <IconChevronRight className="h-3.5 w-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
+                  <IconChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground/80 transition-colors" />
                 </Link>
               ))}
             </div>
@@ -236,16 +274,16 @@ export default async function UserDashboard() {
 
           {/* Wallet address card */}
           {wallet && (
-            <div className="rounded-2xl bg-[#12121e] p-5 ring-1 ring-white/[0.06]">
-              <div className="flex items-center gap-2 mb-3">
-                <IconWallet className="h-4 w-4 text-blue-400" />
-                <p className="text-xs font-semibold text-white">Wallet</p>
-                <span className="ml-auto text-[10px] text-zinc-600">Base network</span>
+            <div className="rounded-[28px] border border-border/40 bg-card/60 p-5 backdrop-blur-2xl">
+              <div className="mb-3 flex items-center gap-2">
+                <IconWallet className="h-4 w-4 text-primary" />
+                <p className="text-xs font-semibold text-foreground">Wallet</p>
+                <span className="ml-auto text-[10px] text-muted-foreground">Base network</span>
               </div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600 mb-1">Address</p>
-              <p className="truncate font-mono text-xs text-zinc-400">{wallet.address}</p>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Address</p>
+              <p className="truncate font-mono text-xs text-foreground/80">{wallet.address}</p>
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-zinc-600">Status</span>
+                <span className="text-xs text-muted-foreground">Status</span>
                 <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
                   <IconCheckCircle className="h-3 w-3" />
                   Active
@@ -253,7 +291,7 @@ export default async function UserDashboard() {
               </div>
               {pendingCount > 0 && (
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-zinc-600">Pending deposits</span>
+                  <span className="text-xs text-muted-foreground">Pending deposits</span>
                   <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
                     {pendingCount}
                   </span>

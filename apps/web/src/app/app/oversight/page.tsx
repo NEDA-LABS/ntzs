@@ -131,6 +131,7 @@ export default async function OversightDashboard() {
       payoutStatus: burnRequests.payoutStatus,
       payoutReference: burnRequests.payoutReference,
       platformFeeTzs: burnRequests.platformFeeTzs,
+      feeTxHash: burnRequests.feeTxHash,
       createdAt: burnRequests.createdAt,
       userEmail: users.email,
     })
@@ -437,14 +438,15 @@ export default async function OversightDashboard() {
                 <th className="pb-3 pr-4">Recipient</th>
                 <th className="pb-3 pr-4">Burn Status</th>
                 <th className="pb-3 pr-4">Payout</th>
-                <th className="pb-3 pr-4">TX Hash</th>
+                <th className="pb-3 pr-4">Burn TX</th>
+                <th className="pb-3 pr-4">Fee TX</th>
                 <th className="pb-3">Created</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {recentBurns.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-sm text-zinc-500">No withdrawals yet</td>
+                  <td colSpan={10} className="py-8 text-center text-sm text-zinc-500">No withdrawals yet</td>
                 </tr>
               ) : (
                 recentBurns.map((burn) => (
@@ -499,6 +501,19 @@ export default async function OversightDashboard() {
                           className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs text-blue-400 hover:bg-blue-500/20"
                         >
                           {burn.txHash.slice(0, 10)}...
+                        </a>
+                      ) : <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {burn.feeTxHash ? (
+                        <a
+                          href={`https://basescan.org/tx/${burn.feeTxHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-xs text-emerald-400 hover:bg-emerald-500/20"
+                          title="Platform fee minted to treasury"
+                        >
+                          {burn.feeTxHash.slice(0, 10)}...
                         </a>
                       ) : <span className="text-zinc-600">—</span>}
                     </td>

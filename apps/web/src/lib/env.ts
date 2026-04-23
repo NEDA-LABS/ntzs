@@ -21,3 +21,10 @@ export const NTZS_CONTRACT_ADDRESS_BASE = sanitizeEnv(
 export const MINTER_PRIVATE_KEY = sanitizeEnv(process.env.MINTER_PRIVATE_KEY)
 export const BURNER_PRIVATE_KEY = sanitizeEnv(process.env.BURNER_PRIVATE_KEY)
 export const SNIPPE_API_KEY = sanitizeEnv(process.env.SNIPPE_API_KEY)
+
+/**
+ * Address that receives withdrawal platform fees (minted on burn).
+ * Used as a fallback when a burn is not associated with a partner that has
+ * its own `treasury_wallet_address` configured.
+ */
+export const PLATFORM_TREASURY_ADDRESS = sanitizeEnv(process.env.PLATFORM_TREASURY_ADDRESS)

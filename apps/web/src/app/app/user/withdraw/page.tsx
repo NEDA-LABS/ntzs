@@ -26,11 +26,11 @@ export default async function WithdrawPage() {
   if (!approvedKyc.length) redirect('/app/user/kyc')
 
   return (
-    <div className="p-8">
-      <div className="mx-auto max-w-xl">
+    <div className="px-4 py-6 lg:p-8">
+      <div className="mx-auto max-w-md sm:max-w-xl">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-white">Withdraw</h1>
-          <p className="mt-1 text-sm text-zinc-400">nTZS to TZS (1:1) — paid out via Snippe mobile money</p>
+          <h1 className="text-2xl font-bold text-foreground">Withdraw</h1>
+          <p className="mt-1 text-sm text-muted-foreground">nTZS to TZS (1:1) — paid out via Snippe mobile money</p>
         </div>
 
         <WithdrawForm userPhone={dbUser.phone} />

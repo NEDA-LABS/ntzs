@@ -113,7 +113,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
   if (depositId && payStatus) {
     return (
-      <div className="overflow-hidden rounded-2xl bg-[#12121e] ring-1 ring-white/[0.06]">
+      <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/35 backdrop-blur-xl">
         <div className="px-6 py-10 text-center">
 
           {payStatus === 'success' ? (
@@ -126,8 +126,8 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                   </svg>
                 </div>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-white">Deposit confirmed</h2>
-              <p className="mt-1.5 text-sm text-zinc-400">Your nTZS is on its way to your wallet</p>
+              <h2 className="mt-5 text-xl font-bold text-foreground">Deposit confirmed</h2>
+              <p className="mt-1.5 text-sm text-muted-foreground">Your nTZS is on its way to your wallet</p>
               <div className="mx-auto mt-5 w-fit rounded-2xl bg-emerald-500/10 px-6 py-3 ring-1 ring-emerald-500/20">
                 <p className="text-2xl font-bold tabular-nums text-emerald-400">{Number(submittedAmount).toLocaleString()} TZS</p>
                 <p className="mt-0.5 text-xs text-emerald-400/60">minted as nTZS</p>
@@ -135,14 +135,14 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
               <div className="mt-7 flex flex-col gap-3">
                 <Link
                   href="/app/user"
-                  className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-center text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+                  className="w-full rounded-2xl bg-primary px-6 py-4 text-center text-base font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.98] hover:opacity-90"
                 >
                   Go to Dashboard
                 </Link>
                 <button
                   type="button"
                   onClick={() => { setDepositId(null); setPayStatus(null); setAmount('') }}
-                  className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-6 py-4 text-base font-medium text-white transition-all duration-75 active:scale-[0.98] hover:bg-white/[0.06]"
+                  className="w-full rounded-2xl border border-border/40 bg-background/35 px-6 py-4 text-base font-medium text-foreground backdrop-blur-xl transition-all duration-75 active:scale-[0.98] hover:bg-background/45"
                 >
                   Make another deposit
                 </button>
@@ -155,19 +155,19 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-white">Payment not completed</h2>
-              <p className="mt-1.5 text-sm text-zinc-400">The payment was cancelled or timed out. Please try again.</p>
+              <h2 className="mt-5 text-xl font-bold text-foreground">Payment not completed</h2>
+              <p className="mt-1.5 text-sm text-muted-foreground">The payment was cancelled or timed out. Please try again.</p>
               <div className="mt-7 flex flex-col gap-3">
                 <button
                   type="button"
                   onClick={() => { setDepositId(null); setPayStatus(null) }}
-                  className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+                  className="w-full rounded-2xl bg-primary px-6 py-4 text-base font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.98] hover:opacity-90"
                 >
                   Try again
                 </button>
                 <Link
                   href="/app/user"
-                  className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-6 py-4 text-center text-base font-medium text-white transition-all duration-75 active:scale-[0.98] hover:bg-white/[0.06]"
+                  className="w-full rounded-2xl border border-border/40 bg-background/35 px-6 py-4 text-center text-base font-medium text-foreground backdrop-blur-xl transition-all duration-75 active:scale-[0.98] hover:bg-background/45"
                 >
                   Go to Dashboard
                 </Link>
@@ -181,16 +181,16 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                   <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-white">
+              <h2 className="mt-5 text-xl font-bold text-foreground">
                 {payStatus === 'pending' ? 'Waiting for approval' : 'Processing payment'}
               </h2>
-              <p className="mt-1.5 text-sm text-zinc-400">
+              <p className="mt-1.5 text-sm text-muted-foreground">
                 {payStatus === 'pending'
                   ? 'Check your phone — the M-Pesa prompt has been sent'
                   : 'Payment received, minting your nTZS...'}
               </p>
               <div className="mx-auto mt-5 w-fit rounded-2xl bg-blue-600/10 px-6 py-3 ring-1 ring-blue-600/20">
-                <p className="text-2xl font-bold tabular-nums text-white">{Number(submittedAmount).toLocaleString()} TZS</p>
+                <p className="text-2xl font-bold tabular-nums text-foreground">{Number(submittedAmount).toLocaleString()} TZS</p>
                 <p className="mt-0.5 text-xs text-blue-400/70">in progress</p>
               </div>
               <div className="mt-6 flex items-center justify-center gap-1.5">
@@ -198,7 +198,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '150ms' }} />
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '300ms' }} />
               </div>
-              <p className="mt-4 text-xs text-zinc-600">This page updates automatically</p>
+              <p className="mt-4 text-xs text-muted-foreground">This page updates automatically</p>
             </>
           )}
 
@@ -210,8 +210,8 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
   if (!defaultBankId) {
     return (
       <div className="py-12 text-center">
-        <p className="text-sm text-zinc-400">System not configured yet.</p>
-        <p className="mt-1 text-xs text-zinc-600">Please contact support.</p>
+        <p className="text-sm text-muted-foreground">System not configured yet.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Please contact support.</p>
       </div>
     )
   }
@@ -221,14 +221,14 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
 
       {/* Amount */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-zinc-400">Amount (TZS)</label>
+        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Amount (TZS)</label>
         <input
           type="number"
           inputMode="numeric"
           placeholder="0"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-3xl font-bold text-white placeholder:text-zinc-700 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+          className="w-full rounded-2xl border border-border/40 bg-background/35 px-4 py-4 text-3xl font-bold text-foreground placeholder:text-muted-foreground focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring backdrop-blur-xl"
         />
         <div className="mt-2 flex gap-2">
           {quickAmounts.map((qa) => (
@@ -236,7 +236,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
               key={qa}
               type="button"
               onClick={() => setAmount(String(qa))}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10"
+              className="rounded-xl border border-border/40 bg-background/35 px-3 py-1.5 text-xs font-medium text-foreground/80 backdrop-blur-xl transition-colors hover:bg-background/45 hover:text-foreground"
             >
               {qa >= 1000 ? `${qa / 1000}k` : qa}
             </button>
@@ -248,7 +248,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
       {method === 'mobile' && (
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <label className="text-xs font-medium text-zinc-400">Your phone number</label>
+            <label className="text-xs font-medium text-muted-foreground">Your phone number</label>
             {isSavedNumber && (
               <span className="flex items-center gap-1 rounded-full bg-blue-600/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400 ring-1 ring-blue-600/20">
                 <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -264,7 +264,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             placeholder="07XX XXX XXX"
             value={phone}
             onChange={(e) => { setPhone(e.target.value); setIsSavedNumber(false) }}
-            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3.5 text-base text-white placeholder:text-zinc-600 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+            className="w-full rounded-2xl border border-border/40 bg-background/35 px-4 py-3.5 text-base text-foreground placeholder:text-muted-foreground focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring backdrop-blur-xl"
           />
           <label className="mt-2.5 flex cursor-pointer items-center gap-2.5">
             <div
@@ -273,28 +273,28 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             >
               <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${rememberPhone ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
-            <span className="text-xs text-zinc-500">Remember for next time</span>
+            <span className="text-xs text-muted-foreground">Remember for next time</span>
           </label>
         </div>
       )}
 
       {/* Pay with — collapsible */}
-      <div className="overflow-hidden rounded-2xl border border-white/10">
+      <div className="overflow-hidden rounded-2xl border border-border/40 backdrop-blur-xl">
         <button
           type="button"
           onClick={() => setPayWithOpen((o) => !o)}
           className="flex w-full items-center justify-between px-4 py-3.5 text-left"
         >
-          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pay with</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pay with</span>
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-2 text-sm font-medium text-white">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground">
               {method === 'mobile'
                 ? <><IconPhone className="h-4 w-4 text-blue-400" />Mobile Money</>
                 : <><IconCard className="h-4 w-4 text-blue-400" />Card</>
               }
             </span>
             <svg
-              className={`h-4 w-4 text-zinc-500 transition-transform duration-200 ${payWithOpen ? 'rotate-180' : ''}`}
+              className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${payWithOpen ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -302,18 +302,18 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
           </div>
         </button>
         {payWithOpen && (
-          <div className="space-y-1 border-t border-white/[0.06] p-2">
+          <div className="space-y-1 border-t border-border/40 p-2">
             <button
               type="button"
               onClick={() => { setMethod('mobile'); setPayWithOpen(false) }}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${method === 'mobile' ? 'bg-blue-600/10 text-white' : 'text-white/70 hover:bg-white/[0.04]'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${method === 'mobile' ? 'bg-blue-600/10 text-foreground' : 'text-foreground/70 hover:bg-background/35'}`}
             >
-              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${method === 'mobile' ? 'bg-blue-600/20' : 'bg-white/[0.06]'}`}>
-                <IconPhone className={`h-4 w-4 ${method === 'mobile' ? 'text-blue-300' : 'text-white/50'}`} />
+              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${method === 'mobile' ? 'bg-blue-600/20' : 'bg-background/35'}`}>
+                <IconPhone className={`h-4 w-4 ${method === 'mobile' ? 'text-blue-300' : 'text-foreground/50'}`} />
               </span>
               <span>
                 <span className="block text-sm font-semibold">Mobile Money</span>
-                <span className={`block text-xs ${method === 'mobile' ? 'text-blue-300/70' : 'text-white/40'}`}>Snippe</span>
+                <span className={`block text-xs ${method === 'mobile' ? 'text-blue-300/70' : 'text-muted-foreground'}`}>Snippe</span>
               </span>
               {method === 'mobile' && (
                 <svg className="ml-auto h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -324,14 +324,14 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
             <button
               type="button"
               onClick={() => { setMethod('card'); setPayWithOpen(false) }}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${method === 'card' ? 'bg-blue-600/10 text-white' : 'text-white/70 hover:bg-white/[0.04]'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${method === 'card' ? 'bg-blue-600/10 text-foreground' : 'text-foreground/70 hover:bg-background/35'}`}
             >
-              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${method === 'card' ? 'bg-blue-600/20' : 'bg-white/[0.06]'}`}>
-                <IconCard className={`h-4 w-4 ${method === 'card' ? 'text-blue-300' : 'text-white/50'}`} />
+              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${method === 'card' ? 'bg-blue-600/20' : 'bg-background/35'}`}>
+                <IconCard className={`h-4 w-4 ${method === 'card' ? 'text-blue-300' : 'text-foreground/50'}`} />
               </span>
               <span>
                 <span className="block text-sm font-semibold">Card</span>
-                <span className={`block text-xs ${method === 'card' ? 'text-blue-300/70' : 'text-white/40'}`}>Visa / Mastercard</span>
+                <span className={`block text-xs ${method === 'card' ? 'text-blue-300/70' : 'text-muted-foreground'}`}>Visa / Mastercard</span>
               </span>
               {method === 'card' && (
                 <svg className="ml-auto h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -350,7 +350,7 @@ export function DepositForm({ defaultBankId, userPhone }: DepositFormProps) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100 hover:shadow-blue-500/40"
+        className="w-full rounded-2xl bg-primary px-6 py-4 text-base font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100 hover:opacity-90"
       >
         {loading ? (
           <span className="flex items-center justify-center gap-2">

@@ -12,12 +12,14 @@ const TOKENS = {
     decimals: 18,
     symbol: 'TZS',
     label: 'nTZS',
+    icon: '/ntzs-icon.svg',
   },
   USDC: {
     address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     decimals: 6,
     symbol: 'USDC',
     label: 'USDC',
+    icon: '/usdc-logo.svg',
   },
 } as const
 
@@ -31,20 +33,24 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
   const [active, setActive] = useState<TokenKey>('NTZS')
   const [balances, setBalances] = useState<Record<TokenKey, string | null>>({ NTZS: null, USDC: null })
   const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!walletAddress) return
 
+    // Base mainnet — static network avoids an extra eth_chainId round-trip
+    const network = ethers.Network.from(8453)
+    const abi = ['function balanceOf(address) view returns (uint256)']
+
     const fetch = async () => {
       try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL)
-        const abi = ['function balanceOf(address) view returns (uint256)']
+        const provider = new ethers.JsonRpcProvider(RPC_URL, network, { staticNetwork: network })
 
         const [ntzsRaw, usdcRaw] = await Promise.all([
           TOKENS.NTZS.address
-            ? new ethers.Contract(TOKENS.NTZS.address, abi, provider).balanceOf(walletAddress)
+            ? new ethers.Contract(TOKENS.NTZS.address, abi, provider).balanceOf(walletAddress, { blockTag: 'latest' })
             : Promise.resolve(BigInt(0)),
-          new ethers.Contract(TOKENS.USDC.address, abi, provider).balanceOf(walletAddress),
+          new ethers.Contract(TOKENS.USDC.address, abi, provider).balanceOf(walletAddress, { blockTag: 'latest' }),
         ])
 
         setBalances({
@@ -52,7 +58,7 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
           USDC: ethers.formatUnits(usdcRaw, TOKENS.USDC.decimals),
         })
       } catch {
-        setBalances({ NTZS: '0', USDC: '0' })
+        // keep previous balances on transient RPC errors
       } finally {
         setLoading(false)
       }
@@ -61,12 +67,14 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
     fetch()
     const interval = setInterval(fetch, 30_000)
 
-    const onSwapComplete = () => fetch()
-    window.addEventListener('swap:complete', onSwapComplete)
+    const onUpdate = () => fetch()
+    window.addEventListener('swap:complete',    onUpdate)
+    window.addEventListener('deposit:complete', onUpdate)
 
     return () => {
       clearInterval(interval)
-      window.removeEventListener('swap:complete', onSwapComplete)
+      window.removeEventListener('swap:complete',    onUpdate)
+      window.removeEventListener('deposit:complete', onUpdate)
     }
   }, [walletAddress])
 
@@ -78,28 +86,38 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
 
   const usdcBalance = parseFloat(balances.USDC || '0')
   const hasUsdc = usdcBalance > 0
+  const subtitle = active === 'NTZS' ? 'Spendable TZS balance' : 'USD stablecoin balance'
+  const shortAddress = `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}`
+
+  async function copyAddress() {
+    try {
+      await navigator.clipboard.writeText(walletAddress)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
+  }
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      {/* Toggle pill */}
-      <div className="flex items-center rounded-xl bg-black/30 p-0.5 ring-1 ring-white/[0.08]">
+    <div className="space-y-5">
+      <div className="inline-flex items-center rounded-full border border-border/40 bg-background/40 p-1 backdrop-blur-xl">
         {(Object.keys(TOKENS) as TokenKey[]).map(key => (
           <button
             key={key}
             type="button"
             onClick={() => setActive(key)}
-            className={`relative px-2.5 py-1 rounded-[10px] text-[11px] font-semibold transition-colors duration-150 ${
-              active === key ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
+            className={`relative rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-colors duration-150 ${
+              active === key ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80'
             }`}
           >
             {active === key && (
               <motion.span
                 layoutId="balance-pill"
-                className="absolute inset-0 rounded-[10px] bg-blue-600/30 ring-1 ring-blue-500/30"
+                className="absolute inset-0 rounded-full bg-foreground text-background"
                 transition={{ type: 'spring', stiffness: 500, damping: 40 }}
               />
             )}
-            <span className="relative">
+            <span className="relative flex items-center gap-1.5">
+              <img src={TOKENS[key].icon} alt={`${TOKENS[key].label} icon`} className="h-4 w-4" />
               {TOKENS[key].label}
               {key === 'USDC' && hasUsdc && active !== 'USDC' && (
                 <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" />
@@ -109,23 +127,50 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
         ))}
       </div>
 
-      {/* Balance display */}
-      <div className="text-right">
+      <div>
         <AnimatePresence mode="wait">
-          <motion.p
+          <motion.div
             key={active}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
-            className={`text-sm font-bold ${loading ? 'text-white/40 animate-pulse' : 'text-white'}`}
+            className="space-y-2"
           >
-            {loading ? `-- ${token.symbol}` : `${formatted} ${token.symbol}`}
-          </motion.p>
+            <p className={`text-4xl font-semibold tracking-tight md:text-5xl ${loading ? 'text-foreground/40 animate-pulse' : 'text-foreground'}`}>
+              {loading ? (
+                `-- ${token.symbol}`
+              ) : (
+                <>
+                  {formatted}
+                  <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                    <img src={token.icon} alt={`${token.label} icon`} className="h-5 w-5" />
+                    {token.symbol}
+                  </span>
+                </>
+              )}
+            </p>
+            <p className="text-sm text-muted-foreground">{subtitle}</p>
+          </motion.div>
         </AnimatePresence>
-        <p className="text-[10px] font-medium uppercase tracking-wide text-blue-400 mt-0.5">
-          Balance
-        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/35 px-2.5 py-1 backdrop-blur-xl">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Base
+          </span>
+          <button
+            type="button"
+            onClick={copyAddress}
+            className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-background/35 px-3 py-1.5 font-mono text-foreground/85 backdrop-blur-xl hover:bg-background/45 focus-visible:outline-none focus:ring-2 focus:ring-ring"
+            title="Copy address"
+          >
+            {shortAddress}
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            {copied && <span className="text-[10px] text-emerald-400">Copied</span>}
+          </button>
+        </div>
       </div>
     </div>
   )

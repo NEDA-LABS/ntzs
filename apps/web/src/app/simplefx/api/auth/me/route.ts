@@ -20,6 +20,7 @@ export async function GET() {
         isActive: lpAccounts.isActive,
         onboardingStep: lpAccounts.onboardingStep,
         kycStatus: lpAccounts.kycStatus,
+        apiKeyHash: lpAccounts.apiKeyHash,
         createdAt: lpAccounts.createdAt,
       })
       .from(lpAccounts)
@@ -28,7 +29,8 @@ export async function GET() {
 
     if (!lp) return NextResponse.json({ error: 'Account not found' }, { status: 404 });
 
-    return NextResponse.json({ lp });
+    const { apiKeyHash, ...lpData } = lp;
+    return NextResponse.json({ lp: { ...lpData, hasApiKey: !!apiKeyHash } });
   } catch (err) {
     console.error('[me]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });

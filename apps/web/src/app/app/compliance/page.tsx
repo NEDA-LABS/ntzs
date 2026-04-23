@@ -37,11 +37,6 @@ export default async function ComplianceDashboard() {
       <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20 pt-8">
         <section className="grid items-center gap-10 md:grid-cols-2 md:gap-12">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 backdrop-blur-lg">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Compliance and transparency overview
-            </div>
-
             <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
               Compliance built for regulators.
             </h1>
@@ -90,9 +85,6 @@ export default async function ComplianceDashboard() {
               <div className="grid gap-5 p-6 md:p-7">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">What we provide</div>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                    Compliance
-                  </div>
                 </div>
 
                 <div className="grid gap-3">

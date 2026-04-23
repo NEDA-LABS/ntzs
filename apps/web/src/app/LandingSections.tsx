@@ -51,9 +51,6 @@ export default function LandingSections() {
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div>
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-zinc-400 backdrop-blur-xl">
-                About nTZS
-              </div>
               <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
                 Tanzania&apos;s first
                 <br />
@@ -99,9 +96,6 @@ export default function LandingSections() {
             </FadeIn>
 
             <FadeIn delay={0.1} className="order-1 md:order-2">
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-zinc-400 backdrop-blur-xl">
-                Smart Wallet
-              </div>
               <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
                 One wallet.
                 <br />
@@ -159,13 +153,10 @@ export default function LandingSections() {
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <FadeIn>
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-zinc-400 backdrop-blur-xl">
-                Developer Portal
-              </div>
               <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-                Build the future of
+                The future of
                 <br />
-                African fintech.
+                Africa fintech:
               </h2>
               <p className="mt-6 text-base leading-relaxed text-zinc-300 sm:text-lg">
                 Integrate nTZS into your application in minutes. Our Wallet as
@@ -251,9 +242,6 @@ export default function LandingSections() {
         >
         <div className="mx-auto w-full max-w-4xl px-6 text-center lg:px-12">
           <FadeIn>
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-zinc-400 backdrop-blur-xl">
-              Launch App
-            </div>
             <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
               Ready to move money
               <br />

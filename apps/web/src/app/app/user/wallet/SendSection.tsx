@@ -1,14 +1,15 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { sendNtzsAction, type SendNtzsResult } from './actions'
 
 interface SendSectionProps {
   walletAddress: string
+  renderLauncher?: boolean
 }
 
-export function SendSection({ walletAddress }: SendSectionProps) {
+export function SendSection({ walletAddress, renderLauncher = true }: SendSectionProps) {
   const [open, setOpen] = useState(false)
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
@@ -27,6 +28,13 @@ export function SendSection({ walletAddress }: SendSectionProps) {
     setTimeout(reset, 300)
   }
 
+  // Open via TopActions event
+  useEffect(() => {
+    const onOpen = () => { reset(); setOpen(true) }
+    window.addEventListener('wallet:openSend', onOpen)
+    return () => window.removeEventListener('wallet:openSend', onOpen)
+  }, [])
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const fd = new FormData()
@@ -42,23 +50,27 @@ export function SendSection({ walletAddress }: SendSectionProps) {
 
   return (
     <>
-      {/* Send button */}
-      <button
-        type="button"
-        onClick={() => { reset(); setOpen(true) }}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-[#12121e] px-5 py-4 text-sm font-semibold text-white ring-1 ring-white/[0.06] transition-all duration-75 hover:bg-white/[0.04] active:scale-[0.98]"
-      >
-        <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-        </svg>
-        Send nTZS
-      </button>
+      {renderLauncher && (
+        <button
+          type="button"
+          onClick={() => { reset(); setOpen(true) }}
+          className="flex min-h-[128px] w-full flex-col items-start justify-between rounded-[28px] border border-border/40 bg-card/70 p-5 text-left text-foreground shadow-[0_30px_90px_rgba(3,7,18,0.32)] backdrop-blur-2xl transition-transform duration-300 hover:-translate-y-1"
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-background/40">
+            <svg className="h-5 w-5 text-foreground/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-lg font-semibold">Send TZS</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Transfer funds to a wallet address or an alias.</p>
+          </div>
+        </button>
+      )}
 
-      {/* Modal backdrop + panel */}
       <AnimatePresence>
         {open && (
           <>
-            {/* Backdrop */}
             <motion.div
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
               initial={{ opacity: 0 }}
@@ -68,19 +80,16 @@ export function SendSection({ walletAddress }: SendSectionProps) {
               onClick={handleClose}
             />
 
-            {/* Sheet */}
             <motion.div
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-3xl bg-[#0f0f1a] p-6 ring-1 ring-white/[0.07] pb-safe"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
             >
-              {/* Drag handle */}
-              <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-white/10" />
+              <div className="w-full max-w-lg rounded-[28px] border border-border/40 bg-card/90 p-6 shadow-[0_30px_90px_rgba(3,7,18,0.4)] backdrop-blur-2xl" role="dialog" aria-modal="true">
 
               {result?.success ? (
-                /* ── Success state ── */
                 <div className="space-y-5 text-center">
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/25">
                     <svg className="h-7 w-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -88,11 +97,11 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                     </svg>
                   </div>
                   <div>
-                    <p className="text-lg font-bold text-white">Sent!</p>
-                    <p className="mt-1 text-sm text-zinc-400">
+                    <p className="text-lg font-bold text-foreground">Sent!</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {result.amountTzs.toLocaleString(undefined, { maximumFractionDigits: 4 })} nTZS
                       {' '}sent to{' '}
-                      <span className="font-mono text-xs text-zinc-300">
+                      <span className="font-mono text-xs text-foreground/80">
                         {result.toAddress.slice(0, 6)}…{result.toAddress.slice(-4)}
                       </span>
                     </p>
@@ -101,7 +110,7 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                     href={`${BASE_SCAN}${result.mintTxHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-mono text-blue-400 hover:bg-white/10 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border/40 bg-background/35 px-3 py-2 text-xs font-mono text-foreground/80 backdrop-blur-xl transition-colors hover:bg-background/45"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -111,32 +120,35 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                   <button
                     type="button"
                     onClick={handleClose}
-                    className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 active:scale-[0.98] hover:shadow-blue-500/40"
+                    className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.98] hover:opacity-90"
                   >
                     Done
                   </button>
                 </div>
               ) : (
-                /* ── Send form ── */
                 <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-bold text-white">Send nTZS</h2>
-                    <button type="button" onClick={handleClose} className="rounded-full p-1.5 text-zinc-500 hover:bg-white/5 hover:text-white transition-colors">
+                    <h2 className="text-base font-bold text-foreground inline-flex items-center gap-2">
+                      Send
+                      <span className="inline-flex items-center gap-1">
+                        <img src="/ntzs-icon.svg" alt="nTZS icon" className="h-4 w-4" />
+                        nTZS
+                      </span>
+                    </h2>
+                    <button type="button" onClick={handleClose} className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-background/40 hover:text-foreground">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </div>
 
-                  {/* Network badge */}
-                  <div className="flex items-center gap-1.5 rounded-xl bg-blue-600/10 px-3 py-2 ring-1 ring-blue-600/20">
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-                    <span className="text-[11px] font-medium text-blue-400">Base network only — nTZS lives on Base</span>
+                  <div className="flex items-center gap-1.5 rounded-xl border border-border/40 bg-background/35 px-3 py-2 backdrop-blur-xl">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    <span className="text-[11px] font-medium text-muted-foreground">Base network only — nTZS lives on Base</span>
                   </div>
 
-                  {/* To field */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-zinc-500">To</label>
+                    <label className="block text-xs font-medium text-muted-foreground">To</label>
                     <input
                       type="text"
                       value={to}
@@ -145,14 +157,13 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                       required
                       autoComplete="off"
                       spellCheck={false}
-                      className="w-full rounded-2xl border border-white/[0.07] bg-black/30 px-4 py-3 font-mono text-sm text-white placeholder:text-zinc-600 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+                      className="w-full rounded-2xl border border-border/40 bg-background/35 px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
                     />
                   </div>
 
-                  {/* Amount field */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-zinc-500">Amount</label>
-                    <div className="flex items-center gap-2 rounded-2xl border border-white/[0.07] bg-black/30 px-4 py-3 focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/30">
+                    <label className="block text-xs font-medium text-muted-foreground">Amount</label>
+                    <div className="flex items-center gap-2 rounded-2xl border border-border/40 bg-background/35 px-4 py-3 focus-within:border-border focus-within:ring-1 focus-within:ring-ring">
                       <input
                         type="number"
                         value={amount}
@@ -161,13 +172,15 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                         min="0.000001"
                         step="any"
                         required
-                        className="flex-1 bg-transparent text-sm text-white placeholder:text-zinc-600 focus:outline-none"
+                        className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                       />
-                      <span className="text-xs font-semibold text-zinc-500">nTZS</span>
+                      <span className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
+                        <img src="/ntzs-icon.svg" alt="nTZS icon" className="h-3.5 w-3.5" />
+                        nTZS
+                      </span>
                     </div>
                   </div>
 
-                  {/* Error */}
                   {result && !result.success && (
                     <motion.p
                       initial={{ opacity: 0, y: -4 }}
@@ -178,11 +191,10 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                     </motion.p>
                   )}
 
-                  {/* Submit */}
                   <button
                     type="submit"
                     disabled={isPending || !to.trim() || !amount.trim()}
-                    className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-75 disabled:opacity-50 active:scale-[0.98] hover:shadow-blue-500/40"
+                    className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity duration-75 disabled:opacity-50 active:scale-[0.98] hover:opacity-90"
                   >
                     {isPending ? (
                       <span className="flex items-center justify-center gap-2">
@@ -196,6 +208,7 @@ export function SendSection({ walletAddress }: SendSectionProps) {
                   </button>
                 </form>
               )}
+              </div>
             </motion.div>
           </>
         )}

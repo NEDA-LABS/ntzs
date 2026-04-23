@@ -19,7 +19,7 @@ export default function PrivacyPage() {
 
       <Section title="2. Data Controller">
         <p>The data controller responsible for your personal data is:</p>
-        <p>NEDA Labs Ltd.<br />Dar es Salaam, United Republic of Tanzania<br />Email: privacy@nedapay.xyz</p>
+        <p>NEDA Labs Ltd.<br />Dar es Salaam, United Republic of Tanzania<br />Email: devops@ntzs.co.tz</p>
       </Section>
 
       <Section title="3. Data We Collect">
@@ -92,7 +92,7 @@ export default function PrivacyPage() {
           <li><strong>Right to Data Portability:</strong> To receive your data in a structured, machine-readable format where technically feasible;</li>
           <li><strong>Right to Withdraw Consent:</strong> Where processing is based on consent, to withdraw it at any time without affecting the lawfulness of prior processing.</li>
         </ul>
-        <p>To exercise any of these rights, please contact us at privacy@nedapay.xyz. We will respond within thirty (30) days. You also have the right to lodge a complaint with the Personal Data Protection Commission of Tanzania.</p>
+        <p>To exercise any of these rights, please contact us at devops@ntzs.co.tz. We will respond within thirty (30) days. You also have the right to lodge a complaint with the Personal Data Protection Commission of Tanzania.</p>
       </Section>
 
       <Section title="9. Cookies and Tracking">
@@ -114,7 +114,7 @@ export default function PrivacyPage() {
 
       <Section title="13. Contact">
         <p>For any privacy-related queries or to exercise your data rights:</p>
-        <p>Data Protection Officer<br />NEDA Labs Ltd.<br />Dar es Salaam, United Republic of Tanzania<br />Email: privacy@nedapay.xyz</p>
+        <p>Data Protection Officer<br />NEDA Labs Ltd.<br />Dar es Salaam, United Republic of Tanzania<br />Email: devops@ntzs.co.tz</p>
       </Section>
     </LegalLayout>
   );

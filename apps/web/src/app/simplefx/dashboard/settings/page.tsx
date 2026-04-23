@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Copy, AlertCircle, Pencil } from 'lucide-react';
+import { CheckCircle2, Copy, AlertCircle, Pencil, RefreshCw, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useLp } from '../layout';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -30,8 +30,43 @@ export default function SettingsPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [revokingKey, setRevokingKey] = useState(false);
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+  const [keyVisible, setKeyVisible] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   if (!lp) return null;
+
+  const generateKey = async () => {
+    setGeneratingKey(true);
+    setNewApiKey(null);
+    const res = await fetch('/simplefx/api/lp/api-key', { method: 'POST' });
+    const data = await res.json();
+    if (data.apiKey) {
+      setNewApiKey(data.apiKey);
+      setKeyVisible(true);
+    }
+    await refresh();
+    setGeneratingKey(false);
+  };
+
+  const revokeKey = async () => {
+    if (!confirm('Revoke the API key? Any integrations using it will stop working immediately.')) return;
+    setRevokingKey(true);
+    await fetch('/simplefx/api/lp/api-key', { method: 'DELETE' });
+    setNewApiKey(null);
+    await refresh();
+    setRevokingKey(false);
+  };
+
+  const copyKey = () => {
+    if (newApiKey) {
+      navigator.clipboard.writeText(newApiKey);
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 2000);
+    }
+  };
 
   const saveName = async () => {
     setSavingName(true);
@@ -113,12 +148,83 @@ export default function SettingsPage() {
               <p className="text-sm text-amber-300 font-medium mb-1">KYC verification pending</p>
               <p className="text-xs text-zinc-500 leading-relaxed">
                 Identity verification is required before your position can go live. Please contact{' '}
-                <a href="mailto:support@nedapay.xyz" className="text-blue-400 underline">support@nedapay.xyz</a>{' '}
+                <a href="mailto:devops@ntzs.co.tz" className="text-blue-400 underline">devops@ntzs.co.tz</a>{' '}
                 to complete your verification.
               </p>
             </div>
           </div>
         )}
+
+        {/* API Key */}
+        <div className="rounded-xl border border-white/5 bg-zinc-950 p-5 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-zinc-600">Market Maker API Key</p>
+            {lp.hasApiKey && !newApiKey && (
+              <button
+                onClick={revokeKey}
+                disabled={revokingKey}
+                className="flex items-center gap-1.5 text-xs text-red-500/70 hover:text-red-400 transition-colors disabled:opacity-40"
+              >
+                <Trash2 size={12} />
+                {revokingKey ? 'Revoking...' : 'Revoke'}
+              </button>
+            )}
+          </div>
+
+          {newApiKey ? (
+            <div className="space-y-3">
+              <p className="text-xs text-amber-400/80">
+                Copy this key now — it will not be shown again.
+              </p>
+              <div className="flex items-center gap-2 bg-black/40 border border-white/8 rounded-lg px-3 py-2">
+                <code className="flex-1 text-xs font-mono text-zinc-300 truncate">
+                  {keyVisible ? newApiKey : newApiKey.slice(0, 12) + '•'.repeat(24)}
+                </code>
+                <button onClick={() => setKeyVisible(v => !v)} className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors">
+                  {keyVisible ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+                <button onClick={copyKey} className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors">
+                  {keyCopied ? <CheckCircle2 size={13} className="text-blue-400" /> : <Copy size={13} />}
+                </button>
+              </div>
+              <button
+                onClick={() => setNewApiKey(null)}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                I have saved my key
+              </button>
+            </div>
+          ) : lp.hasApiKey ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                <span className="text-sm text-zinc-400">Key configured</span>
+              </div>
+              <button
+                onClick={generateKey}
+                disabled={generatingKey}
+                className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
+              >
+                <RefreshCw size={12} />
+                {generatingKey ? 'Rotating...' : 'Rotate key'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                Generate an API key to connect programmatically via the Market Maker API.
+                See the <a href="/simplefx/docs/api-reference" className="text-blue-400 hover:text-blue-300 transition-colors">API Reference</a> for usage.
+              </p>
+              <button
+                onClick={generateKey}
+                disabled={generatingKey}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600/15 text-blue-400 border border-blue-500/25 hover:bg-blue-600/25 transition-colors disabled:opacity-50"
+              >
+                {generatingKey ? 'Generating...' : 'Generate API key'}
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-zinc-600 mb-4">Legal</p>

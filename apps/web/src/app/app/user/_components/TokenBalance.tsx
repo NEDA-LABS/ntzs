@@ -22,33 +22,40 @@ export function TokenBalance({ walletAddress, compact = false, className }: Toke
       return
     }
 
+    // Base mainnet — static network avoids an extra eth_chainId round-trip
+    const network = ethers.Network.from(8453)
+
     const fetchBalance = async () => {
       try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL)
+        const provider = new ethers.JsonRpcProvider(RPC_URL, network, { staticNetwork: network })
         const contract = new ethers.Contract(
           CONTRACT_ADDRESS,
-          ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
+          ['function balanceOf(address) view returns (uint256)'],
           provider
         )
 
-        const [rawBalance, decimals] = await Promise.all([
-          contract.balanceOf(walletAddress),
-          contract.decimals().catch(() => 18),
-        ])
-
-        const formatted = ethers.formatUnits(rawBalance, decimals)
+        // blockTag: 'latest' bypasses any RPC-level response caching
+        const rawBalance = await contract.balanceOf(walletAddress, { blockTag: 'latest' })
+        const formatted = ethers.formatUnits(rawBalance, 18)
         setBalance(formatted)
       } catch (error) {
         console.error('Failed to fetch balance:', error)
-        setBalance('0')
       } finally {
         setLoading(false)
       }
     }
 
     fetchBalance()
-    const interval = setInterval(fetchBalance, 30000)
-    return () => clearInterval(interval)
+    const interval = setInterval(fetchBalance, 30_000)
+
+    window.addEventListener('deposit:complete', fetchBalance)
+    window.addEventListener('swap:complete', fetchBalance)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('deposit:complete', fetchBalance)
+      window.removeEventListener('swap:complete', fetchBalance)
+    }
   }, [walletAddress])
 
   const numBalance = parseFloat(balance || '0')
