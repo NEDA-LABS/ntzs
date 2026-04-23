@@ -6,6 +6,7 @@ import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { BalanceToggle } from '../_components/BalanceToggle'
 import { PayMeSection } from './PayMeSection'
 import { SendSection } from './SendSection'
+import { SendUsdcSection } from './SendUsdcSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
 
@@ -54,6 +55,7 @@ export default async function WalletPage() {
 
         {/* Send */}
         <SendSection walletAddress={wallet.address} />
+        <SendUsdcSection walletAddress={wallet.address} />
 
         {/* Swap */}
         <SwapSection walletAddress={wallet.address} />
