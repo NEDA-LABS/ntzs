@@ -1,28 +1,24 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { PayMeSection } from './PayMeSection'
-import { SendSection } from './SendSection'
+import { SendUsdcSection } from './SendUsdcSection'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
 import { TopActions } from './_components/TopActions'
 import { ActionQueryBridge } from './ActionQueryBridge'
 import { WithdrawInline } from './WithdrawInline'
-// Tabs removed from hero for a minimal surface
 
 export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
   const wallet = await getCachedWallet(dbUser.id)
 
-  // Layout auto-provisions the wallet — redirect back if still missing
   if (!wallet) {
     redirect('/app/user')
   }
 
-  // Suggest an alias from the email prefix (e.g. "victor" from "victor@email.com")
   const suggestedAlias = dbUser.email
     .split('@')[0]
     .toLowerCase()
@@ -41,7 +37,6 @@ export default async function WalletPage() {
             />
           </div>
           <TopActions />
-          {/* Bridge query ?action=... to modal open events */}
           <ActionQueryBridge />
         </div>
 
@@ -54,9 +49,10 @@ export default async function WalletPage() {
             </div>
           </div>
         </div>
-        {/* Swap modal instance (opened via TopActions) */}
+
+        {/* Modal instances — opened via TopActions events */}
         <SwapSection renderLauncher={false} />
-        {/* Withdraw modal instance (opened via TopActions) */}
+        <SendUsdcSection walletAddress={wallet.address} />
         <WithdrawInline userPhone={dbUser.phone} />
       </div>
     </div>
