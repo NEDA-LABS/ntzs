@@ -11,7 +11,7 @@ function emit(name: string) {
 export function TopActions() {
   const items = [
     { label: "Swap", icon: IconTrendingUp, onClick: () => emit('wallet:openSwap') },
-    { label: "Send", icon: IconSend, onClick: () => emit('wallet:openSendUsdc') },
+    { label: "Send", icon: IconSend, onClick: () => emit('wallet:openSend') },
     { label: "Withdraw", icon: IconWithdraw, onClick: () => emit('wallet:openWithdraw') },
   ] as const
   return (

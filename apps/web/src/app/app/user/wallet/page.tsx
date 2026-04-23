@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { PayMeSection } from './PayMeSection'
-import { SendUsdcSection } from './SendUsdcSection'
+import { SendModal } from './SendModal'
 import { SwapSection } from './SwapSection'
 import { SwapHistory } from './SwapHistory'
 import { TopActions } from './_components/TopActions'
@@ -52,7 +52,7 @@ export default async function WalletPage() {
 
         {/* Modal instances — opened via TopActions events */}
         <SwapSection renderLauncher={false} />
-        <SendUsdcSection walletAddress={wallet.address} />
+        <SendModal walletAddress={wallet.address} />
         <WithdrawInline userPhone={dbUser.phone} />
       </div>
     </div>
