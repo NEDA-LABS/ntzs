@@ -290,11 +290,52 @@ export interface SnippePayoutResponse {
   fees?: number
   total?: number
   error?: string
+  /**
+   * Snippe error code (e.g. 'INT_003'). Populated on failures when Snippe
+   * returned a structured error body.
+   */
+  errorCode?: string
 }
+
+/**
+ * Transient Snippe error codes that are safe to retry. These are failures
+ * where Snippe definitely did NOT dispatch the underlying payout (the
+ * request didn't reach the mobile-money provider), so a retry cannot
+ * cause a double-payout.
+ *
+ *   INT_003: "Provider temporarily unreachable" (most common — mobile
+ *            network operator was unreachable from Snippe's end).
+ *
+ * Any other 4xx-style errors (insufficient float, invalid phone, etc.)
+ * are NOT retried because they indicate a terminal condition or client
+ * error that a retry won't fix.
+ */
+const RETRYABLE_SNIPPE_ERROR_CODES = new Set(['INT_003'])
+
+function isRetryableResponse(result: {
+  status?: string
+  error_code?: string
+  message?: string
+}, httpStatus: number): boolean {
+  if (httpStatus >= 500) return true
+  if (result.error_code && RETRYABLE_SNIPPE_ERROR_CODES.has(result.error_code)) return true
+  // Fall back to message pattern for when Snippe omits a code on transient failures.
+  const msg = (result.message || '').toLowerCase()
+  if (msg.includes('provider temporarily unreachable')) return true
+  if (msg.includes('try again later')) return true
+  return false
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /**
  * Send a payout to a mobile money account via Snippe
  * POST /v1/payouts/send
+ *
+ * Automatically retries on transient errors (network failures, HTTP 5xx,
+ * known transient Snippe error codes like INT_003). Retries are safe
+ * because they only fire when Snippe definitely did not reach the
+ * underlying mobile-money provider.
  */
 export async function sendPayout(
   request: SnippePayoutRequest
@@ -302,54 +343,133 @@ export async function sendPayout(
   const apiKey = getApiKey()
   const phone = normalizePhone(request.recipientPhone)
 
-  try {
-    const response = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        amount: request.amountTzs,
-        channel: 'mobile',
-        recipient_phone: phone,
-        recipient_name: request.recipientName,
-        narration: request.narration || 'nTZS withdrawal',
-        ...(request.webhookUrl?.startsWith('https://') ? { webhook_url: request.webhookUrl } : {}),
-        metadata: request.metadata,
-      }),
-    })
+  const MAX_ATTEMPTS = 3
+  const BACKOFF_MS = [0, 1000, 3000] // immediate, +1s, +3s
 
-    const result = await response.json()
+  let lastError: string | undefined
+  let lastErrorCode: string | undefined
+  let lastReference: string | undefined
+  let lastExternalReference: string | undefined
 
-    if (result.status !== 'success' || !result.data?.reference) {
-      console.error('[snippe] payout failed:', result)
-      return {
-        success: false,
-        error: result.message || 'Payout initiation failed',
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (BACKOFF_MS[attempt] > 0) await sleep(BACKOFF_MS[attempt])
+
+    try {
+      const response = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: request.amountTzs,
+          channel: 'mobile',
+          recipient_phone: phone,
+          recipient_name: request.recipientName,
+          narration: request.narration || 'nTZS withdrawal',
+          ...(request.webhookUrl?.startsWith('https://') ? { webhook_url: request.webhookUrl } : {}),
+          metadata: request.metadata,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.status === 'success' && result.data?.reference) {
+        console.log('[snippe] payout initiated:', {
+          reference: result.data.reference,
+          amount: request.amountTzs,
+          phone,
+          fees: result.data.fees?.value,
+          attempt: attempt + 1,
+        })
+        return {
+          success: true,
+          reference: result.data.reference,
+          externalReference: result.data.external_reference,
+          fees: result.data.fees?.value,
+          total: result.data.total?.value,
+        }
       }
-    }
 
-    console.log('[snippe] payout initiated:', {
-      reference: result.data.reference,
-      amount: request.amountTzs,
-      phone,
-      fees: result.data.fees?.value,
+      // Failed. Capture what we can for the caller / reconciler.
+      lastError = result.message || 'Payout initiation failed'
+      lastErrorCode = result.error_code
+      lastReference = result.data?.reference
+      lastExternalReference = result.data?.external_reference
+
+      const retryable = isRetryableResponse(result, response.status)
+      console.error('[snippe] payout failed', {
+        attempt: attempt + 1,
+        httpStatus: response.status,
+        error: lastError,
+        errorCode: lastErrorCode,
+        retryable,
+      })
+
+      if (!retryable) break
+    } catch (error) {
+      // Network / fetch exception — retry
+      lastError = error instanceof Error ? error.message : 'Failed to connect to payout provider'
+      console.error('[snippe] payout fetch error', { attempt: attempt + 1, error: lastError })
+    }
+  }
+
+  // IMPORTANT: capture reference/error_code even on terminal failure. Snippe's
+  // dashboard often shows a reference for "failed at dispatch" cases —
+  // without this we lose the only link we have to the payout record.
+  return {
+    success: false,
+    error: lastError || 'Payout initiation failed',
+    reference: lastReference,
+    externalReference: lastExternalReference,
+    errorCode: lastErrorCode,
+  }
+}
+
+// ─── Payout Status Check ────────────────────────────────────────────────────
+
+export interface SnippePayoutStatusResponse {
+  status: 'completed' | 'failed' | 'reversed' | 'pending' | 'unknown'
+  failureReason?: string
+  completedAt?: string
+}
+
+/**
+ * Check payout status via Snippe API
+ * GET /v1/payouts/{reference}
+ *
+ * Used by the reconcile-stuck-burns cron to act authoritatively on burns
+ * whose payout was initiated but whose webhook may have been missed.
+ */
+export async function checkPayoutStatus(
+  reference: string
+): Promise<SnippePayoutStatusResponse> {
+  const apiKey = getApiKey()
+
+  try {
+    const response = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${reference}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10000),
     })
 
-    return {
-      success: true,
-      reference: result.data.reference,
-      externalReference: result.data.external_reference,
-      fees: result.data.fees?.value,
-      total: result.data.total?.value,
+    const result = await response.json() as {
+      status?: string
+      data?: { status?: string; failure_reason?: string; completed_at?: string }
     }
+
+    if (result.status !== 'success' || !result.data) {
+      return { status: 'unknown' }
+    }
+
+    const s = String(result.data.status ?? '').toLowerCase()
+    if (s === 'completed') return { status: 'completed', completedAt: result.data.completed_at }
+    if (s === 'failed') return { status: 'failed', failureReason: result.data.failure_reason }
+    if (s === 'reversed') return { status: 'reversed', failureReason: result.data.failure_reason }
+    if (s === 'pending' || s === 'processing') return { status: 'pending' }
+    return { status: 'unknown' }
   } catch (error) {
-    console.error('[snippe] payout API error:', error)
-    return {
-      success: false,
-      error: 'Failed to connect to payout provider',
-    }
+    console.error('[snippe] payout status check error:', error instanceof Error ? error.message : error)
+    return { status: 'unknown' }
   }
 }
 
@@ -397,7 +517,13 @@ export async function sendBankPayout(
 
     if (result.status !== 'success' || !result.data?.reference) {
       console.error('[snippe] bank payout failed:', result)
-      return { success: false, error: result.message || 'Bank payout initiation failed' }
+      return {
+        success: false,
+        error: result.message || 'Bank payout initiation failed',
+        reference: result.data?.reference,
+        externalReference: result.data?.external_reference,
+        errorCode: result.error_code,
+      }
     }
 
     console.log('[snippe] bank payout initiated:', {
@@ -483,43 +609,6 @@ export async function calculatePayoutFee(
   }
 }
 
-// ─── Payout Status Check ────────────────────────────────────────────────────
-
-export interface SnippePayoutStatusResponse {
-  status: 'pending' | 'completed' | 'failed' | 'reversed'
-  failureReason?: string
-}
-
-/**
- * Check payout status
- * GET /v1/payouts/{reference}
- */
-export async function checkPayoutStatus(
-  reference: string
-): Promise<SnippePayoutStatusResponse> {
-  const apiKey = getApiKey()
-
-  try {
-    const response = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${reference}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-    })
-
-    const result = await response.json()
-
-    if (result.status !== 'success' || !result.data) {
-      return { status: 'pending' }
-    }
-
-    return {
-      status: result.data.status as SnippePayoutStatusResponse['status'],
-      failureReason: result.data.failure_reason,
-    }
-  } catch (error) {
-    console.error('[snippe] payout status error:', error)
-    return { status: 'pending' }
-  }
-}
-
 // ─── Webhook Signature Verification ─────────────────────────────────────────
 
 export interface SnippePaymentWebhookPayload {
@@ -550,42 +639,73 @@ export interface SnippePayoutWebhookPayload {
 }
 
 /**
- * Verify webhook signature using HMAC-SHA256
- * Snippe signs: HMAC-SHA256(secret, timestamp + "." + rawBody)
- * Fallback: HMAC-SHA256(secret, rawBody)
+ * Maximum age (seconds) for a signed webhook payload before we treat it as a replay.
+ */
+const WEBHOOK_MAX_SKEW_SECONDS = 5 * 60
+
+/**
+ * Verify webhook signature using HMAC-SHA256.
+ * Snippe signs: HMAC-SHA256(secret, timestamp + "." + rawBody).
+ * Fallback: HMAC-SHA256(secret, rawBody) — kept for backwards compatibility
+ * with older Snippe deployments that omit the timestamp header.
+ *
+ * Returns false on any error (missing secret, bad signature, stale timestamp).
+ * This function never throws — callers should treat `false` as "reject".
  */
 export function verifyWebhookSignature(
   rawBody: string,
   signature: string,
   timestamp?: string
 ): boolean {
-  const secret = getWebhookSecret()
+  if (!signature) return false
 
-  // Primary: sign timestamp.body (Snippe's format)
+  let secret: string
+  try {
+    secret = getWebhookSecret()
+  } catch {
+    // Fail closed: a misconfigured server MUST NOT accept unsigned webhooks.
+    console.error('[snippe] SNIPPE_WEBHOOK_SECRET is not configured — rejecting webhook')
+    return false
+  }
+
+  // Primary: sign timestamp.body (Snippe's format). Enforce freshness.
   if (timestamp) {
+    const ts = Number(timestamp)
+    if (!Number.isFinite(ts)) return false
+    const nowSec = Math.floor(Date.now() / 1000)
+    // Snippe sends either seconds or milliseconds — normalise to seconds.
+    const tsSec = ts > 1e12 ? Math.floor(ts / 1000) : Math.floor(ts)
+    if (Math.abs(nowSec - tsSec) > WEBHOOK_MAX_SKEW_SECONDS) {
+      console.warn('[snippe] webhook timestamp outside allowed skew', { tsSec, nowSec })
+      return false
+    }
+
     const signedPayload = `${timestamp}.${rawBody}`
     const expected = crypto
       .createHmac('sha256', secret)
       .update(signedPayload)
       .digest('hex')
-    try {
-      if (crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-        return true
-      }
-    } catch { /* length mismatch, try fallback */ }
+    const sigBuf = Buffer.from(signature, 'utf8')
+    const expBuf = Buffer.from(expected, 'utf8')
+    if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return true
+    }
+    // Fall through to body-only comparison for older Snippe signing mode.
   }
 
-  // Fallback: sign body only
+  // Fallback: sign body only (legacy). Without a timestamp we cannot detect
+  // replays — only allow this path if the partner explicitly opts in via
+  // SNIPPE_WEBHOOK_ALLOW_UNTIMED=1.
+  if (!timestamp && process.env.SNIPPE_WEBHOOK_ALLOW_UNTIMED !== '1') {
+    return false
+  }
+
   const expectedBodyOnly = crypto
     .createHmac('sha256', secret)
     .update(rawBody)
     .digest('hex')
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedBodyOnly),
-    )
-  } catch {
-    return false
-  }
+  const sigBuf = Buffer.from(signature, 'utf8')
+  const expBuf = Buffer.from(expectedBodyOnly, 'utf8')
+  if (sigBuf.length !== expBuf.length) return false
+  return crypto.timingSafeEqual(sigBuf, expBuf)
 }
