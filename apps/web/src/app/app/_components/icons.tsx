@@ -333,3 +333,20 @@ export function IconSettings(props: IconProps) {
     </IconBase>
   )
 }
+
+export function IconCollect(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M22 12h-6l-2 3H10l-2-3H2" />
+      <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6L18.55 5.11A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+    </IconBase>
+  )
+}
+
+export function IconZap(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </IconBase>
+  )
+}

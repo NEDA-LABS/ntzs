@@ -7,8 +7,16 @@ const quickAmounts = [1000, 5000, 10000, 50000]
 
 type PayerStatus = 'pending' | 'processing' | 'success' | 'failed'
 
-export function PayForm({ alias, displayName }: { alias: string; displayName: string }) {
-  const [amount, setAmount] = useState('')
+interface PayFormProps {
+  alias: string
+  displayName: string
+  initialAmount?: string
+  initialDescription?: string
+  isFixed?: boolean
+}
+
+export function PayForm({ alias, displayName, initialAmount, initialDescription, isFixed }: PayFormProps) {
+  const [amount, setAmount] = useState(initialAmount ?? '')
   const [phone, setPhone] = useState('')
   const [payerName, setPayerName] = useState('')
   const [error, setError] = useState('')
@@ -58,7 +66,7 @@ export function PayForm({ alias, displayName }: { alias: string; displayName: st
     }
   }, [depositId, stopPolling])
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
 
@@ -156,29 +164,46 @@ export function PayForm({ alias, displayName }: { alias: string; displayName: st
   // ── Payment form ──
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Description from link (read-only context) */}
+      {initialDescription && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <p className="text-xs text-zinc-500">Payment for</p>
+          <p className="mt-0.5 text-sm font-medium text-white">{initialDescription}</p>
+        </div>
+      )}
+
       {/* Amount */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-zinc-400">Amount (TZS)</label>
+        <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+          Amount (TZS){isFixed && <span className="ml-2 text-zinc-600">· fixed</span>}
+        </label>
         <input
           type="number"
           inputMode="numeric"
           placeholder="0"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-3xl font-bold text-white placeholder:text-zinc-700 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+          readOnly={isFixed}
+          onChange={(e) => !isFixed && setAmount(e.target.value)}
+          className={`w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-3xl font-bold text-white placeholder:text-zinc-700 focus:outline-none ${
+            isFixed
+              ? 'cursor-default opacity-90'
+              : 'focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30'
+          }`}
         />
-        <div className="mt-2 flex gap-2">
-          {quickAmounts.map((qa) => (
-            <button
-              key={qa}
-              type="button"
-              onClick={() => setAmount(String(qa))}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10"
-            >
-              {qa >= 1000 ? `${qa / 1000}k` : qa}
-            </button>
-          ))}
-        </div>
+        {!isFixed && (
+          <div className="mt-2 flex gap-2">
+            {quickAmounts.map((qa) => (
+              <button
+                key={qa}
+                type="button"
+                onClick={() => setAmount(String(qa))}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10"
+              >
+                {qa >= 1000 ? `${qa / 1000}k` : qa}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Phone */}

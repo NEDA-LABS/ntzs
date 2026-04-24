@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 
 import {
   IconActivity,
+  IconCollect,
   IconDashboard,
   IconPlus,
   IconSparkles,
@@ -15,6 +16,7 @@ import {
 const navItems = [
   { href: '/app/user', label: 'Dashboard', icon: IconDashboard },
   { href: '/app/user/wallet', label: 'Wallet', icon: IconWallet },
+  { href: '/app/user/collect', label: 'Collect', icon: IconCollect },
   { href: '/app/user/deposits/new', label: 'Deposit', icon: IconPlus },
   { href: '/app/user/activity', label: 'Activity', icon: IconActivity },
 ]
@@ -29,8 +31,8 @@ const bottomTabs = [
   { href: '/app/user', label: 'Home', icon: IconDashboard, exact: true },
   { href: '/app/user/wallet', label: 'Wallet', icon: IconWallet, exact: false },
   { href: '/app/user/deposits/new', label: 'Deposit', icon: IconPlus, exact: false },
+  { href: '/app/user/collect', label: 'Collect', icon: IconCollect, exact: false },
   { href: '/app/user/activity', label: 'Activity', icon: IconActivity, exact: false },
-  { href: '/app/user/stake', label: 'Stake', icon: IconSparkles, exact: false },
 ]
 
 interface MobileSidebarProps {
