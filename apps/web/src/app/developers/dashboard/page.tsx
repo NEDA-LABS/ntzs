@@ -1664,7 +1664,14 @@ export default function PartnerDashboardPage() {
   ]
 
   const handleLogout = async () => {
-    document.cookie = 'partner_session=; path=/; max-age=0'
+    try {
+      await fetch('/api/v1/partners/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+    } catch {
+      // Ignore — cookie will expire on its own.
+    }
     router.push('/developers/login')
   }
 

@@ -1,34 +1,13 @@
-import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { eq, and, desc, inArray, or, sql, isNotNull } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, partnerSubWallets, users, wallets, transfers, depositRequests } from '@ntzs/db'
+import { verifySessionToken } from '@/lib/waas/auth'
 
 const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const USDC_DECIMALS = 6
-
-function verifySessionToken(token: string): string | null {
-  const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-
-  const [encoded, sig] = parts
-  const expectedSig = crypto.createHmac('sha256', secret).update(encoded!).digest('base64url')
-
-  if (!crypto.timingSafeEqual(Buffer.from(sig!, 'utf8'), Buffer.from(expectedSig, 'utf8'))) {
-    return null
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(encoded!, 'base64url').toString('utf8'))
-    if (payload.exp && payload.exp < Date.now()) return null
-    return payload.pid || null
-  } catch {
-    return null
-  }
-}
 
 /** Fetch ERC-20 balances for multiple addresses in a single JSON-RPC batch call */
 async function fetchERC20BalancesBatch(

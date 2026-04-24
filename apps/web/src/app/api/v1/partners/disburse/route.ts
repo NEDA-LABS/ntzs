@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import { eq, and } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
@@ -7,33 +6,12 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, partnerSubWallets, wallets, auditLogs } from '@ntzs/db'
 import { deriveTreasuryWallet, deriveSubWallet } from '@/lib/waas/hd-wallets'
+import { verifySessionToken } from '@/lib/waas/auth'
 
 const NTZS_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address to, uint256 amount) returns (bool)',
 ] as const
-
-function verifySessionToken(token: string): string | null {
-  const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-
-  const [encoded, sig] = parts
-  const expectedSig = crypto.createHmac('sha256', secret).update(encoded!).digest('base64url')
-
-  if (sig!.length !== expectedSig.length) return null
-  if (!crypto.timingSafeEqual(Buffer.from(sig!, 'utf8'), Buffer.from(expectedSig, 'utf8'))) {
-    return null
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(encoded!, 'base64url').toString('utf8'))
-    if (payload.exp && payload.exp < Date.now()) return null
-    return payload.pid || null
-  } catch {
-    return null
-  }
-}
 
 /**
  * POST /api/v1/partners/disburse

@@ -15,15 +15,12 @@ export async function POST(request: NextRequest) {
   const signature = request.headers.get('x-webhook-signature') || ''
   const timestamp = request.headers.get('x-webhook-timestamp') || undefined
 
-  // Verify HMAC signature
-  try {
-    if (!verifyWebhookSignature(rawBody, signature, timestamp)) {
-      console.error('[snippe/payment webhook] Invalid signature')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
-  } catch (sigErr) {
-    // SNIPPE_WEBHOOK_SECRET not configured — log and continue processing
-    console.warn('[snippe/payment webhook] Signature verification skipped:', sigErr instanceof Error ? sigErr.message : sigErr)
+  // Verify HMAC signature. `verifyWebhookSignature` returns false (never throws)
+  // when the secret is missing, the signature is absent/wrong, or the
+  // timestamp is stale — in all cases we reject the request.
+  if (!verifyWebhookSignature(rawBody, signature, timestamp)) {
+    console.error('[snippe/payment webhook] Invalid signature or misconfigured secret')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   let payload: SnippePaymentWebhookPayload
@@ -64,6 +61,45 @@ export async function POST(request: NextRequest) {
   }
 
   if (type === 'payment.completed' && data.status === 'completed') {
+    // Cross-check that the PSP actually collected the amount and currency
+    // we asked for. Without this, an attacker who can forge or obtain a
+    // completed-payment signature for a cheap payment can still trigger a
+    // mint of whatever `deposit.amountTzs` was originally requested.
+    const paidValue = Number(data.amount?.value ?? NaN)
+    const paidCurrency = String(data.amount?.currency ?? '').toUpperCase()
+
+    if (paidCurrency !== 'TZS') {
+      console.error('[snippe/payment webhook] Currency mismatch', {
+        depositId: depositRequestId,
+        expected: 'TZS',
+        received: paidCurrency,
+      })
+      await db
+        .update(depositRequests)
+        .set({ status: 'rejected', updatedAt: new Date() })
+        .where(eq(depositRequests.id, depositRequestId))
+      return NextResponse.json(
+        { status: 'rejected', reason: 'currency_mismatch' },
+        { status: 400 }
+      )
+    }
+
+    if (!Number.isFinite(paidValue) || Math.trunc(paidValue) < deposit.amountTzs) {
+      console.error('[snippe/payment webhook] Amount mismatch', {
+        depositId: depositRequestId,
+        expected: deposit.amountTzs,
+        received: paidValue,
+      })
+      await db
+        .update(depositRequests)
+        .set({ status: 'rejected', updatedAt: new Date() })
+        .where(eq(depositRequests.id, depositRequestId))
+      return NextResponse.json(
+        { status: 'rejected', reason: 'amount_mismatch' },
+        { status: 400 }
+      )
+    }
+
     // Route to Safe approval if amount >= threshold, otherwise mint immediately
     const newStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
 

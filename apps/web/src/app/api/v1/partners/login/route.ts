@@ -4,20 +4,20 @@ import { eq } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { partners } from '@ntzs/db'
+import { signSessionToken, PARTNER_SESSION_COOKIE, PARTNER_SESSION_TTL_MS } from '@/lib/waas/auth'
 
 function verifyPassword(password: string, storedHash: string): boolean {
   const [salt, hash] = storedHash.split(':')
   if (!salt || !hash) return false
-  const derivedKey = crypto.scryptSync(password, salt, 64).toString('hex')
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(derivedKey, 'hex'))
-}
-
-function signSessionToken(partnerId: string): string {
-  const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
-  const payload = JSON.stringify({ pid: partnerId, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 })
-  const encoded = Buffer.from(payload).toString('base64url')
-  const sig = crypto.createHmac('sha256', secret).update(encoded).digest('base64url')
-  return `${encoded}.${sig}`
+  let derivedKey: Buffer
+  try {
+    derivedKey = crypto.scryptSync(password, salt, 64)
+  } catch {
+    return false
+  }
+  const stored = Buffer.from(hash, 'hex')
+  if (stored.length !== derivedKey.length) return false
+  return crypto.timingSafeEqual(stored, derivedKey)
 }
 
 /**
@@ -64,9 +64,18 @@ export async function POST(request: NextRequest) {
 
   const token = signSessionToken(partner.id)
 
-  return NextResponse.json({
-    token,
+  const response = NextResponse.json({
     partnerId: partner.id,
     name: partner.name,
   })
+
+  response.cookies.set(PARTNER_SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: Math.floor(PARTNER_SESSION_TTL_MS / 1000),
+  })
+
+  return response
 }

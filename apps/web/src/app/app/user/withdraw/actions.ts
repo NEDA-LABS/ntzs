@@ -258,15 +258,56 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
       .set({ payoutReference: payoutResult.reference, payoutStatus: 'pending', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
     await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutReference: payoutResult.reference, recipientPhone }, dbUser.id)
-  } else {
-    const payoutErr = payoutResult.error ?? 'Payout initiation failed'
-    await db
-      .update(burnRequests)
-      .set({ payoutStatus: 'failed', payoutError: payoutErr, updatedAt: new Date() })
-      .where(eq(burnRequests.id, burnRequestId))
-    console.error('[withdraw] payout failed', { burnRequestId, error: payoutErr })
-    return { success: false, error: `Payout failed: ${payoutErr}` }
+    return { success: true as const, requiresApproval: false }
   }
 
-  return { success: true as const, requiresApproval: false }
+  // ── Payout initiation failed ─────────────────────────────────────────────
+  // We do NOT auto-revert the burn here. A failed HTTP response from Snippe
+  // is ambiguous: the request may have been rejected cleanly (safe to
+  // revert), or it may have been partially processed/queued on their side
+  // (revert would double-pay the user once Snippe's retry lands). Only a
+  // signed `payout.failed` webhook or an explicit `GET /v1/payouts/{ref}`
+  // returning `failed`/`reversed` is authoritative enough to auto-revert.
+  //
+  // Mark the burn as `reconcile_required` and surface a clear message to
+  // the user. An operator must confirm via Snippe dashboard that no payout
+  // was dispatched before the revert is triggered (see the admin reconcile
+  // endpoint — /api/admin/burns/:id/reconcile).
+  const payoutErr = payoutResult.error ?? 'Payout initiation failed'
+  console.error('[withdraw] payout failed (NOT auto-reverting — awaiting PSP confirmation)', {
+    burnRequestId,
+    error: payoutErr,
+  })
+
+  await db
+    .update(burnRequests)
+    .set({
+      // Persist Snippe's reference even on failure — without this we lose
+      // the only API handle to reconcile the payout later.
+      payoutReference: payoutResult.reference ?? null,
+      payoutStatus: 'reconcile_required',
+      payoutError: payoutErr,
+      updatedAt: new Date(),
+    })
+    .where(eq(burnRequests.id, burnRequestId))
+
+  await writeAuditLog(
+    'burn.payout_initiation_failed_reconcile_required',
+    'burn_request',
+    burnRequestId,
+    {
+      amountTzs: amountTzsTrunc,
+      receiveAmountTzs: receiveAmountTrunc,
+      platformFeeTzs,
+      payoutError: payoutErr,
+      recipientPhone,
+      note: 'Burn already executed on-chain. Operator must verify with Snippe dashboard whether any payout was dispatched before deciding to remint or mark completed.',
+    },
+    dbUser.id,
+  )
+
+  return {
+    success: false,
+    error: `Your payout could not be dispatched (${payoutErr}). Your withdrawal is under review — do not retry. We will confirm and either complete the payout or restore your nTZS balance within a few hours.`,
+  }
 }

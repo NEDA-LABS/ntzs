@@ -1,32 +1,25 @@
-import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import {
+  BASE_RPC_URL,
+  NTZS_CONTRACT_ADDRESS_BASE,
+  BURNER_PRIVATE_KEY,
+  MINTER_PRIVATE_KEY,
+} from '@/lib/env'
 import { sendPayout, sendBankPayout } from '@/lib/psp/snippe'
-import { deriveTreasuryWallet } from '@/lib/waas/hd-wallets'
-import { partners } from '@ntzs/db'
+import { partners, auditLogs } from '@ntzs/db'
+import { verifySessionToken } from '@/lib/waas/auth'
 
 const MIN_WITHDRAW_TZS = 5000
 
-function verifySessionToken(token: string): string | null {
-  const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-  const [encoded, sig] = parts
-  const expectedSig = crypto.createHmac('sha256', secret).update(encoded!).digest('base64url')
-  if (sig!.length !== expectedSig.length) return null
-  if (!crypto.timingSafeEqual(Buffer.from(sig!, 'utf8'), Buffer.from(expectedSig, 'utf8'))) return null
-  try {
-    const payload = JSON.parse(Buffer.from(encoded!, 'base64url').toString('utf8'))
-    if (payload.exp && payload.exp < Date.now()) return null
-    return payload.pid || null
-  } catch {
-    return null
-  }
-}
+const NTZS_WRITE_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function burn(address from, uint256 amount)',
+  'function mint(address to, uint256 amount)',
+] as const
 
 /**
  * POST /api/v1/partners/treasury/withdraw
@@ -114,7 +107,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Treasury wallet not provisioned' }, { status: 400 })
   }
 
-  // Verify on-chain treasury balance
+  // Verify on-chain treasury balance + acquire signing keys for burn/re-mint.
   const rpcUrl = BASE_RPC_URL
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
 
@@ -122,17 +115,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
   }
 
-  try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    const token = new ethers.Contract(
-      contractAddress,
-      ['function balanceOf(address) view returns (uint256)'],
-      provider
-    )
-    const balanceWei: bigint = await token.balanceOf(partner.treasuryWalletAddress)
-    const balanceTzs = Number(balanceWei / BigInt(10) ** BigInt(18))
+  if (!BURNER_PRIVATE_KEY) {
+    console.error('[treasury/withdraw] BURNER_PRIVATE_KEY is not configured')
+    return NextResponse.json({ error: 'Treasury withdrawal temporarily unavailable' }, { status: 503 })
+  }
+  // MINTER_PRIVATE_KEY is required to roll back the burn if payout fails.
+  if (!MINTER_PRIVATE_KEY) {
+    console.error('[treasury/withdraw] MINTER_PRIVATE_KEY is not configured — refusing to burn without rollback capability')
+    return NextResponse.json({ error: 'Treasury withdrawal temporarily unavailable' }, { status: 503 })
+  }
 
-    if (balanceTzs < amountTzs) {
+  const amountWei = BigInt(Math.trunc(amountTzs)) * (BigInt(10) ** BigInt(18))
+
+  const provider = new ethers.JsonRpcProvider(rpcUrl)
+  const burnerSigner = new ethers.Wallet(BURNER_PRIVATE_KEY, provider)
+  const tokenAsBurner = new ethers.Contract(contractAddress, NTZS_WRITE_ABI, burnerSigner)
+
+  // 1) Verify balance.
+  try {
+    const balanceWei: bigint = await tokenAsBurner.balanceOf(partner.treasuryWalletAddress)
+    if (balanceWei < amountWei) {
+      const balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
       return NextResponse.json(
         { error: `Insufficient treasury balance. Available: ${balanceTzs.toLocaleString()} TZS` },
         { status: 400 }
@@ -143,42 +146,138 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to verify treasury balance' }, { status: 500 })
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
-  const webhookUrl = partner.webhookUrl || `${baseUrl}/api/v1/webhooks/snippe`
-  const sharedMeta = { partnerId: partner.id, partnerName: partner.name, type: 'treasury_withdrawal' }
-
-  let result
-  let successMessage: string
-
-  if (isBank) {
-    result = await sendBankPayout({
-      amountTzs,
-      recipientName: partner.name,
-      bankAccount: partner.payoutBankAccount!,
-      bankName: partner.payoutBankName!,
-      narration: `nTZS treasury withdrawal - ${partner.name}`,
-      webhookUrl,
-      metadata: sharedMeta,
+  // 2) Burn the treasury's nTZS on-chain BEFORE initiating fiat payout, so
+  //    the partner cannot withdraw fiat while retaining the underlying
+  //    tokens. If the fiat payout fails we re-mint in step 4.
+  let burnTxHash: string
+  try {
+    const burnTx = await tokenAsBurner.burn(partner.treasuryWalletAddress, amountWei)
+    burnTxHash = burnTx.hash
+    await burnTx.wait(1)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[treasury/withdraw] Burn failed:', message)
+    await db.insert(auditLogs).values({
+      action: 'treasury_withdraw_burn_failed',
+      entityType: 'partner',
+      entityId: partner.id,
+      metadata: { amountTzs, error: message },
     })
-    successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutBankName} account ending ${partner.payoutBankAccount!.slice(-4)}. Funds will arrive within 1-2 business days.`
-  } else {
-    result = await sendPayout({
-      amountTzs,
-      recipientPhone: partner.payoutPhone!,
-      recipientName: partner.name,
-      narration: `nTZS treasury withdrawal - ${partner.name}`,
-      webhookUrl,
-      metadata: sharedMeta,
-    })
-    successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutPhone}. You will receive an M-Pesa prompt shortly.`
+    return NextResponse.json({ error: 'Failed to debit treasury' }, { status: 500 })
   }
 
+  await db.insert(auditLogs).values({
+    action: 'treasury_withdraw_burned',
+    entityType: 'partner',
+    entityId: partner.id,
+    metadata: { amountTzs, burnTxHash, treasuryWallet: partner.treasuryWalletAddress },
+  })
+
+  // 3) Initiate fiat payout.
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+  const webhookUrl = partner.webhookUrl || `${baseUrl}/api/v1/webhooks/snippe`
+  const sharedMeta = {
+    partnerId: partner.id,
+    partnerName: partner.name,
+    type: 'treasury_withdrawal',
+    burnTxHash,
+    amountTzs,
+    treasuryWallet: partner.treasuryWalletAddress,
+  }
+
+  let result: Awaited<ReturnType<typeof sendPayout>>
+  let successMessage: string
+
+  try {
+    if (isBank) {
+      result = await sendBankPayout({
+        amountTzs,
+        recipientName: partner.name,
+        bankAccount: partner.payoutBankAccount!,
+        bankName: partner.payoutBankName!,
+        narration: `nTZS treasury withdrawal - ${partner.name}`,
+        webhookUrl,
+        metadata: sharedMeta,
+      })
+      successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutBankName} account ending ${partner.payoutBankAccount!.slice(-4)}. Funds will arrive within 1-2 business days.`
+    } else {
+      result = await sendPayout({
+        amountTzs,
+        recipientPhone: partner.payoutPhone!,
+        recipientName: partner.name,
+        narration: `nTZS treasury withdrawal - ${partner.name}`,
+        webhookUrl,
+        metadata: sharedMeta,
+      })
+      successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutPhone}. You will receive an M-Pesa prompt shortly.`
+    }
+  } catch (err) {
+    // Treat a thrown PSP error identically to a failed result — re-mint below.
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[treasury/withdraw] PSP call threw:', message)
+    result = { success: false, error: message } as Awaited<ReturnType<typeof sendPayout>>
+    successMessage = ''
+  }
+
+  // 4) On payout-initiation failure, re-mint the burned amount back to the
+  //    treasury so the partner is made whole. If re-mint also fails, log
+  //    loudly — an operator MUST manually reconcile.
   if (!result.success) {
+    try {
+      const minterSigner = new ethers.Wallet(MINTER_PRIVATE_KEY, provider)
+      const tokenAsMinter = new ethers.Contract(contractAddress, NTZS_WRITE_ABI, minterSigner)
+      const remintTx = await tokenAsMinter.mint(partner.treasuryWalletAddress, amountWei)
+      await remintTx.wait(1)
+      await db.insert(auditLogs).values({
+        action: 'treasury_withdraw_reverted',
+        entityType: 'partner',
+        entityId: partner.id,
+        metadata: {
+          amountTzs,
+          burnTxHash,
+          remintTxHash: remintTx.hash,
+          payoutError: result.error,
+        },
+      })
+    } catch (remintErr) {
+      const message = remintErr instanceof Error ? remintErr.message : String(remintErr)
+      console.error('[treasury/withdraw] CRITICAL: remint after payout failure failed — manual reconciliation required', {
+        partnerId: partner.id,
+        amountTzs,
+        burnTxHash,
+        payoutError: result.error,
+        remintError: message,
+      })
+      await db.insert(auditLogs).values({
+        action: 'treasury_withdraw_reconcile_required',
+        entityType: 'partner',
+        entityId: partner.id,
+        metadata: {
+          amountTzs,
+          burnTxHash,
+          payoutError: result.error,
+          remintError: message,
+        },
+      })
+    }
+
     return NextResponse.json(
       { error: result.error || 'Payout initiation failed' },
       { status: 502 }
     )
   }
+
+  await db.insert(auditLogs).values({
+    action: 'treasury_withdraw_initiated',
+    entityType: 'partner',
+    entityId: partner.id,
+    metadata: {
+      amountTzs,
+      burnTxHash,
+      payoutReference: result.reference,
+      payoutExternalReference: result.externalReference,
+    },
+  })
 
   return NextResponse.json({
     reference: result.reference,
@@ -186,6 +285,7 @@ export async function POST(request: NextRequest) {
     amountTzs,
     fees: result.fees,
     total: result.total,
+    burnTxHash,
     message: successMessage,
   })
 }

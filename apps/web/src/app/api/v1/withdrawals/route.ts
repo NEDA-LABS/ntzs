@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, or } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
@@ -7,6 +7,7 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PR
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone } from '@/lib/psp/snippe'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
+import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
 const SNIPPE_FLAT_FEE_TZS = 1500
@@ -251,6 +252,74 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Burn failed', detail: errorMessage }, { status: 500 })
   }
 
+  // Track whether the platform fee was actually minted so a later revert
+  // knows whether to burn it back.
+  const feeMintedRef = { occurred: false }
+
+  // Re-read flag from DB (since the fee mint block above only set this
+  // conditionally); cheaper to just read it back once.
+  {
+    const [row] = await db
+      .select({ feeTxHash: burnRequests.feeTxHash })
+      .from(burnRequests)
+      .where(eq(burnRequests.id, burnRequestId))
+      .limit(1)
+    feeMintedRef.occurred = Boolean(row?.feeTxHash)
+  }
+
+  // Helper: transition payoutStatus 'pending' → 'reverted' atomically.
+  // Returns true if we were the one that flipped it (i.e. caller should
+  // perform the revert on-chain). Guards against double-revert if both the
+  // polling loop and the webhook fire.
+  const claimRevert = async (): Promise<boolean> => {
+    const updated = await db
+      .update(burnRequests)
+      .set({ payoutStatus: 'reverting', updatedAt: new Date() })
+      .where(
+        and(
+          eq(burnRequests.id, burnRequestId),
+          // Only claim if no one has already finalized this payout.
+          // payoutStatus is text, so compare against the known non-final states.
+          or(
+            eq(burnRequests.payoutStatus, 'pending'),
+            eq(burnRequests.payoutStatus, 'failed'),
+          ),
+        )
+      )
+      .returning({ id: burnRequests.id })
+    return updated.length > 0
+  }
+
+  const finalizeRevert = async (reason: string, remintTxHash?: string, feeBurnTxHash?: string, remintError?: string) => {
+    await db
+      .update(burnRequests)
+      .set({
+        status: 'failed',
+        payoutStatus: remintError ? 'reconcile_required' : 'reverted',
+        payoutError: remintError ? `${reason} | remint_error: ${remintError}` : reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(burnRequests.id, burnRequestId))
+    console.log('[v1/withdrawals] burn reverted', {
+      burnRequestId, reason, remintTxHash, feeBurnTxHash, remintError,
+    })
+  }
+
+  const revertBurnForUser = async (reason: string) => {
+    const claimed = await claimRevert()
+    if (!claimed) return // already finalized by another path
+    const res = await revertOffRampBurn({
+      burnRequestId,
+      userAddress: wallet.address,
+      burnAmountTzs,
+      platformFeeTzs,
+      feeRecipientAddress: feeRecipient,
+      feeMintOccurred: feeMintedRef.occurred,
+      reason,
+    })
+    await finalizeRevert(reason, res.remintTxHash, res.feeBurnTxHash, res.error)
+  }
+
   // Trigger Snippe payout
   if (SNIPPE_API_KEY) {
     let phone = phoneNumber.replace(/[\s\-+]/g, '')
@@ -299,8 +368,8 @@ export async function POST(request: NextRequest) {
                 console.log(`[v1/withdrawals] Payout ${payoutRef} completed (polled)`)
                 break
               } else if (ps === 'failed' || ps === 'reversed') {
-                await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: statusResult.data.failure_reason || 'Payout failed', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
                 console.warn(`[v1/withdrawals] Payout ${payoutRef} failed (polled): ${statusResult.data.failure_reason}`)
+                await revertBurnForUser(statusResult.data.failure_reason || 'Payout failed (polled)')
                 break
               }
             } catch {
@@ -309,14 +378,75 @@ export async function POST(request: NextRequest) {
           }
         })()
       } else {
-        await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: payoutResult.message ?? 'Payout initiation failed', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
-        console.error('[v1/withdrawals] Payout failed:', payoutResult.message)
+        // Snippe returned an error body from /v1/payouts/send. We do NOT
+        // auto-revert here: a non-success HTTP response is ambiguous
+        // (could be a clean reject, could be a partial dispatch). Only
+        // signed webhook events or status-endpoint `failed`/`reversed`
+        // values are authoritative. Mark for reconciliation and let an
+        // operator verify with Snippe before touching funds.
+        const reason = payoutResult.message ?? 'Payout initiation failed'
+        console.error('[v1/withdrawals] Payout initiation failed (NOT auto-reverting):', reason)
+        await db
+          .update(burnRequests)
+          .set({
+            payoutStatus: 'reconcile_required',
+            payoutError: reason,
+            updatedAt: new Date(),
+          })
+          .where(eq(burnRequests.id, burnRequestId))
       }
     } catch (payoutErr) {
+      // Network / fetch exception — state is unknown. Same rule: no
+      // auto-revert, mark for reconciliation.
       const msg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
-      await db.update(burnRequests).set({ payoutStatus: 'failed', payoutError: msg, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
-      console.error('[v1/withdrawals] Payout error:', msg)
+      console.error('[v1/withdrawals] Payout error (NOT auto-reverting):', msg)
+      await db
+        .update(burnRequests)
+        .set({
+          payoutStatus: 'reconcile_required',
+          payoutError: msg,
+          updatedAt: new Date(),
+        })
+        .where(eq(burnRequests.id, burnRequestId))
     }
+  }
+
+  // Re-read final state. Auto-reverts (polling loop) and reconcile-required
+  // (ambiguous sync failure) both need to be surfaced to the caller.
+  const [finalRow] = await db
+    .select({
+      status: burnRequests.status,
+      payoutStatus: burnRequests.payoutStatus,
+      payoutError: burnRequests.payoutError,
+    })
+    .from(burnRequests)
+    .where(eq(burnRequests.id, burnRequestId))
+    .limit(1)
+
+  if (finalRow?.payoutStatus === 'reverted') {
+    return NextResponse.json(
+      {
+        id: burnRequestId,
+        status: finalRow.status,
+        payoutStatus: finalRow.payoutStatus,
+        error: finalRow.payoutError || 'Payout failed; burn reverted.',
+      },
+      { status: 502 }
+    )
+  }
+
+  if (finalRow?.payoutStatus === 'reconcile_required') {
+    return NextResponse.json(
+      {
+        id: burnRequestId,
+        status: finalRow.status,
+        payoutStatus: finalRow.payoutStatus,
+        error: finalRow.payoutError || 'Payout could not be dispatched',
+        message:
+          'Withdrawal is under review. On-chain burn completed but PSP did not confirm the payout. Do not retry — an operator will confirm with the PSP and either complete the payout or restore your balance.',
+      },
+      { status: 502 }
+    )
   }
 
   return NextResponse.json(

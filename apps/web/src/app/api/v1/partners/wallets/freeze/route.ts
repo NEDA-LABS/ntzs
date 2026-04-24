@@ -1,26 +1,9 @@
-import crypto from 'crypto'
 import { eq, and } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { partners, partnerUsers, wallets } from '@ntzs/db'
-
-function verifySessionToken(token: string): string | null {
-  const secret = process.env.APP_SECRET || 'dev-secret-do-not-use'
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-  const [encoded, sig] = parts
-  const expectedSig = crypto.createHmac('sha256', secret).update(encoded!).digest('base64url')
-  if (sig!.length !== expectedSig.length) return null
-  if (!crypto.timingSafeEqual(Buffer.from(sig!, 'utf8'), Buffer.from(expectedSig, 'utf8'))) return null
-  try {
-    const payload = JSON.parse(Buffer.from(encoded!, 'base64url').toString('utf8'))
-    if (payload.exp && payload.exp < Date.now()) return null
-    return payload.pid || null
-  } catch {
-    return null
-  }
-}
+import { partnerUsers, wallets } from '@ntzs/db'
+import { verifySessionToken } from '@/lib/waas/auth'
 
 /**
  * PATCH /api/v1/partners/wallets/freeze

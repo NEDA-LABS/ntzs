@@ -12,15 +12,31 @@ function AuthButtons() {
   const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
-    // Check if partner_session cookie exists
-    const hasSession = document.cookie.includes('partner_session=')
-    setIsLoggedIn(hasSession)
+    let cancelled = false
+    // Cookie is HttpOnly — ask the server whether we have a valid session.
+    fetch('/api/v1/partners/session', { credentials: 'same-origin' })
+      .then((res) => {
+        if (cancelled) return
+        setIsLoggedIn(res.ok)
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoggedIn(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [pathname])
 
   const handleLogout = async () => {
     setLoggingOut(true)
-    // Clear the session cookie
-    document.cookie = 'partner_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+    try {
+      await fetch('/api/v1/partners/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+    } catch {
+      // Ignore — cookie will expire on its own.
+    }
     setIsLoggedIn(false)
     router.push('/developers/login')
   }

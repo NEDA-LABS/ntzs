@@ -19,6 +19,7 @@ export default function PartnerLoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
+        credentials: 'same-origin',
       })
 
       const data = await res.json()
@@ -28,8 +29,7 @@ export default function PartnerLoginPage() {
         return
       }
 
-      // Store session token
-      document.cookie = `partner_session=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=strict`
+      // Session is stored by the server in an HttpOnly cookie.
       router.push('/developers/dashboard')
     } catch {
       setError('Network error. Please try again.')
