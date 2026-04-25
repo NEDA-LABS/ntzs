@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap,
-  Copy, CheckCircle2, ChevronRight, Clock,
+  Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle,
 } from 'lucide-react';
 import { useLp } from './layout';
 
@@ -142,6 +142,84 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
+interface PoolHealth {
+  solver:   { ntzs: string; usdc: string }
+  lp:       { effectiveNtzs: string; effectiveUsdc: string; ntzsSharePct: string; usdcSharePct: string }
+  skew:     { ntzsSkewPct: string; usdcSkewPct: string; isNtzsLow: boolean; isUsdcLow: boolean }
+  isActive: boolean
+}
+
+function PoolHealthCard({ health }: { health: PoolHealth }) {
+  const isLow = health.skew.isNtzsLow || health.skew.isUsdcLow;
+  const ntzsPct = parseFloat(health.skew.ntzsSkewPct);
+  const usdcPct = parseFloat(health.skew.usdcSkewPct);
+  const fmt = (v: string) => parseFloat(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+  return (
+    <div className={`rounded-xl border p-5 ${isLow ? 'border-rose-500/30 bg-rose-600/5' : 'border-white/5 bg-white/2'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs uppercase tracking-[0.2em] text-zinc-600">Pool health</p>
+        <div className="flex items-center gap-2">
+          {isLow && <AlertTriangle size={13} className="text-rose-400" />}
+          <Link
+            href="/simplefx/dashboard/rebalance"
+            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            <ArrowLeftRight size={12} /> Rebalance
+          </Link>
+        </div>
+      </div>
+
+      {/* Skew bar */}
+      <div className="mb-4">
+        <div className="flex justify-between text-[10px] text-zinc-600 mb-1.5">
+          <span className={health.skew.isNtzsLow ? 'text-rose-400' : ''}>nTZS {ntzsPct.toFixed(1)}%</span>
+          <span className={health.skew.isUsdcLow ? 'text-rose-400' : ''}>USDC {usdcPct.toFixed(1)}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden flex">
+          <div
+            className={`h-full rounded-l-full ${health.skew.isNtzsLow ? 'bg-rose-500' : 'bg-blue-500'}`}
+            style={{ width: `${ntzsPct}%` }}
+          />
+          <div
+            className={`h-full rounded-r-full ${health.skew.isUsdcLow ? 'bg-rose-500' : 'bg-emerald-500'}`}
+            style={{ width: `${usdcPct}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <p className="text-zinc-600 mb-0.5">Pool nTZS</p>
+          <p className={`font-mono tabular-nums ${health.skew.isNtzsLow ? 'text-rose-400' : 'text-white'}`}>
+            {fmt(health.solver.ntzs)}
+          </p>
+        </div>
+        <div>
+          <p className="text-zinc-600 mb-0.5">Pool USDC</p>
+          <p className={`font-mono tabular-nums ${health.skew.isUsdcLow ? 'text-rose-400' : 'text-white'}`}>
+            {fmt(health.solver.usdc)}
+          </p>
+        </div>
+        <div>
+          <p className="text-zinc-600 mb-0.5">Your nTZS</p>
+          <p className="font-mono tabular-nums text-zinc-300">{fmt(health.lp.effectiveNtzs)}</p>
+        </div>
+        <div>
+          <p className="text-zinc-600 mb-0.5">Your USDC</p>
+          <p className="font-mono tabular-nums text-zinc-300">{fmt(health.lp.effectiveUsdc)}</p>
+        </div>
+      </div>
+
+      {isLow && (
+        <p className="text-[10px] text-rose-400 mt-3">
+          One side is below 10% of pool value — consider rebalancing to avoid failed fills.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function OverviewPage() {
   const { lp } = useLp();
   const [balances, setBalances] = useState<{
@@ -151,6 +229,7 @@ export default function OverviewPage() {
     positions?: Record<string, { contributed: string; earned: string; total: string }>;
     wallet?: { ntzs: string; usdc: string };
   } | null>(null);
+  const [health, setHealth] = useState<PoolHealth | null>(null);
 
   useEffect(() => {
     if (!lp) return;
@@ -158,6 +237,12 @@ export default function OverviewPage() {
       .then((r) => r.json())
       .then(setBalances)
       .catch(() => {});
+    if (lp.isActive) {
+      fetch('/simplefx/api/lp/pool-health')
+        .then((r) => r.json())
+        .then(setHealth)
+        .catch(() => {});
+    }
   }, [lp?.walletAddress, lp?.isActive]);
 
   if (!lp) {
@@ -240,11 +325,17 @@ export default function OverviewPage() {
         <WalletAddressCard address={lp.walletAddress} />
       </div>
 
+      {health && (
+        <div className="mb-6">
+          <PoolHealthCard health={health} />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { href: '/simplefx/dashboard/deposit', icon: ArrowDownToLine, label: 'Deposit nTZS' },
           { href: '/simplefx/dashboard/withdraw', icon: ArrowUpRight, label: 'Withdraw' },
-          { href: '/simplefx/dashboard/spread', icon: SlidersHorizontal, label: 'Edit Spread' },
+          { href: '/simplefx/dashboard/rebalance', icon: ArrowLeftRight, label: 'Rebalance' },
           { href: '/simplefx/dashboard/transactions', icon: Clock, label: 'Transactions' },
         ].map(({ href, icon: Icon, label }) => (
           <Link

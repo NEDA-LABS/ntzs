@@ -38,6 +38,7 @@ const NAV = [
   { href: '/simplefx/dashboard/spread', label: 'Spread', icon: SlidersHorizontal },
   { href: '/simplefx/dashboard/swap', label: 'Swap', icon: ArrowLeftRight },
   { href: '/simplefx/dashboard/positions', label: 'Positions', icon: Activity },
+  { href: '/simplefx/dashboard/rebalance', label: 'Rebalance', icon: SlidersHorizontal },
   { href: '/simplefx/dashboard/transactions', label: 'Transactions', icon: Clock },
   { href: '/simplefx/dashboard/settings', label: 'Settings', icon: Settings },
 ];
