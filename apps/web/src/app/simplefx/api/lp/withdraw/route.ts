@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
-import { lpAccounts } from '@ntzs/db';
+import { lpAccounts, lpWalletTransactions } from '@ntzs/db';
 import { eq } from 'drizzle-orm';
 import { deriveWallet } from '@/lib/fx/lp-wallet';
 import { JsonRpcProvider, Wallet, Contract, parseUnits, isAddress } from 'ethers';
@@ -74,6 +74,18 @@ export async function POST(req: NextRequest) {
   try {
     const tx = await contract.transfer(toAddress, amountWei);
     await tx.wait(1);
+
+    await db.insert(lpWalletTransactions).values({
+      lpId: session.lpId,
+      type: 'withdrawal',
+      source: 'onchain',
+      tokenAddress: tokenConfig.address,
+      tokenSymbol: token.toUpperCase(),
+      decimals: tokenConfig.decimals,
+      amount: amount,
+      txHash: tx.hash,
+    }).catch((err) => console.error('[withdraw] failed to record tx:', err));
+
     return NextResponse.json({ txHash: tx.hash, status: 'confirmed' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Transaction failed';

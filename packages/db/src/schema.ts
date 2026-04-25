@@ -912,6 +912,36 @@ export const lpFills = pgTable(
   })
 )
 
+/**
+ * Records every deposit, withdrawal, activation sweep, and deactivation return
+ * for an LP wallet so admins and LPs can see a full transaction history.
+ */
+export const lpWalletTransactions = pgTable(
+  'lp_wallet_transactions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    // 'deposit' | 'withdrawal' | 'activation_sweep' | 'deactivation_return'
+    type: text('type').notNull(),
+    // 'mpesa' | 'onchain' | 'system'
+    source: text('source').notNull().default('onchain'),
+    tokenAddress: text('token_address').notNull(),
+    tokenSymbol: text('token_symbol').notNull(),
+    decimals: integer('decimals').notNull().default(18),
+    amount: numeric('amount', { precision: 36, scale: 18 }).notNull(),
+    // null for mpesa deposits before the mint tx is broadcast
+    txHash: text('tx_hash'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lpIdx: index('lp_wallet_transactions_lp_id_idx').on(t.lpId),
+    typeIdx: index('lp_wallet_transactions_type_idx').on(t.type),
+    createdIdx: index('lp_wallet_transactions_created_at_idx').on(t.createdAt),
+  })
+)
+
 export const partnerWebhookEvents = pgTable(
   'partner_webhook_events',
   {

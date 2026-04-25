@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { eq, and, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { depositRequests, mintTransactions, dailyIssuance, wallets, auditLogs } from '@ntzs/db'
+import { depositRequests, mintTransactions, dailyIssuance, wallets, auditLogs, lpAccounts, lpWalletTransactions } from '@ntzs/db'
 import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS } from '@/lib/env'
 
 const DAILY_ISSUANCE_CAP_TZS = Number(process.env.DAILY_ISSUANCE_CAP_TZS ?? '100000000')
@@ -162,6 +162,25 @@ export async function executeMint(depositId: string): Promise<MintResult> {
         entityId: job.id,
         metadata: { amountTzs: job.amountTzs, walletAddress: wallet.address, txHash: tx.hash, chain: job.chain },
       }),
+      // If this wallet belongs to an LP, record the deposit in their transaction history
+      db.select({ id: lpAccounts.id })
+        .from(lpAccounts)
+        .where(eq(lpAccounts.walletAddress, wallet.address))
+        .limit(1)
+        .then(([lp]) => {
+          if (!lp) return
+          return db.insert(lpWalletTransactions).values({
+            lpId: lp.id,
+            type: 'deposit',
+            source: 'mpesa',
+            tokenAddress: NTZS_CONTRACT_ADDRESS!,
+            tokenSymbol: 'nTZS',
+            decimals: 18,
+            amount: job.amountTzs.toString(),
+            txHash: tx.hash,
+          })
+        })
+        .catch((err) => console.error('[executeMint] failed to record LP wallet tx:', err)),
     ])
 
     console.log(`[executeMint] Minted ${job.id}`, { txHash: tx.hash, amountTzs: job.amountTzs })

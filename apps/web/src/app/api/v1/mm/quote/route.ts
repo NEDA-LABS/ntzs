@@ -36,9 +36,11 @@ export async function GET(request: NextRequest) {
   const midRate = config?.midRateTZS ?? 3750
 
   const spreadBps = fromToken === 'USDC' ? mm.askBps : mm.bidBps
+  // USDC→nTZS: user buys nTZS at ask (LP sells high → user gets fewer nTZS)
+  // nTZS→USDC: user sells nTZS at bid (LP buys low → user gets fewer USDC)
   const effectiveRate = fromToken === 'USDC'
     ? midRate * (1 - spreadBps / 10000)
-    : (1 / midRate) * (1 + spreadBps / 10000)
+    : (1 / midRate) * (1 - spreadBps / 10000)
 
   const rawOut = fromToken === 'USDC' ? amount * midRate : amount / midRate
   const minAmountOut = rawOut * (1 - (spreadBps + slippageBps) / 10000)

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
-import { lpAccounts, lpFxPairs, lpPoolPositions } from '@ntzs/db';
+import { lpAccounts, lpFxPairs, lpPoolPositions, lpWalletTransactions } from '@ntzs/db';
 import { eq, sql } from 'drizzle-orm';
 import { deriveWallet } from '@/lib/fx/lp-wallet';
 import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits, parseEther } from 'ethers';
@@ -77,6 +77,17 @@ export async function PATCH(req: NextRequest) {
       const humanAmount = formatUnits(balance, decimals);
       swept.push({ tokenAddress, symbol, amount: humanAmount });
 
+      await db.insert(lpWalletTransactions).values({
+        lpId: lp.id,
+        type: 'activation_sweep',
+        source: 'system',
+        tokenAddress,
+        tokenSymbol: symbol,
+        decimals,
+        amount: humanAmount,
+        txHash: tx.hash,
+      }).catch((err) => console.error('[activate] failed to record sweep tx:', err));
+
       await db
         .insert(lpPoolPositions)
         .values({
@@ -137,11 +148,23 @@ export async function PATCH(req: NextRequest) {
       const tx = await contract.transfer(lp.walletAddress, toSend);
       await tx.wait(1);
 
+      const returnedAmount = formatUnits(toSend, pos.decimals);
       returned.push({
         tokenAddress: pos.tokenAddress,
         symbol: pos.tokenSymbol,
-        amount: formatUnits(toSend, pos.decimals),
+        amount: returnedAmount,
       });
+
+      await db.insert(lpWalletTransactions).values({
+        lpId: lp.id,
+        type: 'deactivation_return',
+        source: 'system',
+        tokenAddress: pos.tokenAddress,
+        tokenSymbol: pos.tokenSymbol,
+        decimals: pos.decimals,
+        amount: returnedAmount,
+        txHash: tx.hash,
+      }).catch((err) => console.error('[deactivate] failed to record return tx:', err));
     }
 
     // Clear pool positions

@@ -6,7 +6,7 @@ import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db'
+import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions } from '@ntzs/db'
 import { SubmitButton } from '../../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
 
@@ -60,8 +60,8 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
   const [lp] = await db.select().from(lpAccounts).where(eq(lpAccounts.id, id)).limit(1)
   if (!lp) notFound()
 
-  // Fetch pool positions and recent fills
-  const [positions, recentFills] = await Promise.all([
+  // Fetch pool positions, recent fills, and wallet transactions
+  const [positions, recentFills, walletTxs] = await Promise.all([
     db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, id)),
     db
       .select()
@@ -69,6 +69,12 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
       .where(eq(lpFills.lpId, id))
       .orderBy(desc(lpFills.createdAt))
       .limit(20),
+    db
+      .select()
+      .from(lpWalletTransactions)
+      .where(eq(lpWalletTransactions.lpId, id))
+      .orderBy(desc(lpWalletTransactions.createdAt))
+      .limit(50),
   ])
 
   const totalSpreadEarned = recentFills.reduce((sum, f) => sum + parseFloat(f.spreadEarned?.toString() ?? '0'), 0)
@@ -283,6 +289,70 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                   )
                 })}
+              </div>
+            )}
+          </div>
+
+          {/* Wallet Transactions */}
+          <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 mb-4">Wallet Transactions</h2>
+            {walletTxs.length === 0 ? (
+              <p className="text-sm text-zinc-600">No wallet transactions recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/5 text-xs text-zinc-600">
+                      <th className="pb-2 text-left font-medium">Time</th>
+                      <th className="pb-2 text-left font-medium">Type</th>
+                      <th className="pb-2 text-left font-medium">Source</th>
+                      <th className="pb-2 text-right font-medium">Amount</th>
+                      <th className="pb-2 text-left font-medium">Tx</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {walletTxs.map((tx) => {
+                      const isCredit = tx.type === 'deposit' || tx.type === 'deactivation_return'
+                      const amount = parseFloat(tx.amount?.toString() ?? '0')
+                      const typeLabel: Record<string, string> = {
+                        deposit: 'Deposit',
+                        withdrawal: 'Withdrawal',
+                        activation_sweep: 'Pool deposit',
+                        deactivation_return: 'Pool withdrawal',
+                      }
+                      return (
+                        <tr key={tx.id} className="text-zinc-400 hover:bg-white/[0.02] transition-colors">
+                          <td className="py-2.5 text-xs text-zinc-500 whitespace-nowrap">
+                            {formatDateEAT(tx.createdAt)}
+                          </td>
+                          <td className="py-2.5 text-xs text-zinc-300">{typeLabel[tx.type] ?? tx.type}</td>
+                          <td className="py-2.5">
+                            <span className="inline-flex items-center rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-zinc-500">
+                              {tx.source}
+                            </span>
+                          </td>
+                          <td className={`py-2.5 text-right font-mono text-xs tabular-nums ${isCredit ? 'text-emerald-400' : 'text-zinc-300'}`}>
+                            {isCredit ? '+' : '-'}{amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} {tx.tokenSymbol}
+                          </td>
+                          <td className="py-2.5">
+                            {tx.txHash ? (
+                              <a
+                                href={`https://basescan.org/tx/${tx.txHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-xs text-zinc-600 hover:text-blue-400 transition-colors"
+                              >
+                                {tx.txHash.slice(0, 8)}…
+                              </a>
+                            ) : (
+                              <span className="text-zinc-700 text-xs">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

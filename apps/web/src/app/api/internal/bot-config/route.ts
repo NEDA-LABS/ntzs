@@ -13,20 +13,27 @@ export async function GET(req: NextRequest) {
 
   const { db } = getDb();
 
-  const pairs = await db
-    .select()
-    .from(lpFxPairs)
-    .where(eq(lpFxPairs.isActive, true));
+  const [pairs, activeLps] = await Promise.all([
+    db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)),
+    db
+      .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+      .from(lpAccounts)
+      .where(eq(lpAccounts.isActive, true)),
+  ]);
 
-  const [lp] = await db
-    .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
-    .from(lpAccounts)
-    .where(eq(lpAccounts.walletIndex, 0))
-    .limit(1);
+  // Mean spread across all active LPs; fall back to safe defaults if none active yet
+  const activeLpCount = activeLps.length;
+  const bidBps = activeLpCount > 0
+    ? Math.round(activeLps.reduce((sum, lp) => sum + lp.bidBps, 0) / activeLpCount)
+    : 120;
+  const askBps = activeLpCount > 0
+    ? Math.round(activeLps.reduce((sum, lp) => sum + lp.askBps, 0) / activeLpCount)
+    : 150;
 
   return NextResponse.json({
-    bidBps: lp?.bidBps ?? 120,
-    askBps: lp?.askBps ?? 150,
+    bidBps,
+    askBps,
+    activeLpCount,
     pairs: pairs.map((p) => ({
       token1Address: p.token1Address,
       token1Symbol: p.token1Symbol,

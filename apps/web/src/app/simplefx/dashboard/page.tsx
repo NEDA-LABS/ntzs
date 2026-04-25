@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap, Activity,
-  Copy, CheckCircle2, ChevronRight,
+  ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap,
+  Copy, CheckCircle2, ChevronRight, Clock,
 } from 'lucide-react';
 import { useLp } from './layout';
 
@@ -215,17 +215,25 @@ export default function OverviewPage() {
             : 'In solver pool'}
         />
         <StatCard label="Avg Spread" value={`${spreadPct}%`} sub={`Bid ${lp.bidBps}bps / Ask ${lp.askBps}bps`} accent />
-        <StatCard
-          label="Total Earnings"
-          value={(() => {
-            if (!balances?.positions) return '0 nTZS';
-            const total = Object.values(balances.positions)
-              .reduce((sum, p) => sum + parseFloat(p.earned || '0'), 0);
-            return total > 0 ? `${total.toLocaleString('en-US', { maximumFractionDigits: 4 })} nTZS` : '0 nTZS';
-          })()}
-          sub="All time"
-          accent
-        />
+        {/* Per-token earnings from pool positions */}
+        {balances?.positions && Object.keys(balances.positions).length > 0 ? (
+          Object.entries(balances.positions).map(([sym, pos]) => {
+            const earned = parseFloat(pos.earned || '0');
+            return (
+              <StatCard
+                key={sym}
+                label={`${sym.toUpperCase()} Earned`}
+                value={earned > 0
+                  ? earned.toLocaleString('en-US', { maximumFractionDigits: 6 })
+                  : '0'}
+                sub="Spread earned (all time)"
+                accent
+              />
+            );
+          })
+        ) : (
+          <StatCard label="Earnings" value="0" sub="Activate to start earning" accent />
+        )}
       </div>
 
       <div className="mb-6">
@@ -237,7 +245,7 @@ export default function OverviewPage() {
           { href: '/simplefx/dashboard/deposit', icon: ArrowDownToLine, label: 'Deposit nTZS' },
           { href: '/simplefx/dashboard/withdraw', icon: ArrowUpRight, label: 'Withdraw' },
           { href: '/simplefx/dashboard/spread', icon: SlidersHorizontal, label: 'Edit Spread' },
-          { href: '/simplefx/dashboard/positions', icon: Activity, label: 'View Positions' },
+          { href: '/simplefx/dashboard/transactions', icon: Clock, label: 'Transactions' },
         ].map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
