@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
-import { lpAccounts, lpPoolPositions } from '@ntzs/db';
-import { eq } from 'drizzle-orm';
+import { lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db';
+import { eq, sql } from 'drizzle-orm';
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers';
 
 const ERC20_ABI = [
@@ -36,20 +36,33 @@ export async function GET() {
     if (!lp) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     if (lp.isActive) {
-      // LP is in the pool — return DB-tracked positions (contributed + earned)
-      const positions = await db
-        .select()
-        .from(lpPoolPositions)
-        .where(eq(lpPoolPositions.lpId, session.lpId));
+      // LP is in the pool — contributed from pool positions, earned from lpFills (authoritative)
+      const [positions, fillTotals] = await Promise.all([
+        db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, session.lpId)),
+        db
+          .select({
+            toToken: lpFills.toToken,
+            totalEarned: sql<string>`SUM(${lpFills.spreadEarned})`,
+          })
+          .from(lpFills)
+          .where(eq(lpFills.lpId, session.lpId))
+          .groupBy(lpFills.toToken),
+      ]);
+
+      // Index fills by token address (lowercased for safe lookup)
+      const earnedByAddr: Record<string, string> = {};
+      for (const f of fillTotals) {
+        earnedByAddr[f.toToken.toLowerCase()] = f.totalEarned ?? '0';
+      }
 
       const byToken: Record<string, { contributed: string; earned: string; total: string }> = {};
       for (const pos of positions) {
         const sym = pos.tokenSymbol.toLowerCase();
         const contributed = parseFloat(pos.contributed);
-        const earned = parseFloat(pos.earned);
+        const earned = parseFloat(earnedByAddr[pos.tokenAddress.toLowerCase()] ?? pos.earned);
         byToken[sym] = {
           contributed: pos.contributed,
-          earned: pos.earned,
+          earned: earned.toString(),
           total: (contributed + earned).toString(),
         };
       }
