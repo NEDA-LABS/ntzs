@@ -30,10 +30,11 @@ export async function GET(req: NextRequest) {
 
   const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
 
-  const NTZS = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'.toLowerCase()
-  const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'.toLowerCase()
+  if (!SWAP_TOKENS[from] || !SWAP_TOKENS[to]) {
+    return NextResponse.json({ error: `Unsupported tokens. Valid: ${Object.keys(SWAP_TOKENS).join(', ')}` }, { status: 400 })
+  }
 
-  const tokenAddressFor = (sym: SwapTokenSymbol) => (sym === 'NTZS' ? NTZS : USDC)
+  const tokenAddressFor = (sym: SwapTokenSymbol) => SWAP_TOKENS[sym].address.toLowerCase()
 
   const pair = pairs.find(
     (p: typeof pairs[number]) =>
@@ -72,7 +73,7 @@ export async function GET(req: NextRequest) {
     const lastFillTimes = new Map<string, number>(
       lastFillRows.map((r) => [r.lpId, r.lastAt ? new Date(r.lastAt).getTime() : 0]),
     )
-    const direction = from === 'USDC' ? 'USDC_TO_NTZS' : 'NTZS_TO_USDC'
+    const direction = to === 'NTZS' ? 'STABLE_TO_NTZS' : 'NTZS_TO_STABLE'
     const bestLP = selectLPForSwap(lpConfigs, direction, lastFillTimes)
     bidBps = bestLP.bidBps
     askBps = bestLP.askBps

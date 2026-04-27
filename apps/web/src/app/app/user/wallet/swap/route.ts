@@ -95,13 +95,11 @@ export async function POST(request: NextRequest) {
     return new Response('fromToken, toToken (must differ), and amount are required', { status: 400 })
   }
   if (!SWAP_TOKENS[fromToken] || !SWAP_TOKENS[toToken]) {
-    return new Response('Unsupported tokens. Valid: NTZS, USDC', { status: 400 })
+    return new Response(`Unsupported tokens. Valid: ${Object.keys(SWAP_TOKENS).join(', ')}`, { status: 400 })
   }
 
   const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
-  const NTZS_ADDR = SWAP_TOKENS.NTZS.address.toLowerCase()
-  const USDC_ADDR = SWAP_TOKENS.USDC.address.toLowerCase()
-  const tokenAddr = (sym: SwapTokenSymbol) => (sym === 'NTZS' ? NTZS_ADDR : USDC_ADDR)
+  const tokenAddr = (sym: SwapTokenSymbol) => SWAP_TOKENS[sym].address.toLowerCase()
 
   const pair = pairs.find(
     (p) =>
@@ -120,7 +118,7 @@ export async function POST(request: NextRequest) {
 
   if (activeLPs.length === 0) return new Response('No active liquidity provider', { status: 503 })
 
-  const direction = fromToken === 'USDC' ? 'USDC_TO_NTZS' : 'NTZS_TO_USDC'
+  const direction = toToken === 'NTZS' ? 'STABLE_TO_NTZS' : 'NTZS_TO_STABLE'
   const lpConfigs: LPConfig[] = activeLPs.map((lp) => ({
     id: lp.id,
     bidBps: lp.bidBps ?? 120,

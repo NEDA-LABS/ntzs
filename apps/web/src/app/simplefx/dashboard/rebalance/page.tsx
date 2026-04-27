@@ -11,9 +11,9 @@ import {
 import { useLp } from '../layout'
 
 interface PoolHealth {
-  solver:   { ntzs: string; usdc: string }
-  lp:       { effectiveNtzs: string; effectiveUsdc: string; ntzsSharePct: string; usdcSharePct: string }
-  skew:     { ntzsSkewPct: string; usdcSkewPct: string; isNtzsLow: boolean; isUsdcLow: boolean; midRate: number }
+  solver:   { ntzs: string; usdc: string; usdt?: string }
+  lp:       { effectiveNtzs: string; effectiveUsdc: string; effectiveUsdt?: string; ntzsSharePct: string; usdcSharePct: string }
+  skew:     { ntzsSkewPct: string; usdcSkewPct: string; usdtSkewPct?: string; isNtzsLow: boolean; isUsdcLow: boolean; isUsdtLow?: boolean; midRate: number }
   isActive: boolean
 }
 
@@ -21,23 +21,31 @@ interface WalletBalance { ntzs: string; usdc: string }
 
 type Step = 'overview' | 'deactivating' | 'adjust' | 'activating' | 'done'
 
-function SkewBar({ ntzsPct, usdcPct, isNtzsLow, isUsdcLow }: {
-  ntzsPct: number; usdcPct: number; isNtzsLow: boolean; isUsdcLow: boolean
+function SkewBar({ ntzsPct, usdcPct, usdtPct = 0, isNtzsLow, isUsdcLow, isUsdtLow = false }: {
+  ntzsPct: number; usdcPct: number; usdtPct?: number; isNtzsLow: boolean; isUsdcLow: boolean; isUsdtLow?: boolean
 }) {
+  const hasUsdt = usdtPct > 0
   return (
     <div className="space-y-2">
       <div className="flex justify-between text-[10px] uppercase tracking-widest text-zinc-500">
         <span className={isNtzsLow ? 'text-rose-400' : 'text-zinc-400'}>nTZS {ntzsPct.toFixed(1)}%</span>
+        {hasUsdt && <span className={isUsdtLow ? 'text-rose-400' : 'text-zinc-400'}>USDT {usdtPct.toFixed(1)}%</span>}
         <span className={isUsdcLow ? 'text-rose-400' : 'text-zinc-400'}>USDC {usdcPct.toFixed(1)}%</span>
       </div>
       <div className="h-2 rounded-full bg-zinc-800 overflow-hidden flex">
         <div
-          className={`h-full rounded-l-full transition-all duration-500 ${isNtzsLow ? 'bg-rose-500' : 'bg-blue-500'}`}
-          style={{ width: `${ntzsPct}%` }}
+          className={`h-full transition-all duration-500 ${isNtzsLow ? 'bg-rose-500' : 'bg-blue-500'}`}
+          style={{ width: `${ntzsPct}%`, borderRadius: hasUsdt ? '' : '9999px 0 0 9999px' }}
         />
+        {hasUsdt && (
+          <div
+            className={`h-full transition-all duration-500 ${isUsdtLow ? 'bg-rose-500' : 'bg-violet-500'}`}
+            style={{ width: `${usdtPct}%` }}
+          />
+        )}
         <div
-          className={`h-full rounded-r-full transition-all duration-500 ${isUsdcLow ? 'bg-rose-500' : 'bg-emerald-500'}`}
-          style={{ width: `${usdcPct}%` }}
+          className={`h-full transition-all duration-500 ${isUsdcLow ? 'bg-rose-500' : 'bg-emerald-500'}`}
+          style={{ width: `${usdcPct}%`, borderRadius: hasUsdt ? '' : '0 9999px 9999px 0' }}
         />
       </div>
       <p className="text-[10px] text-zinc-600">Ideal range: 30–70% each side</p>
@@ -130,7 +138,7 @@ export default function RebalancePage() {
 
   if (!lp) return null
 
-  const isLow = health?.skew.isNtzsLow || health?.skew.isUsdcLow
+  const isLow = health?.skew.isNtzsLow || health?.skew.isUsdcLow || health?.skew.isUsdtLow
   const fmt = (v: string | number | undefined) => {
     if (v === undefined || v === null) return '—'
     const n = parseFloat(v.toString())
@@ -164,8 +172,10 @@ export default function RebalancePage() {
                   <SkewBar
                     ntzsPct={parseFloat(health.skew.ntzsSkewPct)}
                     usdcPct={parseFloat(health.skew.usdcSkewPct)}
+                    usdtPct={parseFloat(health.skew.usdtSkewPct ?? '0')}
                     isNtzsLow={health.skew.isNtzsLow}
                     isUsdcLow={health.skew.isUsdcLow}
+                    isUsdtLow={health.skew.isUsdtLow}
                   />
 
                   <div className="mt-5 space-y-0">
@@ -181,6 +191,14 @@ export default function RebalancePage() {
                       sub="Total across all LPs"
                       warn={health.skew.isUsdcLow}
                     />
+                    {health.solver.usdt && parseFloat(health.solver.usdt) > 0 && (
+                      <StatRow
+                        label="Pool USDT"
+                        value={fmt(health.solver.usdt)}
+                        sub="Total across all LPs"
+                        warn={health.skew.isUsdtLow}
+                      />
+                    )}
                     <StatRow
                       label="Your nTZS"
                       value={fmt(health.lp.effectiveNtzs)}
@@ -191,6 +209,13 @@ export default function RebalancePage() {
                       value={fmt(health.lp.effectiveUsdc)}
                       sub={`~${health.lp.usdcSharePct}% of pool`}
                     />
+                    {health.lp.effectiveUsdt && parseFloat(health.lp.effectiveUsdt) > 0 && (
+                      <StatRow
+                        label="Your USDT"
+                        value={fmt(health.lp.effectiveUsdt)}
+                        sub={`~${health.lp.usdcSharePct}% of pool`}
+                      />
+                    )}
                   </div>
                 </div>
               )}

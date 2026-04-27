@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
-import { lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db';
+import { lpAccounts, lpPoolPositions, lpFills, lpFxPairs } from '@ntzs/db';
 import { eq, sql } from 'drizzle-orm';
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers';
 
@@ -9,9 +9,6 @@ const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
 ];
-
-const NTZS = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688';
-const USDC  = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
 async function getOnChainBalance(provider: JsonRpcProvider, token: string, wallet: string): Promise<string> {
   const contract = new Contract(token, ERC20_ABI, provider);
@@ -22,18 +19,36 @@ async function getOnChainBalance(provider: JsonRpcProvider, token: string, walle
   return formatUnits(raw, Number(decimals));
 }
 
+/** Build a deduplicated token set from active lpFxPairs rows. */
+function uniqueTokens(pairs: Array<{ token1Address: string; token1Symbol: string; token1Decimals: number; token2Address: string; token2Symbol: string; token2Decimals: number }>) {
+  const map = new Map<string, { address: string; symbol: string; decimals: number }>()
+  for (const p of pairs) {
+    map.set(p.token1Address.toLowerCase(), { address: p.token1Address, symbol: p.token1Symbol, decimals: p.token1Decimals })
+    map.set(p.token2Address.toLowerCase(), { address: p.token2Address, symbol: p.token2Symbol, decimals: p.token2Decimals })
+  }
+  return [...map.values()]
+}
+
 export async function GET() {
   try {
     const session = await getSessionFromCookies();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const [lp] = await db
-      .select({ walletAddress: lpAccounts.walletAddress, isActive: lpAccounts.isActive })
-      .from(lpAccounts)
-      .where(eq(lpAccounts.id, session.lpId))
-      .limit(1);
+    const [lp, pairs] = await Promise.all([
+      db
+        .select({ walletAddress: lpAccounts.walletAddress, isActive: lpAccounts.isActive })
+        .from(lpAccounts)
+        .where(eq(lpAccounts.id, session.lpId))
+        .limit(1)
+        .then((r) => r[0]),
+      db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)),
+    ]);
 
     if (!lp) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const tokens = uniqueTokens(pairs);
+    const rpcUrl = process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
+    const provider = new JsonRpcProvider(rpcUrl);
 
     if (lp.isActive) {
       // LP is in the pool — contributed from pool positions, earned from lpFills (authoritative)
@@ -49,7 +64,6 @@ export async function GET() {
           .groupBy(lpFills.toToken),
       ]);
 
-      // Index fills by token address (lowercased for safe lookup)
       const earnedByAddr: Record<string, string> = {};
       for (const f of fillTotals) {
         earnedByAddr[f.toToken.toLowerCase()] = f.totalEarned ?? '0';
@@ -67,35 +81,37 @@ export async function GET() {
         };
       }
 
-      // Also fetch LP wallet on-chain balance (tokens deposited but not yet swept)
-      const rpcUrl = process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
-      const provider = new JsonRpcProvider(rpcUrl);
-      const [walletNtzs, walletUsdc] = await Promise.all([
-        getOnChainBalance(provider, NTZS, lp.walletAddress),
-        getOnChainBalance(provider, USDC, lp.walletAddress),
-      ]);
+      // LP wallet on-chain balances across all active tokens (unsent funds)
+      const walletBalances = await Promise.all(
+        tokens.map(async (t) => [t.symbol.toLowerCase(), await getOnChainBalance(provider, t.address, lp.walletAddress)] as const)
+      );
+      const wallet = Object.fromEntries(walletBalances);
 
       return NextResponse.json({
         source: 'pool',
         ntzs: byToken['ntzs']?.total ?? '0',
         usdc: byToken['usdc']?.total ?? '0',
+        usdt: byToken['usdt']?.total ?? '0',
         positions: byToken,
-        wallet: { ntzs: walletNtzs, usdc: walletUsdc },
+        wallet,
       });
     } else {
-      // LP not yet active — show their on-chain wallet balance (pending deposit)
-      const rpcUrl = process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
-      const provider = new JsonRpcProvider(rpcUrl);
+      // LP not yet active — show on-chain wallet balances for all active tokens
+      const walletBalances = await Promise.all(
+        tokens.map(async (t) => [t.symbol.toLowerCase(), await getOnChainBalance(provider, t.address, lp.walletAddress)] as const)
+      );
+      const walletBySymbol = Object.fromEntries(walletBalances);
 
-      const [ntzs, usdc] = await Promise.all([
-        getOnChainBalance(provider, NTZS, lp.walletAddress),
-        getOnChainBalance(provider, USDC, lp.walletAddress),
-      ]);
-
-      return NextResponse.json({ source: 'wallet', ntzs, usdc });
+      return NextResponse.json({
+        source: 'wallet',
+        ntzs: walletBySymbol['ntzs'] ?? '0',
+        usdc: walletBySymbol['usdc'] ?? '0',
+        usdt: walletBySymbol['usdt'] ?? '0',
+        ...walletBySymbol,
+      });
     }
   } catch (err) {
     console.error('[balances]', err);
-    return NextResponse.json({ ntzs: '0', usdc: '0' });
+    return NextResponse.json({ ntzs: '0', usdc: '0', usdt: '0' });
   }
 }

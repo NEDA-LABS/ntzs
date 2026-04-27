@@ -143,16 +143,18 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 }
 
 interface PoolHealth {
-  solver:   { ntzs: string; usdc: string }
-  lp:       { effectiveNtzs: string; effectiveUsdc: string; ntzsSharePct: string; usdcSharePct: string }
-  skew:     { ntzsSkewPct: string; usdcSkewPct: string; isNtzsLow: boolean; isUsdcLow: boolean }
+  solver:   { ntzs: string; usdc: string; usdt?: string }
+  lp:       { effectiveNtzs: string; effectiveUsdc: string; effectiveUsdt?: string; ntzsSharePct: string; usdcSharePct: string }
+  skew:     { ntzsSkewPct: string; usdcSkewPct: string; usdtSkewPct?: string; isNtzsLow: boolean; isUsdcLow: boolean; isUsdtLow?: boolean }
   isActive: boolean
 }
 
 function PoolHealthCard({ health }: { health: PoolHealth }) {
-  const isLow = health.skew.isNtzsLow || health.skew.isUsdcLow;
+  const isLow = health.skew.isNtzsLow || health.skew.isUsdcLow || health.skew.isUsdtLow;
   const ntzsPct = parseFloat(health.skew.ntzsSkewPct);
   const usdcPct = parseFloat(health.skew.usdcSkewPct);
+  const usdtPct = parseFloat(health.skew.usdtSkewPct ?? '0');
+  const hasUsdt = usdtPct > 0;
   const fmt = (v: string) => parseFloat(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
   return (
@@ -174,15 +176,22 @@ function PoolHealthCard({ health }: { health: PoolHealth }) {
       <div className="mb-4">
         <div className="flex justify-between text-[10px] text-zinc-600 mb-1.5">
           <span className={health.skew.isNtzsLow ? 'text-rose-400' : ''}>nTZS {ntzsPct.toFixed(1)}%</span>
+          {hasUsdt && <span className={health.skew.isUsdtLow ? 'text-rose-400' : ''}>USDT {usdtPct.toFixed(1)}%</span>}
           <span className={health.skew.isUsdcLow ? 'text-rose-400' : ''}>USDC {usdcPct.toFixed(1)}%</span>
         </div>
         <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden flex">
           <div
-            className={`h-full rounded-l-full ${health.skew.isNtzsLow ? 'bg-rose-500' : 'bg-blue-500'}`}
+            className={`h-full ${hasUsdt ? '' : 'rounded-l-full'} ${health.skew.isNtzsLow ? 'bg-rose-500' : 'bg-blue-500'}`}
             style={{ width: `${ntzsPct}%` }}
           />
+          {hasUsdt && (
+            <div
+              className={`h-full ${health.skew.isUsdtLow ? 'bg-rose-500' : 'bg-violet-500'}`}
+              style={{ width: `${usdtPct}%` }}
+            />
+          )}
           <div
-            className={`h-full rounded-r-full ${health.skew.isUsdcLow ? 'bg-rose-500' : 'bg-emerald-500'}`}
+            className={`h-full ${hasUsdt ? '' : 'rounded-r-full'} ${health.skew.isUsdcLow ? 'bg-rose-500' : 'bg-emerald-500'}`}
             style={{ width: `${usdcPct}%` }}
           />
         </div>
@@ -201,6 +210,14 @@ function PoolHealthCard({ health }: { health: PoolHealth }) {
             {fmt(health.solver.usdc)}
           </p>
         </div>
+        {hasUsdt && (
+          <div>
+            <p className="text-zinc-600 mb-0.5">Pool USDT</p>
+            <p className={`font-mono tabular-nums ${health.skew.isUsdtLow ? 'text-rose-400' : 'text-white'}`}>
+              {fmt(health.solver.usdt ?? '0')}
+            </p>
+          </div>
+        )}
         <div>
           <p className="text-zinc-600 mb-0.5">Your nTZS</p>
           <p className="font-mono tabular-nums text-zinc-300">{fmt(health.lp.effectiveNtzs)}</p>
@@ -209,6 +226,12 @@ function PoolHealthCard({ health }: { health: PoolHealth }) {
           <p className="text-zinc-600 mb-0.5">Your USDC</p>
           <p className="font-mono tabular-nums text-zinc-300">{fmt(health.lp.effectiveUsdc)}</p>
         </div>
+        {hasUsdt && health.lp.effectiveUsdt && (
+          <div>
+            <p className="text-zinc-600 mb-0.5">Your USDT</p>
+            <p className="font-mono tabular-nums text-zinc-300">{fmt(health.lp.effectiveUsdt)}</p>
+          </div>
+        )}
       </div>
 
       {isLow && (

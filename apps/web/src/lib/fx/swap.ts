@@ -22,6 +22,11 @@ export const SWAP_TOKENS = {
     decimals: 6,
     symbol: 'USDC',
   },
+  USDT: {
+    address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2' as `0x${string}`,
+    decimals: 6,
+    symbol: 'USDT',
+  },
 } as const
 
 export type SwapTokenSymbol = keyof typeof SWAP_TOKENS
@@ -52,13 +57,13 @@ export interface LPConfig {
 
 /**
  * Pick the best LP for a given swap direction.
- * USDC → nTZS: lowest askBps gives user the most nTZS.
- * nTZS → USDC: lowest bidBps gives user the most USDC.
+ * Stablecoin → nTZS: lowest askBps gives user the most nTZS.
+ * nTZS → Stablecoin: lowest bidBps gives user the most stablecoin.
  * Returns the full ranked list (best first) so callers can use the top pick.
  */
-export function rankLPsByRate(lps: LPConfig[], direction: 'USDC_TO_NTZS' | 'NTZS_TO_USDC'): LPConfig[] {
+export function rankLPsByRate(lps: LPConfig[], direction: 'STABLE_TO_NTZS' | 'NTZS_TO_STABLE'): LPConfig[] {
   return [...lps].sort((a, b) =>
-    direction === 'USDC_TO_NTZS'
+    direction === 'STABLE_TO_NTZS'
       ? a.askBps - b.askBps
       : a.bidBps - b.bidBps
   )
@@ -77,15 +82,15 @@ export function rankLPsByRate(lps: LPConfig[], direction: 'USDC_TO_NTZS' | 'NTZS
  */
 export function selectLPForSwap(
   lps: LPConfig[],
-  direction: 'USDC_TO_NTZS' | 'NTZS_TO_USDC',
+  direction: 'STABLE_TO_NTZS' | 'NTZS_TO_STABLE',
   lastFillTimes: Map<string, number>,
   toleranceBps = 5,
 ): LPConfig {
   if (lps.length === 0) throw new Error('No LPs available')
   const ranked = rankLPsByRate(lps, direction)
-  const bestRate = direction === 'USDC_TO_NTZS' ? ranked[0].askBps : ranked[0].bidBps
+  const bestRate = direction === 'STABLE_TO_NTZS' ? ranked[0].askBps : ranked[0].bidBps
   const eligible = ranked.filter((lp) => {
-    const rate = direction === 'USDC_TO_NTZS' ? lp.askBps : lp.bidBps
+    const rate = direction === 'STABLE_TO_NTZS' ? lp.askBps : lp.bidBps
     return rate - bestRate <= toleranceBps
   })
   if (eligible.length === 1) return eligible[0]
@@ -120,11 +125,13 @@ export function calcMinOutput(params: {
   const { fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps = 100 } = params
   const slippage = 1 - slippageBps / 10000
 
-  if (fromToken === 'USDC' && toToken === 'NTZS') {
+  if (toToken === 'NTZS') {
+    // Any stablecoin → nTZS: user pays ask spread
     const askRate = midRate * (1 - askBps / 10000)
     return amount * askRate * slippage
   }
-  if (fromToken === 'NTZS' && toToken === 'USDC') {
+  if (fromToken === 'NTZS') {
+    // nTZS → any stablecoin: user pays bid spread
     const bidRate = midRate * (1 + bidBps / 10000)
     return (amount / bidRate) * slippage
   }
@@ -255,7 +262,7 @@ export async function* executeSwap(params: {
   }
 
   // Step 2: solver pool sends toToken to user
-  yield { status: 'FILLING', message: `Sending ${from.symbol === 'nTZS' ? 'USDC' : 'nTZS'} to your wallet...` }
+  yield { status: 'FILLING', message: `Sending ${to.symbol} to your wallet...` }
   const solverToContract = toContract.connect(solverWallet) as Contract
   const outTx = await (solverToContract as unknown as { transfer: (to: string, amount: bigint) => Promise<{ hash: string; wait: () => Promise<unknown> }> })
     .transfer(recipientAddress, amountOutUnits)

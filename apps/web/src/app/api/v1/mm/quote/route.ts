@@ -3,6 +3,7 @@ import { authenticateMM } from '@/lib/fx/auth'
 import { getDb } from '@/lib/db'
 import { lpFxConfig } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
+import { SWAP_TOKENS } from '@/lib/fx/swap'
 
 export async function GET(request: NextRequest) {
   const authResult = await authenticateMM(request)
@@ -22,8 +23,8 @@ export async function GET(request: NextRequest) {
   if (fromToken === toToken) {
     return NextResponse.json({ error: 'fromToken and toToken must differ' }, { status: 400 })
   }
-  if (!['NTZS', 'USDC'].includes(fromToken) || !['NTZS', 'USDC'].includes(toToken)) {
-    return NextResponse.json({ error: 'Supported tokens: NTZS, USDC' }, { status: 400 })
+  if (!SWAP_TOKENS[fromToken as keyof typeof SWAP_TOKENS] || !SWAP_TOKENS[toToken as keyof typeof SWAP_TOKENS]) {
+    return NextResponse.json({ error: `Supported tokens: ${Object.keys(SWAP_TOKENS).join(', ')}` }, { status: 400 })
   }
 
   const amount = parseFloat(amountStr)
@@ -35,14 +36,15 @@ export async function GET(request: NextRequest) {
   const [config] = await db.select().from(lpFxConfig).where(eq(lpFxConfig.id, 1)).limit(1)
   const midRate = config?.midRateTZS ?? 3750
 
-  const spreadBps = fromToken === 'USDC' ? mm.askBps : mm.bidBps
-  // USDC→nTZS: user buys nTZS at ask (LP sells high → user gets fewer nTZS)
-  // nTZS→USDC: user sells nTZS at bid (LP buys low → user gets fewer USDC)
-  const effectiveRate = fromToken === 'USDC'
+  const toNtzs = toToken === 'NTZS'
+  const spreadBps = toNtzs ? mm.askBps : mm.bidBps
+  // Stablecoin→nTZS: user buys nTZS at ask (LP sells high → user gets fewer nTZS)
+  // nTZS→Stablecoin: user sells nTZS at bid (LP buys low → user gets fewer stablecoin)
+  const effectiveRate = toNtzs
     ? midRate * (1 - spreadBps / 10000)
     : (1 / midRate) * (1 - spreadBps / 10000)
 
-  const rawOut = fromToken === 'USDC' ? amount * midRate : amount / midRate
+  const rawOut = toNtzs ? amount * midRate : amount / midRate
   const minAmountOut = rawOut * (1 - (spreadBps + slippageBps) / 10000)
 
   return NextResponse.json({

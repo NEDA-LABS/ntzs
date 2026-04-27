@@ -26,6 +26,16 @@ const TOKENS = [
     network: 'Base Mainnet',
     min: 'No minimum',
   },
+  {
+    id: 'usdt',
+    label: 'USDT',
+    icon: '/usdt-logo.svg',
+    description: 'Tether USD — accepted as collateral on the bid side',
+    color: 'blue',
+    contract: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
+    network: 'Base Mainnet',
+    min: 'No minimum',
+  },
 ];
 
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -53,8 +63,8 @@ type MintState = 'idle' | 'loading' | 'sent' | 'error';
 
 export default function DepositPage() {
   const { lp, refresh } = useLp();
-  const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc'>('ntzs');
-  const [balances, setBalances] = useState<{ ntzs: string; usdc: string } | null>(null);
+  const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc' | 'usdt'>('ntzs');
+  const [balances, setBalances] = useState<{ ntzs: string; usdc: string; usdt?: string } | null>(null);
 
   const [mintAmount, setMintAmount] = useState('');
   const [mintPhone, setMintPhone] = useState('');
@@ -89,10 +99,11 @@ export default function DepositPage() {
         <p className="text-xs uppercase tracking-[0.25em] text-zinc-600 mb-1">Deposit</p>
         <h1 className="text-3xl font-thin text-white mb-6">Fund your inventory</h1>
 
-        <div className="grid grid-cols-2 gap-3 mb-8">
+        <div className="grid grid-cols-3 gap-3 mb-8">
           {[
             { label: 'nTZS Inventory', value: fmt(balances?.ntzs) },
             { label: 'USDC Balance', value: fmt(balances?.usdc) },
+            { label: 'USDT Balance', value: fmt(balances?.usdt) },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-lg border border-white/5 bg-zinc-950 px-4 py-3">
               <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">{label}</p>
@@ -105,7 +116,7 @@ export default function DepositPage() {
           {TOKENS.map((t) => (
             <button
               key={t.id}
-              onClick={() => setActiveToken(t.id as 'ntzs' | 'usdc')}
+              onClick={() => setActiveToken(t.id as 'ntzs' | 'usdc' | 'usdt')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeToken === t.id
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'

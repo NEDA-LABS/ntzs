@@ -9,6 +9,7 @@ import { JsonRpcProvider, Wallet, Contract, parseUnits, isAddress } from 'ethers
 const TOKENS = {
   ntzs: { address: '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688', decimals: 18 },
   usdc: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
+  usdt: { address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', decimals: 6 },
 } as const
 
 const ERC20_ABI = [
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
 
   const { mm } = authResult
 
-  let body: { token: 'ntzs' | 'usdc'; toAddress: string; amount: string }
+  let body: { token: 'ntzs' | 'usdc' | 'usdt'; toAddress: string; amount: string }
   try {
     body = await request.json()
   } catch {
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'token, toAddress and amount are required' }, { status: 400 })
   }
   if (!TOKENS[token]) {
-    return NextResponse.json({ error: 'token must be "ntzs" or "usdc"' }, { status: 400 })
+    return NextResponse.json({ error: 'token must be "ntzs", "usdc" or "usdt"' }, { status: 400 })
   }
   if (!isAddress(toAddress)) {
     return NextResponse.json({ error: 'Invalid destination address' }, { status: 400 })

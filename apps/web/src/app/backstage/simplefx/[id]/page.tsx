@@ -11,8 +11,9 @@ import { SubmitButton } from '../../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
 
 const TOKENS = {
-  nTZS:  { address: '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688', decimals: 18, symbol: 'nTZS'  },
-  USDC:  { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6,  symbol: 'USDC'  },
+  nTZS: { address: '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688', decimals: 18, symbol: 'nTZS' },
+  USDC: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6,  symbol: 'USDC' },
+  USDT: { address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', decimals: 6,  symbol: 'USDT' },
 }
 const ERC20_ABI = ['function balanceOf(address) view returns (uint256)']
 

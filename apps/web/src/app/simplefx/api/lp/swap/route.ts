@@ -52,9 +52,7 @@ export async function POST(req: NextRequest) {
   if (!lp) return new Response('LP account not found', { status: 404 })
 
   const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
-  const NTZS_ADDR = SWAP_TOKENS.NTZS.address.toLowerCase()
-  const USDC_ADDR = SWAP_TOKENS.USDC.address.toLowerCase()
-  const tokenAddr = (sym: SwapTokenSymbol) => (sym === 'NTZS' ? NTZS_ADDR : USDC_ADDR)
+  const tokenAddr = (sym: SwapTokenSymbol) => SWAP_TOKENS[sym].address.toLowerCase()
 
   const pair = pairs.find(
     (p: typeof pairs[number]) =>

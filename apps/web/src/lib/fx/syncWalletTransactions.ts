@@ -4,12 +4,14 @@ import { and, eq } from 'drizzle-orm'
 
 const NTZS   = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
 const USDC   = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const USDT   = '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2'
 const SOLVER = '0xf4766439DC70f5B943Cc1918747b408b612ba646'.toLowerCase()
 const ZERO   = '0x0000000000000000000000000000000000000000'
 
 const TOKEN_META: Record<string, { sym: string; addr: string; dec: number }> = {
   [NTZS.toLowerCase()]: { sym: 'nTZS', addr: NTZS, dec: 18 },
-  [USDC.toLowerCase()]: { sym: 'USDC',  addr: USDC,  dec: 6  },
+  [USDC.toLowerCase()]: { sym: 'USDC', addr: USDC, dec: 6  },
+  [USDT.toLowerCase()]: { sym: 'USDT', addr: USDT, dec: 6  },
 }
 
 interface AlchemyTransfer {
@@ -33,7 +35,7 @@ async function fetchTransfers(
       id: 1, jsonrpc: '2.0', method: 'alchemy_getAssetTransfers',
       params: [{
         [direction]: address,
-        contractAddresses: [NTZS, USDC],
+        contractAddresses: [NTZS, USDC, USDT],
         category: ['erc20'],
         withMetadata: true,
         order: 'asc',
