@@ -93,11 +93,17 @@ export async function GET() {
       await Promise.all(
         [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
           let cfg: ReturnType<typeof getChainConfig>
-          try { cfg = getChainConfig(chain) } catch { return }
+          try { cfg = getChainConfig(chain) } catch (e) {
+            console.error(`[balances] chain config missing for ${chain}:`, e)
+            return
+          }
           const provider = new JsonRpcProvider(cfg.rpcUrl)
           const results = await Promise.all(
             [...tokenMap.values()].map(async (t) => {
-              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch(() => '0')
+              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch((e) => {
+                console.error(`[balances] balanceOf failed for ${t.symbol} on ${chain}:`, e)
+                return '0'
+              })
               return { sym: t.symbol.toLowerCase(), bal }
             })
           )
@@ -121,11 +127,17 @@ export async function GET() {
       await Promise.all(
         [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
           let cfg: ReturnType<typeof getChainConfig>
-          try { cfg = getChainConfig(chain) } catch { return }
+          try { cfg = getChainConfig(chain) } catch (e) {
+            console.error(`[balances] chain config missing for ${chain}:`, e)
+            return
+          }
           const provider = new JsonRpcProvider(cfg.rpcUrl)
           const results = await Promise.all(
             [...tokenMap.values()].map(async (t) => {
-              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch(() => '0')
+              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch((e) => {
+                console.error(`[balances] balanceOf failed for ${t.symbol} on ${chain}:`, e)
+                return '0'
+              })
               return { sym: t.symbol.toLowerCase(), bal }
             })
           )
