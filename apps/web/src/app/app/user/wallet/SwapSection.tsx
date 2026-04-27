@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-type TokenSymbol = 'NTZS' | 'USDC'
+type StableSymbol = 'USDC' | 'USDT'
+type TokenSymbol = 'NTZS' | StableSymbol
 
 interface RateInfo {
   expectedOutput: number
@@ -38,6 +39,18 @@ const STATUS_COLORS: Record<string, string> = {
 
 const TERMINAL = new Set(['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'])
 
+const TOKEN_ICONS: Record<TokenSymbol, string> = {
+  NTZS: '/ntzs-icon.svg',
+  USDC: '/usdc-logo.svg',
+  USDT: '/usdt-logo.svg',
+}
+
+const TOKEN_LABELS: Record<TokenSymbol, string> = {
+  NTZS: 'nTZS',
+  USDC: 'USDC',
+  USDT: 'USDT',
+}
+
 function Spinner({ className = '' }: { className?: string }) {
   return (
     <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
@@ -47,14 +60,60 @@ function Spinner({ className = '' }: { className?: string }) {
   )
 }
 
+function TokenButton({
+  token,
+  onChange,
+  disabled,
+}: {
+  token: TokenSymbol
+  onChange?: (t: TokenSymbol) => void
+  disabled?: boolean
+}) {
+  const stables: StableSymbol[] = ['USDC', 'USDT']
+  const isStable = token !== 'NTZS'
+
+  if (!isStable || !onChange) {
+    return (
+      <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground inline-flex items-center gap-2">
+        <img src={TOKEN_ICONS[token]} alt={TOKEN_LABELS[token]} className="h-4 w-4" />
+        {TOKEN_LABELS[token]}
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative flex-none">
+      <select
+        value={token}
+        onChange={(e) => onChange(e.target.value as TokenSymbol)}
+        disabled={disabled}
+        className="appearance-none rounded-xl border border-border/40 bg-background/60 pl-8 pr-7 py-2 text-sm font-semibold text-foreground cursor-pointer focus:outline-none disabled:opacity-50"
+      >
+        {stables.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+      </select>
+      <img
+        src={TOKEN_ICONS[token]}
+        alt={TOKEN_LABELS[token]}
+        className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4"
+      />
+      <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
+  )
+}
+
 interface SwapSectionProps {
   renderLauncher?: boolean
 }
 
 export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const [open, setOpen] = useState(false)
-  const [fromToken, setFromToken] = useState<TokenSymbol>('NTZS')
-  const [toToken, setToToken] = useState<TokenSymbol>('USDC')
+  // ntzsSide: whether NTZS is the "pay" token or the "receive" token
+  const [ntzsSide, setNtzsSide] = useState<'pay' | 'receive'>('pay')
+  const [stableToken, setStableToken] = useState<StableSymbol>('USDC')
   const [amount, setAmount] = useState('')
   const [slippageBps, setSlippageBps] = useState(100)
 
@@ -68,12 +127,13 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const abortRef = useRef<AbortController | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll status log
+  const fromToken: TokenSymbol = ntzsSide === 'pay' ? 'NTZS' : stableToken
+  const toToken: TokenSymbol   = ntzsSide === 'pay' ? stableToken : 'NTZS'
+
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
 
-  // Open via TopActions event
   useEffect(() => {
     const onOpen = () => { reset(); setOpen(true) }
     window.addEventListener('wallet:openSwap', onOpen)
@@ -81,8 +141,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   }, [])
 
   function flip() {
-    setFromToken(toToken)
-    setToToken(fromToken)
+    setNtzsSide(s => s === 'pay' ? 'receive' : 'pay')
     setRate(null)
     setAmount('')
   }
@@ -101,11 +160,17 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
     setTimeout(reset, 300)
   }
 
-  async function fetchRate(amt: string) {
+  function handleStableChange(token: TokenSymbol) {
+    setStableToken(token as StableSymbol)
+    setRate(null)
+    setAmount('')
+  }
+
+  async function fetchRate(amt: string, ft: TokenSymbol = fromToken, tt: TokenSymbol = toToken) {
     if (!amt || parseFloat(amt) <= 0) { setRate(null); return }
     setRateLoading(true)
     try {
-      const res = await fetch(`/api/v1/swap/rate?from=${fromToken}&to=${toToken}&amount=${amt}`)
+      const res = await fetch(`/api/v1/swap/rate?from=${ft}&to=${tt}&amount=${amt}`)
       if (res.ok) setRate(await res.json())
       else setRate(null)
     } catch {
@@ -184,10 +249,6 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const isFilled = lastStatus === 'FILLED'
   const isFailed = lastStatus === 'FAILED' || lastStatus === 'PARTIAL_FILL_EXHAUSTED'
 
-  const fromLabel = fromToken === 'NTZS' ? 'nTZS' : 'USDC'
-  const toLabel = toToken === 'NTZS' ? 'nTZS' : 'USDC'
-  const ICONS: Record<TokenSymbol, string> = { NTZS: '/ntzs-icon.svg', USDC: '/usdc-logo.svg' }
-
   return (
     <>
       {renderLauncher && (
@@ -203,7 +264,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
           </div>
           <div>
             <p className="text-lg font-semibold">Swap assets</p>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Exchange nTZS and USDC with live quote previews.</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Exchange nTZS for USDC or USDT with live quote previews.</p>
           </div>
         </button>
       )}
@@ -252,7 +313,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                     <div>
                       <p className="text-lg font-bold text-foreground">Swap complete!</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {amount} {fromLabel} → {toLabel}
+                        {amount} {TOKEN_LABELS[fromToken]} → {TOKEN_LABELS[toToken]}
                       </p>
                     </div>
                     {logs[logs.length - 1]?.txHash && (
@@ -278,13 +339,15 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                   </div>
                 ) : (
                   <>
+                    {/* You pay */}
                     <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You pay</p>
                       <div className="flex items-center gap-3">
-                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground inline-flex items-center gap-2">
-                          <img src={ICONS[fromToken]} alt={`${fromLabel} icon`} className="h-4 w-4" />
-                          {fromLabel}
-                        </div>
+                        <TokenButton
+                          token={fromToken}
+                          onChange={ntzsSide === 'receive' ? handleStableChange : undefined}
+                          disabled={swapping}
+                        />
                         <input
                           type="number"
                           min="0"
@@ -298,6 +361,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                       </div>
                     </div>
 
+                    {/* Flip */}
                     <div className="flex justify-center -my-1">
                       <button
                         type="button"
@@ -311,13 +375,15 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                       </button>
                     </div>
 
+                    {/* You receive */}
                     <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You receive</p>
                       <div className="flex items-center gap-3">
-                        <div className="flex-none rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground inline-flex items-center gap-2">
-                          <img src={ICONS[toToken]} alt={`${toLabel} icon`} className="h-4 w-4" />
-                          {toLabel}
-                        </div>
+                        <TokenButton
+                          token={toToken}
+                          onChange={ntzsSide === 'pay' ? handleStableChange : undefined}
+                          disabled={swapping}
+                        />
                         <div className="min-w-0 flex-1 text-right">
                           {rateLoading ? (
                             <Spinner className="ml-auto h-5 w-5 text-muted-foreground" />
@@ -337,6 +403,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                       </div>
                     </div>
 
+                    {/* Slippage */}
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Slippage tolerance</p>
                       <div className="flex gap-1.5">
