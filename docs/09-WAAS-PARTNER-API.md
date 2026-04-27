@@ -4,6 +4,55 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.4.0 (27 Apr 2026)
+
+### USDT is now live on Base and BNB Smart Chain
+
+**Do you need to update your integration?**
+
+| Scenario | Action required |
+|----------|----------------|
+| You only swap `NTZS ↔ USDC` on Base | **None.** No breaking changes. |
+| You want to offer `NTZS ↔ USDT` on Base | Add `"USDT"` as `fromToken` or `toToken` in swap calls. |
+| You want cross-chain `USDT (BNB) ↔ nTZS (Base)` | Add `fromChain: "bnb"` or `toChain: "bnb"` to the swap body. |
+| You withdraw USDT to BNB Smart Chain | Add `"chain": "bnb"` to the withdraw request body. |
+
+### What changed in the API
+
+**`POST /api/v1/swap`** — `fromToken` / `toToken` now accept `"USDT"`. New optional fields:
+```json
+{
+  "fromToken": "USDT",
+  "toToken": "NTZS",
+  "fromChain": "bnb",
+  "toChain": "base",
+  "amount": 50
+}
+```
+Cross-chain swaps use a dual-solver model: the BNB solver handles USDT on BNB; the Base solver handles nTZS on Base. No bridging protocol is involved.
+
+**`GET /api/v1/swap/rate`** — `from` and `to` params now accept `"USDT"`.
+
+**`POST /api/v1/mm/withdraw`** — New optional `chain` field. Must be `"bnb"` when withdrawing BNB USDT:
+```json
+{ "token": "usdt", "chain": "bnb", "toAddress": "0x...", "amount": "100" }
+```
+
+**`GET /api/v1/mm/balances`** — Response now includes `"usdt"` field alongside `"ntzs"` and `"usdc"`.
+
+### New token addresses
+
+| Token | Chain | Address | Decimals |
+|-------|-------|---------|----------|
+| USDT | Base mainnet | `0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2` | 6 |
+| USDT | BNB Smart Chain | `0x55d398326f99059fF775485246999027B3197955` | 18 |
+
+> **Note on BNB USDT decimals:** BEP-20 USDT uses 18 decimals (unlike Base USDT which uses 6). The API accepts and returns human-readable amounts — this difference is handled server-side. You do not need to adjust your amount formatting.
+
+---
+
+---
+
 ## Authentication
 
 All partner endpoints require:

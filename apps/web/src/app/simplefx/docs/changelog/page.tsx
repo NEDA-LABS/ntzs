@@ -54,6 +54,21 @@ export default function ChangelogPage() {
 
       <div className="fx-fade-up fx-delay-1 space-y-0">
         <Entry
+          version="v1.4.0"
+          date="27 Apr 2026"
+          tag="new"
+          changes={[
+            'USDT on Base mainnet is now live as a trading pair (0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2, 6 decimals). Supports nTZS ↔ USDT swaps with the same bid/ask spread model as USDC.',
+            'USDT on BNB Smart Chain is now live (0x55d398326f99059fF775485246999027B3197955, 18 decimals). Cross-chain swaps: USDT (BNB) → nTZS (Base) and nTZS (Base) → USDT (BNB) via dual-solver model.',
+            'Withdraw API: new optional `chain` parameter ("base" or "bnb"). Default is "base". Required when withdrawing USDT on BNB Smart Chain.',
+            'Balances API: response now includes a `usdt` field alongside `ntzs` and `usdc`.',
+            'LP Dashboard: USDT inventory stat card, USDT deposit tab (Base and BNB), USDT withdraw tab.',
+            'Inline wallet swap: USDC/USDT selector added to the swap widget.',
+            'Pool health card: three-way skew bar now includes USDT segment.',
+            'No breaking changes — existing USDC integrations continue to work unchanged.',
+          ]}
+        />
+        <Entry
           version="v1.3.0"
           date="8 Apr 2026"
           tag="improvement"

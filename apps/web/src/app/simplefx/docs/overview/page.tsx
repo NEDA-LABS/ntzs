@@ -1,8 +1,10 @@
 import { InlineCode } from '../_components/code-block'
+import { AnnouncementBanner } from '../_components/AnnouncementBanner'
 
 export default function OverviewPage() {
   return (
     <div>
+      <AnnouncementBanner />
       {/* Page header */}
       <div className="fx-fade-up mb-10 pb-8 border-b border-white/5">
         <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-600 mb-3">Documentation</p>
