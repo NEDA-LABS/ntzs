@@ -35,7 +35,7 @@ export default function OverviewPage() {
             {
               step: '03',
               title: 'Deposit Inventory',
-              body: 'Send nTZS or USDC directly to your LP wallet address. The minimum initial nTZS deposit to activate a position is 10,000 nTZS. Deposits are visible in your LP Dashboard under Inventory.',
+              body: 'Send nTZS, USDC, or USDT directly to your LP wallet address on Base mainnet. For USDT on BNB Smart Chain, use the BNB deposit tab. The minimum initial nTZS deposit to activate a position is 10,000 nTZS. Deposits are visible in your LP Dashboard under Inventory.',
             },
             {
               step: '04',
@@ -89,9 +89,15 @@ export default function OverviewPage() {
               </tr>
               <tr>
                 <td className="py-3 pr-6 font-mono text-zinc-200">USDT</td>
-                <td className="py-3 pr-6 text-zinc-400">Tether USD</td>
-                <td className="py-3 pr-6 font-mono text-zinc-500 text-[11px]">—</td>
-                <td className="py-3"><span className="text-[10px] font-medium text-zinc-500 bg-white/5 border border-white/8 px-2 py-0.5 rounded">Roadmap</span></td>
+                <td className="py-3 pr-6 text-zinc-400">Tether USD (Base)</td>
+                <td className="py-3 pr-6 font-mono text-zinc-500 text-[11px]">0xfde4C96c...99bb2</td>
+                <td className="py-3"><span className="text-[10px] font-medium text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Live</span></td>
+              </tr>
+              <tr>
+                <td className="py-3 pr-6 font-mono text-zinc-200">USDT</td>
+                <td className="py-3 pr-6 text-zinc-400">Tether USD (BNB Smart Chain)</td>
+                <td className="py-3 pr-6 font-mono text-zinc-500 text-[11px]">0x55d39832...9955</td>
+                <td className="py-3"><span className="text-[10px] font-medium text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Live</span></td>
               </tr>
             </tbody>
           </table>

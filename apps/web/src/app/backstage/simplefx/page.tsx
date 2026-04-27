@@ -107,7 +107,7 @@ export default async function SimpleFXBackstagePage() {
               <p className="text-xs uppercase tracking-widest text-zinc-500 mb-1">Live Mid Rate</p>
               <p className="text-4xl font-light text-white tabular-nums">
                 {currentRate.toLocaleString()}
-                <span className="ml-2 text-base text-zinc-500">nTZS / USDC</span>
+                <span className="ml-2 text-base text-zinc-500">nTZS / USD</span>
               </p>
               {config && (
                 <p className="mt-1 text-xs text-zinc-600">Last updated {formatDateEAT(config.updatedAt)}</p>
@@ -115,7 +115,7 @@ export default async function SimpleFXBackstagePage() {
             </div>
             <form action={setMidRateAction} className="flex items-end gap-3">
               <div>
-                <label className="block text-xs text-zinc-500 mb-1.5">New mid rate (nTZS per USDC)</label>
+                <label className="block text-xs text-zinc-500 mb-1.5">New mid rate (nTZS per USD)</label>
                 <input
                   type="number"
                   name="midRateTZS"

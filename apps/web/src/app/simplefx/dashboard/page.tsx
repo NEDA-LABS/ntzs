@@ -248,9 +248,10 @@ export default function OverviewPage() {
   const [balances, setBalances] = useState<{
     ntzs: string;
     usdc: string;
+    usdt?: string;
     source?: string;
     positions?: Record<string, { contributed: string; earned: string; total: string }>;
-    wallet?: { ntzs: string; usdc: string };
+    wallet?: { ntzs: string; usdc: string; usdt?: string };
   } | null>(null);
   const [health, setHealth] = useState<PoolHealth | null>(null);
 
@@ -320,6 +321,13 @@ export default function OverviewPage() {
           value={fmt(balances?.usdc)}
           sub={balances?.wallet && parseFloat(balances.wallet.usdc) > 0
             ? `+${fmt(balances.wallet.usdc)} in wallet (unsent)`
+            : 'In solver pool'}
+        />
+        <StatCard
+          label="USDT Balance"
+          value={fmt(balances?.usdt)}
+          sub={balances?.wallet && parseFloat(balances.wallet?.usdt ?? '0') > 0
+            ? `+${fmt(balances.wallet.usdt)} in wallet (unsent)`
             : 'In solver pool'}
         />
         <StatCard label="Avg Spread" value={`${spreadPct}%`} sub={`Bid ${lp.bidBps}bps / Ask ${lp.askBps}bps`} accent />

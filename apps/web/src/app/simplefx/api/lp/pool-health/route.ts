@@ -4,7 +4,7 @@ import { db } from '@/lib/fx/db'
 import { lpAccounts, lpPoolPositions, lpFxPairs, lpFxConfig } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
-import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig'
+import { getChainConfig, getChainTokens, type ChainId } from '@/lib/fx/chainConfig'
 
 const ERC20_ABI = ['function balanceOf(address owner) view returns (uint256)']
 
@@ -33,14 +33,15 @@ export async function GET() {
 
     const midRate = Number(fxConfig[0]?.midRateTZS ?? 3750)
 
-    // Group tokens by chain
+    // Build token map per chain from CHAIN_TOKENS (source of truth for which tokens exist on each chain)
+    const activeChains = new Set<ChainId>(activePairs.map((p) => (p.chain ?? 'base') as ChainId))
     const tokensByChain = new Map<ChainId, Map<string, { address: string; symbol: string; decimals: number }>>()
-    for (const p of activePairs) {
-      const chain = (p.chain ?? 'base') as ChainId
-      if (!tokensByChain.has(chain)) tokensByChain.set(chain, new Map())
-      const map = tokensByChain.get(chain)!
-      map.set(p.token1Address.toLowerCase(), { address: p.token1Address, symbol: p.token1Symbol, decimals: p.token1Decimals })
-      map.set(p.token2Address.toLowerCase(), { address: p.token2Address, symbol: p.token2Symbol, decimals: p.token2Decimals })
+    for (const chain of activeChains) {
+      const map = new Map<string, { address: string; symbol: string; decimals: number }>()
+      for (const token of Object.values(getChainTokens(chain))) {
+        map.set(token.address.toLowerCase(), { address: token.address, symbol: token.symbol, decimals: token.decimals })
+      }
+      tokensByChain.set(chain, map)
     }
 
     // Fetch solver balance for every token on its chain — aggregate by uppercase symbol

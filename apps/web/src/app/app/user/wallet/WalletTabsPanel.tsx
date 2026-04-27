@@ -21,8 +21,10 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
   const [isPending, startTransition] = useTransition()
   const BASE_SCAN = "https://basescan.org/tx/"
   // Swap (inline quote)
-  const [fromToken, setFromToken] = useState<"NTZS" | "USDC">("NTZS")
-  const toToken = fromToken === "NTZS" ? "USDC" : "NTZS"
+  const [ntzsSide, setNtzsSide] = useState<"pay" | "receive">("pay")
+  const [stableToken, setStableToken] = useState<"USDC" | "USDT">("USDC")
+  const fromToken = ntzsSide === "pay" ? "NTZS" : stableToken
+  const toToken = ntzsSide === "pay" ? stableToken : "NTZS"
   const [swapAmount, setSwapAmount] = useState("")
   const [rateLoading, setRateLoading] = useState(false)
   const [quote, setQuote] = useState<null | { expectedOutput: number; minOutput: number; midRate: number; expiresAt: string; lowLiquidity?: boolean }>(null)
@@ -135,7 +137,7 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
     })
   }
 
-  async function fetchQuote(v: string, from: "NTZS" | "USDC", to: "NTZS" | "USDC") {
+  async function fetchQuote(v: string, from: "NTZS" | "USDC" | "USDT", to: "NTZS" | "USDC" | "USDT") {
     if (!v || parseFloat(v) <= 0) { setQuote(null); return }
     setRateLoading(true)
     try {
@@ -313,27 +315,24 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
 
         {tab === "swap" && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="inline-flex items-center rounded-full border border-border/40 bg-background/35 p-1 backdrop-blur-xl">
-                {(["NTZS", "USDC"] as const).map(k => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => { setFromToken(k); setQuote(null); setSwapAmount("") }}
-                    className={cn(
-                      "relative rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors",
-                      fromToken === k ? "text-foreground" : "text-muted-foreground hover:text-foreground/80",
-                    )}
-                  >
-                    {fromToken === k && <span className="absolute inset-0 -z-10 rounded-full bg-foreground/10" />}
-                    {k === "NTZS" ? "nTZS" : "USDC"}
-                  </button>
-                ))}
-              </div>
-              <span className="text-sm text-muted-foreground">→</span>
-              <span className="rounded-full border border-border/40 bg-background/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-foreground/90 backdrop-blur-xl">
-                {toToken === "NTZS" ? "nTZS" : "USDC"}
-              </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { setNtzsSide(s => s === "pay" ? "receive" : "pay"); setQuote(null); setSwapAmount("") }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/35 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/90 backdrop-blur-xl hover:bg-background/45"
+              >
+                {fromToken === "NTZS" ? "nTZS" : stableToken}
+                <span className="text-muted-foreground">⇄</span>
+                {toToken === "NTZS" ? "nTZS" : stableToken}
+              </button>
+              <select
+                value={stableToken}
+                onChange={(e) => { setStableToken(e.target.value as "USDC" | "USDT"); setQuote(null); setSwapAmount("") }}
+                className="rounded-full border border-border/40 bg-background/35 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/90 backdrop-blur-xl focus:outline-none"
+              >
+                <option value="USDC">USDC</option>
+                <option value="USDT">USDT</option>
+              </select>
             </div>
 
             <div className="space-y-1.5">
@@ -354,8 +353,8 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
                 <span>Fetching rate…</span>
               ) : quote ? (
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between"><span>Expected output</span><span className="font-medium text-foreground/90">{quote.expectedOutput.toLocaleString(undefined, { maximumFractionDigits: 4 })} {toToken === 'NTZS' ? 'nTZS' : 'USDC'}</span></div>
-                  <div className="flex items-center justify-between"><span>Minimum received</span><span className="font-medium text-foreground/90">{quote.minOutput.toLocaleString(undefined, { maximumFractionDigits: 4 })} {toToken === 'NTZS' ? 'nTZS' : 'USDC'}</span></div>
+                  <div className="flex items-center justify-between"><span>Expected output</span><span className="font-medium text-foreground/90">{quote.expectedOutput.toLocaleString(undefined, { maximumFractionDigits: 4 })} {toToken === 'NTZS' ? 'nTZS' : toToken}</span></div>
+                  <div className="flex items-center justify-between"><span>Minimum received</span><span className="font-medium text-foreground/90">{quote.minOutput.toLocaleString(undefined, { maximumFractionDigits: 4 })} {toToken === 'NTZS' ? 'nTZS' : toToken}</span></div>
                   <div className="flex items-center justify-between"><span>Rate</span><span className="font-medium text-foreground/90">{quote.midRate.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span></div>
                 </div>
               ) : (

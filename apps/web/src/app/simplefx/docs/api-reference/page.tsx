@@ -111,6 +111,7 @@ export default function ApiReferencePage() {
             code={`{
   "ntzs": "9452.000000000000000000",
   "usdc": "3.912500",
+  "usdt": "500.000000",
   "wallet": {
     "address": "0x723A3D...155aBe",
     "chain": "base"
@@ -145,8 +146,8 @@ export default function ApiReferencePage() {
             <p className="text-xs text-zinc-600 mb-3">Query parameters:</p>
             <table className="w-full text-xs border-collapse mb-3">
               <tbody>
-                <ParamRow name="fromToken" type="string" required desc="NTZS or USDC" />
-                <ParamRow name="toToken" type="string" required desc="NTZS or USDC" />
+                <ParamRow name="fromToken" type="string" required desc="NTZS, USDC, or USDT" />
+                <ParamRow name="toToken" type="string" required desc="NTZS, USDC, or USDT" />
                 <ParamRow name="amount" type="number" required desc="Input amount (human-readable, not wei)" />
                 <ParamRow name="slippageBps" type="number" desc="Slippage tolerance in bps. Default: 100" />
               </tbody>
@@ -267,9 +268,10 @@ export default function ApiReferencePage() {
           <EndpointBadge method="POST" path="/api/v1/mm/withdraw" />
           <table className="w-full text-xs border-collapse mb-2">
             <tbody>
-              <ParamRow name="token" type="string" required desc={'"ntzs" or "usdc"'} />
+              <ParamRow name="token" type="string" required desc={'"ntzs", "usdc", or "usdt"'} />
               <ParamRow name="toAddress" type="string" required desc="Destination EVM address (0x...)" />
               <ParamRow name="amount" type="string" required desc='Human-readable amount e.g. "500.00"' />
+              <ParamRow name="chain" type="string" desc='"base" or "bnb" — chain to withdraw from (default: "base"). Required for USDT on BNB.' />
             </tbody>
           </table>
           <CodeBlock

@@ -74,7 +74,7 @@ export function WalletInfoClient({ address }: WalletInfoClientProps) {
       {/* Notice */}
       <div className="rounded-xl border border-border/40 bg-background/35 p-4 backdrop-blur-xl">
         <p className="text-xs text-muted-foreground leading-relaxed">
-          This is your nTZS wallet address on the Base network. Share it to receive nTZS tokens. Only send nTZS-compatible tokens to this address.
+          This is your nTZS wallet address on the Base network. Share it to receive nTZS, USDC, or USDT tokens on Base mainnet.
         </p>
       </div>
     </div>
