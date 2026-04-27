@@ -5,11 +5,11 @@ import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { partnerUsers, partners, lpFxPairs, lpAccounts } from '@ntzs/db'
 import { eq, and } from 'drizzle-orm'
 import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
+import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const SOLVER_ADDRESS = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
 
 /**
  * POST /api/v1/swap
@@ -30,6 +30,8 @@ export async function POST(request: NextRequest) {
     userId: string
     fromToken: SwapTokenSymbol
     toToken: SwapTokenSymbol
+    fromChain?: ChainId
+    toChain?: ChainId
     amount: number
     slippageBps?: number
   }
@@ -40,7 +42,7 @@ export async function POST(request: NextRequest) {
     return new Response('Invalid JSON body', { status: 400 })
   }
 
-  const { userId, fromToken, toToken, amount, slippageBps = 100 } = body
+  const { userId, fromToken, toToken, fromChain = 'base', toChain = 'base', amount, slippageBps = 100 } = body
 
   if (!userId || !fromToken || !toToken || !amount) {
     return new Response('userId, fromToken, toToken, and amount are required', { status: 400 })
@@ -50,12 +52,6 @@ export async function POST(request: NextRequest) {
   }
   if (!SWAP_TOKENS[fromToken] || !SWAP_TOKENS[toToken]) {
     return new Response(`Unsupported tokens. Valid: ${Object.keys(SWAP_TOKENS).join(', ')}`, { status: 400 })
-  }
-
-  const rpcUrl = process.env.BASE_RPC_URL
-  const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
-  if (!rpcUrl || !solverPrivateKey) {
-    return new Response('BASE_RPC_URL or SOLVER_PRIVATE_KEY not configured', { status: 503 })
   }
 
   const { db } = getDb()
@@ -82,15 +78,41 @@ export async function POST(request: NextRequest) {
   const privateKey = hdWallet.privateKey as `0x${string}`
   const recipientAddress = hdWallet.address as `0x${string}`
 
-  // Get current rate from active pair
-  const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
-  const tokenAddr = (sym: SwapTokenSymbol) => SWAP_TOKENS[sym].address.toLowerCase()
+  // Resolve chain configs for this swap
+  let fromCfg: ReturnType<typeof getChainConfig>, toCfg: ReturnType<typeof getChainConfig>
+  try {
+    fromCfg = getChainConfig(fromChain)
+    toCfg   = getChainConfig(toChain)
+  } catch (e) {
+    return new Response((e as Error).message, { status: 503 })
+  }
 
-  const pair = pairs.find(
-    (p: typeof pairs[number]) =>
-      (p.token1Address.toLowerCase() === tokenAddr(fromToken) || p.token2Address.toLowerCase() === tokenAddr(fromToken)) &&
-      (p.token1Address.toLowerCase() === tokenAddr(toToken) || p.token2Address.toLowerCase() === tokenAddr(toToken))
-  )
+  // Resolve token addresses from the correct chain
+  let fromTokenAddress: string, toTokenAddress: string
+  try {
+    fromTokenAddress = getChainToken(fromChain, fromToken).address.toLowerCase()
+    toTokenAddress   = getChainToken(toChain, toToken).address.toLowerCase()
+  } catch {
+    // Fall back to Base SWAP_TOKENS for backward compat
+    fromTokenAddress = SWAP_TOKENS[fromToken]?.address.toLowerCase() ?? ''
+    toTokenAddress   = SWAP_TOKENS[toToken]?.address.toLowerCase() ?? ''
+  }
+
+  // For cross-chain pairs the "stablecoin chain" is whichever side isn't NTZS
+  const stablecoinChain = fromToken === 'NTZS' ? toChain : fromChain
+  const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(20)
+
+  const pair = pairs.find((p: typeof pairs[number]) => {
+    const p1 = p.token1Address.toLowerCase()
+    const p2 = p.token2Address.toLowerCase()
+    const matchesTokens = (
+      (p1 === fromTokenAddress || p2 === fromTokenAddress) &&
+      (p1 === toTokenAddress   || p2 === toTokenAddress)
+    )
+    // For cross-chain, also match by stablecoin chain
+    const matchesChain = fromChain === toChain ? p.chain === fromChain : p.chain === stablecoinChain
+    return matchesTokens && matchesChain
+  })
 
   if (!pair) {
     return new Response('No active trading pair found for these tokens', { status: 404 })
@@ -134,17 +156,24 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        const isCrossChain = fromChain !== toChain
         for await (const update of executeSwap({
           userPrivateKey: privateKey,
-          solverPrivateKey,
-          solverAddress: SOLVER_ADDRESS,
+          solverPrivateKey: toCfg.solverPrivateKey,
+          solverAddress: toCfg.solverAddress,
           selectedLpId: bestLP.id,
           fromToken,
           toToken,
+          fromChain,
+          toChain,
+          rpcUrl: toCfg.rpcUrl,
+          ...(isCrossChain && {
+            fromRpcUrl: fromCfg.rpcUrl,
+            fromSolverAddress: fromCfg.solverAddress,
+          }),
           amount,
           minOutput,
           recipientAddress,
-          rpcUrl,
         })) {
           send(update)
           if (update.status === 'FILLED' || update.status === 'FAILED' || update.status === 'PARTIAL_FILL_EXHAUSTED') {

@@ -27,13 +27,23 @@ const TOKENS = [
     min: 'No minimum',
   },
   {
-    id: 'usdt',
-    label: 'USDT',
+    id: 'usdt-base',
+    label: 'USDT (Base)',
     icon: '/usdt-logo.svg',
-    description: 'Tether USD — accepted as collateral on the bid side',
+    description: 'Tether USD on Base — collateral for Base liquidity',
     color: 'blue',
     contract: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
     network: 'Base Mainnet',
+    min: 'No minimum',
+  },
+  {
+    id: 'usdt-bnb',
+    label: 'USDT (BNB)',
+    icon: '/usdt-logo.svg',
+    description: 'Tether USD on BNB Smart Chain — collateral for BNB liquidity',
+    color: 'yellow',
+    contract: '0x55d398326f99059fF775485246999027B3197955',
+    network: 'BNB Smart Chain',
     min: 'No minimum',
   },
 ];
@@ -63,7 +73,7 @@ type MintState = 'idle' | 'loading' | 'sent' | 'error';
 
 export default function DepositPage() {
   const { lp, refresh } = useLp();
-  const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc' | 'usdt'>('ntzs');
+  const [activeToken, setActiveToken] = useState<'ntzs' | 'usdc' | 'usdt-base' | 'usdt-bnb'>('ntzs');
   const [balances, setBalances] = useState<{ ntzs: string; usdc: string; usdt?: string } | null>(null);
 
   const [mintAmount, setMintAmount] = useState('');
@@ -116,7 +126,7 @@ export default function DepositPage() {
           {TOKENS.map((t) => (
             <button
               key={t.id}
-              onClick={() => setActiveToken(t.id as 'ntzs' | 'usdc' | 'usdt')}
+              onClick={() => setActiveToken(t.id as 'ntzs' | 'usdc' | 'usdt-base' | 'usdt-bnb')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeToken === t.id
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
@@ -237,9 +247,15 @@ export default function DepositPage() {
           </div>
         </motion.div>
 
-        <a href={`https://basescan.org/address/${lp.walletAddress}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
-          View on Basescan <ArrowUpRight size={12} />
-        </a>
+        {activeToken === 'usdt-bnb' ? (
+          <a href={`https://bscscan.com/address/${lp.walletAddress}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
+            View on BscScan <ArrowUpRight size={12} />
+          </a>
+        ) : (
+          <a href={`https://basescan.org/address/${lp.walletAddress}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
+            View on Basescan <ArrowUpRight size={12} />
+          </a>
+        )}
       </motion.div>
     </div>
   );

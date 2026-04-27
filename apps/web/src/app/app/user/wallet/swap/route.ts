@@ -8,11 +8,10 @@ import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { getDb } from '@/lib/db'
 import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills, users } from '@ntzs/db'
 import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type ExternalTransferFn } from '@/lib/fx/swap'
+import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
-
-const SOLVER_ADDRESS = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
 
 export async function POST(request: NextRequest) {
   let dbUser: Awaited<ReturnType<typeof requireAnyRole>>
@@ -38,19 +37,11 @@ export async function POST(request: NextRequest) {
 
   if (!wallet) return new Response('No swap-eligible wallet found for this account', { status: 404 })
 
-  const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
-  const rpcUrl = process.env.BASE_RPC_URL
-
-  if (!solverPrivateKey || !rpcUrl) {
-    return new Response('Server configuration error', { status: 503 })
-  }
-
   let userPrivateKey: `0x${string}` | undefined
   let externalTransfer: ExternalTransferFn | undefined
   const recipientAddress = wallet.address as `0x${string}`
 
   if (wallet.provider === 'platform_hd') {
-    // HD wallet — derive private key from seed
     const platformSeed = process.env.PLATFORM_HD_SEED
     if (!platformSeed) return new Response('Server configuration error', { status: 503 })
     if (wallet.providerWalletRef === null) return new Response('Wallet index not provisioned', { status: 404 })
@@ -59,7 +50,6 @@ export async function POST(request: NextRequest) {
     const hdWallet = deriveWallet(platformSeed, walletIndex)
     userPrivateKey = hdWallet.privateKey as `0x${string}`
   } else if (wallet.provider === 'coinbase_embedded') {
-    // CDP wallet — use Coinbase SDK signing
     const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, dbUser.id)).limit(1)
     if (!user) return new Response('User not found', { status: 404 })
 
@@ -83,14 +73,14 @@ export async function POST(request: NextRequest) {
     return new Response('Wallet type not supported for swaps', { status: 400 })
   }
 
-  let body: { fromToken: SwapTokenSymbol; toToken: SwapTokenSymbol; amount: number; slippageBps?: number }
+  let body: { fromToken: SwapTokenSymbol; toToken: SwapTokenSymbol; fromChain?: ChainId; toChain?: ChainId; amount: number; slippageBps?: number }
   try {
     body = await request.json()
   } catch {
     return new Response('Invalid JSON', { status: 400 })
   }
 
-  const { fromToken, toToken, amount, slippageBps = 100 } = body
+  const { fromToken, toToken, fromChain = 'base', toChain = 'base', amount, slippageBps = 100 } = body
   if (!fromToken || !toToken || fromToken === toToken || !amount || amount <= 0) {
     return new Response('fromToken, toToken (must differ), and amount are required', { status: 400 })
   }
@@ -98,19 +88,38 @@ export async function POST(request: NextRequest) {
     return new Response(`Unsupported tokens. Valid: ${Object.keys(SWAP_TOKENS).join(', ')}`, { status: 400 })
   }
 
-  const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
-  const tokenAddr = (sym: SwapTokenSymbol) => SWAP_TOKENS[sym].address.toLowerCase()
+  let fromCfg: ReturnType<typeof getChainConfig>, toCfg: ReturnType<typeof getChainConfig>
+  try {
+    fromCfg = getChainConfig(fromChain)
+    toCfg   = getChainConfig(toChain)
+  } catch (e) {
+    return new Response((e as Error).message, { status: 503 })
+  }
 
-  const pair = pairs.find(
-    (p) =>
-      (p.token1Address.toLowerCase() === tokenAddr(fromToken) || p.token2Address.toLowerCase() === tokenAddr(fromToken)) &&
-      (p.token1Address.toLowerCase() === tokenAddr(toToken) || p.token2Address.toLowerCase() === tokenAddr(toToken))
-  )
+  let fromTokenAddress: string, toTokenAddress: string
+  try {
+    fromTokenAddress = getChainToken(fromChain, fromToken).address.toLowerCase()
+    toTokenAddress   = getChainToken(toChain, toToken).address.toLowerCase()
+  } catch {
+    fromTokenAddress = SWAP_TOKENS[fromToken]?.address.toLowerCase() ?? ''
+    toTokenAddress   = SWAP_TOKENS[toToken]?.address.toLowerCase() ?? ''
+  }
+
+  const stablecoinChain = fromToken === 'NTZS' ? toChain : fromChain
+  const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(20)
+  const pair = pairs.find((p) => {
+    const p1 = p.token1Address.toLowerCase()
+    const p2 = p.token2Address.toLowerCase()
+    return (
+      (p1 === fromTokenAddress || p2 === fromTokenAddress) &&
+      (p1 === toTokenAddress   || p2 === toTokenAddress) &&
+      (fromChain === toChain ? p.chain === fromChain : p.chain === stablecoinChain)
+    )
+  })
   if (!pair) return new Response('No active trading pair found', { status: 404 })
 
   const midRate = parseFloat(pair.midRate.toString())
 
-  // Query all active LPs, pick the one with the best rate for this direction
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
@@ -125,7 +134,6 @@ export async function POST(request: NextRequest) {
     askBps: lp.askBps ?? 150,
   }))
 
-  // Load-balance: query each LP's most recent fill to break ties via LRU
   const lastFillRows = await db
     .select({ lpId: lpFills.lpId, lastAt: sql<Date>`max(${lpFills.createdAt})` })
     .from(lpFills)
@@ -141,6 +149,8 @@ export async function POST(request: NextRequest) {
     bidBps: bestLP.bidBps, askBps: bestLP.askBps, slippageBps,
   })
 
+  const isCrossChain = fromChain !== toChain
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -153,23 +163,40 @@ export async function POST(request: NextRequest) {
         for await (const update of executeSwap({
           userPrivateKey,
           externalTransfer,
-          solverPrivateKey,
-          solverAddress: SOLVER_ADDRESS,
+          solverPrivateKey: toCfg.solverPrivateKey,
+          solverAddress: toCfg.solverAddress,
           selectedLpId: bestLP.id,
           fromToken,
           toToken,
+          fromChain,
+          toChain,
+          rpcUrl: toCfg.rpcUrl,
+          ...(isCrossChain && {
+            fromRpcUrl: fromCfg.rpcUrl,
+            fromSolverAddress: fromCfg.solverAddress,
+          }),
           amount,
           minOutput,
           recipientAddress,
-          rpcUrl,
         })) {
           const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
           send(clientUpdate)
 
-          // On success, record the fill and credit the LP
           if (update.status === 'FILLED' && _result) {
             const filledLpId = _result.lpId
-            const toDecimals = SWAP_TOKENS[toToken].decimals
+            let toTokenMeta: { decimals: number; address: string }
+            try {
+              toTokenMeta = getChainToken(toChain, toToken)
+            } catch {
+              toTokenMeta = SWAP_TOKENS[toToken]
+            }
+            let fromTokenMeta: { decimals: number; address: string }
+            try {
+              fromTokenMeta = getChainToken(fromChain, fromToken)
+            } catch {
+              fromTokenMeta = SWAP_TOKENS[fromToken]
+            }
+            const toDecimals = toTokenMeta.decimals
 
             const midOutput = fromToken === 'NTZS'
               ? amount / midRate
@@ -180,8 +207,8 @@ export async function POST(request: NextRequest) {
               await db.insert(lpFills).values({
                 lpId: filledLpId,
                 userAddress: recipientAddress,
-                fromToken: SWAP_TOKENS[fromToken].address,
-                toToken: SWAP_TOKENS[toToken].address,
+                fromToken: fromTokenMeta.address,
+                toToken: toTokenMeta.address,
                 amountIn: _result.amountIn,
                 amountOut: _result.amountOut,
                 spreadEarned: spread.toFixed(toDecimals),
@@ -189,7 +216,7 @@ export async function POST(request: NextRequest) {
                 outTxHash: _result.outTxHash,
               })
 
-              const outTokenAddr = SWAP_TOKENS[toToken].address.toLowerCase()
+              const outTokenAddr = toTokenMeta.address.toLowerCase()
               await db
                 .update(lpPoolPositions)
                 .set({
@@ -198,10 +225,11 @@ export async function POST(request: NextRequest) {
                 })
                 .where(and(
                   eq(lpPoolPositions.lpId, filledLpId),
+                  eq(lpPoolPositions.chain, toChain),
                   eq(lpPoolPositions.tokenAddress, outTokenAddr),
                 ))
 
-              const inTokenAddr = SWAP_TOKENS[fromToken].address.toLowerCase()
+              const inTokenAddr = fromTokenMeta.address.toLowerCase()
               await db
                 .update(lpPoolPositions)
                 .set({
@@ -210,6 +238,7 @@ export async function POST(request: NextRequest) {
                 })
                 .where(and(
                   eq(lpPoolPositions.lpId, filledLpId),
+                  eq(lpPoolPositions.chain, fromChain),
                   eq(lpPoolPositions.tokenAddress, inTokenAddr),
                 ))
             } catch (err) {

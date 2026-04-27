@@ -4,6 +4,7 @@ import { db } from '@/lib/fx/db';
 import { lpAccounts, lpPoolPositions, lpFills, lpFxPairs } from '@ntzs/db';
 import { eq, sql } from 'drizzle-orm';
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers';
+import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig';
 
 const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
@@ -17,16 +18,6 @@ async function getOnChainBalance(provider: JsonRpcProvider, token: string, walle
     contract.decimals(),
   ]);
   return formatUnits(raw, Number(decimals));
-}
-
-/** Build a deduplicated token set from active lpFxPairs rows. */
-function uniqueTokens(pairs: Array<{ token1Address: string; token1Symbol: string; token1Decimals: number; token2Address: string; token2Symbol: string; token2Decimals: number }>) {
-  const map = new Map<string, { address: string; symbol: string; decimals: number }>()
-  for (const p of pairs) {
-    map.set(p.token1Address.toLowerCase(), { address: p.token1Address, symbol: p.token1Symbol, decimals: p.token1Decimals })
-    map.set(p.token2Address.toLowerCase(), { address: p.token2Address, symbol: p.token2Symbol, decimals: p.token2Decimals })
-  }
-  return [...map.values()]
 }
 
 export async function GET() {
@@ -46,12 +37,17 @@ export async function GET() {
 
     if (!lp) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const tokens = uniqueTokens(pairs);
-    const rpcUrl = process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
-    const provider = new JsonRpcProvider(rpcUrl);
+    // Group tokens by chain from active pairs
+    const tokensByChain = new Map<ChainId, Map<string, { address: string; symbol: string; decimals: number }>>()
+    for (const p of pairs) {
+      const chain = (p.chain ?? 'base') as ChainId
+      if (!tokensByChain.has(chain)) tokensByChain.set(chain, new Map())
+      const map = tokensByChain.get(chain)!
+      map.set(p.token1Address.toLowerCase(), { address: p.token1Address, symbol: p.token1Symbol, decimals: p.token1Decimals })
+      map.set(p.token2Address.toLowerCase(), { address: p.token2Address, symbol: p.token2Symbol, decimals: p.token2Decimals })
+    }
 
     if (lp.isActive) {
-      // LP is in the pool — contributed from pool positions, earned from lpFills (authoritative)
       const [positions, fillTotals] = await Promise.all([
         db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, session.lpId)),
         db
@@ -69,23 +65,46 @@ export async function GET() {
         earnedByAddr[f.toToken.toLowerCase()] = f.totalEarned ?? '0';
       }
 
+      // Aggregate positions by token symbol (across chains)
       const byToken: Record<string, { contributed: string; earned: string; total: string }> = {};
       for (const pos of positions) {
         const sym = pos.tokenSymbol.toLowerCase();
         const contributed = parseFloat(pos.contributed);
         const earned = parseFloat(earnedByAddr[pos.tokenAddress.toLowerCase()] ?? pos.earned);
-        byToken[sym] = {
-          contributed: pos.contributed,
-          earned: earned.toString(),
-          total: (contributed + earned).toString(),
-        };
+        const prev = byToken[sym]
+        if (prev) {
+          byToken[sym] = {
+            contributed: (parseFloat(prev.contributed) + contributed).toString(),
+            earned: (parseFloat(prev.earned) + earned).toString(),
+            total: (parseFloat(prev.total) + contributed + earned).toString(),
+          }
+        } else {
+          byToken[sym] = {
+            contributed: pos.contributed,
+            earned: earned.toString(),
+            total: (contributed + earned).toString(),
+          };
+        }
       }
 
-      // LP wallet on-chain balances across all active tokens (unsent funds)
-      const walletBalances = await Promise.all(
-        tokens.map(async (t) => [t.symbol.toLowerCase(), await getOnChainBalance(provider, t.address, lp.walletAddress)] as const)
-      );
-      const wallet = Object.fromEntries(walletBalances);
+      // Wallet balances per chain
+      const walletBySymbol: Record<string, string> = {}
+      await Promise.all(
+        [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
+          let cfg: ReturnType<typeof getChainConfig>
+          try { cfg = getChainConfig(chain) } catch { return }
+          const provider = new JsonRpcProvider(cfg.rpcUrl)
+          const results = await Promise.all(
+            [...tokenMap.values()].map(async (t) => {
+              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch(() => '0')
+              return { sym: t.symbol.toLowerCase(), bal }
+            })
+          )
+          for (const { sym, bal } of results) {
+            walletBySymbol[sym] = (parseFloat(walletBySymbol[sym] ?? '0') + parseFloat(bal)).toString()
+          }
+        })
+      )
 
       return NextResponse.json({
         source: 'pool',
@@ -93,14 +112,27 @@ export async function GET() {
         usdc: byToken['usdc']?.total ?? '0',
         usdt: byToken['usdt']?.total ?? '0',
         positions: byToken,
-        wallet,
+        wallet: walletBySymbol,
       });
     } else {
-      // LP not yet active — show on-chain wallet balances for all active tokens
-      const walletBalances = await Promise.all(
-        tokens.map(async (t) => [t.symbol.toLowerCase(), await getOnChainBalance(provider, t.address, lp.walletAddress)] as const)
-      );
-      const walletBySymbol = Object.fromEntries(walletBalances);
+      // LP not active — show on-chain wallet balances per chain
+      const walletBySymbol: Record<string, string> = {}
+      await Promise.all(
+        [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
+          let cfg: ReturnType<typeof getChainConfig>
+          try { cfg = getChainConfig(chain) } catch { return }
+          const provider = new JsonRpcProvider(cfg.rpcUrl)
+          const results = await Promise.all(
+            [...tokenMap.values()].map(async (t) => {
+              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch(() => '0')
+              return { sym: t.symbol.toLowerCase(), bal }
+            })
+          )
+          for (const { sym, bal } of results) {
+            walletBySymbol[sym] = (parseFloat(walletBySymbol[sym] ?? '0') + parseFloat(bal)).toString()
+          }
+        })
+      )
 
       return NextResponse.json({
         source: 'wallet',

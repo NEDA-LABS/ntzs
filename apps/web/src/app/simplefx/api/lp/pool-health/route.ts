@@ -4,6 +4,7 @@ import { db } from '@/lib/fx/db'
 import { lpAccounts, lpPoolPositions, lpFxPairs, lpFxConfig } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
+import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig'
 
 const ERC20_ABI = ['function balanceOf(address owner) view returns (uint256)']
 
@@ -11,11 +12,6 @@ export async function GET() {
   try {
     const session = await getSessionFromCookies()
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const rpcUrl = process.env.BASE_RPC_URL
-    if (!rpcUrl) return NextResponse.json({ error: 'RPC not configured' }, { status: 503 })
-
-    const SOLVER_ADDRESS = process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646'
 
     const [lpRow, allPositions, fxConfig, activePairs] = await Promise.all([
       db.select({ walletAddress: lpAccounts.walletAddress, isActive: lpAccounts.isActive })
@@ -37,29 +33,36 @@ export async function GET() {
 
     const midRate = Number(fxConfig[0]?.midRateTZS ?? 3750)
 
-    // Build unique token set from active pairs
-    const tokenMap = new Map<string, { address: string; symbol: string; decimals: number }>()
+    // Group tokens by chain
+    const tokensByChain = new Map<ChainId, Map<string, { address: string; symbol: string; decimals: number }>>()
     for (const p of activePairs) {
-      tokenMap.set(p.token1Address.toLowerCase(), { address: p.token1Address, symbol: p.token1Symbol, decimals: p.token1Decimals })
-      tokenMap.set(p.token2Address.toLowerCase(), { address: p.token2Address, symbol: p.token2Symbol, decimals: p.token2Decimals })
+      const chain = (p.chain ?? 'base') as ChainId
+      if (!tokensByChain.has(chain)) tokensByChain.set(chain, new Map())
+      const map = tokensByChain.get(chain)!
+      map.set(p.token1Address.toLowerCase(), { address: p.token1Address, symbol: p.token1Symbol, decimals: p.token1Decimals })
+      map.set(p.token2Address.toLowerCase(), { address: p.token2Address, symbol: p.token2Symbol, decimals: p.token2Decimals })
     }
-    const tokens = [...tokenMap.values()]
 
-    // Fetch solver wallet balance for all tokens in parallel
-    const provider = new JsonRpcProvider(rpcUrl)
-    const solverBalances = await Promise.all(
-      tokens.map(async (t) => {
-        const contract = new Contract(t.address, ERC20_ABI, provider)
-        const raw: bigint = await contract.balanceOf(SOLVER_ADDRESS)
-        return { ...t, balance: parseFloat(formatUnits(raw, t.decimals)) }
+    // Fetch solver balance for every token on its chain — aggregate by uppercase symbol
+    const solverBySym = new Map<string, number>()
+    await Promise.all(
+      [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
+        let cfg: ReturnType<typeof getChainConfig>
+        try { cfg = getChainConfig(chain) } catch { return }
+        const provider = new JsonRpcProvider(cfg.rpcUrl)
+        await Promise.all(
+          [...tokenMap.values()].map(async (t) => {
+            try {
+              const contract = new Contract(t.address, ERC20_ABI, provider)
+              const raw: bigint = await contract.balanceOf(cfg.solverAddress)
+              const bal = parseFloat(formatUnits(raw, t.decimals))
+              const sym = t.symbol.toUpperCase()
+              solverBySym.set(sym, (solverBySym.get(sym) ?? 0) + bal)
+            } catch { /* skip on RPC error */ }
+          })
+        )
       })
     )
-
-    // Index solver balances by lowercased symbol
-    const solverBySym = new Map<string, number>()
-    for (const b of solverBalances) {
-      solverBySym.set(b.symbol.toUpperCase(), b.balance)
-    }
 
     const solverNtzs = solverBySym.get('NTZS') ?? 0
     const solverUsdc = solverBySym.get('USDC') ?? 0
@@ -77,36 +80,50 @@ export async function GET() {
       }
     }
 
+    // Build a flat token list for share calculations
+    const allTokens = [...tokensByChain.values()].flatMap((m) => [...m.values()])
+    const seenAddrs = new Set<string>()
+    const uniqueTokens = allTokens.filter((t) => {
+      const addr = t.address.toLowerCase()
+      if (seenAddrs.has(addr)) return false
+      seenAddrs.add(addr)
+      return true
+    })
+
     // LP effective balances by token (share of solver balance)
-    const effectiveByAddr = new Map<string, number>()
-    for (const b of solverBalances) {
-      const addr = b.address.toLowerCase()
+    const effectiveBySym = new Map<string, number>()
+    for (const t of uniqueTokens) {
+      const addr = t.address.toLowerCase()
+      const sym = t.symbol.toUpperCase()
+      const solverBal = solverBySym.get(sym) ?? 0
       const total = totalContrib.get(addr) ?? 0
       const mine  = myContrib.get(addr) ?? 0
       const share = total > 0 ? mine / total : 0
-      effectiveByAddr.set(addr, b.balance * share)
+      effectiveBySym.set(sym, (effectiveBySym.get(sym) ?? 0) + solverBal * share)
     }
 
-    const ntzsAddr = tokens.find((t) => t.symbol.toUpperCase() === 'NTZS')?.address.toLowerCase() ?? ''
-    const usdcAddr = tokens.find((t) => t.symbol.toUpperCase() === 'USDC')?.address.toLowerCase() ?? ''
-    const usdtAddr = tokens.find((t) => t.symbol.toUpperCase() === 'USDT')?.address.toLowerCase() ?? ''
+    // Contributed totals by symbol (aggregate across chains)
+    const totalBySym = new Map<string, number>()
+    const myBySym = new Map<string, number>()
+    for (const t of uniqueTokens) {
+      const addr = t.address.toLowerCase()
+      const sym = t.symbol.toUpperCase()
+      totalBySym.set(sym, (totalBySym.get(sym) ?? 0) + (totalContrib.get(addr) ?? 0))
+      myBySym.set(sym, (myBySym.get(sym) ?? 0) + (myContrib.get(addr) ?? 0))
+    }
 
-    const effectiveNtzs = effectiveByAddr.get(ntzsAddr) ?? 0
-    const effectiveUsdc = effectiveByAddr.get(usdcAddr) ?? 0
-    const effectiveUsdt = effectiveByAddr.get(usdtAddr) ?? 0
-
-    const ntzsTotal = totalContrib.get(ntzsAddr) ?? 0
-    const usdcTotal = totalContrib.get(usdcAddr) ?? 0
-    const usdtTotal = totalContrib.get(usdtAddr) ?? 0
-    const myNtzs = myContrib.get(ntzsAddr) ?? 0
-    const myUsdc = myContrib.get(usdcAddr) ?? 0
-    const myUsdt = myContrib.get(usdtAddr) ?? 0
+    const ntzsTotal = totalBySym.get('NTZS') ?? 0
+    const usdcTotal = totalBySym.get('USDC') ?? 0
+    const usdtTotal = totalBySym.get('USDT') ?? 0
+    const myNtzs = myBySym.get('NTZS') ?? 0
+    const myUsdc = myBySym.get('USDC') ?? 0
+    const myUsdt = myBySym.get('USDT') ?? 0
 
     const ntzsSharePct = ntzsTotal > 0 ? myNtzs / ntzsTotal : 0
     const usdcSharePct = usdcTotal > 0 ? myUsdc / usdcTotal : 0
     const usdtSharePct = usdtTotal > 0 ? myUsdt / usdtTotal : 0
 
-    // Pool skew: each token's value in USD terms as % of total pool value
+    // Skew: each token's USD value as % of total pool
     const ntzsValueUsdc = solverNtzs / midRate
     const totalValueUsdc = ntzsValueUsdc + solverUsdc + solverUsdt
     const ntzsSkewPct = totalValueUsdc > 0 ? (ntzsValueUsdc / totalValueUsdc) * 100 : 33.3
@@ -116,7 +133,7 @@ export async function GET() {
     const LOW_THRESHOLD = 10
     const isNtzsLow = ntzsSkewPct < LOW_THRESHOLD
     const isUsdcLow = usdcSkewPct < LOW_THRESHOLD
-    const isUsdtLow = usdtAddr ? usdtSkewPct < LOW_THRESHOLD : false
+    const isUsdtLow = solverUsdt > 0 ? usdtSkewPct < LOW_THRESHOLD : false
 
     return NextResponse.json({
       solver: {
@@ -125,9 +142,9 @@ export async function GET() {
         usdt: solverUsdt.toString(),
       },
       lp: {
-        effectiveNtzs: effectiveNtzs.toFixed(6),
-        effectiveUsdc: effectiveUsdc.toFixed(6),
-        effectiveUsdt: effectiveUsdt.toFixed(6),
+        effectiveNtzs: (effectiveBySym.get('NTZS') ?? 0).toFixed(6),
+        effectiveUsdc: (effectiveBySym.get('USDC') ?? 0).toFixed(6),
+        effectiveUsdt: (effectiveBySym.get('USDT') ?? 0).toFixed(6),
         ntzsSharePct: (ntzsSharePct * 100).toFixed(1),
         usdcSharePct: (usdcSharePct * 100).toFixed(1),
         usdtSharePct: (usdtSharePct * 100).toFixed(1),

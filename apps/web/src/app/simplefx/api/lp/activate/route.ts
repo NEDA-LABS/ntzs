@@ -2,25 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
 import { lpAccounts, lpFxPairs, lpPoolPositions, lpWalletTransactions } from '@ntzs/db';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { deriveWallet } from '@/lib/fx/lp-wallet';
-import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits, parseEther } from 'ethers';
+import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits } from 'ethers';
+import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig';
 
 const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
   'function balanceOf(address owner) view returns (uint256)',
 ];
 
-const SOLVER_ADDRESS = process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646';
-
 export async function PATCH(req: NextRequest) {
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { isActive } = await req.json();
+  const body = await req.json();
+  const isActive: boolean = body.isActive;
+  const chain: ChainId = body.chain ?? 'base';
 
-  const rpcUrl = process.env.BASE_RPC_URL;
-  if (!rpcUrl) return NextResponse.json({ error: 'RPC not configured' }, { status: 503 });
+  let chainCfg: ReturnType<typeof getChainConfig>;
+  try {
+    chainCfg = getChainConfig(chain);
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+  }
 
   const [lp] = await db
     .select()
@@ -30,20 +35,21 @@ export async function PATCH(req: NextRequest) {
 
   if (!lp) return NextResponse.json({ error: 'LP account not found' }, { status: 404 });
 
-  const provider = new JsonRpcProvider(rpcUrl);
+  const provider = new JsonRpcProvider(chainCfg.rpcUrl);
 
   if (isActive) {
     // ── ACTIVATE: sweep LP wallet tokens into the solver pool ───────────────
+    // Only look at pairs for the requested chain
     const pairs = await db
       .select()
       .from(lpFxPairs)
-      .where(eq(lpFxPairs.isActive, true));
+      .where(and(eq(lpFxPairs.isActive, true), eq(lpFxPairs.chain, chain)));
 
     if (pairs.length === 0) {
-      return NextResponse.json({ error: 'No active trading pairs configured' }, { status: 400 });
+      return NextResponse.json({ error: `No active trading pairs configured for ${chain}` }, { status: 400 });
     }
 
-    // Collect unique tokens across all active pairs
+    // Collect unique token addresses for this chain
     const tokens = new Map<string, { symbol: string; decimals: number }>();
     for (const pair of pairs) {
       tokens.set(pair.token1Address.toLowerCase(), { symbol: pair.token1Symbol, decimals: pair.token1Decimals });
@@ -53,14 +59,13 @@ export async function PATCH(req: NextRequest) {
     const { privateKey } = deriveWallet(lp.walletIndex);
     const lpSigner = new Wallet(privateKey, provider);
 
-    // Pre-fund LP wallet with gas if needed (LP wallets start with 0 ETH)
-    const MIN_GAS = parseEther('0.0001');
-    const lpEthBalance: bigint = await provider.getBalance(lp.walletAddress);
-    if (lpEthBalance < MIN_GAS) {
-      const relayerKey = process.env.RELAYER_PRIVATE_KEY ?? process.env.MINTER_PRIVATE_KEY;
-      if (!relayerKey) return NextResponse.json({ error: 'Relayer key not configured — cannot fund gas' }, { status: 503 });
+    // Pre-fund LP wallet with gas if needed
+    const lpGasBalance: bigint = await provider.getBalance(lp.walletAddress);
+    if (lpGasBalance < chainCfg.minGas) {
+      const relayerKey = chainCfg.relayerKey;
+      if (!relayerKey) return NextResponse.json({ error: `Relayer key not configured for ${chain} — cannot fund gas` }, { status: 503 });
       const relayer = new Wallet(relayerKey, provider);
-      const gasTx = await relayer.sendTransaction({ to: lp.walletAddress, value: MIN_GAS });
+      const gasTx = await relayer.sendTransaction({ to: lp.walletAddress, value: chainCfg.minGas });
       await gasTx.wait(1);
     }
 
@@ -69,9 +74,9 @@ export async function PATCH(req: NextRequest) {
     for (const [tokenAddress, { symbol, decimals }] of tokens) {
       const contract = new Contract(tokenAddress, ERC20_ABI, lpSigner);
       const balance: bigint = await contract.balanceOf(lp.walletAddress);
-      if (balance === BigInt(0)) continue;
+      if (balance === BigInt(0)) continue; // token doesn't exist on this chain or LP has none
 
-      const tx = await contract.transfer(SOLVER_ADDRESS, balance);
+      const tx = await contract.transfer(chainCfg.solverAddress, balance);
       await tx.wait(1);
 
       const humanAmount = formatUnits(balance, decimals);
@@ -79,6 +84,7 @@ export async function PATCH(req: NextRequest) {
 
       await db.insert(lpWalletTransactions).values({
         lpId: lp.id,
+        chain,
         type: 'activation_sweep',
         source: 'system',
         tokenAddress,
@@ -92,6 +98,7 @@ export async function PATCH(req: NextRequest) {
         .insert(lpPoolPositions)
         .values({
           lpId: lp.id,
+          chain,
           tokenAddress,
           tokenSymbol: symbol,
           decimals,
@@ -99,7 +106,7 @@ export async function PATCH(req: NextRequest) {
           earned: '0',
         })
         .onConflictDoUpdate({
-          target: [lpPoolPositions.lpId, lpPoolPositions.tokenAddress],
+          target: [lpPoolPositions.lpId, lpPoolPositions.chain, lpPoolPositions.tokenAddress],
           set: {
             contributed: sql`${lpPoolPositions.contributed} + ${humanAmount}::numeric`,
             updatedAt: new Date(),
@@ -109,7 +116,7 @@ export async function PATCH(req: NextRequest) {
 
     if (swept.length === 0) {
       return NextResponse.json(
-        { error: 'No token balance found. Please deposit nTZS or USDC to your wallet first.' },
+        { error: `No token balance found on ${chainCfg.chainName}. Please deposit tokens to your wallet first.` },
         { status: 400 }
       );
     }
@@ -120,54 +127,66 @@ export async function PATCH(req: NextRequest) {
       .where(eq(lpAccounts.id, session.lpId))
       .returning();
 
-    return NextResponse.json({ lp: updated, swept });
+    return NextResponse.json({ lp: updated, swept, chain });
   } else {
     // ── DEACTIVATE: return contributed + earned back to LP wallet ────────────
-    const solverKey = process.env.SOLVER_PRIVATE_KEY;
-    if (!solverKey) return NextResponse.json({ error: 'Solver key not configured' }, { status: 503 });
-
-    const solverSigner = new Wallet(solverKey, provider);
-
+    // Group positions by chain and return each via the correct solver
     const positions = await db
       .select()
       .from(lpPoolPositions)
       .where(eq(lpPoolPositions.lpId, lp.id));
 
-    const returned: Array<{ tokenAddress: string; symbol: string; amount: string }> = [];
+    const returned: Array<{ tokenAddress: string; symbol: string; amount: string; chain: string }> = [];
 
+    // Group by chain so we only create one provider per chain
+    const byChain = new Map<ChainId, typeof positions>();
     for (const pos of positions) {
-      const totalWei =
-        parseUnits(pos.contributed, pos.decimals) + parseUnits(pos.earned, pos.decimals);
-      if (totalWei === BigInt(0)) continue;
-
-      const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner);
-      const solverBalance: bigint = await contract.balanceOf(SOLVER_ADDRESS);
-      const toSend = totalWei < solverBalance ? totalWei : solverBalance;
-      if (toSend === BigInt(0)) continue;
-
-      const tx = await contract.transfer(lp.walletAddress, toSend);
-      await tx.wait(1);
-
-      const returnedAmount = formatUnits(toSend, pos.decimals);
-      returned.push({
-        tokenAddress: pos.tokenAddress,
-        symbol: pos.tokenSymbol,
-        amount: returnedAmount,
-      });
-
-      await db.insert(lpWalletTransactions).values({
-        lpId: lp.id,
-        type: 'deactivation_return',
-        source: 'system',
-        tokenAddress: pos.tokenAddress,
-        tokenSymbol: pos.tokenSymbol,
-        decimals: pos.decimals,
-        amount: returnedAmount,
-        txHash: tx.hash,
-      }).catch((err) => console.error('[deactivate] failed to record return tx:', err));
+      const c = (pos.chain ?? 'base') as ChainId;
+      if (!byChain.has(c)) byChain.set(c, []);
+      byChain.get(c)!.push(pos);
     }
 
-    // Clear pool positions
+    for (const [posChain, chainPositions] of byChain) {
+      let cfg: ReturnType<typeof getChainConfig>;
+      try { cfg = getChainConfig(posChain); } catch { continue; }
+
+      const solverKey = cfg.solverPrivateKey;
+      if (!solverKey) continue;
+
+      const chainProvider = new JsonRpcProvider(cfg.rpcUrl);
+      const solverSigner = new Wallet(solverKey, chainProvider);
+
+      for (const pos of chainPositions) {
+        const totalWei =
+          parseUnits(pos.contributed, pos.decimals) + parseUnits(pos.earned, pos.decimals);
+        if (totalWei === BigInt(0)) continue;
+
+        const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner);
+        const solverBal: bigint = await contract.balanceOf(cfg.solverAddress);
+        const toSend = totalWei < solverBal ? totalWei : solverBal;
+        if (toSend === BigInt(0)) continue;
+
+        const tx = await contract.transfer(lp.walletAddress, toSend);
+        await tx.wait(1);
+
+        const returnedAmount = formatUnits(toSend, pos.decimals);
+        returned.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, amount: returnedAmount, chain: posChain });
+
+        await db.insert(lpWalletTransactions).values({
+          lpId: lp.id,
+          chain: posChain,
+          type: 'deactivation_return',
+          source: 'system',
+          tokenAddress: pos.tokenAddress,
+          tokenSymbol: pos.tokenSymbol,
+          decimals: pos.decimals,
+          amount: returnedAmount,
+          txHash: tx.hash,
+        }).catch((err) => console.error('[deactivate] failed to record return tx:', err));
+      }
+    }
+
+    // Clear all pool positions
     await db.delete(lpPoolPositions).where(eq(lpPoolPositions.lpId, lp.id));
 
     const [updated] = await db

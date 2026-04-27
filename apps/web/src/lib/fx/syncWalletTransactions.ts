@@ -1,17 +1,38 @@
 import { db } from './db'
 import { lpWalletTransactions } from '@ntzs/db'
 import { and, eq } from 'drizzle-orm'
+import { getChainConfig, type ChainId } from './chainConfig'
 
-const NTZS   = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
-const USDC   = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
-const USDT   = '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2'
-const SOLVER = '0xf4766439DC70f5B943Cc1918747b408b612ba646'.toLowerCase()
-const ZERO   = '0x0000000000000000000000000000000000000000'
+// Base token addresses
+const BASE_NTZS = '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688'
+const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const BASE_USDT = '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2'
+// BNB token addresses
+const BNB_USDT  = '0x55d398326f99059fF775485246999027B3197955'
 
-const TOKEN_META: Record<string, { sym: string; addr: string; dec: number }> = {
-  [NTZS.toLowerCase()]: { sym: 'nTZS', addr: NTZS, dec: 18 },
-  [USDC.toLowerCase()]: { sym: 'USDC', addr: USDC, dec: 6  },
-  [USDT.toLowerCase()]: { sym: 'USDT', addr: USDT, dec: 6  },
+const ZERO = '0x0000000000000000000000000000000000000000'
+
+type TokenMeta = Record<string, { sym: string; addr: string; dec: number }>
+
+const BASE_TOKEN_META: TokenMeta = {
+  [BASE_NTZS.toLowerCase()]: { sym: 'nTZS', addr: BASE_NTZS, dec: 18 },
+  [BASE_USDC.toLowerCase()]: { sym: 'USDC', addr: BASE_USDC, dec: 6  },
+  [BASE_USDT.toLowerCase()]: { sym: 'USDT', addr: BASE_USDT, dec: 6  },
+}
+
+const BNB_TOKEN_META: TokenMeta = {
+  [BNB_USDT.toLowerCase()]: { sym: 'USDT', addr: BNB_USDT, dec: 18 },
+}
+
+const CHAIN_META: Record<ChainId, { tokenMeta: TokenMeta; contracts: string[] }> = {
+  base: {
+    tokenMeta: BASE_TOKEN_META,
+    contracts: [BASE_NTZS, BASE_USDC, BASE_USDT],
+  },
+  bnb: {
+    tokenMeta: BNB_TOKEN_META,
+    contracts: [BNB_USDT],
+  },
 }
 
 interface AlchemyTransfer {
@@ -27,6 +48,7 @@ async function fetchTransfers(
   rpcUrl: string,
   direction: 'toAddress' | 'fromAddress',
   address: string,
+  contractAddresses: string[],
 ): Promise<AlchemyTransfer[]> {
   const res = await fetch(rpcUrl, {
     method: 'POST',
@@ -35,7 +57,7 @@ async function fetchTransfers(
       id: 1, jsonrpc: '2.0', method: 'alchemy_getAssetTransfers',
       params: [{
         [direction]: address,
-        contractAddresses: [NTZS, USDC, USDT],
+        contractAddresses,
         category: ['erc20'],
         withMetadata: true,
         order: 'asc',
@@ -47,36 +69,46 @@ async function fetchTransfers(
   return (json.result?.transfers ?? []) as AlchemyTransfer[]
 }
 
-function classify(tx: AlchemyTransfer, wallet: string): { type: string; source: string } | null {
-  const from = tx.from.toLowerCase()
-  const to   = tx.to?.toLowerCase() ?? ''
+function classify(tx: AlchemyTransfer, wallet: string, solverAddress: string): { type: string; source: string } | null {
+  const from   = tx.from.toLowerCase()
+  const to     = tx.to?.toLowerCase() ?? ''
+  const solver = solverAddress.toLowerCase()
   if (to === wallet && from === ZERO)   return { type: 'deposit',             source: 'mpesa'   }
-  if (to === wallet && from === SOLVER) return { type: 'deactivation_return', source: 'system'  }
+  if (to === wallet && from === solver) return { type: 'deactivation_return', source: 'system'  }
   if (to === wallet)                    return { type: 'deposit',             source: 'onchain' }
-  if (from === wallet && to === SOLVER) return { type: 'activation_sweep',    source: 'system'  }
+  if (from === wallet && to === solver) return { type: 'activation_sweep',    source: 'system'  }
   if (from === wallet)                  return { type: 'withdrawal',          source: 'onchain' }
   return null
 }
 
 /**
- * Pulls all nTZS/USDC on-chain transfers for an LP wallet from Alchemy and
+ * Pulls on-chain ERC-20 transfers for an LP wallet from Alchemy and
  * inserts any missing records into lp_wallet_transactions.
  * Idempotent: deduplicates by (lp_id, tx_hash, token_address).
  * Non-blocking: errors are swallowed so callers are never interrupted.
  */
-export async function syncLpWalletTransactions(lpId: string, walletAddress: string): Promise<void> {
-  const rpcUrl = process.env.BASE_RPC_URL
-  if (!rpcUrl) return
+export async function syncLpWalletTransactions(
+  lpId: string,
+  walletAddress: string,
+  chain: ChainId = 'base',
+): Promise<void> {
+  let cfg: ReturnType<typeof getChainConfig>
+  try {
+    cfg = getChainConfig(chain)
+  } catch {
+    return
+  }
+
+  const { tokenMeta, contracts } = CHAIN_META[chain]
 
   try {
     const wallet = walletAddress.toLowerCase()
 
     const [incoming, outgoing] = await Promise.all([
-      fetchTransfers(rpcUrl, 'toAddress', walletAddress),
-      fetchTransfers(rpcUrl, 'fromAddress', walletAddress),
+      fetchTransfers(cfg.rpcUrl, 'toAddress', walletAddress, contracts),
+      fetchTransfers(cfg.rpcUrl, 'fromAddress', walletAddress, contracts),
     ])
 
-    // Deduplicate by (hash, contractAddress) — same tx can appear in both directions
     const seen = new Set<string>()
     const transfers = [...incoming, ...outgoing]
       .sort((a, b) => a.metadata.blockTimestamp.localeCompare(b.metadata.blockTimestamp))
@@ -88,13 +120,12 @@ export async function syncLpWalletTransactions(lpId: string, walletAddress: stri
       })
 
     for (const tx of transfers) {
-      const meta = TOKEN_META[tx.rawContract?.address?.toLowerCase()]
+      const meta = tokenMeta[tx.rawContract?.address?.toLowerCase()]
       if (!meta) continue
 
-      const label = classify(tx, wallet)
+      const label = classify(tx, wallet, cfg.solverAddress)
       if (!label) continue
 
-      // Skip if already recorded
       const existing = await db
         .select({ id: lpWalletTransactions.id })
         .from(lpWalletTransactions)
@@ -109,6 +140,7 @@ export async function syncLpWalletTransactions(lpId: string, walletAddress: stri
 
       await db.insert(lpWalletTransactions).values({
         lpId,
+        chain,
         type:         label.type,
         source:       label.source,
         tokenAddress: meta.addr,

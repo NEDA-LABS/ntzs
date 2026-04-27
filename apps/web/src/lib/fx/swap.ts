@@ -10,6 +10,7 @@
  */
 
 import { JsonRpcProvider, Contract, Wallet, parseUnits, parseEther, formatUnits, formatEther } from 'ethers'
+import { type ChainId, getChainTokens } from './chainConfig'
 
 export const SWAP_TOKENS = {
   NTZS: {
@@ -150,12 +151,11 @@ export type ExternalTransferFn = (params: {
 }) => Promise<{ txHash: string }>
 
 /**
- * Execute a direct swap via the shared solver pool.
+ * Execute a direct or cross-chain swap via the solver pool.
  *
- * Step 1: user's platform wallet sends `fromToken` to the solver pool.
- *   - If `userPrivateKey` is provided, signs directly with ethers.
- *   - If `externalTransfer` is provided, delegates signing to an external service (e.g. CDP).
- * Step 2: solver pool sends `toToken` to the user's wallet.
+ * Same-chain: both tokens live on the same chain (rpcUrl).
+ * Cross-chain: user sends fromToken on fromRpcUrl/fromSolverAddress;
+ *              solver sends toToken on rpcUrl/solverAddress.
  *
  * `selectedLpId` identifies which LP gets credited for the fill.
  */
@@ -167,31 +167,53 @@ export async function* executeSwap(params: {
   selectedLpId: string
   fromToken: SwapTokenSymbol
   toToken: SwapTokenSymbol
+  fromChain?: ChainId
+  toChain?: ChainId
+  /** RPC for the output (to-) chain. Also used as fromRpcUrl when same-chain. */
+  rpcUrl: string
+  /** RPC for the input (from-) chain. Only needed for cross-chain swaps. */
+  fromRpcUrl?: string
+  /** Solver address on the input chain. Defaults to solverAddress (same-chain). */
+  fromSolverAddress?: `0x${string}`
   amount: number
   minOutput: number
   recipientAddress: `0x${string}`
-  rpcUrl: string
 }): AsyncGenerator<SwapStatusUpdate & { _result?: SwapResult }> {
-  const { userPrivateKey, externalTransfer, solverPrivateKey, solverAddress, selectedLpId, fromToken, toToken, amount, minOutput, recipientAddress, rpcUrl } = params
+  const {
+    userPrivateKey, externalTransfer, solverPrivateKey, solverAddress,
+    selectedLpId, fromToken, toToken, fromChain = 'base', toChain = 'base',
+    rpcUrl, fromRpcUrl, fromSolverAddress, amount, minOutput, recipientAddress,
+  } = params
 
   if (!userPrivateKey && !externalTransfer) {
     yield { status: 'FAILED', message: 'No signing method available for this wallet', error: 'NO_SIGNER' }
     return
   }
 
-  const from = SWAP_TOKENS[fromToken]
-  const to = SWAP_TOKENS[toToken]
+  // Resolve token info from the correct chain's token map
+  const fromTokens = getChainTokens(fromChain)
+  const toTokens   = getChainTokens(toChain)
+  const from = fromTokens[fromToken] ?? SWAP_TOKENS[fromToken]
+  const to   = toTokens[toToken]   ?? SWAP_TOKENS[toToken]
 
-  const provider = new JsonRpcProvider(rpcUrl)
-  const solverWallet = new Wallet(solverPrivateKey, provider)
+  if (!from) { yield { status: 'FAILED', message: `Token ${fromToken} not supported on ${fromChain}`, error: 'UNSUPPORTED_TOKEN' }; return }
+  if (!to)   { yield { status: 'FAILED', message: `Token ${toToken} not supported on ${toChain}`,   error: 'UNSUPPORTED_TOKEN' }; return }
 
-  const fromContract = new Contract(from.address, ERC20_ABI, provider)
-  const toContract = new Contract(to.address, ERC20_ABI, provider)
+  const isCrossChain = fromRpcUrl && fromRpcUrl !== rpcUrl
+  // Provider for the output (to-) chain — solver sends here
+  const toProvider   = new JsonRpcProvider(rpcUrl)
+  // Provider for the input (from-) chain — user sends here
+  const fromProvider = isCrossChain ? new JsonRpcProvider(fromRpcUrl!) : toProvider
+  const inboundSolverAddress = fromSolverAddress ?? solverAddress
 
-  // Check user balance
+  const solverWallet = new Wallet(solverPrivateKey, toProvider)
+  const fromContract = new Contract(from.address, ERC20_ABI, fromProvider)
+  const toContract   = new Contract(to.address,   ERC20_ABI, toProvider)
+
+  // Check user balance on the from-chain
   yield { status: 'CHECKING', message: 'Checking balance...' }
   const balance: bigint = await fromContract.balanceOf(recipientAddress)
-  const amountInUnits = parseUnits(amount.toFixed(from.decimals), from.decimals)
+  const amountInUnits = parseUnits(amount.toFixed(Math.min(from.decimals, 18)), from.decimals)
   if (balance < amountInUnits) {
     const have = formatUnits(balance, from.decimals)
     yield {
@@ -202,10 +224,7 @@ export async function* executeSwap(params: {
     return
   }
 
-  // Check solver pool has enough output tokens.
-  // Use toFixed(6) instead of toFixed(to.decimals) — JS floats have ~15 significant
-  // digits, so toFixed(18) on nTZS amounts inflates the last digits and can make the
-  // check fail even when the pool has plenty. 6dp is more than enough precision here.
+  // Check solver has enough output tokens on the to-chain
   const amountOutUnits = parseUnits(minOutput.toFixed(6), to.decimals)
   const solverBalance: bigint = await toContract.balanceOf(solverAddress)
   if (solverBalance < amountOutUnits) {
@@ -217,52 +236,53 @@ export async function* executeSwap(params: {
     return
   }
 
-  // Gas check: top up user wallet if ETH balance is too low for an ERC-20 transfer
-  // (only needed for HD wallets — CDP wallets handle gas internally)
+  // Gas check on the from-chain (HD wallets only — CDP handles gas internally)
   if (userPrivateKey) {
     const GAS_THRESHOLD = parseEther('0.00003')
-    const GAS_TOPUP = parseEther('0.00005')
-    const userEthBalance = await provider.getBalance(recipientAddress)
-    if (userEthBalance < GAS_THRESHOLD) {
+    const GAS_TOPUP     = parseEther('0.00005')
+    const userGasBalance = await fromProvider.getBalance(recipientAddress)
+    if (userGasBalance < GAS_THRESHOLD) {
       yield { status: 'PREPARING', message: 'Topping up gas...' }
-      const gasTx = await solverWallet.sendTransaction({ to: recipientAddress, value: GAS_TOPUP })
+      // Top up from the solver wallet connected to the from-chain
+      const fromChainSolver = isCrossChain
+        ? new Wallet(solverPrivateKey, fromProvider)
+        : solverWallet
+      const gasTx = await fromChainSolver.sendTransaction({ to: recipientAddress, value: GAS_TOPUP })
       await gasTx.wait()
-      console.log(`[swap] Gas top-up: ${formatEther(GAS_TOPUP)} ETH → ${recipientAddress}, tx: ${gasTx.hash}`)
+      console.log(`[swap] Gas top-up on ${fromChain}: ${formatEther(GAS_TOPUP)} → ${recipientAddress}, tx: ${gasTx.hash}`)
     }
   }
 
-  // Step 1: user sends fromToken to solver pool
+  // Step 1: user sends fromToken to inbound solver (on from-chain)
   yield { status: 'SENDING', message: `Sending ${amount} ${from.symbol} to liquidity pool...` }
   let inTxHash: string
 
   if (externalTransfer) {
-    // CDP / external wallet signing
     const result = await externalTransfer({
       tokenAddress: from.address,
-      toAddress: solverAddress,
+      toAddress: inboundSolverAddress,
       amountWei: amountInUnits,
     })
     inTxHash = result.txHash
     yield { status: 'SENDING', message: 'Confirming deposit...', txHash: inTxHash }
-    // Wait for confirmation on-chain
-    const receipt = await provider.waitForTransaction(inTxHash, 1, 120_000)
+    const receipt = await fromProvider.waitForTransaction(inTxHash, 1, 120_000)
     if (!receipt || receipt.status === 0) {
       yield { status: 'FAILED', message: 'Deposit transaction failed on-chain', error: 'TX_FAILED' }
       return
     }
   } else {
-    // HD wallet signing — we have the private key
-    const userWallet = new Wallet(userPrivateKey!, provider)
+    const userWallet = new Wallet(userPrivateKey!, fromProvider)
     const userFromContract = fromContract.connect(userWallet) as Contract
     const inTx = await (userFromContract as unknown as { transfer: (to: string, amount: bigint) => Promise<{ hash: string; wait: () => Promise<unknown> }> })
-      .transfer(solverAddress, amountInUnits)
+      .transfer(inboundSolverAddress, amountInUnits)
     inTxHash = inTx.hash
     yield { status: 'SENDING', message: 'Confirming deposit...', txHash: inTxHash }
     await inTx.wait()
   }
 
-  // Step 2: solver pool sends toToken to user
-  yield { status: 'FILLING', message: `Sending ${to.symbol} to your wallet...` }
+  // Step 2: solver sends toToken to user on the to-chain
+  const chainLabel = isCrossChain ? ` on ${toChain === 'bnb' ? 'BNB Smart Chain' : 'Base'}` : ''
+  yield { status: 'FILLING', message: `Sending ${to.symbol}${chainLabel} to your wallet...` }
   const solverToContract = toContract.connect(solverWallet) as Contract
   const outTx = await (solverToContract as unknown as { transfer: (to: string, amount: bigint) => Promise<{ hash: string; wait: () => Promise<unknown> }> })
     .transfer(recipientAddress, amountOutUnits)

@@ -841,6 +841,7 @@ export const lpFxPairs = pgTable(
   'lp_fx_pairs',
   {
     id: serial('id').primaryKey(),
+    chain: chain('chain').notNull().default('base'),
     token1Address: text('token1_address').notNull(),
     token1Symbol: text('token1_symbol').notNull(),
     token1Decimals: integer('token1_decimals').notNull().default(18),
@@ -853,7 +854,7 @@ export const lpFxPairs = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    pairUq: uniqueIndex('lp_fx_pairs_tokens_uq').on(t.token1Address, t.token2Address),
+    pairUq: uniqueIndex('lp_fx_pairs_chain_tokens_uq').on(t.chain, t.token1Address, t.token2Address),
   })
 )
 
@@ -869,6 +870,7 @@ export const lpPoolPositions = pgTable(
     lpId: uuid('lp_id')
       .notNull()
       .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    chain: chain('chain').notNull().default('base'),
     tokenAddress: text('token_address').notNull(),
     tokenSymbol: text('token_symbol').notNull(),
     decimals: integer('decimals').notNull().default(18),
@@ -878,7 +880,7 @@ export const lpPoolPositions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    lpTokenUq: uniqueIndex('lp_pool_positions_lp_token_uq').on(t.lpId, t.tokenAddress),
+    lpTokenUq: uniqueIndex('lp_pool_positions_lp_chain_token_uq').on(t.lpId, t.chain, t.tokenAddress),
     lpIdx: index('lp_pool_positions_lp_id_idx').on(t.lpId),
     tokenIdx: index('lp_pool_positions_token_address_idx').on(t.tokenAddress),
   })
@@ -895,6 +897,7 @@ export const lpFills = pgTable(
     lpId: uuid('lp_id')
       .notNull()
       .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    chain: chain('chain').notNull().default('base'),
     userAddress: text('user_address').notNull(),
     fromToken: text('from_token').notNull(),
     toToken: text('to_token').notNull(),
@@ -923,6 +926,7 @@ export const lpWalletTransactions = pgTable(
     lpId: uuid('lp_id')
       .notNull()
       .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    chain: chain('chain').notNull().default('base'),
     // 'deposit' | 'withdrawal' | 'activation_sweep' | 'deactivation_return'
     type: text('type').notNull(),
     // 'mpesa' | 'onchain' | 'system'
