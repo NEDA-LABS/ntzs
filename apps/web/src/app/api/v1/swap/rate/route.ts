@@ -49,18 +49,29 @@ export async function GET(req: NextRequest) {
 
   const fromAddr = tokenAddressFor(from, fromChain)
   const toAddr   = tokenAddressFor(to, toChain)
+  // Same chain logic as the swap route: cross-chain swaps use the stablecoin's chain
+  const stablecoinChain = from === 'NTZS' ? toChain : fromChain
+
+  console.log('[rate] pair search', { from, to, fromChain, toChain, fromAddr, toAddr, stablecoinChain, totalPairs: pairs.length })
 
   const pair = pairs.find(
-    (p: typeof pairs[number]) =>
-      (p.token1Address.toLowerCase() === fromAddr || p.token2Address.toLowerCase() === fromAddr) &&
-      (p.token1Address.toLowerCase() === toAddr   || p.token2Address.toLowerCase() === toAddr)
+    (p: typeof pairs[number]) => {
+      const p1 = p.token1Address.toLowerCase()
+      const p2 = p.token2Address.toLowerCase()
+      const addressMatch = (p1 === fromAddr || p2 === fromAddr) && (p1 === toAddr || p2 === toAddr)
+      const chainMatch = fromChain === toChain ? p.chain === fromChain : p.chain === stablecoinChain
+      return addressMatch && chainMatch
+    }
   )
+
+  console.log('[rate] pair found', pair ? { id: pair.id, chain: pair.chain, midRate: pair.midRate, t1: pair.token1Address, t2: pair.token2Address } : null)
 
   if (!pair) {
     return NextResponse.json({ error: 'No active pair found for this token combination' }, { status: 404 })
   }
 
   const midRate = parseFloat(pair.midRate.toString())
+  console.log('[rate] midRate parsed', midRate)
 
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
@@ -112,10 +123,13 @@ export async function GET(req: NextRequest) {
   // Liquidity check against the chain-correct solver wallet
   let lowLiquidity = false
   const outputChain = to === 'NTZS' ? 'base' : toChain
+  const hasBnbSolver = !!process.env.BNB_SOLVER_ADDRESS
   const solverAddress = outputChain === 'bnb'
     ? (process.env.BNB_SOLVER_ADDRESS ?? process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646')
     : (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646')
   const rpcUrl = outputChain === 'bnb' ? process.env.BNB_RPC_URL : process.env.BASE_RPC_URL
+
+  console.log('[rate] liquidity check', { outputChain, solverAddress, hasBnbSolver, hasRpc: !!rpcUrl, expectedOutput: +expectedOutput.toFixed(6), minOutput: +minOutput.toFixed(6) })
 
   if (rpcUrl) {
     try {
@@ -127,9 +141,10 @@ export async function GET(req: NextRequest) {
       const contract = new ethers.Contract(outTokenAddress, ['function balanceOf(address) view returns (uint256)'], provider)
       const balance: bigint = await contract.balanceOf(solverAddress)
       const balanceFormatted = parseFloat(ethers.formatUnits(balance, outTokenDecimals))
+      console.log('[rate] solver balance', { solverAddress, outTokenAddress, outTokenDecimals, balanceFormatted, minOutput: +minOutput.toFixed(6), lowLiquidity: balanceFormatted < minOutput })
       lowLiquidity = balanceFormatted < minOutput
-    } catch {
-      // If check fails, don't block the rate — swap will catch it
+    } catch (err) {
+      console.error('[rate] liquidity check failed', err)
     }
   }
 

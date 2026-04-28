@@ -227,6 +227,8 @@ export async function* executeSwap(params: {
   // Check solver has enough output tokens on the to-chain
   const amountOutUnits = parseUnits(minOutput.toFixed(6), to.decimals)
   const solverBalance: bigint = await toContract.balanceOf(solverAddress)
+  const solverBalanceFormatted = formatUnits(solverBalance, to.decimals)
+  console.log('[swap:liquidity]', { toChain, toToken: to.symbol, toAddress: to.address, solverAddress, solverBalance: solverBalanceFormatted, minOutput, amountOutUnits: amountOutUnits.toString(), sufficient: solverBalance >= amountOutUnits })
   if (solverBalance < amountOutUnits) {
     yield {
       status: 'FAILED',

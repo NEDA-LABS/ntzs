@@ -107,6 +107,10 @@ export async function POST(request: NextRequest) {
 
   const stablecoinChain = fromToken === 'NTZS' ? toChain : fromChain
   const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(20)
+
+  console.log('[swap] pair search', { fromToken, toToken, fromChain, toChain, fromTokenAddress, toTokenAddress, stablecoinChain, totalPairs: pairs.length })
+  console.log('[swap] chain config', { solverAddress: toCfg.solverAddress, chainName: toCfg.chainName, hasBnbSolverEnv: !!process.env.BNB_SOLVER_ADDRESS })
+
   const pair = pairs.find((p) => {
     const p1 = p.token1Address.toLowerCase()
     const p2 = p.token2Address.toLowerCase()
@@ -116,9 +120,13 @@ export async function POST(request: NextRequest) {
       (fromChain === toChain ? p.chain === fromChain : p.chain === stablecoinChain)
     )
   })
+
+  console.log('[swap] pair found', pair ? { id: pair.id, chain: pair.chain, midRate: pair.midRate } : null)
+
   if (!pair) return new Response('No active trading pair found', { status: 404 })
 
   const midRate = parseFloat(pair.midRate.toString())
+  console.log('[swap] midRate parsed', midRate)
 
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
