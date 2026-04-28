@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import type { ChainId } from '@/lib/fx/chainConfig'
 
 type StableSymbol = 'USDC' | 'USDT'
 type TokenSymbol = 'NTZS' | StableSymbol
+type UsdtChain = 'base' | 'bnb'
 
 interface RateInfo {
   expectedOutput: number
@@ -49,6 +51,16 @@ const TOKEN_LABELS: Record<TokenSymbol, string> = {
   NTZS: 'nTZS',
   USDC: 'USDC',
   USDT: 'USDT',
+}
+
+const CHAIN_EXPLORER: Record<ChainId, string> = {
+  base: 'https://basescan.org/tx/',
+  bnb: 'https://bscscan.com/tx/',
+}
+
+const CHAIN_LABELS: Record<ChainId, string> = {
+  base: 'BaseScan',
+  bnb: 'BscScan',
 }
 
 function Spinner({ className = '' }: { className?: string }) {
@@ -111,9 +123,9 @@ interface SwapSectionProps {
 
 export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const [open, setOpen] = useState(false)
-  // ntzsSide: whether NTZS is the "pay" token or the "receive" token
   const [ntzsSide, setNtzsSide] = useState<'pay' | 'receive'>('pay')
   const [stableToken, setStableToken] = useState<StableSymbol>('USDC')
+  const [usdtChain, setUsdtChain] = useState<UsdtChain>('base')
   const [amount, setAmount] = useState('')
   const [slippageBps, setSlippageBps] = useState(100)
 
@@ -123,12 +135,18 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const [logs, setLogs] = useState<StatusUpdate[]>([])
   const [swapping, setSwapping] = useState(false)
   const [done, setDone] = useState(false)
+  const [executedToChain, setExecutedToChain] = useState<ChainId>('base')
 
   const abortRef = useRef<AbortController | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   const fromToken: TokenSymbol = ntzsSide === 'pay' ? 'NTZS' : stableToken
   const toToken: TokenSymbol   = ntzsSide === 'pay' ? stableToken : 'NTZS'
+
+  // NTZS always on Base; USDC always on Base; USDT on selected chain
+  const stableChain: ChainId = stableToken === 'USDC' ? 'base' : usdtChain
+  const fromChain: ChainId = fromToken === 'NTZS' ? 'base' : stableChain
+  const toChain: ChainId   = toToken   === 'NTZS' ? 'base' : stableChain
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -166,11 +184,16 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
     setAmount('')
   }
 
-  async function fetchRate(amt: string, ft: TokenSymbol = fromToken, tt: TokenSymbol = toToken) {
+  function handleChainChange(chain: UsdtChain) {
+    setUsdtChain(chain)
+    setRate(null)
+  }
+
+  async function fetchRate(amt: string, ft: TokenSymbol = fromToken, tt: TokenSymbol = toToken, fc: ChainId = fromChain, tc: ChainId = toChain) {
     if (!amt || parseFloat(amt) <= 0) { setRate(null); return }
     setRateLoading(true)
     try {
-      const res = await fetch(`/api/v1/swap/rate?from=${ft}&to=${tt}&amount=${amt}`)
+      const res = await fetch(`/api/v1/swap/rate?from=${ft}&to=${tt}&amount=${amt}&fromChain=${fc}&toChain=${tc}`)
       if (res.ok) setRate(await res.json())
       else setRate(null)
     } catch {
@@ -190,6 +213,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
     setLogs([])
     setDone(false)
     setSwapping(true)
+    setExecutedToChain(toChain)
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -198,7 +222,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
       const res = await fetch('/app/user/wallet/swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromToken, toToken, amount: parseFloat(amount), slippageBps }),
+        body: JSON.stringify({ fromToken, toToken, fromChain, toChain, amount: parseFloat(amount), slippageBps }),
         signal: controller.signal,
       })
 
@@ -248,6 +272,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
   const lastStatus = logs[logs.length - 1]?.status
   const isFilled = lastStatus === 'FILLED'
   const isFailed = lastStatus === 'FAILED' || lastStatus === 'PARTIAL_FILL_EXHAUSTED'
+  const lastTxHash = logs[logs.length - 1]?.txHash
 
   return (
     <>
@@ -314,11 +339,17 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                       <p className="text-lg font-bold text-foreground">Swap complete!</p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {amount} {TOKEN_LABELS[fromToken]} → {TOKEN_LABELS[toToken]}
+                        {toToken === 'USDT' && executedToChain === 'bnb' && (
+                          <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2 py-0.5 text-[10px] font-medium text-yellow-400 ring-1 ring-yellow-500/20">
+                            <img src="/bnb.svg" alt="BNB" className="h-2.5 w-2.5" />
+                            BNB
+                          </span>
+                        )}
                       </p>
                     </div>
-                    {logs[logs.length - 1]?.txHash && (
+                    {lastTxHash && (
                       <a
-                        href={`https://basescan.org/tx/${logs[logs.length - 1].txHash}`}
+                        href={`${CHAIN_EXPLORER[executedToChain]}${lastTxHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 rounded-xl border border-border/40 bg-background/35 px-3 py-2 text-xs font-mono text-foreground/80 backdrop-blur-xl transition-colors hover:bg-background/45"
@@ -326,7 +357,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
-                        View on BaseScan
+                        View on {CHAIN_LABELS[executedToChain]}
                       </a>
                     )}
                     <button
@@ -402,6 +433,55 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                         </div>
                       </div>
                     </div>
+
+                    {/* USDT chain selector — only shown when USDT is the stable token */}
+                    <AnimatePresence>
+                      {stableToken === 'USDT' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.15 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-muted-foreground">USDT network</span>
+                            <div className="inline-flex items-center rounded-full border border-border/40 bg-background/35 p-0.5 backdrop-blur-xl">
+                              {(['base', 'bnb'] as UsdtChain[]).map(chain => (
+                                <button
+                                  key={chain}
+                                  type="button"
+                                  onClick={() => handleChainChange(chain)}
+                                  disabled={swapping}
+                                  className={`relative rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] transition-colors duration-150 disabled:opacity-50 ${
+                                    usdtChain === chain ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/70'
+                                  }`}
+                                >
+                                  {usdtChain === chain && (
+                                    <motion.span
+                                      layoutId="swap-chain-pill"
+                                      className="absolute inset-0 rounded-full bg-foreground/15"
+                                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                                    />
+                                  )}
+                                  <span className="relative flex items-center gap-1">
+                                    <img
+                                      src={chain === 'base' ? '/base.svg' : '/bnb.svg'}
+                                      alt={chain}
+                                      className="h-3 w-3"
+                                    />
+                                    {chain === 'base' ? 'Base' : 'BNB'}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                            {usdtChain === 'bnb' && (
+                              <span className="text-[10px] text-muted-foreground">cross-chain</span>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     {/* Slippage */}
                     <div className="flex items-center justify-between">
@@ -492,7 +572,7 @@ export function SwapSection({ renderLauncher = true }: SwapSectionProps) {
                                   <p className={`text-xs ${STATUS_COLORS[log.status] ?? 'text-zinc-400'}`}>{log.message}</p>
                                   {log.txHash && (
                                     <a
-                                      href={`https://basescan.org/tx/${log.txHash}`}
+                                      href={`${CHAIN_EXPLORER[executedToChain]}${log.txHash}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="mt-0.5 block truncate text-[10px] font-mono text-muted-foreground hover:text-foreground/80"

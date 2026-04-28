@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 import { AnimatePresence, motion } from 'framer-motion'
 
-const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org'
+const BASE_RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org'
+const BNB_RPC = 'https://bsc-dataseed.binance.org/'
 
 const TOKENS = {
   NTZS: {
@@ -21,9 +22,29 @@ const TOKENS = {
     label: 'USDC',
     icon: '/usdc-logo.svg',
   },
+  USDT: {
+    address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', // Base default
+    decimals: 6,
+    symbol: 'USDT',
+    label: 'USDT',
+    icon: '/usdt-logo.svg',
+  },
 } as const
 
+const USDT_CHAINS = {
+  base: { address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2' as const, decimals: 6 },
+  bnb:  { address: '0x55d398326f99059fF775485246999027B3197955' as const, decimals: 18 },
+}
+
 type TokenKey = keyof typeof TOKENS
+type UsdtChain = keyof typeof USDT_CHAINS
+
+type Balances = {
+  NTZS: string | null
+  USDC: string | null
+  USDT_base: string | null
+  USDT_bnb: string | null
+}
 
 interface BalanceToggleProps {
   walletAddress: string
@@ -31,31 +52,37 @@ interface BalanceToggleProps {
 
 export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
   const [active, setActive] = useState<TokenKey>('NTZS')
-  const [balances, setBalances] = useState<Record<TokenKey, string | null>>({ NTZS: null, USDC: null })
+  const [usdtChain, setUsdtChain] = useState<UsdtChain>('base')
+  const [balances, setBalances] = useState<Balances>({ NTZS: null, USDC: null, USDT_base: null, USDT_bnb: null })
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!walletAddress) return
 
-    // Base mainnet — static network avoids an extra eth_chainId round-trip
-    const network = ethers.Network.from(8453)
     const abi = ['function balanceOf(address) view returns (uint256)']
+    const baseNetwork = ethers.Network.from(8453)
+    const bnbNetwork = ethers.Network.from(56)
 
-    const fetch = async () => {
+    const fetchAll = async () => {
       try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL, network, { staticNetwork: network })
+        const baseProvider = new ethers.JsonRpcProvider(BASE_RPC, baseNetwork, { staticNetwork: baseNetwork })
+        const bnbProvider = new ethers.JsonRpcProvider(BNB_RPC, bnbNetwork, { staticNetwork: bnbNetwork })
 
-        const [ntzsRaw, usdcRaw] = await Promise.all([
+        const [ntzsRaw, usdcRaw, usdtBaseRaw, usdtBnbRaw] = await Promise.all([
           TOKENS.NTZS.address
-            ? new ethers.Contract(TOKENS.NTZS.address, abi, provider).balanceOf(walletAddress, { blockTag: 'latest' })
+            ? new ethers.Contract(TOKENS.NTZS.address, abi, baseProvider).balanceOf(walletAddress, { blockTag: 'latest' })
             : Promise.resolve(BigInt(0)),
-          new ethers.Contract(TOKENS.USDC.address, abi, provider).balanceOf(walletAddress, { blockTag: 'latest' }),
+          new ethers.Contract(TOKENS.USDC.address, abi, baseProvider).balanceOf(walletAddress, { blockTag: 'latest' }),
+          new ethers.Contract(USDT_CHAINS.base.address, abi, baseProvider).balanceOf(walletAddress, { blockTag: 'latest' }),
+          new ethers.Contract(USDT_CHAINS.bnb.address, abi, bnbProvider).balanceOf(walletAddress, { blockTag: 'latest' }),
         ])
 
         setBalances({
           NTZS: ethers.formatUnits(ntzsRaw, TOKENS.NTZS.decimals),
           USDC: ethers.formatUnits(usdcRaw, TOKENS.USDC.decimals),
+          USDT_base: ethers.formatUnits(usdtBaseRaw, USDT_CHAINS.base.decimals),
+          USDT_bnb: ethers.formatUnits(usdtBnbRaw, USDT_CHAINS.bnb.decimals),
         })
       } catch {
         // keep previous balances on transient RPC errors
@@ -64,29 +91,41 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
       }
     }
 
-    fetch()
-    const interval = setInterval(fetch, 30_000)
+    fetchAll()
+    const interval = setInterval(fetchAll, 30_000)
 
-    const onUpdate = () => fetch()
-    window.addEventListener('swap:complete',    onUpdate)
+    const onUpdate = () => fetchAll()
+    window.addEventListener('swap:complete', onUpdate)
     window.addEventListener('deposit:complete', onUpdate)
 
     return () => {
       clearInterval(interval)
-      window.removeEventListener('swap:complete',    onUpdate)
+      window.removeEventListener('swap:complete', onUpdate)
       window.removeEventListener('deposit:complete', onUpdate)
     }
   }, [walletAddress])
 
-  const token = TOKENS[active]
-  const raw = parseFloat(balances[active] || '0')
-  const formatted = active === 'NTZS'
-    ? raw.toLocaleString(undefined, { maximumFractionDigits: 0 })
-    : raw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const rawBalance = (() => {
+    if (active === 'NTZS') return parseFloat(balances.NTZS || '0')
+    if (active === 'USDC') return parseFloat(balances.USDC || '0')
+    return parseFloat((usdtChain === 'base' ? balances.USDT_base : balances.USDT_bnb) || '0')
+  })()
 
-  const usdcBalance = parseFloat(balances.USDC || '0')
-  const hasUsdc = usdcBalance > 0
-  const subtitle = active === 'NTZS' ? 'Spendable TZS balance' : 'USD stablecoin balance'
+  const formatted = active === 'NTZS'
+    ? rawBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })
+    : rawBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const token = TOKENS[active]
+
+  const hasUsdc = parseFloat(balances.USDC || '0') > 0
+  const hasUsdt = parseFloat(balances.USDT_base || '0') > 0 || parseFloat(balances.USDT_bnb || '0') > 0
+
+  const subtitle = active === 'NTZS'
+    ? 'Spendable TZS balance'
+    : active === 'USDC'
+    ? 'USD stablecoin balance on Base'
+    : `USDT balance on ${usdtChain === 'base' ? 'Base' : 'BNB Smart Chain'}`
+
   const shortAddress = `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}`
 
   async function copyAddress() {
@@ -122,6 +161,9 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
               {key === 'USDC' && hasUsdc && active !== 'USDC' && (
                 <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" />
               )}
+              {key === 'USDT' && hasUsdt && active !== 'USDT' && (
+                <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" />
+              )}
             </span>
           </button>
         ))}
@@ -130,7 +172,7 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
       <div>
         <AnimatePresence mode="wait">
           <motion.div
-            key={active}
+            key={`${active}-${active === 'USDT' ? usdtChain : ''}`}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
@@ -153,11 +195,44 @@ export function BalanceToggle({ walletAddress }: BalanceToggleProps) {
             <p className="text-sm text-muted-foreground">{subtitle}</p>
           </motion.div>
         </AnimatePresence>
+
         <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/35 px-2.5 py-1 backdrop-blur-xl">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Base
-          </span>
+          {active === 'USDT' ? (
+            <div className="inline-flex items-center rounded-full border border-border/40 bg-background/35 p-0.5 backdrop-blur-xl">
+              {(['base', 'bnb'] as UsdtChain[]).map(chain => (
+                <button
+                  key={chain}
+                  type="button"
+                  onClick={() => setUsdtChain(chain)}
+                  className={`relative rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] transition-colors duration-150 ${
+                    usdtChain === chain ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/70'
+                  }`}
+                >
+                  {usdtChain === chain && (
+                    <motion.span
+                      layoutId="chain-pill"
+                      className="absolute inset-0 rounded-full bg-foreground/15"
+                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                    />
+                  )}
+                  <span className="relative flex items-center gap-1">
+                    <img
+                      src={chain === 'base' ? '/base.svg' : '/bnb.svg'}
+                      alt={chain}
+                      className="h-3 w-3"
+                    />
+                    {chain === 'base' ? 'Base' : 'BNB'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/35 px-2.5 py-1 backdrop-blur-xl">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Base
+            </span>
+          )}
+
           <button
             type="button"
             onClick={copyAddress}

@@ -4,20 +4,24 @@ import { getDb } from '@/lib/db'
 import { lpFxPairs, lpAccounts, lpFills } from '@ntzs/db'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
+import { getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 
 export const runtime = 'nodejs'
 
 /**
- * GET /api/v1/swap/rate?from=USDC&to=NTZS&amount=5
+ * GET /api/v1/swap/rate?from=USDC&to=NTZS&amount=5&fromChain=base&toChain=base
  *
  * Returns the current expected output for a swap, based on active
  * pair mid-rate and the average LP spread.  Public endpoint — no auth.
+ * fromChain/toChain default to 'base'; only matters for USDT (Base vs BNB).
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
   const from = (searchParams.get('from') ?? '').toUpperCase() as SwapTokenSymbol
   const to = (searchParams.get('to') ?? '').toUpperCase() as SwapTokenSymbol
   const amount = parseFloat(searchParams.get('amount') ?? '0')
+  const fromChain = (searchParams.get('fromChain') ?? 'base') as ChainId
+  const toChain   = (searchParams.get('toChain')   ?? 'base') as ChainId
 
   if (!from || !to || from === to) {
     return NextResponse.json({ error: 'from and to are required and must differ' }, { status: 400 })
@@ -34,14 +38,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Unsupported tokens. Valid: ${Object.keys(SWAP_TOKENS).join(', ')}` }, { status: 400 })
   }
 
-  const tokenAddressFor = (sym: SwapTokenSymbol) => SWAP_TOKENS[sym].address.toLowerCase()
+  // Resolve chain-correct addresses (falls back to SWAP_TOKENS default for tokens that only exist on Base)
+  const tokenAddressFor = (sym: SwapTokenSymbol, chain: ChainId) => {
+    try {
+      return getChainToken(chain, sym).address.toLowerCase()
+    } catch {
+      return SWAP_TOKENS[sym].address.toLowerCase()
+    }
+  }
+
+  const fromAddr = tokenAddressFor(from, fromChain)
+  const toAddr   = tokenAddressFor(to, toChain)
 
   const pair = pairs.find(
     (p: typeof pairs[number]) =>
-      (p.token1Address.toLowerCase() === tokenAddressFor(from) ||
-        p.token2Address.toLowerCase() === tokenAddressFor(from)) &&
-      (p.token1Address.toLowerCase() === tokenAddressFor(to) ||
-        p.token2Address.toLowerCase() === tokenAddressFor(to))
+      (p.token1Address.toLowerCase() === fromAddr || p.token2Address.toLowerCase() === fromAddr) &&
+      (p.token1Address.toLowerCase() === toAddr   || p.token2Address.toLowerCase() === toAddr)
   )
 
   if (!pair) {
@@ -50,8 +62,6 @@ export async function GET(req: NextRequest) {
 
   const midRate = parseFloat(pair.midRate.toString())
 
-  // Pick LP using same load-balanced logic as the swap route, so the
-  // displayed rate matches the LP that will actually fill.
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
@@ -99,21 +109,24 @@ export async function GET(req: NextRequest) {
     slippageBps: 100,
   })
 
-  // Check solver pool liquidity for the output token.
-  // Only flag lowLiquidity when the pool genuinely can't cover minOutput
-  // (expectedOutput with 1% slippage already baked in).
-  // Previously used expectedOutput * 1.1 which caused false positives for
-  // valid swaps — the actual execution only needs minOutput, not 110%.
+  // Liquidity check against the chain-correct solver wallet
   let lowLiquidity = false
-  const solverAddress = process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646'
-  const rpcUrl = process.env.BASE_RPC_URL
+  const outputChain = to === 'NTZS' ? 'base' : toChain
+  const solverAddress = outputChain === 'bnb'
+    ? (process.env.BNB_SOLVER_ADDRESS ?? process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646')
+    : (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646')
+  const rpcUrl = outputChain === 'bnb' ? process.env.BNB_RPC_URL : process.env.BASE_RPC_URL
+
   if (rpcUrl) {
     try {
+      const outTokenAddress = tokenAddressFor(to, toChain)
+      const outTokenDecimals = (() => {
+        try { return getChainToken(toChain, to).decimals } catch { return SWAP_TOKENS[to].decimals }
+      })()
       const provider = new ethers.JsonRpcProvider(rpcUrl)
-      const outToken = SWAP_TOKENS[to]
-      const contract = new ethers.Contract(outToken.address, ['function balanceOf(address) view returns (uint256)'], provider)
+      const contract = new ethers.Contract(outTokenAddress, ['function balanceOf(address) view returns (uint256)'], provider)
       const balance: bigint = await contract.balanceOf(solverAddress)
-      const balanceFormatted = parseFloat(ethers.formatUnits(balance, outToken.decimals))
+      const balanceFormatted = parseFloat(ethers.formatUnits(balance, outTokenDecimals))
       lowLiquidity = balanceFormatted < minOutput
     } catch {
       // If check fails, don't block the rate — swap will catch it
@@ -123,6 +136,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     from,
     to,
+    fromChain,
+    toChain,
     amount,
     midRate,
     bidBps,

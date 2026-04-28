@@ -23,8 +23,12 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
   // Swap (inline quote)
   const [ntzsSide, setNtzsSide] = useState<"pay" | "receive">("pay")
   const [stableToken, setStableToken] = useState<"USDC" | "USDT">("USDC")
+  const [usdtChain, setUsdtChain] = useState<"base" | "bnb">("base")
   const fromToken = ntzsSide === "pay" ? "NTZS" : stableToken
   const toToken = ntzsSide === "pay" ? stableToken : "NTZS"
+  const stableChain = stableToken === "USDC" ? "base" : usdtChain
+  const fromChain = fromToken === "NTZS" ? "base" : stableChain
+  const toChain = toToken === "NTZS" ? "base" : stableChain
   const [swapAmount, setSwapAmount] = useState("")
   const [rateLoading, setRateLoading] = useState(false)
   const [quote, setQuote] = useState<null | { expectedOutput: number; minOutput: number; midRate: number; expiresAt: string; lowLiquidity?: boolean }>(null)
@@ -77,7 +81,7 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
       const res = await fetch('/app/user/wallet/swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromToken, toToken, amount: parseFloat(swapAmount), slippageBps: 100 }),
+        body: JSON.stringify({ fromToken, toToken, fromChain, toChain, amount: parseFloat(swapAmount), slippageBps: 100 }),
         signal: controller.signal,
       })
       if (!res.ok) {
@@ -141,7 +145,7 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
     if (!v || parseFloat(v) <= 0) { setQuote(null); return }
     setRateLoading(true)
     try {
-      const res = await fetch(`/api/v1/swap/rate?from=${from}&to=${to}&amount=${encodeURIComponent(v)}`)
+      const res = await fetch(`/api/v1/swap/rate?from=${from}&to=${to}&amount=${encodeURIComponent(v)}&fromChain=${fromChain}&toChain=${toChain}`)
       if (res.ok) setQuote(await res.json())
       else setQuote(null)
     } catch {
@@ -333,6 +337,26 @@ export function WalletTabsPanel({ walletAddress, payAlias, suggestedAlias }: Wal
                 <option value="USDC">USDC</option>
                 <option value="USDT">USDT</option>
               </select>
+              {stableToken === "USDT" && (
+                <div className="inline-flex items-center rounded-full border border-border/40 bg-background/35 p-0.5 backdrop-blur-xl">
+                  {(["base", "bnb"] as const).map(chain => (
+                    <button
+                      key={chain}
+                      type="button"
+                      onClick={() => { setUsdtChain(chain); setQuote(null); setSwapAmount("") }}
+                      disabled={swapping}
+                      className={`relative rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] transition-colors duration-150 disabled:opacity-50 ${
+                        usdtChain === chain ? 'bg-foreground/15 text-foreground' : 'text-muted-foreground hover:text-foreground/70'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1">
+                        <img src={chain === "base" ? "/base.svg" : "/bnb.svg"} alt={chain} className="h-3 w-3" />
+                        {chain === "base" ? "Base" : "BNB"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
