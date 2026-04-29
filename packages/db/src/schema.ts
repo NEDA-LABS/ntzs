@@ -968,3 +968,126 @@ export const partnerWebhookEvents = pgTable(
     nextRetryIdx: index('partner_webhook_events_next_retry_idx').on(t.nextRetryAt),
   })
 )
+
+// ─── Merchant Portal Tables ──────────────────────────────────────────────────
+
+export const merchantPaymentLinkType = pgEnum('merchant_payment_link_type', ['fixed', 'open'])
+
+export const merchantCollectionStatus = pgEnum('merchant_collection_status', [
+  'pending',
+  'minted',
+  'failed',
+])
+
+export const merchantSettlementStatus = pgEnum('merchant_settlement_status', [
+  'pending',
+  'queued',
+  'processing',
+  'completed',
+  'failed',
+  'skipped',
+])
+
+export const merchantAccounts = pgTable(
+  'merchant_accounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    email: varchar('email', { length: 320 }).notNull(),
+    businessName: text('business_name'),
+    handle: varchar('handle', { length: 40 }).notNull(),
+
+    walletAddress: text('wallet_address').notNull(),
+    walletIndex: integer('wallet_index').notNull(),
+
+    settlePct: integer('settle_pct').notNull().default(0),
+    settlementPhone: varchar('settlement_phone', { length: 32 }),
+    settlementPendingTzs: bigint('settlement_pending_tzs', { mode: 'number' }).notNull().default(0),
+
+    isActive: boolean('is_active').notNull().default(true),
+    onboardingStep: integer('onboarding_step').notNull().default(1),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex('merchant_accounts_email_uq').on(t.email),
+    handleUq: uniqueIndex('merchant_accounts_handle_uq').on(t.handle),
+    walletIndexUq: uniqueIndex('merchant_accounts_wallet_index_uq').on(t.walletIndex),
+    walletAddressUq: uniqueIndex('merchant_accounts_wallet_address_uq').on(t.walletAddress),
+  })
+)
+
+export const merchantOtpCodes = pgTable(
+  'merchant_otp_codes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    email: varchar('email', { length: 320 }).notNull(),
+    codeHash: text('code_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    used: boolean('used').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailIdx: index('merchant_otp_codes_email_idx').on(t.email),
+    expiresIdx: index('merchant_otp_codes_expires_at_idx').on(t.expiresAt),
+  })
+)
+
+export const merchantNextWalletIndex = pgTable('merchant_next_wallet_index', {
+  id: integer('id').primaryKey().default(1),
+  nextIndex: integer('next_index').notNull().default(0),
+})
+
+export const merchantPaymentLinks = pgTable(
+  'merchant_payment_links',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchantAccounts.id, { onDelete: 'cascade' }),
+    type: merchantPaymentLinkType('type').notNull().default('open'),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }),
+    description: text('description'),
+    slug: varchar('slug', { length: 60 }),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    merchantIdx: index('merchant_payment_links_merchant_id_idx').on(t.merchantId),
+    slugUq: uniqueIndex('merchant_payment_links_slug_uq').on(t.slug),
+  })
+)
+
+export const merchantCollections = pgTable(
+  'merchant_collections',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchantAccounts.id, { onDelete: 'restrict' }),
+    depositRequestId: uuid('deposit_request_id').notNull(),
+    paymentLinkId: uuid('payment_link_id').references(() => merchantPaymentLinks.id),
+
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    payerPhone: varchar('payer_phone', { length: 32 }),
+    payerName: text('payer_name'),
+
+    collectionStatus: merchantCollectionStatus('collection_status').notNull().default('pending'),
+
+    settlePct: integer('settle_pct').notNull().default(0),
+    settlementAmountTzs: bigint('settlement_amount_tzs', { mode: 'number' }),
+    settlementStatus: merchantSettlementStatus('settlement_status').notNull().default('skipped'),
+    settlementBurnRequestId: uuid('settlement_burn_request_id'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    merchantIdx: index('merchant_collections_merchant_id_idx').on(t.merchantId),
+    depositRequestUq: uniqueIndex('merchant_collections_deposit_request_uq').on(t.depositRequestId),
+    collectionStatusIdx: index('merchant_collections_collection_status_idx').on(t.collectionStatus),
+    settlementStatusIdx: index('merchant_collections_settlement_status_idx').on(t.settlementStatus),
+    createdIdx: index('merchant_collections_created_at_idx').on(t.createdAt),
+  })
+)

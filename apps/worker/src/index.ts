@@ -107,6 +107,238 @@ async function logAudit(
   `
 }
 
+const SNIPPE_FLAT_FEE_TZS = 1500
+const PLATFORM_FEE_PCT = 0.005
+const MIN_SETTLEMENT_TZS = 5000
+
+/**
+ * Phase A — Queue collections.
+ *
+ * For each minted collection with settlement pending, add the merchant's share
+ * to their running settlement_pending_tzs accumulator and mark the collection
+ * as 'queued'. No payout fires here — collections stack up until the pot is
+ * large enough for Snippe to accept it.
+ */
+async function queueCollectionSettlements(sql: ReturnType<typeof createDbClient>['sql']) {
+  const collections = await sql<{
+    collection_id: string
+    merchant_id: string
+    amount_tzs: number
+    settle_pct: number
+  }[]>`
+    select mc.id as collection_id, mc.merchant_id, mc.amount_tzs, mc.settle_pct
+    from merchant_collections mc
+    join merchant_accounts ma on ma.id = mc.merchant_id
+    where mc.collection_status = 'minted'
+      and mc.settlement_status = 'pending'
+      and mc.settle_pct > 0
+      and ma.settlement_phone is not null
+      and ma.is_active = true
+    order by mc.created_at asc
+    limit 20
+  `
+
+  for (const col of collections) {
+    // Claim atomically
+    const claimed = await sql<{ id: string }[]>`
+      update merchant_collections
+      set settlement_status = 'queued', updated_at = now()
+      where id = ${col.collection_id} and settlement_status = 'pending'
+      returning id
+    `
+    if (!claimed.length) continue
+
+    const netTzs = Math.floor((col.amount_tzs * col.settle_pct) / 100)
+
+    // Increment the merchant's accumulator and record the per-collection amount
+    await sql`
+      update merchant_accounts
+      set settlement_pending_tzs = settlement_pending_tzs + ${netTzs},
+          updated_at = now()
+      where id = ${col.merchant_id}
+    `
+
+    await sql`
+      update merchant_collections
+      set settlement_amount_tzs = ${netTzs},
+          updated_at = now()
+      where id = ${col.collection_id}
+    `
+
+    console.log('[worker] settlement queued', {
+      collectionId: col.collection_id,
+      netTzs,
+    })
+  }
+}
+
+/**
+ * Phase B — Fire batch payouts.
+ *
+ * For each merchant whose accumulated settlement_pending_tzs has crossed the
+ * PSP minimum, atomically claim the full pot and insert a single approved
+ * burn_request. The burn worker picks it up on the next cycle and pays out
+ * via Snippe. All 'queued' collections for that merchant flip to 'processing'.
+ *
+ * When we switch to a better PSP, only MIN_SETTLEMENT_TZS needs to change.
+ */
+async function fireBatchSettlements(sql: ReturnType<typeof createDbClient>['sql']) {
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  if (!contractAddress) return
+
+  const merchants = await sql<{
+    merchant_id: string
+    wallet_address: string
+    settlement_phone: string
+    settlement_pending_tzs: number
+  }[]>`
+    select id as merchant_id, wallet_address, settlement_phone, settlement_pending_tzs
+    from merchant_accounts
+    where settlement_pending_tzs >= ${MIN_SETTLEMENT_TZS}
+      and settlement_phone is not null
+      and is_active = true
+    limit 5
+  `
+
+  for (const merchant of merchants) {
+    // Atomically claim the full accumulated pot — prevents double-fire if two
+    // worker instances run simultaneously
+    const claimed = await sql<{ claimed_tzs: number }[]>`
+      update merchant_accounts
+      set settlement_pending_tzs = 0, updated_at = now()
+      where id = ${merchant.merchant_id}
+        and settlement_pending_tzs >= ${MIN_SETTLEMENT_TZS}
+      returning settlement_pending_tzs as claimed_tzs
+    `
+    // Note: settlement_pending_tzs in RETURNING is the NEW value (0) after the update.
+    // We need the old value — use the one we already read from the SELECT above.
+    if (!claimed.length) continue  // another worker claimed it first
+
+    const batchTzs = merchant.settlement_pending_tzs
+
+    // Gross up for Snippe flat fee + platform fee
+    const burnAmount = Math.ceil((batchTzs + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PCT))
+    const platformFeeTzs = burnAmount - batchTzs - SNIPPE_FLAT_FEE_TZS
+
+    // Resolve synthetic user + wallet (created on first payment)
+    const syntheticNeonId = `merchant_${merchant.wallet_address.toLowerCase()}`
+    const userRows = await sql<{ id: string }[]>`
+      select id from users where neon_auth_user_id = ${syntheticNeonId} limit 1
+    `
+    const userId = userRows[0]?.id
+
+    if (!userId) {
+      // Restore the pot so it can be retried
+      await sql`
+        update merchant_accounts
+        set settlement_pending_tzs = settlement_pending_tzs + ${batchTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[worker] batch settlement: merchant user not found', { merchantId: merchant.merchant_id })
+      continue
+    }
+
+    const walletRows = await sql<{ id: string }[]>`
+      select id from wallets where user_id = ${userId} and chain = 'base' limit 1
+    `
+    const walletId = walletRows[0]?.id
+
+    if (!walletId) {
+      await sql`
+        update merchant_accounts
+        set settlement_pending_tzs = settlement_pending_tzs + ${batchTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[worker] batch settlement: merchant wallet not found', { merchantId: merchant.merchant_id })
+      continue
+    }
+
+    // Insert pre-approved burn — burn worker claims it on the next poll
+    const burnRows = await sql<{ id: string }[]>`
+      insert into burn_requests (
+        user_id, wallet_id, chain, contract_address,
+        amount_tzs, platform_fee_tzs, reason, status,
+        requested_by_user_id, recipient_phone,
+        created_at, updated_at
+      ) values (
+        ${userId}, ${walletId}, 'base', ${contractAddress},
+        ${burnAmount}, ${platformFeeTzs}, 'merchant_auto_settlement', 'approved',
+        ${userId}, ${merchant.settlement_phone},
+        now(), now()
+      )
+      returning id
+    `
+    const burnId = burnRows[0]?.id
+
+    if (!burnId) {
+      // Restore pot on insert failure
+      await sql`
+        update merchant_accounts
+        set settlement_pending_tzs = settlement_pending_tzs + ${batchTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[worker] batch settlement: failed to insert burn request', { merchantId: merchant.merchant_id })
+      continue
+    }
+
+    // Move all this merchant's queued collections into 'processing', linked to this burn
+    await sql`
+      update merchant_collections
+      set settlement_status = 'processing',
+          settlement_burn_request_id = ${burnId},
+          updated_at = now()
+      where merchant_id = ${merchant.merchant_id}
+        and settlement_status = 'queued'
+    `
+
+    console.log('[worker] batch settlement fired', {
+      merchantId: merchant.merchant_id,
+      batchTzs,
+      burnAmount,
+      burnRequestId: burnId,
+      phone: merchant.settlement_phone,
+    })
+  }
+}
+
+/**
+ * Propagate burn_requests.payout_status back to merchant_collections.settlement_status
+ * for collections whose auto-settlement burn has been processed.
+ */
+async function syncMerchantSettlementStatus(sql: ReturnType<typeof createDbClient>['sql']) {
+  const jobs = await sql<{
+    collection_id: string
+    payout_status: string | null
+    burn_status: string
+  }[]>`
+    select mc.id as collection_id, br.payout_status, br.status as burn_status
+    from merchant_collections mc
+    join burn_requests br on br.id = mc.settlement_burn_request_id
+    where mc.settlement_status = 'processing'
+      and mc.settlement_burn_request_id is not null
+    limit 10
+  `
+
+  for (const job of jobs) {
+    let newStatus: string | null = null
+
+    if (job.payout_status === 'completed') {
+      newStatus = 'completed'
+    } else if (job.payout_status === 'failed' || job.burn_status === 'failed') {
+      newStatus = 'failed'
+    }
+
+    if (newStatus) {
+      await sql`
+        update merchant_collections
+        set settlement_status = ${newStatus}, updated_at = now()
+        where id = ${job.collection_id}
+      `
+      console.log('[worker] settlement status synced', { collectionId: job.collection_id, newStatus })
+    }
+  }
+}
+
 /**
  * Poll Snippe for payout completion on burn requests still in 'pending' payout status.
  * This is a fallback in case the payout webhook doesn't fire.
@@ -462,6 +694,33 @@ async function main() {
       if (rpcUrl) await processLpEarnings(databaseUrl, rpcUrl)
     } catch (err) {
       console.warn('[worker] LP earnings error:', err instanceof Error ? err.message : err)
+    }
+
+    // Phase A: add each minted collection's share to the merchant's running pot
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await queueCollectionSettlements(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] queue-settlements error:', err instanceof Error ? err.message : err)
+    }
+
+    // Phase B: fire a batch payout for any merchant whose pot hit the PSP minimum
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await fireBatchSettlements(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] batch-settlements error:', err instanceof Error ? err.message : err)
+    }
+
+    // Phase C: propagate burn payout status back to merchant_collections
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await syncMerchantSettlementStatus(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] settlement-sync error:', err instanceof Error ? err.message : err)
     }
 
     await sleep(pollMs)

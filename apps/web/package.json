@@ -39,6 +39,7 @@
     "nodemailer": "^8.0.2",
     "ogl": "^1.0.11",
     "openai": "^6.27.0",
+    "qr-code-styling": "^1.9.2",
     "react": "19.1.2",
     "react-dom": "19.1.2",
     "react-use-measure": "^2.1.7",

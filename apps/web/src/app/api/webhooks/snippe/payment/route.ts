@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { verifyWebhookSignature, type SnippePaymentWebhookPayload } from '@/lib/psp/snippe'
 import { executeMint } from '@/lib/minting/executeMint'
-import { depositRequests } from '@ntzs/db'
+import { depositRequests, merchantCollections } from '@ntzs/db'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
 
@@ -128,6 +128,18 @@ export async function POST(request: NextRequest) {
         if (result.status === 'minted') {
           revalidatePath('/app/user')
           revalidatePath('/app/user/activity')
+
+          // Update merchant_collections if this was a merchant payment
+          const { db: afterDb } = getDb()
+          await afterDb
+            .update(merchantCollections)
+            .set({ collectionStatus: 'minted', updatedAt: new Date() })
+            .where(
+              and(
+                eq(merchantCollections.depositRequestId, depositRequestId),
+                eq(merchantCollections.collectionStatus, 'pending')
+              )
+            )
         }
       })
     }
