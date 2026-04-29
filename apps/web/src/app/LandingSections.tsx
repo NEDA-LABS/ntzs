@@ -51,12 +51,16 @@ export default function LandingSections() {
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div>
-              <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-                Tanzania&apos;s first
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-4 h-px bg-emerald-400/60" />
+                <span className="text-[9px] tracking-widest text-emerald-400/60 uppercase">002 / About</span>
+              </div>
+              <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
+                Tanzania&apos;s First
                 <br />
-                digital asset reserve.
+                Digital Reserve.
               </h2>
-              <p className="mt-6 text-base leading-relaxed text-zinc-300 sm:text-lg">
+              <p className="mt-6 text-sm leading-relaxed text-zinc-300 font-mono">
                 Real money. Instant movement.
                 <br />
                 nTZS is programmable Tanzanian Shillings — backed 1:1 by regulated deposits, settled in real time, secured on-chain.
@@ -64,16 +68,15 @@ export default function LandingSections() {
               <div className="mt-8">
                 <Link
                   href="/landing"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-6 py-3 text-sm font-medium text-white backdrop-blur-xl transition-all hover:bg-white/20"
+                  className="inline-flex items-center gap-2 border border-white/15 px-6 py-2.5 text-[10px] tracking-widest text-white/60 uppercase hover:bg-white/[0.04] hover:text-white/90 transition-colors"
                 >
                   Learn more about nTZS
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                   </svg>
                 </Link>
               </div>
             </div>
-
             <div className="hidden md:block" />
           </div>
         </div>
@@ -96,42 +99,39 @@ export default function LandingSections() {
             </FadeIn>
 
             <FadeIn delay={0.1} className="order-1 md:order-2">
-              <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-                One wallet.
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-4 h-px bg-emerald-400/60" />
+                <span className="text-[9px] tracking-widest text-emerald-400/60 uppercase">003 / Wallet</span>
+              </div>
+              <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
+                One Wallet.
                 <br />
-                Infinite possibilities.
+                Infinite Possibilities.
               </h2>
-              <p className="mt-6 text-base leading-relaxed text-zinc-300 sm:text-lg">
+              <p className="mt-6 text-sm leading-relaxed text-zinc-300 font-mono">
                 Deposit via mobile money, hold digital TZS, send to anyone
-                instantly. The nTZS Smart Wallet is your gateway to a new
-                financial system -- no bank account required, no hidden fees,
-                no waiting.
+                instantly. No bank account required, no hidden fees, no waiting.
               </p>
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <div className="rounded-xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                  <div className="text-2xl font-bold text-white">0s</div>
-                  <div className="mt-1 text-xs text-zinc-500">Settlement time</div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                  <div className="text-2xl font-bold text-white">24/7</div>
-                  <div className="mt-1 text-xs text-zinc-500">Always available</div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                  <div className="text-2xl font-bold text-white">0%</div>
-                  <div className="mt-1 text-xs text-zinc-500">Transfer fees</div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                  <div className="text-2xl font-bold text-white">1:1</div>
-                  <div className="mt-1 text-xs text-zinc-500">TZS backed</div>
-                </div>
+              <div className="mt-6 grid grid-cols-2 gap-2">
+                {[
+                  { value: '0s', label: 'Settlement time' },
+                  { value: '24/7', label: 'Always available' },
+                  { value: '0%', label: 'Transfer fees' },
+                  { value: '1:1', label: 'TZS backed' },
+                ].map(({ value, label }) => (
+                  <div key={label} className="border border-white/8 bg-white/[0.03] p-4">
+                    <div className="text-2xl font-bold text-white tracking-wider">{value}</div>
+                    <div className="mt-1 text-[9px] tracking-widest text-white/30 uppercase">{label}</div>
+                  </div>
+                ))}
               </div>
               <div className="mt-8">
                 <Link
                   href="/smart-wallets"
-                  className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm font-medium text-white transition-all hover:bg-blue-700"
+                  className="inline-flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 px-6 py-2.5 text-[10px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors"
                 >
                   Open your wallet
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                   </svg>
                 </Link>
@@ -153,25 +153,28 @@ export default function LandingSections() {
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <FadeIn>
-              <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-                The future of
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-4 h-px bg-emerald-400/60" />
+                <span className="text-[9px] tracking-widest text-emerald-400/60 uppercase">004 / Developers</span>
+              </div>
+              <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
+                The Future of
                 <br />
-                Africa fintech:
+                Africa Fintech.
               </h2>
-              <p className="mt-6 text-base leading-relaxed text-zinc-300 sm:text-lg">
+              <p className="mt-6 text-sm leading-relaxed text-zinc-300 font-mono">
                 Integrate nTZS into your application in minutes. Our Wallet as
                 a Service API lets you provision wallets, move money, and build
-                financial products with simple REST calls. Full documentation,
-                SDKs, and sandbox testing included.
+                financial products with simple REST calls.
               </p>
 
               {/* Code preview card */}
-              <div className="mt-6 overflow-hidden rounded-xl border border-white/10 bg-black/60 backdrop-blur-xl">
-                <div className="flex items-center gap-2 border-b border-white/5 px-4 py-2.5">
-                  <div className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/60" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
-                  <span className="ml-2 text-[10px] text-zinc-600">create-wallet.ts</span>
+              <div className="mt-6 overflow-hidden border border-white/8 bg-black/60 backdrop-blur-xl">
+                <div className="flex items-center gap-2 border-b border-white/5 px-4 py-2.5 bg-white/[0.02]">
+                  <div className="w-4 h-px bg-emerald-400/40" />
+                  <span className="text-[9px] tracking-widest text-white/25 uppercase">create-wallet.ts</span>
+                  <div className="flex-1 h-px bg-white/5" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-pulse" />
                 </div>
                 <pre className="overflow-x-auto p-4 text-xs leading-relaxed">
                   <code>
@@ -214,10 +217,10 @@ export default function LandingSections() {
               <div className="mt-8">
                 <Link
                   href="/developers"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-6 py-3 text-sm font-medium text-white backdrop-blur-xl transition-all hover:bg-white/20"
+                  className="inline-flex items-center gap-2 border border-white/15 px-6 py-2.5 text-[10px] tracking-widest text-white/60 uppercase hover:bg-white/[0.04] hover:text-white/90 transition-colors"
                 >
                   View developer docs
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                   </svg>
                 </Link>
@@ -242,30 +245,36 @@ export default function LandingSections() {
         >
         <div className="mx-auto w-full max-w-4xl px-6 text-center lg:px-12">
           <FadeIn>
-            <h2 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-              Ready to move money
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <div className="w-6 h-px bg-emerald-400/40" />
+              <span className="text-[9px] tracking-widest text-emerald-400/40 uppercase">005 / Get Started</span>
+              <div className="w-6 h-px bg-emerald-400/40" />
+            </div>
+            <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
+              Ready to Move Money
               <br />
-              at the speed of the internet?
+              at Internet Speed?
             </h2>
-            <p className="mt-6 text-base leading-relaxed text-zinc-300 sm:text-lg">
+            <p className="mt-6 text-sm leading-relaxed text-zinc-300 font-mono">
               Create your account, deposit via mobile money, and start
-              transacting in under 2 minutes. The nTZS dashboard puts
-              you in full control of your digital finances.
+              transacting in under 2 minutes.
             </p>
 
-            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/app"
-                className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-all hover:bg-blue-700 hover:shadow-blue-600/40"
+                className="relative inline-flex items-center gap-2 border border-emerald-500/40 bg-emerald-500/10 px-8 py-3 text-[11px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors group"
               >
+                <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-emerald-400/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-emerald-400/50 opacity-0 group-hover:opacity-100 transition-opacity" />
                 Launch App
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
               </Link>
               <Link
                 href="/auth/sign-up"
-                className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-8 py-3.5 text-sm font-medium text-white backdrop-blur-xl transition-all hover:bg-white/20"
+                className="inline-flex items-center gap-2 border border-white/15 px-8 py-3 text-[11px] tracking-widest text-white/50 uppercase hover:bg-white/[0.04] hover:text-white/80 transition-colors"
               >
                 Create Account
               </Link>
