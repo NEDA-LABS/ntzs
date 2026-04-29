@@ -64,6 +64,7 @@ export default function ScrollExpandSection({
             loop={!videoEndTime}
             muted
             playsInline
+            preload="auto"
             className="absolute inset-0 h-full w-full object-cover"
           >
             <source src={videoSrc} type="video/mp4" />
