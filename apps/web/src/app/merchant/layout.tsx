@@ -6,12 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function MerchantLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      <style>{`
-        html, body { background: #000 !important; height: 100%; margin: 0; padding: 0; }
-      `}</style>
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }
