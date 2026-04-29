@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useMerchant } from '../layout';
-import { Copy, Plus, X, Trash2, Upload, Tag } from 'lucide-react';
-import Image from 'next/image';
+import { Copy, Plus, X, Trash2, Upload, Tag, Share2, MessageCircle, Send, ExternalLink } from 'lucide-react';
 
 interface PayLink {
   id: string;
@@ -353,6 +352,35 @@ function ProductLinkCard({
   onDelete: () => void;
 }) {
   const hasDiscount = link.discountPct > 0 && link.originalAmountTzs;
+  const [shareOpen, setShareOpen] = useState(false);
+
+  const shareText = link.productName
+    ? `${link.productName}${link.amountTzs ? ` — ${link.amountTzs.toLocaleString()} TZS` : ''}${hasDiscount ? ` (${link.discountPct}% off!)` : ''}`
+    : 'Pay via nTZS Biashara';
+
+  function shareWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${url}`)}`, '_blank');
+    setShareOpen(false);
+  }
+
+  function shareTelegram() {
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shareText)}`, '_blank');
+    setShareOpen(false);
+  }
+
+  function shareTwitter() {
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${shareText} ${url}`)}`, '_blank');
+    setShareOpen(false);
+  }
+
+  async function shareNative() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shareText, url });
+      } catch { /* user cancelled */ }
+    }
+    setShareOpen(false);
+  }
 
   return (
     <div className="relative border border-white/5 bg-white/[0.02] overflow-hidden group">
@@ -414,6 +442,65 @@ function ProductLinkCard({
               <Copy size={10} />
               {copied ? 'Copied' : 'Copy'}
             </button>
+
+            {/* Share button + sheet */}
+            <div className="relative">
+              <button
+                onClick={() => setShareOpen((o) => !o)}
+                className={`border px-3 py-1.5 text-[10px] tracking-wider uppercase transition-colors flex items-center gap-1.5 ${
+                  shareOpen
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                    : 'border-white/10 text-white/35 hover:bg-white/5 hover:text-white/60'
+                }`}
+              >
+                <Share2 size={10} />
+                Share
+              </button>
+
+              {shareOpen && (
+                <>
+                  {/* Backdrop */}
+                  <div className="fixed inset-0 z-10" onClick={() => setShareOpen(false)} />
+                  {/* Sheet */}
+                  <div className="absolute right-0 top-full mt-1 z-20 border border-white/10 bg-zinc-950 min-w-[160px] py-1 shadow-xl">
+                    <div className="px-3 py-1.5 border-b border-white/5 mb-1">
+                      <p className="text-[9px] tracking-widest text-white/25 uppercase">Share via</p>
+                    </div>
+                    <button
+                      onClick={shareWhatsApp}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors"
+                    >
+                      <MessageCircle size={12} className="text-green-400" />
+                      WhatsApp
+                    </button>
+                    <button
+                      onClick={shareTelegram}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors"
+                    >
+                      <Send size={12} className="text-sky-400" />
+                      Telegram
+                    </button>
+                    <button
+                      onClick={shareTwitter}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors"
+                    >
+                      <ExternalLink size={12} className="text-white/40" />
+                      X / Twitter
+                    </button>
+                    {typeof navigator !== 'undefined' && 'share' in navigator && (
+                      <button
+                        onClick={shareNative}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors border-t border-white/5 mt-1"
+                      >
+                        <Share2 size={12} className="text-white/40" />
+                        More options...
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
             <button
               onClick={onDelete}
               className="border border-white/10 p-1.5 text-white/20 hover:text-rose-400 hover:border-rose-500/30 transition-colors"
