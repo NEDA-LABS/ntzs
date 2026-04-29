@@ -35,7 +35,7 @@ export default function MasterLandingPage() {
             <div className="flex items-center gap-3">
               <Image src="/ntzs-logo.png" alt="nTZS" width={28} height={28} className="rounded-md opacity-90" />
               <span className="text-base font-bold tracking-widest uppercase">
-                n<span className="text-emerald-400">TZS</span>
+                n<span className="text-blue-400">TZS</span>
               </span>
               <div className="hidden lg:flex items-center gap-2 ml-3 pl-3 border-l border-white/10">
                 <span className="text-[9px] tracking-widest text-white/30 uppercase">Tanzania Shilling Network</span>
@@ -100,7 +100,7 @@ export default function MasterLandingPage() {
             </div>
             <div className="flex items-center gap-4 text-[9px] tracking-widest text-white/20 uppercase">
               <div className="flex items-center gap-1.5">
-                <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
                 <span>Base Mainnet</span>
               </div>
               <div className="w-px h-2.5 bg-white/10" />
@@ -116,8 +116,8 @@ export default function MasterLandingPage() {
 
               {/* Section label */}
               <div className="flex items-center gap-2 mb-4 opacity-60">
-                <div className="w-6 h-px bg-emerald-400" />
-                <span className="text-[9px] tracking-widest text-emerald-400 uppercase">001 / Digital Reserve</span>
+                <div className="w-6 h-px bg-blue-400" />
+                <span className="text-[9px] tracking-widest text-blue-400 uppercase">001 / Digital Reserve</span>
                 <div className="flex-1 h-px bg-white/10" />
               </div>
 
@@ -125,12 +125,12 @@ export default function MasterLandingPage() {
               <div className="relative">
                 <div className="hidden lg:block absolute -left-4 top-0 bottom-0 w-px"
                   style={{
-                    background: 'repeating-linear-gradient(180deg, rgba(74,222,128,0.4) 0px, rgba(74,222,128,0.4) 2px, transparent 2px, transparent 5px)'
+                    background: 'repeating-linear-gradient(180deg, rgba(96,165,250,0.4) 0px, rgba(96,165,250,0.4) 2px, transparent 2px, transparent 5px)'
                   }}
                 />
                 <h1 className="text-3xl lg:text-6xl font-bold text-white leading-tight tracking-wider uppercase">
                   Tanzania&apos;s
-                  <span className="block text-emerald-400 mt-1">
+                  <span className="block text-blue-400 mt-1">
                     Digital Shilling
                   </span>
                 </h1>
@@ -154,10 +154,10 @@ export default function MasterLandingPage() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link
                   href="/app"
-                  className="relative inline-flex items-center justify-center border border-emerald-500/50 bg-emerald-500/10 px-6 py-2.5 text-[11px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors group"
+                  className="relative inline-flex items-center justify-center border border-blue-500/50 bg-blue-500/10 px-6 py-2.5 text-[11px] tracking-widest text-blue-400 uppercase hover:bg-blue-500/20 transition-colors group"
                 >
-                  <span className="absolute -top-px -left-px w-2 h-2 border-t border-l border-emerald-400/60 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <span className="absolute -bottom-px -right-px w-2 h-2 border-b border-r border-emerald-400/60 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="absolute -top-px -left-px w-2 h-2 border-t border-l border-blue-400/60 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="absolute -bottom-px -right-px w-2 h-2 border-b border-r border-blue-400/60 opacity-0 group-hover:opacity-100 transition-opacity" />
                   Create Wallet
                 </Link>
                 <Link
@@ -202,7 +202,7 @@ export default function MasterLandingPage() {
             <span className="hidden lg:inline">◐ Rendering</span>
             <div className="flex gap-1">
               {[0, 0.15, 0.3].map((d, i) => (
-                <div key={i} className="w-1 h-1 rounded-full bg-emerald-400/40 animate-pulse" style={{ animationDelay: `${d}s` }} />
+                <div key={i} className="w-1 h-1 rounded-full bg-blue-400/40 animate-pulse" style={{ animationDelay: `${d}s` }} />
               ))}
             </div>
             <span className="hidden lg:inline">Secure · Instant · Regulated</span>
@@ -218,7 +218,7 @@ export default function MasterLandingPage() {
         <div className="flex items-center justify-between py-6">
           <div className="flex items-center gap-3">
             <span className="text-base font-bold tracking-widest uppercase">
-              n<span className="text-emerald-400">TZS</span>
+              n<span className="text-blue-400">TZS</span>
             </span>
             <div className="w-px h-3 bg-white/10" />
             <span className="text-[9px] tracking-widest text-white/20 uppercase">Tanzania Shilling Stablecoin</span>

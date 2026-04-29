@@ -52,8 +52,8 @@ export default function LandingSections() {
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-4 h-px bg-emerald-400/60" />
-                <span className="text-[9px] tracking-widest text-emerald-400/60 uppercase">002 / About</span>
+                <div className="w-4 h-px bg-blue-400/60" />
+                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">002 / About</span>
               </div>
               <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
                 Tanzania&apos;s First
@@ -100,8 +100,8 @@ export default function LandingSections() {
 
             <FadeIn delay={0.1} className="order-1 md:order-2">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-4 h-px bg-emerald-400/60" />
-                <span className="text-[9px] tracking-widest text-emerald-400/60 uppercase">003 / Wallet</span>
+                <div className="w-4 h-px bg-blue-400/60" />
+                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">003 / Wallet</span>
               </div>
               <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
                 One Wallet.
@@ -128,7 +128,7 @@ export default function LandingSections() {
               <div className="mt-8">
                 <Link
                   href="/smart-wallets"
-                  className="inline-flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 px-6 py-2.5 text-[10px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors"
+                  className="inline-flex items-center gap-2 border border-blue-500/30 bg-blue-500/10 px-6 py-2.5 text-[10px] tracking-widest text-blue-400 uppercase hover:bg-blue-500/20 transition-colors"
                 >
                   Open your wallet
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -154,8 +154,8 @@ export default function LandingSections() {
           <div className="grid items-center gap-12 md:grid-cols-2">
             <FadeIn>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-4 h-px bg-emerald-400/60" />
-                <span className="text-[9px] tracking-widest text-emerald-400/60 uppercase">004 / Developers</span>
+                <div className="w-4 h-px bg-blue-400/60" />
+                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">004 / Developers</span>
               </div>
               <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
                 The Future of
@@ -171,10 +171,10 @@ export default function LandingSections() {
               {/* Code preview card */}
               <div className="mt-6 overflow-hidden border border-white/8 bg-black/60 backdrop-blur-xl">
                 <div className="flex items-center gap-2 border-b border-white/5 px-4 py-2.5 bg-white/[0.02]">
-                  <div className="w-4 h-px bg-emerald-400/40" />
+                  <div className="w-4 h-px bg-blue-400/40" />
                   <span className="text-[9px] tracking-widest text-white/25 uppercase">create-wallet.ts</span>
                   <div className="flex-1 h-px bg-white/5" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400/60 animate-pulse" />
                 </div>
                 <pre className="overflow-x-auto p-4 text-xs leading-relaxed">
                   <code>
@@ -246,9 +246,9 @@ export default function LandingSections() {
         <div className="mx-auto w-full max-w-4xl px-6 text-center lg:px-12">
           <FadeIn>
             <div className="flex items-center justify-center gap-2 mb-6">
-              <div className="w-6 h-px bg-emerald-400/40" />
-              <span className="text-[9px] tracking-widest text-emerald-400/40 uppercase">005 / Get Started</span>
-              <div className="w-6 h-px bg-emerald-400/40" />
+              <div className="w-6 h-px bg-blue-400/40" />
+              <span className="text-[9px] tracking-widest text-blue-400/40 uppercase">005 / Get Started</span>
+              <div className="w-6 h-px bg-blue-400/40" />
             </div>
             <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
               Ready to Move Money
@@ -263,10 +263,10 @@ export default function LandingSections() {
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/app"
-                className="relative inline-flex items-center gap-2 border border-emerald-500/40 bg-emerald-500/10 px-8 py-3 text-[11px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors group"
+                className="relative inline-flex items-center gap-2 border border-blue-500/40 bg-blue-500/10 px-8 py-3 text-[11px] tracking-widest text-blue-400 uppercase hover:bg-blue-500/20 transition-colors group"
               >
-                <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-emerald-400/50 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-emerald-400/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-blue-400/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-blue-400/50 opacity-0 group-hover:opacity-100 transition-opacity" />
                 Launch App
                 <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
