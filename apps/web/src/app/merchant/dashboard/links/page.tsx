@@ -383,7 +383,7 @@ function ProductLinkCard({
   }
 
   return (
-    <div className="relative border border-white/5 bg-white/[0.02] overflow-hidden group">
+    <div className="border border-white/5 bg-white/[0.02] overflow-hidden">
       {/* Product image strip */}
       {link.imageUrl && (
         <div className="relative h-32 w-full overflow-hidden border-b border-white/5">
@@ -404,7 +404,6 @@ function ProductLinkCard({
       <div className="px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            {/* Name + badges */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
               {link.productName && (
                 <p className="text-sm font-medium text-white truncate">{link.productName}</p>
@@ -417,7 +416,6 @@ function ProductLinkCard({
               )}
             </div>
 
-            {/* Pricing */}
             {link.type === 'fixed' && link.amountTzs && (
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{link.amountTzs.toLocaleString()} TZS</span>
@@ -433,7 +431,7 @@ function ProductLinkCard({
             <p className="text-[10px] text-white/15 truncate mt-0.5">{url}</p>
           </div>
 
-          {/* Actions */}
+          {/* Top-right actions */}
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={onCopy}
@@ -442,65 +440,17 @@ function ProductLinkCard({
               <Copy size={10} />
               {copied ? 'Copied' : 'Copy'}
             </button>
-
-            {/* Share button + sheet */}
-            <div className="relative">
-              <button
-                onClick={() => setShareOpen((o) => !o)}
-                className={`border px-3 py-1.5 text-[10px] tracking-wider uppercase transition-colors flex items-center gap-1.5 ${
-                  shareOpen
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                    : 'border-white/10 text-white/35 hover:bg-white/5 hover:text-white/60'
-                }`}
-              >
-                <Share2 size={10} />
-                Share
-              </button>
-
-              {shareOpen && (
-                <>
-                  {/* Backdrop */}
-                  <div className="fixed inset-0 z-10" onClick={() => setShareOpen(false)} />
-                  {/* Sheet */}
-                  <div className="absolute right-0 top-full mt-1 z-20 border border-white/10 bg-zinc-950 min-w-[160px] py-1 shadow-xl">
-                    <div className="px-3 py-1.5 border-b border-white/5 mb-1">
-                      <p className="text-[9px] tracking-widest text-white/25 uppercase">Share via</p>
-                    </div>
-                    <button
-                      onClick={shareWhatsApp}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors"
-                    >
-                      <MessageCircle size={12} className="text-green-400" />
-                      WhatsApp
-                    </button>
-                    <button
-                      onClick={shareTelegram}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors"
-                    >
-                      <Send size={12} className="text-sky-400" />
-                      Telegram
-                    </button>
-                    <button
-                      onClick={shareTwitter}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors"
-                    >
-                      <ExternalLink size={12} className="text-white/40" />
-                      X / Twitter
-                    </button>
-                    {typeof navigator !== 'undefined' && 'share' in navigator && (
-                      <button
-                        onClick={shareNative}
-                        className="flex items-center gap-2.5 w-full px-3 py-2 text-[11px] text-white/50 hover:bg-white/5 hover:text-white/80 transition-colors border-t border-white/5 mt-1"
-                      >
-                        <Share2 size={12} className="text-white/40" />
-                        More options...
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-
+            <button
+              onClick={() => setShareOpen((o) => !o)}
+              className={`border px-3 py-1.5 text-[10px] tracking-wider uppercase transition-colors flex items-center gap-1.5 ${
+                shareOpen
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                  : 'border-white/10 text-white/35 hover:bg-white/5 hover:text-white/60'
+              }`}
+            >
+              <Share2 size={10} />
+              Share
+            </button>
             <button
               onClick={onDelete}
               className="border border-white/10 p-1.5 text-white/20 hover:text-rose-400 hover:border-rose-500/30 transition-colors"
@@ -510,6 +460,43 @@ function ProductLinkCard({
           </div>
         </div>
       </div>
+
+      {/* Inline share strip — expands inside the card, no overlay */}
+      {shareOpen && (
+        <div className="border-t border-white/5 bg-white/[0.015] px-4 py-3 flex items-center gap-2 flex-wrap">
+          <span className="text-[9px] tracking-widest text-white/20 uppercase mr-1">Share via</span>
+          <button
+            onClick={shareWhatsApp}
+            className="flex items-center gap-1.5 border border-green-500/20 bg-green-500/5 px-3 py-1.5 text-[10px] tracking-wider text-green-400/80 uppercase hover:bg-green-500/15 transition-colors"
+          >
+            <MessageCircle size={10} />
+            WhatsApp
+          </button>
+          <button
+            onClick={shareTelegram}
+            className="flex items-center gap-1.5 border border-sky-500/20 bg-sky-500/5 px-3 py-1.5 text-[10px] tracking-wider text-sky-400/80 uppercase hover:bg-sky-500/15 transition-colors"
+          >
+            <Send size={10} />
+            Telegram
+          </button>
+          <button
+            onClick={shareTwitter}
+            className="flex items-center gap-1.5 border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/35 uppercase hover:bg-white/5 hover:text-white/60 transition-colors"
+          >
+            <ExternalLink size={10} />
+            X
+          </button>
+          {typeof navigator !== 'undefined' && 'share' in navigator && (
+            <button
+              onClick={shareNative}
+              className="flex items-center gap-1.5 border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/35 uppercase hover:bg-white/5 hover:text-white/60 transition-colors"
+            >
+              <Share2 size={10} />
+              More
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
