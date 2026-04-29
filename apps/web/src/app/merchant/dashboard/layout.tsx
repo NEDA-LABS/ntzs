@@ -18,13 +18,45 @@ export interface MerchantAccount {
   createdAt: string;
 }
 
+export type PortalTheme = 'dark' | 'midnight' | 'forest' | 'slate' | 'rose' | 'blush' | 'jade' | 'light';
+
 interface MerchantCtx {
   merchant: MerchantAccount | null;
   refresh: () => Promise<void>;
+  theme: PortalTheme;
+  setTheme: (t: PortalTheme) => void;
 }
 
-const Ctx = createContext<MerchantCtx>({ merchant: null, refresh: async () => {} });
+const Ctx = createContext<MerchantCtx>({
+  merchant: null,
+  refresh: async () => {},
+  theme: 'dark',
+  setTheme: () => {},
+});
 export const useMerchant = () => useContext(Ctx);
+
+const THEME_STYLES: Record<PortalTheme, { root: string; sidebar: string; border: string; mobilebar: string }> = {
+  dark:     { root: 'bg-black',        sidebar: 'bg-black',        border: 'border-white/10',          mobilebar: 'bg-black' },
+  midnight: { root: 'bg-[#0a0f1a]',    sidebar: 'bg-[#0d1424]',    border: 'border-[#1e2d4a]',         mobilebar: 'bg-[#0d1424]' },
+  forest:   { root: 'bg-[#020a04]',    sidebar: 'bg-[#030d06]',    border: 'border-emerald-950',        mobilebar: 'bg-[#030d06]' },
+  slate:    { root: 'bg-[#0e0f11]',    sidebar: 'bg-[#141518]',    border: 'border-white/[0.07]',       mobilebar: 'bg-[#141518]' },
+  rose:     { root: 'bg-[#0d0508]',    sidebar: 'bg-[#150609]',    border: 'border-rose-900/60',        mobilebar: 'bg-[#150609]' },
+  blush:    { root: 'bg-[#0d0810]',    sidebar: 'bg-[#160b1a]',    border: 'border-pink-900/60',        mobilebar: 'bg-[#160b1a]' },
+  jade:     { root: 'bg-[#010c05]',    sidebar: 'bg-[#021608]',    border: 'border-emerald-800/50',     mobilebar: 'bg-[#021608]' },
+  // Light: dark sidebar, light content area (overrides applied via <style> scoped to main)
+  light:    { root: 'bg-zinc-100',     sidebar: 'bg-zinc-900',     border: 'border-zinc-700/60',        mobilebar: 'bg-zinc-900' },
+};
+
+const THEME_SWATCHES: { id: PortalTheme; label: string; swatch: string }[] = [
+  { id: 'dark',     label: 'Dark',     swatch: 'bg-zinc-950 border border-white/20' },
+  { id: 'midnight', label: 'Midnight', swatch: 'bg-[#0d1424] border border-indigo-500/40' },
+  { id: 'forest',   label: 'Forest',   swatch: 'bg-[#030d06] border border-emerald-700/50' },
+  { id: 'slate',    label: 'Slate',    swatch: 'bg-[#141518] border border-white/15' },
+  { id: 'rose',     label: 'Rose',     swatch: 'bg-[#150609] border border-rose-500/50' },
+  { id: 'blush',    label: 'Blush',    swatch: 'bg-[#160b1a] border border-pink-500/50' },
+  { id: 'jade',     label: 'Jade',     swatch: 'bg-[#021608] border border-emerald-400/60' },
+  { id: 'light',    label: 'Light',    swatch: 'bg-zinc-100 border border-zinc-400/60' },
+];
 
 const NAV = [
   { href: '/merchant/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -33,13 +65,22 @@ const NAV = [
   { href: '/merchant/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
-function Sidebar({ merchant, onLogout, onClose }: { merchant: MerchantAccount | null; onLogout: () => void; onClose?: () => void }) {
+function Sidebar({
+  merchant, onLogout, onClose, theme, setTheme,
+}: {
+  merchant: MerchantAccount | null;
+  onLogout: () => void;
+  onClose?: () => void;
+  theme: PortalTheme;
+  setTheme: (t: PortalTheme) => void;
+}) {
   const pathname = usePathname();
+  const s = THEME_STYLES[theme];
 
   return (
-    <aside className="flex flex-col h-full w-60 bg-black border-r border-white/10 font-mono">
+    <aside className={`flex flex-col h-full w-60 ${s.sidebar} border-r ${s.border} font-mono`}>
       {/* Header */}
-      <div className="px-5 py-5 border-b border-white/10">
+      <div className={`px-5 py-5 border-b ${s.border}`}>
         <div className="flex items-center justify-between">
           <Link href="/merchant" className="text-white font-bold tracking-widest text-sm uppercase">
             n<span className="text-emerald-400">TZS</span>
@@ -55,7 +96,7 @@ function Sidebar({ merchant, onLogout, onClose }: { merchant: MerchantAccount | 
         </div>
         {merchant && (
           <>
-            <div className="h-px bg-white/10 my-3" />
+            <div className={`h-px my-3 border-t ${s.border}`} />
             <p className="text-xs text-white/60 truncate">{merchant.businessName || `@${merchant.handle}`}</p>
             <p className="text-[10px] text-white/25 tracking-wide truncate mt-0.5">{merchant.email}</p>
           </>
@@ -84,7 +125,27 @@ function Sidebar({ merchant, onLogout, onClose }: { merchant: MerchantAccount | 
         })}
       </nav>
 
-      <div className="px-3 pb-4 border-t border-white/10 pt-3">
+      {/* Theme switcher */}
+      <div className={`px-5 py-4 border-t ${s.border}`}>
+        <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2.5">Theme</p>
+        <div className="grid grid-cols-4 gap-1.5">
+          {THEME_SWATCHES.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTheme(t.id)}
+              title={t.label}
+              className={`w-5 h-5 transition-all ${t.swatch} ${
+                theme === t.id
+                  ? 'ring-2 ring-offset-1 ring-white/40 opacity-100'
+                  : 'opacity-35 hover:opacity-65'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Sign out */}
+      <div className="px-3 pb-4">
         <button
           onClick={onLogout}
           className="flex items-center gap-3 px-3 py-2.5 text-xs tracking-wide text-white/25 hover:text-white/50 hover:bg-white/[0.03] transition-colors w-full text-left uppercase"
@@ -100,7 +161,18 @@ function Sidebar({ merchant, onLogout, onClose }: { merchant: MerchantAccount | 
 export default function MerchantDashboardLayout({ children }: { children: React.ReactNode }) {
   const [merchant, setMerchant] = useState<MerchantAccount | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setThemeState] = useState<PortalTheme>('dark');
   const router = useRouter();
+
+  useEffect(() => {
+    const saved = localStorage.getItem('biashara-theme') as PortalTheme | null;
+    if (saved && (saved in THEME_STYLES)) setThemeState(saved);
+  }, []);
+
+  function setTheme(t: PortalTheme) {
+    setThemeState(t);
+    localStorage.setItem('biashara-theme', t);
+  }
 
   const refresh = async () => {
     try {
@@ -120,32 +192,91 @@ export default function MerchantDashboardLayout({ children }: { children: React.
     router.replace('/merchant');
   };
 
+  const s = THEME_STYLES[theme];
+
   return (
-    <Ctx.Provider value={{ merchant, refresh }}>
-      <div className="flex h-screen bg-black text-white overflow-hidden font-mono">
+    <Ctx.Provider value={{ merchant, refresh, theme, setTheme }}>
+      {/* Light theme: sidebar stays dark, only main content area is overridden */}
+      {theme === 'light' && (
+        <style>{`
+          .portal-main { background-color: #f4f4f5 !important; }
+          .portal-main .bg-black { background-color: #ffffff !important; }
+          .portal-main .bg-white\\/\\[0\\.02\\],
+          .portal-main .bg-white\\/\\[0\\.03\\] { background-color: rgba(0,0,0,0.035) !important; }
+          .portal-main .border-white\\/5  { border-color: rgba(0,0,0,0.07) !important; }
+          .portal-main .border-white\\/10 { border-color: rgba(0,0,0,0.10) !important; }
+          .portal-main .divide-white\\/\\[0\\.04\\] > * + * { border-color: rgba(0,0,0,0.08) !important; }
+          .portal-main .hover\\:bg-white\\/5:hover,
+          .portal-main .hover\\:bg-white\\/\\[0\\.02\\]:hover { background-color: rgba(0,0,0,0.04) !important; }
+          .portal-main table thead tr { background-color: rgba(0,0,0,0.03) !important; }
+          .portal-main table tbody tr:hover { background-color: rgba(0,0,0,0.03) !important; }
+
+          /* Text — map white/opacity variants to zinc grays */
+          .portal-main .text-white                  { color: #09090b !important; }
+          .portal-main .text-white\\/80,
+          .portal-main .text-white\\/70             { color: #18181b !important; }
+          .portal-main .text-white\\/60             { color: #27272a !important; }
+          .portal-main .text-white\\/50             { color: #3f3f46 !important; }
+          .portal-main .text-white\\/40             { color: #52525b !important; }
+          .portal-main .text-white\\/35             { color: #71717a !important; }
+          .portal-main .text-white\\/30             { color: #71717a !important; }
+          .portal-main .text-white\\/25,
+          .portal-main .text-white\\/20,
+          .portal-main .text-white\\/15             { color: #a1a1aa !important; }
+          .portal-main .text-zinc-300,
+          .portal-main .text-zinc-400              { color: #3f3f46 !important; }
+          .portal-main .text-zinc-500,
+          .portal-main .text-zinc-600              { color: #71717a !important; }
+
+          /* Emerald accent — darken for legibility on white */
+          .portal-main .text-emerald-400            { color: #059669 !important; }
+          .portal-main .text-emerald-500\\/60       { color: rgba(5,150,105,0.7) !important; }
+          .portal-main .border-emerald-500\\/20,
+          .portal-main .border-emerald-500\\/15     { border-color: rgba(5,150,105,0.25) !important; }
+          .portal-main .border-emerald-500\\/40     { border-color: rgba(5,150,105,0.40) !important; }
+          .portal-main .bg-emerald-500\\/10         { background-color: rgba(5,150,105,0.10) !important; }
+          .portal-main .bg-emerald-500\\/5,
+          .portal-main .bg-emerald-500\\/\\[0\\.03\\] { background-color: rgba(5,150,105,0.06) !important; }
+
+          /* Amber/rose alerts */
+          .portal-main .border-amber-500\\/20       { border-color: rgba(217,119,6,0.25) !important; }
+          .portal-main .bg-amber-500\\/\\[0\\.03\\]   { background-color: rgba(217,119,6,0.06) !important; }
+          .portal-main .border-rose-500\\/20        { border-color: rgba(220,38,38,0.20) !important; }
+          .portal-main .bg-rose-500\\/\\[0\\.03\\]    { background-color: rgba(220,38,38,0.04) !important; }
+
+          /* Input fields */
+          .portal-main input[type="text"],
+          .portal-main input[type="email"],
+          .portal-main input[type="tel"],
+          .portal-main input[type="number"],
+          .portal-main input[type="url"] {
+            background-color: #ffffff !important;
+            color: #09090b !important;
+            border-color: rgba(0,0,0,0.15) !important;
+          }
+          .portal-main input::placeholder { color: #a1a1aa !important; }
+        `}</style>
+      )}
+      <div className={`flex h-screen ${s.root} text-white overflow-hidden font-mono`}>
+        {/* Desktop sidebar */}
         <div className="hidden lg:flex flex-col h-full">
-          <Sidebar merchant={merchant} onLogout={handleLogout} />
+          <Sidebar merchant={merchant} onLogout={handleLogout} theme={theme} setTheme={setTheme} />
         </div>
 
+        {/* Mobile sidebar */}
         {sidebarOpen && (
           <>
-            <div
-              className="fixed inset-0 bg-black/80 z-30 lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
+            <div className="fixed inset-0 bg-black/70 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
             <div className="fixed left-0 top-0 h-full z-40 lg:hidden">
-              <Sidebar merchant={merchant} onLogout={handleLogout} onClose={() => setSidebarOpen(false)} />
+              <Sidebar merchant={merchant} onLogout={handleLogout} onClose={() => setSidebarOpen(false)} theme={theme} setTheme={setTheme} />
             </div>
           </>
         )}
 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Mobile top bar */}
-          <div className="lg:hidden flex items-center justify-between px-5 py-3 border-b border-white/10">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="text-white/40 hover:text-white transition-colors"
-            >
+          <div className={`lg:hidden flex items-center justify-between px-5 py-3 border-b ${s.border} ${s.mobilebar}`}>
+            <button onClick={() => setSidebarOpen(true)} className="text-white/40 hover:text-white transition-colors">
               <Menu size={18} />
             </button>
             <span className="text-xs font-bold tracking-widest uppercase text-white">
@@ -154,7 +285,7 @@ export default function MerchantDashboardLayout({ children }: { children: React.
             <div className="w-5" />
           </div>
 
-          <main className="flex-1 overflow-y-auto">
+          <main className="portal-main flex-1 overflow-y-auto">
             {children}
           </main>
         </div>

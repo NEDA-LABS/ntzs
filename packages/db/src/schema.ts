@@ -1046,7 +1046,11 @@ export const merchantPaymentLinks = pgTable(
       .notNull()
       .references(() => merchantAccounts.id, { onDelete: 'cascade' }),
     type: merchantPaymentLinkType('type').notNull().default('open'),
+    productName: text('product_name'),
+    imageUrl: text('image_url'),
     amountTzs: bigint('amount_tzs', { mode: 'number' }),
+    originalAmountTzs: bigint('original_amount_tzs', { mode: 'number' }),
+    discountPct: integer('discount_pct').notNull().default(0),
     description: text('description'),
     slug: varchar('slug', { length: 60 }),
     isActive: boolean('is_active').notNull().default(true),

@@ -1,13 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMerchant } from '../layout';
-import { Copy, Plus, X } from 'lucide-react';
+import { Copy, Plus, X, Trash2, Upload, Tag } from 'lucide-react';
+import Image from 'next/image';
 
 interface PayLink {
   id: string;
   type: 'fixed' | 'open';
+  productName: string | null;
+  imageUrl: string | null;
   amountTzs: number | null;
+  originalAmountTzs: number | null;
+  discountPct: number;
   description: string | null;
   slug: string | null;
   isActive: boolean;
@@ -18,12 +23,18 @@ export default function LinksPage() {
   const { merchant } = useMerchant();
   const [links, setLinks] = useState<PayLink[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [type, setType] = useState<'fixed' | 'open'>('open');
+  const [type, setType] = useState<'fixed' | 'open'>('fixed');
+  const [productName, setProductName] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imagePreview, setImagePreview] = useState('');
   const [amount, setAmount] = useState('');
+  const [enableDiscount, setEnableDiscount] = useState(false);
+  const [discountPct, setDiscountPct] = useState(10);
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const base = typeof window !== 'undefined' ? window.location.origin : '';
 
@@ -35,6 +46,40 @@ export default function LinksPage() {
 
   useEffect(() => { loadLinks(); }, []);
 
+  function handleImageFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = ev.target?.result as string;
+      setImagePreview(url);
+      setImageUrl(url);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  function handleImageUrlInput(val: string) {
+    setImageUrl(val);
+    setImagePreview(val);
+  }
+
+  function resetForm() {
+    setType('fixed');
+    setProductName('');
+    setImageUrl('');
+    setImagePreview('');
+    setAmount('');
+    setEnableDiscount(false);
+    setDiscountPct(10);
+    setDescription('');
+    setFormError('');
+  }
+
+  const discountedAmount = enableDiscount && amount
+    ? Math.round(Number(amount) * (1 - discountPct / 100))
+    : Number(amount);
+
   async function createLink(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
@@ -45,7 +90,11 @@ export default function LinksPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type,
-          amountTzs: type === 'fixed' ? Number(amount) : undefined,
+          productName: productName || undefined,
+          imageUrl: imageUrl || undefined,
+          amountTzs: type === 'fixed' && !enableDiscount ? Number(amount) : undefined,
+          originalAmountTzs: type === 'fixed' && enableDiscount ? Number(amount) : undefined,
+          discountPct: enableDiscount ? discountPct : 0,
           description: description || undefined,
         }),
       });
@@ -56,18 +105,20 @@ export default function LinksPage() {
       }
       await loadLinks();
       setShowForm(false);
-      setType('open');
-      setAmount('');
-      setDescription('');
+      resetForm();
     } finally {
       setCreating(false);
     }
   }
 
+  async function deleteLink(id: string) {
+    await fetch(`/merchant/api/merchant/links?id=${id}`, { method: 'DELETE' });
+    setLinks((prev) => prev.filter((l) => l.id !== id));
+  }
+
   function linkUrl(link: PayLink): string {
     const handle = merchant?.handle ?? '';
-    if (link.type === 'fixed') return `${base}/m/${handle}?link=${link.id}`;
-    return `${base}/m/${handle}`;
+    return `${base}/m/${handle}?link=${link.id}`;
   }
 
   function copyLink(link: PayLink) {
@@ -86,7 +137,7 @@ export default function LinksPage() {
           <span className="text-[10px] tracking-widest text-white/30 uppercase">Dashboard / Payment Links</span>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setShowForm(true); resetForm(); }}
           className="flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-[10px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors"
         >
           <Plus size={11} />
@@ -96,7 +147,7 @@ export default function LinksPage() {
 
       {/* Create form */}
       {showForm && (
-        <form onSubmit={createLink} className="relative mb-5 border border-white/10 bg-white/[0.02] p-5 space-y-5">
+        <form onSubmit={createLink} className="relative mb-6 border border-white/10 bg-white/[0.02] p-5 space-y-5">
           <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-emerald-500/30" />
           <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-emerald-500/30" />
           <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-emerald-500/30" />
@@ -104,55 +155,153 @@ export default function LinksPage() {
 
           <div className="flex items-center justify-between">
             <span className="text-[10px] tracking-widest text-white/40 uppercase">New Payment Link</span>
-            <button
-              type="button"
-              onClick={() => { setShowForm(false); setFormError(''); }}
-              className="text-white/25 hover:text-white/60 transition-colors"
-            >
+            <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="text-white/25 hover:text-white/60 transition-colors">
               <X size={14} />
             </button>
           </div>
 
-          <div className="flex gap-2">
-            {(['open', 'fixed'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setType(t)}
-                className={`flex-1 py-2 text-[10px] tracking-widest uppercase transition-colors ${
-                  type === t
-                    ? 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                    : 'border border-white/10 text-white/30 hover:bg-white/[0.03]'
-                }`}
-              >
-                {t === 'open' ? 'Customer Sets Amount' : 'Fixed Amount'}
+          {/* Type toggle */}
+          <div className="grid grid-cols-2 gap-2">
+            {(['fixed', 'open'] as const).map((t) => (
+              <button key={t} type="button" onClick={() => setType(t)}
+                className={`py-2 text-[10px] tracking-widest uppercase transition-colors ${
+                  type === t ? 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border border-white/10 text-white/30 hover:bg-white/[0.03]'
+                }`}>
+                {t === 'fixed' ? 'Fixed Amount' : 'Customer Sets Amount'}
               </button>
             ))}
           </div>
 
+          {/* Product name */}
+          <div>
+            <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Product Name</label>
+            <input
+              type="text"
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              placeholder="Summer Dress, Invoice #42, Event Ticket..."
+              className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/15 focus:outline-none focus:border-emerald-500/40"
+            />
+          </div>
+
+          {/* Product image */}
+          <div>
+            <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Product Image</label>
+            {imagePreview ? (
+              <div className="relative border border-white/10">
+                <img src={imagePreview} alt="preview" className="w-full h-40 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => { setImageUrl(''); setImagePreview(''); }}
+                  className="absolute top-2 right-2 border border-white/20 bg-black/70 p-1 text-white/60 hover:text-white transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-2 w-full border border-dashed border-white/15 px-4 py-3 text-[10px] tracking-wider text-white/25 uppercase hover:border-white/30 hover:text-white/40 transition-colors"
+                >
+                  <Upload size={11} />
+                  Upload image
+                </button>
+                <input
+                  type="url"
+                  placeholder="Or paste image URL..."
+                  value={imageUrl}
+                  onChange={(e) => handleImageUrlInput(e.target.value)}
+                  className="w-full border border-white/10 bg-black px-4 py-2 text-xs text-white placeholder:text-white/15 focus:outline-none focus:border-emerald-500/40"
+                />
+              </div>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+          </div>
+
+          {/* Price */}
           {type === 'fixed' && (
             <div>
-              <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Amount (TZS)</label>
+              <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">
+                {enableDiscount ? 'Original Price (TZS)' : 'Price (TZS)'}
+              </label>
               <input
                 type="number"
                 required
                 min={100}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="5000"
-                className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50"
+                placeholder="25000"
+                className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/15 focus:outline-none focus:border-emerald-500/40"
               />
             </div>
           )}
 
+          {/* Discount */}
+          {type === 'fixed' && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-[10px] tracking-widest text-white/40 uppercase flex items-center gap-2">
+                  <Tag size={10} />
+                  Discount / Promo
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setEnableDiscount(!enableDiscount)}
+                  className={`px-3 py-1 text-[10px] tracking-widest uppercase border transition-colors ${
+                    enableDiscount
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                      : 'border-white/10 text-white/25 hover:bg-white/5'
+                  }`}
+                >
+                  {enableDiscount ? 'On' : 'Off'}
+                </button>
+              </div>
+
+              {enableDiscount && (
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-white/30">Discount</span>
+                      <span className="text-sm font-bold text-emerald-400">{discountPct}% off</span>
+                    </div>
+                    <input
+                      type="range" min={5} max={90} step={5}
+                      value={discountPct}
+                      onChange={(e) => setDiscountPct(Number(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+
+                  {amount && discountedAmount >= 100 && (
+                    <div className="border border-emerald-500/15 bg-emerald-500/[0.03] px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] tracking-widest text-white/25 uppercase mb-1">Customer pays</p>
+                          <p className="text-lg font-bold text-emerald-400">{discountedAmount.toLocaleString()} TZS</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] tracking-widest text-white/25 uppercase mb-1">Was</p>
+                          <p className="text-sm text-white/35 line-through">{Number(amount).toLocaleString()} TZS</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Description */}
           <div>
             <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Description (optional)</label>
             <input
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Delivery fee, Invoice #123"
-              className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50"
+              placeholder="Any extra details for the buyer..."
+              className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/15 focus:outline-none focus:border-emerald-500/40"
             />
           </div>
 
@@ -174,46 +323,106 @@ export default function LinksPage() {
       {links.length === 0 ? (
         <div className="border border-white/5 p-12 text-center">
           <p className="text-xs text-white/30 tracking-wide">No payment links yet</p>
-          <p className="mt-1 text-[10px] text-white/15">Create a fixed-amount link for specific products or invoices</p>
+          <p className="mt-1 text-[10px] text-white/15">Create a product link with an image and custom price</p>
         </div>
       ) : (
-        <div className="border border-white/5 divide-y divide-white/[0.04]">
+        <div className="space-y-3">
           {links.map((link) => (
-            <div key={link.id} className="px-4 py-4 hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className={`border px-2 py-0.5 text-[9px] tracking-widest uppercase ${
-                      link.type === 'fixed'
-                        ? 'border-blue-500/20 bg-blue-500/5 text-blue-400'
-                        : 'border-white/10 bg-white/[0.03] text-white/40'
-                    }`}>
-                      {link.type === 'fixed' ? `${link.amountTzs?.toLocaleString()} TZS` : 'Open'}
-                    </span>
-                    {!link.isActive && (
-                      <span className="border border-white/10 px-2 py-0.5 text-[9px] tracking-widest uppercase text-white/25">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                  {link.description && (
-                    <p className="text-xs text-white/70 truncate mb-1">{link.description}</p>
-                  )}
-                  <p className="text-[10px] text-white/20 truncate">{linkUrl(link)}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => copyLink(link)}
-                  className="shrink-0 border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/35 uppercase hover:bg-white/5 hover:text-white/60 transition-colors flex items-center gap-1.5"
-                >
-                  <Copy size={10} />
-                  {copiedId === link.id ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
+            <ProductLinkCard
+              key={link.id}
+              link={link}
+              url={linkUrl(link)}
+              copied={copiedId === link.id}
+              onCopy={() => copyLink(link)}
+              onDelete={() => deleteLink(link.id)}
+            />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ProductLinkCard({
+  link, url, copied, onCopy, onDelete,
+}: {
+  link: PayLink;
+  url: string;
+  copied: boolean;
+  onCopy: () => void;
+  onDelete: () => void;
+}) {
+  const hasDiscount = link.discountPct > 0 && link.originalAmountTzs;
+
+  return (
+    <div className="relative border border-white/5 bg-white/[0.02] overflow-hidden group">
+      {/* Product image strip */}
+      {link.imageUrl && (
+        <div className="relative h-32 w-full overflow-hidden border-b border-white/5">
+          <img src={link.imageUrl} alt={link.productName ?? ''} className="w-full h-full object-cover" />
+          {hasDiscount && (
+            <div className="absolute top-2 left-2 border border-emerald-500/60 bg-black/80 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-400 uppercase">
+              Save {link.discountPct}%
+            </div>
+          )}
+          {link.type === 'open' && (
+            <div className="absolute top-2 right-2 border border-white/20 bg-black/70 px-2 py-0.5 text-[9px] tracking-widest text-white/50 uppercase">
+              Open
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {/* Name + badges */}
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              {link.productName && (
+                <p className="text-sm font-medium text-white truncate">{link.productName}</p>
+              )}
+              {!link.imageUrl && link.type === 'open' && (
+                <span className="border border-white/10 px-2 py-0.5 text-[9px] tracking-widest text-white/35 uppercase">Open</span>
+              )}
+              {!link.isActive && (
+                <span className="border border-white/10 px-2 py-0.5 text-[9px] tracking-widest text-white/25 uppercase">Inactive</span>
+              )}
+            </div>
+
+            {/* Pricing */}
+            {link.type === 'fixed' && link.amountTzs && (
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{link.amountTzs.toLocaleString()} TZS</span>
+                {hasDiscount && (
+                  <span className="text-xs text-white/30 line-through">{link.originalAmountTzs!.toLocaleString()} TZS</span>
+                )}
+              </div>
+            )}
+
+            {link.description && (
+              <p className="text-[10px] text-white/30 truncate">{link.description}</p>
+            )}
+            <p className="text-[10px] text-white/15 truncate mt-0.5">{url}</p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={onCopy}
+              className="border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/35 uppercase hover:bg-white/5 hover:text-white/60 transition-colors flex items-center gap-1.5"
+            >
+              <Copy size={10} />
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              onClick={onDelete}
+              className="border border-white/10 p-1.5 text-white/20 hover:text-rose-400 hover:border-rose-500/30 transition-colors"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
