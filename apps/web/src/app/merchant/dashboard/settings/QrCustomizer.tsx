@@ -53,12 +53,13 @@ export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: strin
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const buildConfig = useCallback((o: QrOptions) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildConfig = useCallback((o: QrOptions): any => ({
     width: 300,
     height: 300,
     data: payUrl,
     margin: 16,
-    qrOptions: { errorCorrectionLevel: o.logoDataUrl ? 'H' : 'M' as const },
+    qrOptions: { errorCorrectionLevel: (o.logoDataUrl ? 'H' : 'M') as 'H' | 'M' },
     dotsOptions: { type: o.dotStyle, color: o.fgColor },
     backgroundOptions: { color: o.bgColor },
     cornersSquareOptions: { type: o.cornerStyle === 'dot' ? 'dot' : o.cornerStyle, color: o.fgColor },
