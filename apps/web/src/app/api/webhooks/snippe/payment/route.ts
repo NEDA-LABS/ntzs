@@ -8,7 +8,7 @@ import { verifyWebhookSignature, type SnippePaymentWebhookPayload } from '@/lib/
 import { executeMint } from '@/lib/minting/executeMint'
 import { depositRequests, merchantCollections } from '@ntzs/db'
 
-const SAFE_MINT_THRESHOLD_TZS = 100000
+const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
