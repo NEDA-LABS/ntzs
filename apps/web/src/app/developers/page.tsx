@@ -105,7 +105,8 @@ const NAV = [
   {
     group: 'Advanced',
     items: [
-      { id: 'swap', label: 'Swap (nTZS / USDC)' },
+      { id: 'rate', label: 'Swap Rate (Public)' },
+      { id: 'swap', label: 'Swap (nTZS / USDC / USDT)' },
       { id: 'webhooks', label: 'Webhooks' },
       { id: 'errors', label: 'Error Reference' },
     ],
@@ -584,18 +585,18 @@ const transfer = await res.json()
   }),
 })
 const withdrawal = await res.json()
-// Small amounts (< 100,000 TZS):
+// Small amounts (< 1,000,000 TZS):
 // { id, status: "burned", amountTzs: 10000,
 //   message: "Withdrawal processed successfully." }
 //
-// Large amounts (>= 100,000 TZS):
+// Large amounts (>= 1,000,000 TZS):
 // { id, status: "requested", amountTzs: 150000,
-//   message: "Withdrawal requires admin approval for amounts >= 100,000 TZS." }`}
+//   message: "Withdrawal requires admin approval for amounts >= 1,000,000 TZS." }`}
             />
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { label: 'Minimum', value: '5,000 TZS' },
-                { label: 'Large withdrawal threshold', value: '>= 100,000 TZS requires admin approval and may take up to 1 business day' },
+                { label: 'Large withdrawal threshold', value: '>= 1,000,000 TZS requires admin approval and may take up to 1 business day' },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-medium text-white/50">{label}</div>
@@ -605,13 +606,65 @@ const withdrawal = await res.json()
             </div>
           </DocSection>
 
+          {/* Swap Rate */}
+          <DocSection
+            id="rate"
+            isActive={activeSection === 'rate'}
+            step="Advanced"
+            title="Swap Rate — fetch before you swap"
+            description="Public endpoint — no API key required. Use this to show users a live quote before they confirm. Rates are valid for ~30 seconds."
+          >
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Recommended flow:</span>{' '}
+              fetch rate → show <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">expectedOutput</code> and{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">minOutput</code> →
+              call <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/swap</code> within the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">expiresAt</code> window.
+            </Note>
+            <CodeBlock
+              title="GET /api/v1/swap/rate — no auth required"
+              code={`// Same-chain: USDT → nTZS on Base
+const res = await fetch(
+  'https://www.ntzs.co.tz/api/v1/swap/rate?from=USDT&to=NTZS&amount=100'
+)
+const rate = await res.json()
+// {
+//   from: "USDT",  to: "NTZS",  amount: 100,
+//   midRate: 3750,            // market reference rate
+//   rate: 3744.375,           // effective rate after LP spread
+//   expectedOutput: 374437.5,
+//   minOutput: 370993.1,      // with 1% slippage guard
+//   expiresAt: "2026-04-27T10:00:30.000Z",
+//   lowLiquidity: false
+// }
+
+// Cross-chain: USDT on BNB → nTZS on Base
+const crossRate = await fetch(
+  'https://www.ntzs.co.tz/api/v1/swap/rate' +
+  '?from=USDT&to=NTZS&fromChain=bnb&toChain=base&amount=50'
+)`}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">lowLiquidity</span> — when{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">true</code>, the pool may
+                not fill the full amount. Warn the user and consider reducing the swap size.
+              </Note>
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Rate expiry</span> — re-fetch if the user
+                takes {'>'}30 s to confirm. Stale rates raise the chance of{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">SLIPPAGE_EXCEEDED</code>.
+              </Note>
+            </div>
+          </DocSection>
+
           {/* Swap */}
           <DocSection
             id="swap"
             isActive={activeSection === 'swap'}
             step="Advanced"
-            title="Swap nTZS / USDC"
-            description="Let users swap between nTZS and USDC on Base. The swap settles directly against the LP pool and streams real-time status over SSE."
+            title="Swap — nTZS / USDC / USDT"
+            description="Execute a swap for any WaaS user. Supports nTZS, USDC, and USDT on Base — plus cross-chain USDT swaps via BNB Smart Chain. Streams status in real time over SSE."
           >
             <CodeBlock
               title="POST /api/v1/swap — SSE stream"
@@ -623,49 +676,59 @@ const withdrawal = await res.json()
   },
   body: JSON.stringify({
     userId:      user.id,
-    fromToken:   'USDC',   // 'USDC' or 'NTZS'
+    fromToken:   'USDT',   // 'NTZS' | 'USDC' | 'USDT'
     toToken:     'NTZS',
-    amount:      5,        // in fromToken units
+    amount:      100,
     slippageBps: 100,      // optional, default 100 (1%)
   }),
 })
 
-// Response is text/event-stream — read with EventSource or manually:
 const reader = res.body!.getReader()
 const decoder = new TextDecoder()
 while (true) {
   const { done, value } = await reader.read()
   if (done) break
-  const lines = decoder.decode(value).split('\\n')
-  for (const line of lines) {
+  for (const line of decoder.decode(value).split('\\n')) {
     if (!line.startsWith('data: ')) continue
-    const update = JSON.parse(line.slice(6))
-    console.log(update.status, update.message, update.txHash)
-    // CHECKING → "Checking balance..."
-    // SENDING  → "Sending 5 USDC to liquidity pool..."  txHash
-    // FILLING  → "Sending nTZS to your wallet..."       txHash
-    // FILLED   → "Swap complete!"                       txHash (final)
-    // FAILED   → error message
+    const event = JSON.parse(line.slice(6))
+    // CHECKING → balance check
+    // SENDING  → user → solver transfer (txHash)
+    // FILLING  → solver → user transfer (txHash)
+    // FILLED   → complete               (txHash)
+    // FAILED   → event.error for code
+    if (event.status === 'FILLED' || event.status === 'FAILED') break
   }
 }`}
             />
             <CodeBlock
-              title="curl (raw SSE)"
+              title="POST /api/v1/swap — cross-chain (USDT BNB → nTZS Base)"
+              code={`body: JSON.stringify({
+  userId:    user.id,
+  fromToken: 'USDT',
+  toToken:   'NTZS',
+  fromChain: 'bnb',   // USDT sent from BNB Smart Chain
+  toChain:   'base',  // nTZS received on Base
+  amount:    50,
+  slippageBps: 150,
+})`}
+            />
+            <CodeBlock
+              title="curl — raw SSE"
               code={`curl -N -X POST https://www.ntzs.co.tz/api/v1/swap \\
   -H "Authorization: Bearer ntzs_live_xxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
-  -d '{"userId":"uuid...","fromToken":"USDC","toToken":"NTZS","amount":5}'
+  -d '{"userId":"uuid...","fromToken":"USDT","toToken":"NTZS","amount":100}'
 
 # data: {"status":"CHECKING","message":"Checking balance..."}
-# data: {"status":"SENDING","message":"Sending 5 USDC to liquidity pool...","txHash":"0x..."}
+# data: {"status":"SENDING","message":"Sending 100 USDT to liquidity pool...","txHash":"0x..."}
 # data: {"status":"FILLING","message":"Sending nTZS to your wallet...","txHash":"0x..."}
 # data: {"status":"FILLED","message":"Swap complete!","txHash":"0x..."}`}
             />
             <div className="grid gap-3 sm:grid-cols-3">
               {[
-                { label: 'Supported pairs', value: 'nTZS / USDC (both directions)' },
-                { label: 'Settlement', value: 'Two on-chain ERC-20 transfers on Base, ~5–10 seconds' },
-                { label: 'Gas', value: 'Auto-managed. User wallet is pre-funded via the relayer if needed.' },
+                { label: 'Supported pairs', value: 'nTZS ↔ USDC, nTZS ↔ USDT (Base), USDT BNB ↔ nTZS cross-chain' },
+                { label: 'Settlement', value: 'Two on-chain ERC-20 transfers, ~5–10 seconds same-chain' },
+                { label: 'Gas', value: 'Auto-managed — user wallet pre-funded via relayer' },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-medium text-white/50">{label}</div>
@@ -673,16 +736,20 @@ while (true) {
                 </div>
               ))}
             </div>
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">Slippage errors:</span> If the price moves
+              beyond <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">slippageBps</code> between
+              rate fetch and execution, you receive{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">FAILED / SLIPPAGE_EXCEEDED</code>.
+              Re-fetch the rate and let the user re-confirm before retrying.
+            </Note>
             <Note variant="info">
-              <span className="font-semibold text-blue-200">Balance tracking after a swap:</span>{' '}
-              Once a swap settles, the user&apos;s stablecoin holdings are immediately visible via{' '}
-              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/users/:id</code>.
-              A nTZS{'\u2192'}USDC swap increases <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">balanceUsdc</code> and
-              decreases <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">balanceTzs</code>. A USDC{'\u2192'}nTZS swap does the reverse.
-              Both fields reflect live on-chain state — no caching.
+              <span className="font-semibold text-blue-200">Balance after swap:</span>{' '}
+              Call <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/users/:id</code>{' '}
+              after <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">FILLED</code> — returns
+              live on-chain balances for nTZS, USDC, and USDT with no caching.
             </Note>
           </DocSection>
-
           {/* Webhooks */}
           <DocSection
             id="webhooks"

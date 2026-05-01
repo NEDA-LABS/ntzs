@@ -31,7 +31,7 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 ```
 Cross-chain swaps use a dual-solver model: the BNB solver handles USDT on BNB; the Base solver handles nTZS on Base. No bridging protocol is involved.
 
-**`GET /api/v1/swap/rate`** — `from` and `to` params now accept `"USDT"`.
+**`GET /api/v1/swap/rate`** — `from`, `to` now accept `"USDT"`. New optional params: `fromChain`, `toChain`.
 
 **`POST /api/v1/mm/withdraw`** — New optional `chain` field. Must be `"bnb"` when withdrawing BNB USDT:
 ```json
@@ -51,8 +51,6 @@ Cross-chain swaps use a dual-solver model: the BNB solver handles USDT on BNB; t
 
 ---
 
----
-
 ## Authentication
 
 All partner endpoints require:
@@ -65,11 +63,70 @@ API keys are issued per partner and scoped to their sub-wallet namespace. Keys c
 
 ---
 
+## Swap Rate (Public)
+
+### `GET /api/v1/swap/rate`
+
+Returns the current expected output for a swap **without executing it**. No authentication required. Use this before showing a swap UI or confirming an order.
+
+#### Query params
+
+| Param | Required | Description |
+|-------|----------|-------------|
+| `from` | ✓ | `NTZS`, `USDC`, or `USDT` |
+| `to` | ✓ | `NTZS`, `USDC`, or `USDT` |
+| `amount` | ✓ | Numeric amount of `from` token |
+| `fromChain` | — | `base` or `bnb` (default: `base`) |
+| `toChain` | — | `base` or `bnb` (default: `base`) |
+
+#### Example — USDT → nTZS
+
+```
+GET /api/v1/swap/rate?from=USDT&to=NTZS&amount=10
+```
+
+```json
+{
+  "from": "USDT",
+  "to": "NTZS",
+  "amount": 10,
+  "midRate": 3750,
+  "bidBps": 120,
+  "askBps": 150,
+  "expectedOutput": 37443.75,
+  "minOutput": 37069.31,
+  "rate": 3744.375,
+  "expiresAt": "2026-04-27T10:00:30.000Z",
+  "lowLiquidity": false
+}
+```
+
+#### Example — cross-chain (USDT on BNB → nTZS on Base)
+
+```
+GET /api/v1/swap/rate?from=USDT&to=NTZS&fromChain=bnb&toChain=base&amount=50
+```
+
+#### Response fields
+
+| Field | Description |
+|-------|-------------|
+| `midRate` | Reference market rate (TZS per stablecoin unit) |
+| `rate` | Effective rate after LP spread — what the user actually gets per unit |
+| `expectedOutput` | Best-case output at current rate |
+| `minOutput` | Minimum output including 1% slippage protection |
+| `expiresAt` | Rate is good for ~30 seconds — refresh before executing |
+| `lowLiquidity` | `true` if solver balance may be insufficient for this amount |
+
+> **Recommended flow:** call `/swap/rate` → show the user `expectedOutput` and `minOutput` → if confirmed, call `POST /api/v1/swap` within the `expiresAt` window using the same `slippageBps`.
+
+---
+
 ## Swap
 
 ### `POST /api/v1/swap`
 
-Executes a direct LP-pool swap on behalf of a WaaS user. Streams real-time order status as Server-Sent Events (SSE).
+Executes a direct LP-pool swap on behalf of a WaaS user. Streams real-time order status as Server-Sent Events (SSE). Requires authentication.
 
 #### Request body
 
@@ -91,14 +148,14 @@ Executes a direct LP-pool swap on behalf of a WaaS user. Streams real-time order
 | USDC | NTZS | base | base | USDC → nTZS on Base |
 | NTZS | USDT | base | base | nTZS → USDT on Base |
 | USDT | NTZS | base | base | USDT (Base) → nTZS |
-| USDT | NTZS | bnb | base | USDT (BNB) → nTZS on Base (cross-chain) |
+| USDT | NTZS | bnb | base | USDT (BNB) → nTZS (cross-chain) |
 | NTZS | USDT | base | bnb | nTZS → USDT (BNB) (cross-chain) |
 
-Cross-chain swaps use a dual-solver model: the BNB solver receives/sends USDT on BNB Smart Chain; the Base solver handles nTZS on Base. No bridging protocol is involved.
+Cross-chain swaps use a dual-solver model — no bridging protocol is involved.
 
 #### Response: SSE stream
 
-The response is `Content-Type: text/event-stream`. Each event is a JSON object:
+The response is `Content-Type: text/event-stream`. Each event is a JSON object on a `data:` line:
 
 ```
 data: {"status":"CHECKING","message":"Checking balance..."}
@@ -111,44 +168,53 @@ Terminal statuses: `FILLED`, `FAILED`, `PARTIAL_FILL_EXHAUSTED`
 
 #### Error statuses
 
-| status | error code | Meaning |
-|--------|-----------|---------|
+| `status` | `error` | Meaning |
+|----------|---------|---------|
 | `FAILED` | `INSUFFICIENT_BALANCE` | User wallet has less than `amount` |
-| `FAILED` | `INSUFFICIENT_LIQUIDITY` | Pool cannot cover the output |
+| `FAILED` | `INSUFFICIENT_LIQUIDITY` | Pool cannot cover the output amount |
+| `FAILED` | `SLIPPAGE_EXCEEDED` | Price moved beyond `slippageBps` since rate was quoted |
+| `FAILED` | `PAIR_NOT_FOUND` | The requested token pair / chain combo is not active |
 | `FAILED` | `TX_FAILED` | On-chain transaction reverted |
 | `FAILED` | `NO_SIGNER` | Wallet has no signing method configured |
 
----
+#### Complete integration example
 
-## Swap Rate
+```ts
+// Step 1 — fetch rate and show to user
+const rateRes = await fetch(
+  'https://www.ntzs.co.tz/api/v1/swap/rate?from=USDT&to=NTZS&amount=100'
+)
+const rate = await rateRes.json()
+// Show rate.expectedOutput, rate.minOutput, rate.expiresAt to user
 
-### `GET /api/v1/swap/rate`
+// Step 2 — execute after user confirms
+const swapRes = await fetch('https://www.ntzs.co.tz/api/v1/swap', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId: 'user-uuid',
+    fromToken: 'USDT',
+    toToken: 'NTZS',
+    amount: 100,
+    slippageBps: 100,   // 1% — match what you showed the user
+  }),
+})
 
-Returns the current expected output for a swap without executing it. Public endpoint — no authentication required.
-
-#### Query params
-
-| Param | Description |
-|-------|-------------|
-| `from` | `NTZS`, `USDC`, or `USDT` |
-| `to` | `NTZS`, `USDC`, or `USDT` |
-| `amount` | Numeric amount of `from` token |
-
-#### Response
-
-```json
-{
-  "from": "USDT",
-  "to": "NTZS",
-  "amount": 10,
-  "midRate": 3750,
-  "bidBps": 120,
-  "askBps": 150,
-  "expectedOutput": 37443.75,
-  "minOutput": 37069.31,
-  "rate": 3744.375,
-  "expiresAt": "2024-01-01T00:00:30.000Z",
-  "lowLiquidity": false
+// Step 3 — stream SSE events
+const reader = swapRes.body!.getReader()
+const decoder = new TextDecoder()
+while (true) {
+  const { done, value } = await reader.read()
+  if (done) break
+  for (const line of decoder.decode(value).split('\n')) {
+    if (!line.startsWith('data: ')) continue
+    const event = JSON.parse(line.slice(6))
+    // { status: 'FILLED', message: 'Swap complete!', txHash: '0x...' }
+    if (event.status === 'FILLED' || event.status === 'FAILED') break
+  }
 }
 ```
 
@@ -257,8 +323,14 @@ For BNB USDT liquidity, activate with `"chain": "bnb"` separately.
 
 ## Error format
 
-All non-SSE endpoints return errors as plain text (4xx/5xx) or:
+All non-SSE endpoints return errors as:
 
 ```json
 { "error": "Human-readable message" }
+```
+
+SSE errors are delivered as a terminal event:
+
+```
+data: {"status":"FAILED","error":"INSUFFICIENT_LIQUIDITY","message":"Pool cannot cover this amount"}
 ```
