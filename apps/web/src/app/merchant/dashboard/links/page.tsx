@@ -84,38 +84,68 @@ function ProductPreview({
         </div>
       ) : (
         <div className="p-4">
-          {imagePreview ? (
-            <div className="relative mb-4 overflow-hidden rounded-sm">
-              <img src={imagePreview} alt="preview" className="w-full h-48 object-cover" />
-              {promoMeta && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/70 border border-white/20 backdrop-blur-sm">
-                    <Play size={16} className="text-white ml-0.5" />
+          {/* Live iframe embed for YouTube / TikTok */}
+          {promoMeta?.embedUrl ? (
+            <div className="mb-4 overflow-hidden border border-white/10">
+              <div className={`relative w-full ${promoMeta.platform === 'tiktok' ? 'h-[300px]' : 'aspect-video'}`}>
+                <iframe
+                  src={promoMeta.embedUrl}
+                  className="absolute inset-0 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  loading="lazy"
+                />
+              </div>
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 border-t border-white/10 text-[9px] tracking-widest uppercase ${PLATFORM_COLORS[promoMeta.platform]}`}>
+                <PlatformIcon platform={promoMeta.platform} size={8} />
+                {PLATFORM_LABELS[promoMeta.platform]} · Live Preview
+              </div>
+            </div>
+
+          /* Instagram — can't embed, show thumbnail or static badge */
+          ) : promoMeta ? (
+            imagePreview ? (
+              <div className="relative mb-4 overflow-hidden">
+                <img src={imagePreview} alt="preview" className="w-full h-44 object-cover" />
+                <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
+                  <div className={`flex items-center gap-1.5 border px-3 py-1.5 text-[10px] tracking-widest uppercase backdrop-blur-sm ${PLATFORM_COLORS[promoMeta.platform]}`}>
+                    <PlatformIcon platform={promoMeta.platform} size={10} />
+                    {PLATFORM_LABELS[promoMeta.platform]}
                   </div>
+                  <p className="text-[9px] text-white/50">Opens in Instagram</p>
                 </div>
-              )}
+              </div>
+            ) : (
+              <div className="mb-4 h-28 flex items-center justify-center bg-white/[0.03] border border-dashed border-white/10">
+                <div className="flex flex-col items-center gap-2">
+                  <PlatformIcon platform={promoMeta.platform} size={18} />
+                  <span className="text-[9px] text-white/30">Opens in Instagram</span>
+                </div>
+              </div>
+            )
+
+          /* Regular image (no promo) */
+          ) : imagePreview ? (
+            <div className="relative mb-4 overflow-hidden">
+              <img src={imagePreview} alt="preview" className="w-full h-48 object-cover" />
               {enableDiscount && price > 0 && (
                 <div className="absolute top-3 left-3 bg-emerald-500 px-2 py-1 text-[10px] font-bold text-black tracking-wide">
                   SAVE {discountPct}%
                 </div>
               )}
-              {promoMeta && (
-                <div className={`absolute top-3 right-3 flex items-center gap-1 border px-2 py-0.5 text-[9px] font-semibold tracking-widest uppercase backdrop-blur-sm ${PLATFORM_COLORS[promoMeta.platform]}`}>
-                  <PlatformIcon platform={promoMeta.platform} size={9} />
-                  {PLATFORM_LABELS[promoMeta.platform]}
-                </div>
-              )}
             </div>
-          ) : promoMeta ? (
-            <div className="mb-4 h-32 flex items-center justify-center bg-white/[0.03] border border-dashed border-white/10">
-              <div className="flex flex-col items-center gap-2">
-                <PlatformIcon platform={promoMeta.platform} size={20} />
-                <span className="text-[10px] text-white/30">{PLATFORM_LABELS[promoMeta.platform]} promo</span>
-              </div>
-            </div>
+
+          /* Nothing yet */
           ) : (
             <div className="mb-4 h-32 flex items-center justify-center bg-white/[0.03] border border-dashed border-white/10">
               <Package size={24} className="text-white/20" />
+            </div>
+          )}
+
+          {/* Discount badge sits outside iframe (for promo+discount combo) */}
+          {promoMeta?.embedUrl && enableDiscount && price > 0 && (
+            <div className="flex items-center gap-2 mb-3">
+              <div className="bg-emerald-500 px-2 py-1 text-[10px] font-bold text-black tracking-wide">SAVE {discountPct}%</div>
             </div>
           )}
 
