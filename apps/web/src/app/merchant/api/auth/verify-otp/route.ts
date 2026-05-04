@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     const token = await createSession(merchant.id);
     await setSessionCookie(token);
 
-    return NextResponse.json({ ok: true, merchantId: merchant.id });
+    return NextResponse.json({ ok: true, merchantId: merchant.id, hasPassword: !!merchant.passwordHash });
   } catch (err) {
     console.error('[merchant/verify-otp]', err);
     return NextResponse.json({ error: 'Verification failed' }, { status: 500 });

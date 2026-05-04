@@ -15,6 +15,14 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwSaved, setPwSaved] = useState(false);
+  const [pwError, setPwError] = useState('');
+
   useEffect(() => {
     if (merchant) {
       setBusinessName(merchant.businessName ?? '');
@@ -49,6 +57,31 @@ export default function SettingsPage() {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePasswordChange(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError('');
+    if (newPassword !== confirmPassword) { setPwError('Passwords do not match'); return; }
+    if (newPassword.length < 8) { setPwError('Password must be at least 8 characters'); return; }
+    setPwSaving(true);
+    try {
+      const res = await fetch('/merchant/api/auth/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword, currentPassword: currentPassword || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPwSaved(true);
+      setTimeout(() => setPwSaved(false), 3000);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : 'Failed to update password');
+    } finally {
+      setPwSaving(false);
     }
   }
 
@@ -199,6 +232,70 @@ export default function SettingsPage() {
           className="w-full border border-emerald-500/40 bg-emerald-500/10 py-3 text-[10px] font-medium tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {saving ? 'Saving...' : saved ? 'Saved' : 'Save Settings'}
+        </button>
+      </form>
+
+      {/* Security — separate form so it doesn't interfere with profile save */}
+      <form onSubmit={handlePasswordChange} className="mt-5 space-y-5">
+        <section className="relative border border-white/10 p-5">
+          <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-white/20" />
+          <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-white/20" />
+
+          <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Security</p>
+          <p className="text-xs text-white/40 mb-5 leading-relaxed">
+            {merchant.hasPassword
+              ? 'Update your password. You\'ll need your current password to change it.'
+              : 'Set a password so you can sign in without an email code each time.'}
+          </p>
+
+          <div className="space-y-4">
+            {merchant.hasPassword && (
+              <div>
+                <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">Current Password</label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full border border-white/15 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/50 focus:outline-none font-mono"
+                />
+              </div>
+            )}
+            <div>
+              <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">
+                {merchant.hasPassword ? 'New Password' : 'Password'}
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Min. 8 characters"
+                className="w-full border border-white/15 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/50 focus:outline-none font-mono"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">Confirm Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat password"
+                className="w-full border border-white/15 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/50 focus:outline-none font-mono"
+              />
+            </div>
+          </div>
+
+          {pwError && (
+            <p className="mt-4 border border-rose-500/20 bg-rose-500/[0.03] px-4 py-2.5 text-xs text-rose-300">{pwError}</p>
+          )}
+        </section>
+
+        <button
+          type="submit"
+          disabled={pwSaving || !newPassword || !confirmPassword}
+          className="w-full border border-emerald-500/40 bg-emerald-500/10 py-3 text-[10px] font-medium tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {pwSaving ? 'Saving...' : pwSaved ? 'Password Updated' : merchant.hasPassword ? 'Update Password' : 'Set Password'}
         </button>
       </form>
 

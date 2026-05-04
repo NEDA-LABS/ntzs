@@ -1,5 +1,26 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { scrypt, randomBytes, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
+
+const scryptAsync = promisify(scrypt);
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString('hex');
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${salt}:${buf.toString('hex')}`;
+}
+
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  try {
+    const [salt, hash] = stored.split(':');
+    const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+    const storedBuf = Buffer.from(hash, 'hex');
+    return buf.length === storedBuf.length && timingSafeEqual(buf, storedBuf);
+  } catch {
+    return false;
+  }
+}
 
 const COOKIE = 'merchant_session';
 const ALG = 'HS256';
@@ -14,7 +35,7 @@ export async function createSession(merchantId: string): Promise<string> {
   return new SignJWT({ merchantId })
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
-    .setExpirationTime('7d')
+    .setExpirationTime('30d')
     .sign(getSecret());
 }
 
@@ -41,7 +62,7 @@ export async function setSessionCookie(token: string) {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/merchant',
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: 60 * 60 * 24 * 30,
   });
 }
 

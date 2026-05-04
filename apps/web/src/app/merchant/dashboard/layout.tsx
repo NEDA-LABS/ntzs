@@ -16,6 +16,7 @@ export interface MerchantAccount {
   isActive: boolean;
   onboardingStep: number;
   createdAt: string;
+  hasPassword: boolean;
 }
 
 export type PortalTheme = 'dark' | 'midnight' | 'forest' | 'slate' | 'rose' | 'jade' | 'light' | 'pink';

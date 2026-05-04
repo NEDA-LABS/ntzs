@@ -20,6 +20,7 @@ export async function GET() {
       isActive: merchantAccounts.isActive,
       onboardingStep: merchantAccounts.onboardingStep,
       createdAt: merchantAccounts.createdAt,
+      passwordHash: merchantAccounts.passwordHash,
     })
     .from(merchantAccounts)
     .where(eq(merchantAccounts.id, session.merchantId))
@@ -27,5 +28,6 @@ export async function GET() {
 
   if (!merchant) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json({ merchant });
+  const { passwordHash, ...rest } = merchant;
+  return NextResponse.json({ merchant: { ...rest, hasPassword: !!passwordHash } });
 }

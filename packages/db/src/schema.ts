@@ -1003,6 +1003,8 @@ export const merchantAccounts = pgTable(
     settlementPhone: varchar('settlement_phone', { length: 32 }),
     settlementPendingTzs: bigint('settlement_pending_tzs', { mode: 'number' }).notNull().default(0),
 
+    passwordHash: text('password_hash'),
+
     isActive: boolean('is_active').notNull().default(true),
     onboardingStep: integer('onboarding_step').notNull().default(1),
 
