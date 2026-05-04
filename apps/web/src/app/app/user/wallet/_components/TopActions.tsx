@@ -1,6 +1,17 @@
 "use client"
 
-import { IconTrendingUp, IconWithdraw, IconSend } from "@/app/app/_components/icons"
+import { TrendingUp, Send, ArrowDown } from "lucide-react"
+
+const glassBtn = [
+  'group relative flex items-center justify-center gap-2',
+  'h-12 w-full rounded-full px-4',
+  'ntzs-wallet-pill border border-border/40 bg-background/35 backdrop-blur-2xl',
+  'text-sm font-semibold text-foreground',
+  'transition-all duration-200',
+  'hover:opacity-90 active:scale-[0.97]',
+  'focus-visible:outline-none focus:ring-2 focus:ring-ring',
+  'overflow-hidden',
+].join(' ')
 
 function emit(name: string) {
   if (typeof window !== 'undefined') {
@@ -9,25 +20,25 @@ function emit(name: string) {
 }
 
 export function TopActions() {
-  const items = [
-    { label: "Swap", icon: IconTrendingUp, onClick: () => emit('wallet:openSwap') },
-    { label: "Send", icon: IconSend, onClick: () => emit('wallet:openSend') },
-    { label: "Withdraw", icon: IconWithdraw, onClick: () => emit('wallet:openWithdraw') },
-  ] as const
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {items.map((it) => (
-        <button
-          key={it.label}
-          type="button"
-          onClick={it.onClick}
-          className="inline-flex items-center justify-center gap-2 rounded-full border border-border/40 bg-background/35 px-4 py-2.5 text-sm font-semibold text-foreground/90 backdrop-blur-xl transition-colors hover:bg-background/45 focus-visible:outline-none focus:ring-2 focus:ring-ring"
-          aria-label={it.label}
-        >
-          <it.icon className="h-4 w-4 text-muted-foreground" />
-          {it.label}
-        </button>
-      ))}
+    <div className="grid grid-cols-3 gap-3">
+      <button type="button" onClick={() => emit('wallet:openSwap')} className={glassBtn}>
+        <span className="pointer-events-none absolute inset-0 translate-x-[-100%] bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.06)_50%,transparent_75%)] transition-transform duration-500 group-hover:translate-x-[100%]" />
+        <TrendingUp className="h-4 w-4 text-violet-400" />
+        Swap
+      </button>
+
+      <button type="button" onClick={() => emit('wallet:openSend')} className={glassBtn}>
+        <span className="pointer-events-none absolute inset-0 translate-x-[-100%] bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.06)_50%,transparent_75%)] transition-transform duration-500 group-hover:translate-x-[100%]" />
+        <Send className="h-4 w-4 text-emerald-400" />
+        Send
+      </button>
+
+      <button type="button" onClick={() => emit('wallet:openWithdraw')} className={glassBtn}>
+        <span className="pointer-events-none absolute inset-0 translate-x-[-100%] bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.06)_50%,transparent_75%)] transition-transform duration-500 group-hover:translate-x-[100%]" />
+        <ArrowDown className="h-4 w-4 text-blue-300" />
+        Withdraw
+      </button>
     </div>
   )
 }
