@@ -54,8 +54,6 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       parts.push(`Pay via nTZS`);
       description = parts.join(' · ');
 
-      // Route ALL images through the proxy — handles both base64 uploads and external URLs.
-      // WhatsApp's OG crawler requires a real HTTPS URL; data: URIs are silently ignored.
       if (link.imageUrl) {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.ntzs.co.tz';
         ogImage = `${appUrl}/api/merchant/image/${linkId}`;
@@ -128,7 +126,11 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
     }
   }
 
-  // Compute embed details from promoUrl server-side (no fetch needed — URL is deterministic)
+  const displayName = merchant.businessName || `@${merchant.handle}`;
+  const initial = (merchant.businessName || merchant.handle)[0].toUpperCase();
+  const hasDiscount = discountPct > 0 && originalAmount;
+
+  // Compute embed details from promoUrl server-side
   let promoEmbed: { type: 'iframe'; src: string; portrait: boolean } | { type: 'link'; href: string; platform: string } | null = null;
   if (promoUrl) {
     const ytMatch = promoUrl.match(/(?:[?&]v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
@@ -143,107 +145,88 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
     }
   }
 
-  const displayName = merchant.businessName || `@${merchant.handle}`;
-  const initial = (merchant.businessName || merchant.handle)[0].toUpperCase();
-  const hasDiscount = discountPct > 0 && originalAmount;
-
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-black p-4 font-mono overflow-hidden">
-      {/* Corner frame accents */}
-      <div className="pointer-events-none absolute top-0 left-0 w-12 h-12 border-t border-l border-white/15" />
-      <div className="pointer-events-none absolute top-0 right-0 w-12 h-12 border-t border-r border-white/15" />
-      <div className="pointer-events-none absolute bottom-0 left-0 w-12 h-12 border-b border-l border-white/15" />
-      <div className="pointer-events-none absolute bottom-0 right-0 w-12 h-12 border-b border-r border-white/15" />
+    <div className="min-h-screen bg-zinc-50 font-mono">
 
       {/* Top bar */}
-      <div className="pointer-events-none absolute top-0 left-0 right-0 border-b border-white/10 px-6 py-3 flex items-center justify-between">
-        <span className="text-[10px] tracking-widest text-white/30 uppercase">nTZS / Biashara</span>
+      <div className="border-b border-zinc-100 bg-white px-6 py-3 flex items-center justify-between">
+        <span className="text-[10px] tracking-widest text-zinc-400 uppercase">nTZS / Biashara</span>
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px] tracking-widest text-white/25 uppercase">Secure Payment</span>
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[10px] tracking-widest text-zinc-400 uppercase">Secure Payment</span>
         </div>
       </div>
 
-      <div className="w-full max-w-md pt-8">
+      <div className="max-w-md mx-auto px-4 py-8">
 
-        {/* Product card (when a product link is used) */}
+        {/* Product card */}
         {imageUrl ? (
-          <div className="relative border border-white/10 bg-white/[0.02] overflow-hidden mb-5">
-            <div className="absolute top-0 left-0 w-4 h-4 border-t border-l border-emerald-500/25" />
-            <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-emerald-500/25" />
-
-            {/* Hero image */}
+          <div className="bg-white border border-zinc-100 overflow-hidden mb-5 shadow-sm">
             <div className="relative h-52 w-full overflow-hidden">
               <img src={imageUrl} alt={productName ?? displayName} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-              {/* Discount badge */}
               {hasDiscount && (
-                <div className="absolute top-3 left-3 border border-emerald-400/70 bg-black/80 px-2.5 py-1 backdrop-blur-sm">
-                  <span className="text-[10px] font-bold tracking-widest text-emerald-400 uppercase">
+                <div className="absolute top-3 left-3 bg-emerald-500 px-2.5 py-1">
+                  <span className="text-[10px] font-bold tracking-widest text-white uppercase">
                     Save {discountPct}%
                   </span>
                 </div>
               )}
 
               {/* Merchant tag */}
-              <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center border border-white/30 bg-black/60 text-[10px] font-bold text-white backdrop-blur-sm">
+              <div className="absolute bottom-3 right-3 flex items-center gap-2 bg-white/90 border border-white/60 px-2.5 py-1 backdrop-blur-sm">
+                <div className="flex h-4 w-4 items-center justify-center bg-emerald-50 border border-emerald-100 text-[8px] font-bold text-emerald-600">
                   {initial}
                 </div>
-                <span className="text-[10px] text-white/60 tracking-wide">{displayName}</span>
+                <span className="text-[10px] text-zinc-500 tracking-wide">{displayName}</span>
               </div>
             </div>
 
-            {/* Product details */}
             <div className="px-5 py-4">
               {productName && (
-                <p className="text-base font-bold text-white tracking-wide mb-2">{productName}</p>
+                <p className="text-base font-bold text-zinc-900 tracking-wide mb-2">{productName}</p>
               )}
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center gap-3 mb-1 flex-wrap">
                 {fixedAmount && (
-                  <span className="text-xl font-bold text-emerald-400">{fixedAmount.toLocaleString()} TZS</span>
+                  <span className="text-xl font-bold text-emerald-600">{fixedAmount.toLocaleString()} TZS</span>
                 )}
                 {hasDiscount && originalAmount && (
                   <>
-                    <span className="text-sm text-white/30 line-through">{originalAmount.toLocaleString()} TZS</span>
-                    <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400 tracking-wider uppercase">
+                    <span className="text-sm text-zinc-300 line-through">{originalAmount.toLocaleString()} TZS</span>
+                    <span className="border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 tracking-wider uppercase">
                       -{discountPct}%
                     </span>
                   </>
                 )}
               </div>
               {linkDescription && (
-                <p className="text-xs text-white/35 leading-relaxed mt-1">{linkDescription}</p>
+                <p className="text-xs text-zinc-400 leading-relaxed mt-1">{linkDescription}</p>
               )}
             </div>
           </div>
+
         ) : (
-          /* No product image — simple merchant identity header */
-          <div className="mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-4 h-px bg-white/20" />
-              <span className="text-[10px] tracking-widest text-white/25 uppercase">
-                {productName || linkDescription ? 'Payment For' : 'Pay To'}
-              </span>
-              <div className="flex-1 h-px bg-white/5" />
-            </div>
+          /* No product image — merchant identity header */
+          <div className="mb-6 bg-white border border-zinc-100 px-5 py-4 shadow-sm">
+            <p className="text-[10px] tracking-widest text-zinc-300 uppercase mb-3">
+              {productName || linkDescription ? 'Payment For' : 'Pay To'}
+            </p>
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-emerald-500/30 bg-emerald-500/5 text-lg font-bold text-emerald-400">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-emerald-100 bg-emerald-50 text-lg font-bold text-emerald-600">
                 {initial}
               </div>
               <div>
-                <p className="text-base font-bold text-white tracking-wide">
-                  {productName || linkDescription || displayName}
+                <p className="text-base font-bold text-zinc-900 tracking-wide">
+                  {productName || displayName}
                 </p>
-                {(productName || linkDescription) && (
-                  <p className="text-xs text-white/35 mt-0.5">{displayName}</p>
+                {productName && (
+                  <p className="text-xs text-zinc-400 mt-0.5">{displayName}</p>
                 )}
                 {fixedAmount && hasDiscount && (
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm font-bold text-emerald-400">{fixedAmount.toLocaleString()} TZS</span>
-                    <span className="text-xs text-white/30 line-through">{originalAmount!.toLocaleString()} TZS</span>
-                    <span className="border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-400 uppercase tracking-wider">-{discountPct}%</span>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-sm font-bold text-emerald-600">{fixedAmount.toLocaleString()} TZS</span>
+                    <span className="text-xs text-zinc-300 line-through">{originalAmount!.toLocaleString()} TZS</span>
+                    <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] text-emerald-600 uppercase tracking-wider">-{discountPct}%</span>
                   </div>
                 )}
               </div>
@@ -253,12 +236,16 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
 
         {/* Promo video embed */}
         {promoEmbed && (
-          <div className="border border-white/10 overflow-hidden mb-5">
-            <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between">
-              <span className="text-[10px] tracking-widest text-white/30 uppercase">Watch Promo</span>
+          <div className="bg-white border border-zinc-100 overflow-hidden mb-5 shadow-sm">
+            <div className="px-4 py-2.5 border-b border-zinc-50 flex items-center justify-between">
+              <span className="text-[10px] tracking-widest text-zinc-400 uppercase">Watch Promo</span>
               {promoUrl && (
-                <a href={promoUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-[10px] tracking-widest text-white/25 uppercase hover:text-white/50 transition-colors flex items-center gap-1">
+                <a
+                  href={promoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] tracking-widest text-zinc-300 uppercase hover:text-zinc-500 transition-colors"
+                >
                   Open ↗
                 </a>
               )}
@@ -277,14 +264,14 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
                 href={promoEmbed.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-3 py-8 hover:bg-white/[0.02] transition-colors"
+                className="flex items-center gap-4 px-5 py-6 hover:bg-zinc-50 transition-colors"
               >
-                <div className="flex h-10 w-10 items-center justify-center border border-purple-500/30 bg-purple-500/10">
-                  <span className="text-purple-400 text-sm">▶</span>
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center border border-purple-100 bg-purple-50">
+                  <span className="text-purple-500 text-base leading-none">▶</span>
                 </div>
                 <div>
-                  <p className="text-sm text-white/70 font-semibold">Watch on {promoEmbed.platform}</p>
-                  <p className="text-[10px] text-white/30 mt-0.5">Tap to view the promo reel</p>
+                  <p className="text-sm font-semibold text-zinc-800">Watch on Instagram</p>
+                  <p className="text-[10px] text-zinc-400 mt-0.5 tracking-wide">Tap to view the promo reel</p>
                 </div>
               </a>
             )}
@@ -292,12 +279,7 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
         )}
 
         {/* Pay form */}
-        <div className="relative border border-white/10 p-6 bg-white/[0.02]">
-          <div className="absolute top-0 left-0 w-4 h-4 border-t border-l border-emerald-500/25" />
-          <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-emerald-500/25" />
-          <div className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-emerald-500/25" />
-          <div className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-emerald-500/25" />
-
+        <div className="bg-white border border-zinc-100 p-6 shadow-sm">
           <MerchantPayForm
             handle={merchant.handle}
             displayName={productName || displayName}
@@ -308,15 +290,15 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
           />
         </div>
 
-        <p className="mt-5 text-center text-[10px] tracking-widest text-white/15 uppercase">
+        <p className="mt-6 text-center text-[10px] tracking-widest text-zinc-300 uppercase">
           Powered by nTZS Network · Secure Mobile Payments
         </p>
       </div>
 
       {/* Bottom bar */}
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 border-t border-white/10 px-6 py-3 flex items-center justify-between">
-        <span className="text-[10px] tracking-widest text-white/15 uppercase">nTZS</span>
-        <span className="text-[10px] tracking-widest text-white/15 uppercase">Tanzania Shilling Stablecoin</span>
+      <div className="border-t border-zinc-100 px-6 py-3 flex items-center justify-between">
+        <span className="text-[10px] tracking-widest text-zinc-300 uppercase">nTZS</span>
+        <span className="text-[10px] tracking-widest text-zinc-300 uppercase">Tanzania Shilling Stablecoin</span>
       </div>
     </div>
   );

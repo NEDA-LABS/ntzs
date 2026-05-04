@@ -98,52 +98,52 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
       <div className="py-8 text-center font-mono">
         {payStatus === 'success' ? (
           <>
-            <div className="mx-auto flex h-14 w-14 items-center justify-center border border-emerald-500/30 bg-emerald-500/10 mb-5">
-              <svg className="h-6 w-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center border border-emerald-200 bg-emerald-50 mb-5">
+              <svg className="h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-[10px] tracking-widest text-emerald-500/60 uppercase mb-2">Payment Confirmed</p>
-            <p className="text-sm text-white/70">
-              <span className="font-bold text-white">{Number(amount).toLocaleString()} TZS</span>{' '}
+            <p className="text-[10px] tracking-widest text-emerald-500 uppercase mb-2">Payment Confirmed</p>
+            <p className="text-sm text-zinc-600">
+              <span className="font-bold text-zinc-900">{Number(amount).toLocaleString()} TZS</span>{' '}
               sent to {displayName}
             </p>
           </>
         ) : payStatus === 'failed' ? (
           <>
-            <div className="mx-auto flex h-14 w-14 items-center justify-center border border-rose-500/30 bg-rose-500/10 mb-5">
-              <svg className="h-6 w-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center border border-rose-200 bg-rose-50 mb-5">
+              <svg className="h-6 w-6 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <p className="text-[10px] tracking-widest text-rose-400/60 uppercase mb-2">Payment Failed</p>
-            <p className="text-xs text-white/35 mb-5">The payment was not completed. Please try again.</p>
+            <p className="text-[10px] tracking-widest text-rose-500 uppercase mb-2">Payment Failed</p>
+            <p className="text-xs text-zinc-400 mb-5">The payment was not completed. Please try again.</p>
             <button
               type="button"
               onClick={() => { setDepositId(null); setPayStatus(null); }}
-              className="border border-white/10 px-5 py-2.5 text-[10px] tracking-widest text-white/40 uppercase hover:bg-white/5 transition-colors"
+              className="border border-zinc-200 px-5 py-2.5 text-[10px] tracking-widest text-zinc-500 uppercase hover:bg-zinc-50 transition-colors"
             >
               Try Again
             </button>
           </>
         ) : (
           <>
-            <div className="mx-auto flex h-14 w-14 items-center justify-center border border-emerald-500/20 bg-emerald-500/5 mb-5">
-              <svg className="h-6 w-6 animate-spin text-emerald-400/60" fill="none" viewBox="0 0 24 24">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center border border-emerald-100 bg-emerald-50 mb-5">
+              <svg className="h-6 w-6 animate-spin text-emerald-500" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             </div>
-            <p className="text-[10px] tracking-widest text-white/40 uppercase mb-2">
+            <p className="text-[10px] tracking-widest text-zinc-400 uppercase mb-2">
               {payStatus === 'pending' ? 'Awaiting Approval' : 'Processing Payment'}
             </p>
-            <p className="text-xs text-white/25 leading-relaxed">
+            <p className="text-xs text-zinc-400 leading-relaxed">
               {payStatus === 'pending'
                 ? 'Check your phone and approve the payment prompt'
                 : 'Payment received — finalising transaction'}
             </p>
-            <p className="mt-4 text-[10px] text-white/20">
-              <span className="text-white/40">{Number(amount).toLocaleString()} TZS</span>
+            <p className="mt-4 text-[10px] text-zinc-300">
+              <span className="text-zinc-500">{Number(amount).toLocaleString()} TZS</span>
               {' '}to {displayName}
             </p>
           </>
@@ -155,17 +155,17 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
   return (
     <form onSubmit={handleSubmit} className="space-y-5 font-mono">
       {description && (
-        <div className="border border-white/5 bg-white/[0.02] px-4 py-3">
-          <p className="text-[10px] tracking-widest text-white/30 uppercase mb-0.5">Payment For</p>
-          <p className="text-sm text-white/70">{description}</p>
+        <div className="border border-zinc-100 bg-zinc-50 px-4 py-3">
+          <p className="text-[10px] tracking-widest text-zinc-400 uppercase mb-0.5">Payment For</p>
+          <p className="text-sm text-zinc-600">{description}</p>
         </div>
       )}
 
       {/* Amount */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-[10px] tracking-widest text-white/40 uppercase">Amount (TZS)</label>
-          {fixedAmount && <span className="text-[10px] tracking-widest text-white/20 uppercase">Fixed</span>}
+          <label className="text-[10px] tracking-widest text-zinc-400 uppercase">Amount (TZS)</label>
+          {fixedAmount && <span className="text-[10px] tracking-widest text-zinc-300 uppercase">Fixed</span>}
         </div>
         <input
           type="number"
@@ -174,8 +174,10 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
           value={amount}
           readOnly={!!fixedAmount}
           onChange={(e) => !fixedAmount && setAmount(e.target.value)}
-          className={`w-full border border-white/10 bg-black px-4 py-4 text-3xl font-bold text-white placeholder:text-white/10 focus:outline-none ${
-            fixedAmount ? 'cursor-default opacity-70' : 'focus:border-emerald-500/40'
+          className={`w-full border px-4 py-4 text-3xl font-bold text-zinc-900 placeholder:text-zinc-200 focus:outline-none bg-white transition-colors ${
+            fixedAmount
+              ? 'border-zinc-100 cursor-default text-zinc-700'
+              : 'border-zinc-200 focus:border-emerald-500'
           }`}
         />
         {!fixedAmount && (
@@ -185,7 +187,7 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
                 key={qa}
                 type="button"
                 onClick={() => setAmount(String(qa))}
-                className="flex-1 border border-white/10 py-1.5 text-[10px] tracking-wide text-white/35 uppercase hover:bg-white/5 hover:text-white/60 transition-colors"
+                className="flex-1 border border-zinc-100 py-1.5 text-[10px] tracking-wide text-zinc-400 uppercase hover:border-zinc-300 hover:text-zinc-700 transition-colors"
               >
                 {qa >= 1000 ? `${qa / 1000}k` : qa}
               </button>
@@ -196,37 +198,39 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
 
       {/* Phone */}
       <div>
-        <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Your Phone Number</label>
+        <label className="mb-2 block text-[10px] tracking-widest text-zinc-400 uppercase">Your Phone Number</label>
         <input
           type="tel"
           inputMode="tel"
           placeholder="07XX XXX XXX"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          className="w-full border border-white/10 bg-black px-4 py-3 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/40 focus:outline-none"
+          className="w-full border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-300 focus:border-emerald-500 focus:outline-none transition-colors"
         />
       </div>
 
       {/* Name */}
       <div>
-        <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Your Name (optional)</label>
+        <label className="mb-2 block text-[10px] tracking-widest text-zinc-400 uppercase">
+          Your Name <span className="text-zinc-300 normal-case tracking-normal font-normal">(optional)</span>
+        </label>
         <input
           type="text"
           placeholder="Jane"
           value={payerName}
           onChange={(e) => setPayerName(e.target.value)}
-          className="w-full border border-white/10 bg-black px-4 py-3 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/40 focus:outline-none"
+          className="w-full border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-300 focus:border-emerald-500 focus:outline-none transition-colors"
         />
       </div>
 
       {error && (
-        <p className="border border-rose-500/20 bg-rose-500/[0.03] px-4 py-2.5 text-xs text-rose-300">{error}</p>
+        <p className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-600">{error}</p>
       )}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full border border-emerald-500/40 bg-emerald-500/10 px-6 py-4 text-xs font-medium tracking-widest text-emerald-400 uppercase transition-colors hover:bg-emerald-500/20 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+        className="w-full bg-zinc-900 px-6 py-4 text-xs font-medium tracking-widest text-white uppercase transition-colors hover:bg-zinc-800 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
       >
         {loading ? 'Sending...' : `Pay ${displayName}`}
       </button>
