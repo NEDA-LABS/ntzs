@@ -5,6 +5,7 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { wallets, lpFills } from '@ntzs/db'
 import { SWAP_TOKENS } from '@/lib/fx/swap'
+import { CHAIN_TOKENS } from '@/lib/fx/chainConfig'
 
 const PAGE_SIZE = 20
 
@@ -60,10 +61,15 @@ export async function GET(request: NextRequest) {
   const hasMore = fills.length > PAGE_SIZE
   const page = hasMore ? fills.slice(0, PAGE_SIZE) : fills
 
-  // Resolve token symbols from contract addresses
+  // Resolve token symbols from contract addresses (all chains)
   const addrToSymbol: Record<string, string> = {}
   for (const [sym, info] of Object.entries(SWAP_TOKENS)) {
     addrToSymbol[info.address.toLowerCase()] = sym
+  }
+  for (const tokens of Object.values(CHAIN_TOKENS)) {
+    for (const [sym, info] of Object.entries(tokens)) {
+      addrToSymbol[(info as { address: string }).address.toLowerCase()] = sym
+    }
   }
 
   const swaps = page.map((f) => ({
