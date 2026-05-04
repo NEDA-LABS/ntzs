@@ -18,7 +18,7 @@ export interface MerchantAccount {
   createdAt: string;
 }
 
-export type PortalTheme = 'dark' | 'midnight' | 'forest' | 'slate' | 'rose' | 'blush' | 'jade' | 'light';
+export type PortalTheme = 'dark' | 'midnight' | 'forest' | 'slate' | 'rose' | 'jade' | 'light' | 'pink';
 
 interface MerchantCtx {
   merchant: MerchantAccount | null;
@@ -35,16 +35,16 @@ const Ctx = createContext<MerchantCtx>({
 });
 export const useMerchant = () => useContext(Ctx);
 
-const THEME_STYLES: Record<PortalTheme, { root: string; sidebar: string; border: string; mobilebar: string }> = {
-  dark:     { root: 'bg-black',        sidebar: 'bg-black',        border: 'border-white/10',          mobilebar: 'bg-black' },
-  midnight: { root: 'bg-[#0a0f1a]',    sidebar: 'bg-[#0d1424]',    border: 'border-[#1e2d4a]',         mobilebar: 'bg-[#0d1424]' },
-  forest:   { root: 'bg-[#020a04]',    sidebar: 'bg-[#030d06]',    border: 'border-emerald-950',        mobilebar: 'bg-[#030d06]' },
-  slate:    { root: 'bg-[#0e0f11]',    sidebar: 'bg-[#141518]',    border: 'border-white/[0.07]',       mobilebar: 'bg-[#141518]' },
-  rose:     { root: 'bg-[#0d0508]',    sidebar: 'bg-[#150609]',    border: 'border-rose-900/60',        mobilebar: 'bg-[#150609]' },
-  blush:    { root: 'bg-[#0d0810]',    sidebar: 'bg-[#160b1a]',    border: 'border-pink-900/60',        mobilebar: 'bg-[#160b1a]' },
-  jade:     { root: 'bg-[#010c05]',    sidebar: 'bg-[#021608]',    border: 'border-emerald-800/50',     mobilebar: 'bg-[#021608]' },
+const THEME_STYLES: Record<PortalTheme, { root: string; sidebar: string; border: string; mobilebar: string; navActive: string }> = {
+  dark:     { root: 'bg-black',        sidebar: 'bg-black',        border: 'border-white/10',          mobilebar: 'bg-black',        navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
+  midnight: { root: 'bg-[#0a0f1a]',    sidebar: 'bg-[#0d1424]',    border: 'border-[#1e2d4a]',         mobilebar: 'bg-[#0d1424]',    navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
+  forest:   { root: 'bg-[#020a04]',    sidebar: 'bg-[#030d06]',    border: 'border-emerald-950',        mobilebar: 'bg-[#030d06]',    navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
+  slate:    { root: 'bg-[#0e0f11]',    sidebar: 'bg-[#141518]',    border: 'border-white/[0.07]',       mobilebar: 'bg-[#141518]',    navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
+  rose:     { root: 'bg-[#0d0508]',    sidebar: 'bg-[#150609]',    border: 'border-rose-900/60',        mobilebar: 'bg-[#150609]',    navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
+  jade:     { root: 'bg-[#010c05]',    sidebar: 'bg-[#021608]',    border: 'border-emerald-800/50',     mobilebar: 'bg-[#021608]',    navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
   // Light: dark sidebar, light content area (overrides applied via <style> scoped to main)
-  light:    { root: 'bg-zinc-100',     sidebar: 'bg-zinc-900',     border: 'border-zinc-700/60',        mobilebar: 'bg-zinc-900' },
+  light:    { root: 'bg-zinc-100',     sidebar: 'bg-zinc-900',     border: 'border-zinc-700/60',        mobilebar: 'bg-zinc-900',     navActive: 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5' },
+  pink:     { root: 'bg-[#120008]',    sidebar: 'bg-[#1c0010]',    border: 'border-pink-800/50',        mobilebar: 'bg-[#1c0010]',    navActive: 'border-l border-pink-400 pl-[11px] text-pink-400 bg-pink-500/5' },
 };
 
 const THEME_SWATCHES: { id: PortalTheme; label: string; swatch: string }[] = [
@@ -53,9 +53,9 @@ const THEME_SWATCHES: { id: PortalTheme; label: string; swatch: string }[] = [
   { id: 'forest',   label: 'Forest',   swatch: 'bg-[#030d06] border border-emerald-700/50' },
   { id: 'slate',    label: 'Slate',    swatch: 'bg-[#141518] border border-white/15' },
   { id: 'rose',     label: 'Rose',     swatch: 'bg-[#150609] border border-rose-500/50' },
-  { id: 'blush',    label: 'Blush',    swatch: 'bg-[#160b1a] border border-pink-500/50' },
   { id: 'jade',     label: 'Jade',     swatch: 'bg-[#021608] border border-emerald-400/60' },
   { id: 'light',    label: 'Light',    swatch: 'bg-zinc-100 border border-zinc-400/60' },
+  { id: 'pink',     label: 'Pink',     swatch: 'bg-pink-400 border border-pink-200/60' },
 ];
 
 const NAV = [
@@ -114,7 +114,7 @@ function Sidebar({
               onClick={onClose}
               className={`flex items-center gap-3 px-3 py-2.5 text-xs tracking-wide transition-colors ${
                 active
-                  ? 'border-l border-emerald-400 pl-[11px] text-emerald-400 bg-emerald-500/5'
+                  ? s.navActive
                   : 'text-white/35 hover:text-white/70 hover:bg-white/[0.03]'
               }`}
             >
@@ -304,6 +304,39 @@ export default function MerchantDashboardLayout({ children }: { children: React.
           .portal-main .from-emerald-500\\/\\[0\\.07\\] { --tw-gradient-from: rgba(4,120,87,0.05) !important; }
         `}</style>
       )}
+
+      {/* Pink theme: remap emerald accents → pink throughout main content */}
+      {theme === 'pink' && (
+        <style>{`
+          /* ── Emerald → Pink accent remap ── */
+          .portal-main .text-emerald-400            { color: #f472b6 !important; }
+          .portal-main .text-emerald-400\\/70,
+          .portal-main .text-emerald-400\\/80       { color: rgba(244,114,182,0.85) !important; }
+          .portal-main .text-emerald-400\\/60       { color: rgba(244,114,182,0.70) !important; }
+          .portal-main .border-emerald-500\\/25,
+          .portal-main .border-emerald-500\\/20,
+          .portal-main .border-emerald-500\\/15     { border-color: rgba(236,72,153,0.28) !important; }
+          .portal-main .border-emerald-500\\/35,
+          .portal-main .border-emerald-500\\/40     { border-color: rgba(236,72,153,0.45) !important; }
+          .portal-main .border-emerald-500\\/50     { border-color: rgba(236,72,153,0.55) !important; }
+          .portal-main .bg-emerald-500\\/10         { background-color: rgba(236,72,153,0.10) !important; }
+          .portal-main .bg-emerald-500\\/20         { background-color: rgba(236,72,153,0.16) !important; }
+          .portal-main .bg-emerald-500\\/5,
+          .portal-main .bg-emerald-500\\/\\[0\\.03\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.04\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.05\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.06\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.07\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.08\\] { background-color: rgba(236,72,153,0.07) !important; }
+          .portal-main .bg-emerald-400              { background-color: #ec4899 !important; }
+          .portal-main .bg-emerald-500              { background-color: #ec4899 !important; }
+          .portal-main .border-emerald-950          { border-color: rgba(236,72,153,0.15) !important; }
+          .portal-main .border-emerald-800\\/50     { border-color: rgba(236,72,153,0.30) !important; }
+          .portal-main .from-emerald-500\\/\\[0\\.07\\] { --tw-gradient-from: rgba(236,72,153,0.07) !important; }
+          .portal-main input:focus                  { border-color: rgba(236,72,153,0.55) !important; }
+        `}</style>
+      )}
+
       <div className={`flex h-screen ${s.root} text-white overflow-hidden font-mono`}>
         {/* Desktop sidebar */}
         <div className="hidden lg:flex flex-col h-full">
