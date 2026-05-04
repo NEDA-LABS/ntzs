@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   const productName = typeof body.productName === 'string' ? body.productName.trim() || null : null;
   const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim() || null : null;
   const description = typeof body.description === 'string' ? body.description.trim() || null : null;
+  const promoUrl = typeof body.promoUrl === 'string' ? body.promoUrl.trim() || null : null;
   const slug = typeof body.slug === 'string' ? body.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || null : null;
 
   const discountPct = Math.min(100, Math.max(0, Number(body.discountPct) || 0));
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
       originalAmountTzs: type === 'fixed' && discountPct > 0 ? originalAmountTzs : null,
       discountPct,
       description,
+      promoUrl,
       slug,
     })
     .returning();

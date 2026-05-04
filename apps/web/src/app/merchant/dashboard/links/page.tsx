@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useMerchant } from '../layout';
 import {
   Copy, Plus, X, Trash2, Upload, Tag, Share2,
   MessageCircle, Send, ExternalLink, Package, ArrowRight,
+  Play, Youtube, Music2, Instagram,
 } from 'lucide-react';
+import type { SocialPreview, SocialPlatform } from '@/app/api/merchant/social-preview/route';
 
 interface PayLink {
   id: string;
   type: 'fixed' | 'open';
   productName: string | null;
   imageUrl: string | null;
+  promoUrl: string | null;
   amountTzs: number | null;
   originalAmountTzs: number | null;
   discountPct: number;
@@ -27,16 +30,45 @@ function fmtPrice(n: number) {
   return n.toLocaleString('en-US');
 }
 
+function isSocialUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname;
+    return /youtube\.com|youtu\.be|tiktok\.com|instagram\.com/.test(h);
+  } catch { return false; }
+}
+
+const PLATFORM_LABELS: Record<SocialPlatform, string> = {
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+  instagram: 'Instagram Reel',
+  unknown: 'Video',
+};
+
+const PLATFORM_COLORS: Record<SocialPlatform, string> = {
+  youtube:   'border-rose-500/30 bg-rose-500/[0.06] text-rose-400',
+  tiktok:    'border-pink-500/30 bg-pink-500/[0.06] text-pink-400',
+  instagram: 'border-purple-500/30 bg-purple-500/[0.06] text-purple-400',
+  unknown:   'border-white/15 bg-white/[0.03] text-white/40',
+};
+
+function PlatformIcon({ platform, size = 12 }: { platform: SocialPlatform; size?: number }) {
+  if (platform === 'youtube')   return <Youtube size={size} />;
+  if (platform === 'tiktok')    return <Music2 size={size} />;
+  if (platform === 'instagram') return <Instagram size={size} />;
+  return <Play size={size} />;
+}
+
 /* ─── Live preview ─── */
 function ProductPreview({
-  name, imagePreview, type, amount, enableDiscount, discountPct, description,
+  name, imagePreview, type, amount, enableDiscount, discountPct, description, promoMeta,
 }: {
   name: string; imagePreview: string; type: 'fixed' | 'open';
   amount: string; enableDiscount: boolean; discountPct: number; description: string;
+  promoMeta: SocialPreview | null;
 }) {
   const price = Number(amount);
   const discounted = enableDiscount && price > 0 ? Math.round(price * (1 - discountPct / 100)) : price;
-  const hasContent = name || imagePreview || amount;
+  const hasContent = name || imagePreview || amount || promoMeta;
 
   return (
     <div className="border border-white/10 bg-white/[0.02] overflow-hidden">
@@ -52,15 +84,34 @@ function ProductPreview({
         </div>
       ) : (
         <div className="p-4">
-          {/* Image */}
           {imagePreview ? (
             <div className="relative mb-4 overflow-hidden rounded-sm">
               <img src={imagePreview} alt="preview" className="w-full h-48 object-cover" />
+              {promoMeta && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/70 border border-white/20 backdrop-blur-sm">
+                    <Play size={16} className="text-white ml-0.5" />
+                  </div>
+                </div>
+              )}
               {enableDiscount && price > 0 && (
                 <div className="absolute top-3 left-3 bg-emerald-500 px-2 py-1 text-[10px] font-bold text-black tracking-wide">
                   SAVE {discountPct}%
                 </div>
               )}
+              {promoMeta && (
+                <div className={`absolute top-3 right-3 flex items-center gap-1 border px-2 py-0.5 text-[9px] font-semibold tracking-widest uppercase backdrop-blur-sm ${PLATFORM_COLORS[promoMeta.platform]}`}>
+                  <PlatformIcon platform={promoMeta.platform} size={9} />
+                  {PLATFORM_LABELS[promoMeta.platform]}
+                </div>
+              )}
+            </div>
+          ) : promoMeta ? (
+            <div className="mb-4 h-32 flex items-center justify-center bg-white/[0.03] border border-dashed border-white/10">
+              <div className="flex flex-col items-center gap-2">
+                <PlatformIcon platform={promoMeta.platform} size={20} />
+                <span className="text-[10px] text-white/30">{PLATFORM_LABELS[promoMeta.platform]} promo</span>
+              </div>
             </div>
           ) : (
             <div className="mb-4 h-32 flex items-center justify-center bg-white/[0.03] border border-dashed border-white/10">
@@ -68,17 +119,14 @@ function ProductPreview({
             </div>
           )}
 
-          {/* Name */}
           <p className="text-base font-bold text-white/90 mb-1 leading-snug">
             {name || <span className="text-white/25 font-normal italic">Product name…</span>}
           </p>
 
-          {/* Description */}
           {description && (
             <p className="text-xs text-white/45 mb-3 leading-relaxed">{description}</p>
           )}
 
-          {/* Price */}
           {type === 'fixed' && amount ? (
             <div className="flex items-baseline gap-2 mb-4">
               <span className="text-2xl font-bold text-emerald-400">{fmtPrice(discounted)}</span>
@@ -91,12 +139,73 @@ function ProductPreview({
             <p className="text-xs text-white/40 mb-4">Customer enters the amount</p>
           ) : null}
 
-          {/* CTA simulation */}
           <div className="flex items-center justify-center gap-2 border border-emerald-500/40 bg-emerald-500/10 py-3 text-xs font-medium tracking-widest text-emerald-400 uppercase">
             Pay Now <ArrowRight size={12} />
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Promo video preview card in the form ─── */
+function PromoPreviewCard({ meta, rawUrl, onRemove }: { meta: SocialPreview; rawUrl: string; onRemove: () => void }) {
+  const colorClass = PLATFORM_COLORS[meta.platform];
+  return (
+    <div className="relative border border-white/10 overflow-hidden">
+      {/* Thumbnail */}
+      {meta.thumbnail ? (
+        <div className="relative h-44 w-full overflow-hidden">
+          <img src={meta.thumbnail} alt="promo thumbnail" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 border border-white/25 backdrop-blur-sm">
+              <Play size={20} className="text-white ml-1" />
+            </div>
+          </div>
+          <div className={`absolute top-3 left-3 flex items-center gap-1.5 border px-2.5 py-1 text-[10px] font-semibold tracking-widest uppercase backdrop-blur-sm ${colorClass}`}>
+            <PlatformIcon platform={meta.platform} size={10} />
+            {PLATFORM_LABELS[meta.platform]}
+          </div>
+        </div>
+      ) : (
+        <div className="h-24 flex items-center justify-center bg-white/[0.03]">
+          <div className="flex flex-col items-center gap-2">
+            <div className={`flex items-center gap-2 border px-3 py-1.5 text-[10px] tracking-widest uppercase ${colorClass}`}>
+              <PlatformIcon platform={meta.platform} size={11} />
+              {PLATFORM_LABELS[meta.platform]}
+            </div>
+            {meta.platform === 'instagram' && (
+              <p className="text-[10px] text-white/30">Preview not available — will embed on product page</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Info row */}
+      <div className="flex items-center gap-3 px-4 py-3 border-t border-white/10">
+        <div className="flex-1 min-w-0">
+          {meta.title && <p className="text-[11px] text-white/60 truncate mb-0.5">{meta.title}</p>}
+          <p className="text-[10px] text-white/30 truncate">{rawUrl}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={rawUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] tracking-widest text-white/30 uppercase hover:text-white/60 transition-colors flex items-center gap-1"
+          >
+            <ExternalLink size={10} /> Open
+          </a>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex items-center gap-1.5 border border-white/15 bg-black/50 px-3 py-1.5 text-[10px] text-white/50 uppercase hover:text-white transition-colors backdrop-blur-sm"
+          >
+            <X size={10} /> Remove
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -115,6 +224,10 @@ function LinksPageInner() {
   const [productName, setProductName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [imagePreview, setImagePreview] = useState('');
+  const [promoUrl, setPromoUrl] = useState('');
+  const [promoMeta, setPromoMeta] = useState<SocialPreview | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [mediaInput, setMediaInput] = useState('');
   const [amount, setAmount] = useState('');
   const [enableDiscount, setEnableDiscount] = useState(false);
   const [discountPct, setDiscountPct] = useState(10);
@@ -163,14 +276,67 @@ function LinksPageInner() {
       const url = ev.target?.result as string;
       setImagePreview(url);
       setImageUrl(url);
+      setPromoUrl('');
+      setPromoMeta(null);
+      setMediaInput('');
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   }
 
-  function handleImageUrlInput(val: string) {
-    setImageUrl(val);
-    setImagePreview(val);
+  const resolveMediaUrl = useCallback(async (val: string) => {
+    const trimmed = val.trim();
+    if (!trimmed) return;
+
+    if (isSocialUrl(trimmed)) {
+      setPromoLoading(true);
+      try {
+        const res = await fetch(`/api/merchant/social-preview?url=${encodeURIComponent(trimmed)}`);
+        if (res.ok) {
+          const meta: SocialPreview = await res.json();
+          setPromoUrl(trimmed);
+          setPromoMeta(meta);
+          if (meta.thumbnail) {
+            setImageUrl(meta.thumbnail);
+            setImagePreview(meta.thumbnail);
+          } else {
+            setImageUrl('');
+            setImagePreview('');
+          }
+        }
+      } finally {
+        setPromoLoading(false);
+      }
+    } else {
+      // Treat as image URL
+      setImageUrl(trimmed);
+      setImagePreview(trimmed);
+      setPromoUrl('');
+      setPromoMeta(null);
+    }
+  }, []);
+
+  function handleMediaInputChange(val: string) {
+    setMediaInput(val);
+  }
+
+  function handleMediaInputBlur() {
+    if (mediaInput.trim()) resolveMediaUrl(mediaInput);
+  }
+
+  function handleMediaInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (mediaInput.trim()) resolveMediaUrl(mediaInput);
+    }
+  }
+
+  function clearMedia() {
+    setImageUrl('');
+    setImagePreview('');
+    setPromoUrl('');
+    setPromoMeta(null);
+    setMediaInput('');
   }
 
   function resetForm() {
@@ -178,11 +344,15 @@ function LinksPageInner() {
     setProductName('');
     setImageUrl('');
     setImagePreview('');
+    setPromoUrl('');
+    setPromoMeta(null);
+    setMediaInput('');
     setAmount('');
     setEnableDiscount(false);
     setDiscountPct(10);
     setDescription('');
     setFormError('');
+    setPromoLoading(false);
   }
 
   const discountedAmount = enableDiscount && amount
@@ -201,6 +371,7 @@ function LinksPageInner() {
           type,
           productName: productName || undefined,
           imageUrl: imageUrl || undefined,
+          promoUrl: promoUrl || undefined,
           amountTzs: type === 'fixed' && !enableDiscount ? Number(amount) : undefined,
           originalAmountTzs: type === 'fixed' && enableDiscount ? Number(amount) : undefined,
           discountPct: enableDiscount ? discountPct : 0,
@@ -235,6 +406,9 @@ function LinksPageInner() {
       setTimeout(() => setCopiedId(null), 2000);
     });
   }
+
+  // has any media set (photo OR promo video)
+  const hasMedia = !!(imagePreview || promoMeta);
 
   return (
     <div className="p-5 lg:p-7 max-w-2xl mx-auto font-mono">
@@ -281,22 +455,30 @@ function LinksPageInner() {
               {/* ── Left: form fields ── */}
               <div className="space-y-5">
 
-                {/* Image upload */}
+                {/* Media: photo upload OR social link */}
                 <div>
                   <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">
-                    Product Photo
+                    Product Photo or Promo Video
                   </label>
-                  {imagePreview ? (
+
+                  {/* Has image from upload (not social) */}
+                  {imagePreview && !promoMeta ? (
                     <div className="relative border border-white/10 overflow-hidden">
                       <img src={imagePreview} alt="preview" className="w-full h-52 object-cover" />
                       <button
                         type="button"
-                        onClick={() => { setImageUrl(''); setImagePreview(''); }}
+                        onClick={clearMedia}
                         className="absolute top-3 right-3 flex items-center gap-1.5 border border-white/20 bg-black/80 px-3 py-1.5 text-[10px] text-white/60 hover:text-white transition-colors backdrop-blur-sm"
                       >
                         <X size={11} /> Remove
                       </button>
                     </div>
+
+                  /* Has promo video */
+                  ) : promoMeta ? (
+                    <PromoPreviewCard meta={promoMeta} rawUrl={promoUrl} onRemove={clearMedia} />
+
+                  /* Empty state — upload or paste */
                   ) : (
                     <div className="space-y-2">
                       <button
@@ -310,20 +492,57 @@ function LinksPageInner() {
                         <p className="text-sm text-white/50 group-hover:text-white/70 transition-colors">Upload product photo</p>
                         <p className="mt-1 text-[10px] text-white/30">Click to browse · JPG, PNG, WEBP</p>
                       </button>
+
+                      {/* Divider */}
                       <div className="flex items-center gap-3">
                         <div className="flex-1 h-px bg-white/10" />
-                        <span className="text-[10px] text-white/30">or paste URL</span>
+                        <span className="text-[10px] text-white/30">or paste a link</span>
                         <div className="flex-1 h-px bg-white/10" />
                       </div>
-                      <input
-                        type="url"
-                        placeholder="https://example.com/photo.jpg"
-                        value={imageUrl}
-                        onChange={(e) => handleImageUrlInput(e.target.value)}
-                        className="w-full border border-white/15 bg-black px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
-                      />
+
+                      {/* Smart URL input */}
+                      <div className="relative">
+                        <input
+                          type="url"
+                          placeholder="Photo URL, TikTok Reel, Instagram Reel, or YouTube…"
+                          value={mediaInput}
+                          onChange={(e) => handleMediaInputChange(e.target.value)}
+                          onBlur={handleMediaInputBlur}
+                          onKeyDown={handleMediaInputKeyDown}
+                          className="w-full border border-white/15 bg-black px-4 py-3 pr-20 text-sm text-white placeholder:text-white/25 focus:border-emerald-500/50 focus:outline-none"
+                        />
+                        {promoLoading && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                            <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:0ms]" />
+                            <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:150ms]" />
+                            <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:300ms]" />
+                          </div>
+                        )}
+                        {!promoLoading && mediaInput && (
+                          <button
+                            type="button"
+                            onClick={() => resolveMediaUrl(mediaInput)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] tracking-widest text-emerald-400/70 uppercase hover:text-emerald-400 transition-colors"
+                          >
+                            Go →
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Platform hints */}
+                      <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                        <span className="text-[9px] text-white/20 tracking-wider uppercase">Accepts:</span>
+                        {(['tiktok', 'instagram', 'youtube'] as SocialPlatform[]).map((p) => (
+                          <span key={p} className={`flex items-center gap-1 border px-2 py-0.5 text-[9px] tracking-widest uppercase ${PLATFORM_COLORS[p]}`}>
+                            <PlatformIcon platform={p} size={8} />
+                            {PLATFORM_LABELS[p]}
+                          </span>
+                        ))}
+                        <span className="text-[9px] text-white/20">· image URLs</span>
+                      </div>
                     </div>
                   )}
+
                   <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
                 </div>
 
@@ -487,6 +706,7 @@ function LinksPageInner() {
                   enableDiscount={enableDiscount}
                   discountPct={discountPct}
                   description={description}
+                  promoMeta={promoMeta}
                 />
               </div>
             </div>
@@ -502,6 +722,7 @@ function LinksPageInner() {
                 enableDiscount={enableDiscount}
                 discountPct={discountPct}
                 description={description}
+                promoMeta={promoMeta}
               />
             </div>
           </form>
@@ -569,6 +790,13 @@ function ProductLinkCard({
   const hasDiscount = link.discountPct > 0 && link.originalAmountTzs;
   const [shareOpen, setShareOpen] = useState(false);
 
+  const promoplatform: SocialPlatform | null = link.promoUrl
+    ? /tiktok/.test(link.promoUrl) ? 'tiktok'
+    : /instagram/.test(link.promoUrl) ? 'instagram'
+    : /youtube|youtu\.be/.test(link.promoUrl) ? 'youtube'
+    : null
+  : null;
+
   const shareText = link.productName
     ? `${link.productName}${link.amountTzs ? ` — ${link.amountTzs.toLocaleString()} TZS` : ''}${hasDiscount ? ` (${link.discountPct}% off!)` : ''}`
     : 'Pay via nTZS Biashara';
@@ -591,7 +819,13 @@ function ProductLinkCard({
               Save {link.discountPct}%
             </div>
           )}
-          {link.type === 'open' && (
+          {promoplatform && (
+            <div className={`absolute top-2 right-2 flex items-center gap-1 border px-2 py-0.5 text-[9px] tracking-widest uppercase backdrop-blur-sm ${PLATFORM_COLORS[promoplatform]}`}>
+              <PlatformIcon platform={promoplatform} size={8} />
+              <Play size={8} />
+            </div>
+          )}
+          {link.type === 'open' && !promoplatform && (
             <div className="absolute top-2 right-2 border border-white/25 bg-black/70 px-2 py-0.5 text-[10px] tracking-widest text-white/60 uppercase backdrop-blur-sm">
               Open
             </div>

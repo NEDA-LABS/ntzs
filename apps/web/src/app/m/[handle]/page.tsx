@@ -106,6 +106,7 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
   let linkDescription: string | null = null;
   let productName: string | null = null;
   let imageUrl: string | null = null;
+  let promoUrl: string | null = null;
   let resolvedLinkId: string | null = null;
 
   if (linkId) {
@@ -120,9 +121,25 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
       linkDescription = link.description;
       productName = link.productName;
       imageUrl = link.imageUrl;
+      promoUrl = link.promoUrl ?? null;
       discountPct = link.discountPct ?? 0;
       originalAmount = link.originalAmountTzs;
       if (link.type === 'fixed' && link.amountTzs) fixedAmount = link.amountTzs;
+    }
+  }
+
+  // Compute embed details from promoUrl server-side (no fetch needed — URL is deterministic)
+  let promoEmbed: { type: 'iframe'; src: string; portrait: boolean } | { type: 'link'; href: string; platform: string } | null = null;
+  if (promoUrl) {
+    const ytMatch = promoUrl.match(/(?:[?&]v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+    const ttMatch = promoUrl.match(/tiktok\.com.*\/video\/(\d+)/);
+    const igMatch = promoUrl.match(/instagram\.com\/(?:reel|p)\/([A-Za-z0-9_-]+)/);
+    if (ytMatch) {
+      promoEmbed = { type: 'iframe', src: `https://www.youtube.com/embed/${ytMatch[1]}?playsinline=1&rel=0`, portrait: false };
+    } else if (ttMatch) {
+      promoEmbed = { type: 'iframe', src: `https://www.tiktok.com/embed/v2/${ttMatch[1]}`, portrait: true };
+    } else if (igMatch) {
+      promoEmbed = { type: 'link', href: promoUrl, platform: 'Instagram' };
     }
   }
 
@@ -231,6 +248,46 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Promo video embed */}
+        {promoEmbed && (
+          <div className="border border-white/10 overflow-hidden mb-5">
+            <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between">
+              <span className="text-[10px] tracking-widest text-white/30 uppercase">Watch Promo</span>
+              {promoUrl && (
+                <a href={promoUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-[10px] tracking-widest text-white/25 uppercase hover:text-white/50 transition-colors flex items-center gap-1">
+                  Open ↗
+                </a>
+              )}
+            </div>
+            {promoEmbed.type === 'iframe' ? (
+              <div className={promoEmbed.portrait ? 'relative mx-auto max-w-[280px] aspect-[9/16]' : 'relative w-full aspect-video'}>
+                <iframe
+                  src={promoEmbed.src}
+                  className="absolute inset-0 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <a
+                href={promoEmbed.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-3 py-8 hover:bg-white/[0.02] transition-colors"
+              >
+                <div className="flex h-10 w-10 items-center justify-center border border-purple-500/30 bg-purple-500/10">
+                  <span className="text-purple-400 text-sm">▶</span>
+                </div>
+                <div>
+                  <p className="text-sm text-white/70 font-semibold">Watch on {promoEmbed.platform}</p>
+                  <p className="text-[10px] text-white/30 mt-0.5">Tap to view the promo reel</p>
+                </div>
+              </a>
+            )}
           </div>
         )}
 

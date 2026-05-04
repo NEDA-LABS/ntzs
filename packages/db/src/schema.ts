@@ -1054,6 +1054,7 @@ export const merchantPaymentLinks = pgTable(
     originalAmountTzs: bigint('original_amount_tzs', { mode: 'number' }),
     discountPct: integer('discount_pct').notNull().default(0),
     description: text('description'),
+    promoUrl: text('promo_url'),
     slug: varchar('slug', { length: 60 }),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
