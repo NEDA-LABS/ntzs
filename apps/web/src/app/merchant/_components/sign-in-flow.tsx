@@ -184,10 +184,9 @@ export function MerchantSignIn() {
         .trace-br-v    { animation: traceV 0.5s ease-out 0.75s both; }
       `}</style>
 
-      <div className="page-reveal relative flex min-h-screen bg-zinc-50 font-mono">
+      <div className="page-reveal relative flex min-h-screen items-center justify-center bg-zinc-50 font-mono px-6 py-16">
 
-        {/* Left panel — brand + form */}
-        <div className="flex flex-1 flex-col justify-center px-8 py-12 sm:px-16 lg:px-24 max-w-2xl">
+        <div className="w-full max-w-sm">
 
           {/* Top bar label */}
           <div className="brand-reveal mb-14">
@@ -465,7 +464,7 @@ export function MerchantSignIn() {
           </div>
 
           {/* Value props */}
-          <div className="props-reveal mt-10 space-y-3 max-w-sm">
+          <div className="props-reveal mt-10 space-y-3">
             <div className="h-px bg-zinc-200" />
             {[
               'Collect digital payments with ease',
@@ -479,43 +478,6 @@ export function MerchantSignIn() {
                 <p className="text-xs text-zinc-500 leading-relaxed">{text}</p>
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* Right panel — decorative, hidden on mobile */}
-        <div className="hidden lg:flex flex-1 bg-zinc-900 flex-col justify-between p-16 relative overflow-hidden">
-          {/* Subtle grid */}
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.04]"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)',
-              backgroundSize: '48px 48px',
-            }}
-          />
-
-          {/* Top label */}
-          <div className="relative z-10">
-            <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] tracking-widest text-white/30 uppercase">Portal Active</span>
-            </div>
-          </div>
-
-          {/* Center stat */}
-          <div className="relative z-10">
-            <p className="text-[10px] tracking-widest text-white/25 uppercase mb-3">Network</p>
-            <p className="text-5xl font-bold text-white tracking-tight mb-1">nTZS</p>
-            <p className="text-sm text-emerald-400 tracking-widest uppercase font-medium">Tanzania Shilling</p>
-            <p className="text-xs text-white/30 mt-4 leading-relaxed max-w-xs">
-              Accept payments from any mobile network, settle instantly to your mobile money account.
-            </p>
-          </div>
-
-          {/* Bottom */}
-          <div className="relative z-10 flex items-center justify-between">
-            <span className="text-[10px] tracking-widest text-white/20 uppercase">Secure · Mobile Money</span>
-            <span className="text-[10px] tracking-widest text-white/20 uppercase">ntzs.co.tz</span>
           </div>
         </div>
 
