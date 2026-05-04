@@ -14,19 +14,21 @@ const TRANSFER_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
 ] as const
 
-// Base USDC (6 decimals)
+// Base token contracts
 const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const USDT_CONTRACT_BASE = '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2'
 const USDC_DECIMALS = 6
+const USDT_DECIMALS = 6
 const NTZS_DECIMALS = 18
 
-type TransferToken = 'ntzs' | 'usdc'
+type TransferToken = 'ntzs' | 'usdc' | 'usdt'
 
 function resolveToken(raw: unknown): TransferToken | { error: string } {
   if (raw == null) return 'ntzs'
   if (typeof raw !== 'string') return { error: 'token must be a string' }
   const norm = raw.toLowerCase()
-  if (norm === 'ntzs' || norm === 'usdc') return norm
-  return { error: `Unsupported token "${raw}" — must be NTZS or USDC` }
+  if (norm === 'ntzs' || norm === 'usdc' || norm === 'usdt') return norm
+  return { error: `Unsupported token "${raw}" — must be NTZS, USDC, or USDT` }
 }
 
 /**
@@ -64,8 +66,8 @@ export async function POST(request: NextRequest) {
     )
   }
   const token: TransferToken = tokenResult
-  const decimals = token === 'usdc' ? USDC_DECIMALS : NTZS_DECIMALS
-  const tokenContractAddress = token === 'usdc' ? USDC_CONTRACT_BASE : ENV_CONTRACT_ADDRESS
+  const decimals = token === 'usdc' ? USDC_DECIMALS : token === 'usdt' ? USDT_DECIMALS : NTZS_DECIMALS
+  const tokenContractAddress = token === 'usdc' ? USDC_CONTRACT_BASE : token === 'usdt' ? USDT_CONTRACT_BASE : ENV_CONTRACT_ADDRESS
 
   // Accept `amount` (new, token-agnostic) or fall back to `amountTzs` (legacy)
   const rawAmount = body.amount ?? body.amountTzs

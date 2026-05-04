@@ -61,7 +61,7 @@ export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', '
 
 export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
 
-export const transferToken = pgEnum('transfer_token', ['ntzs', 'usdc'])
+export const transferToken = pgEnum('transfer_token', ['ntzs', 'usdc', 'usdt'])
 
 export const webhookEventStatus = pgEnum('webhook_event_status', ['pending', 'delivered', 'failed'])
 

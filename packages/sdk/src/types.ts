@@ -67,7 +67,7 @@ export interface CreateWithdrawalParams {
 
 // ─── Transfer Types ─────────────────────────────────────────────────────────
 
-export type TransferToken = 'NTZS' | 'USDC'
+export type TransferToken = 'NTZS' | 'USDC' | 'USDT'
 
 export interface NtzsTransfer {
   id: string

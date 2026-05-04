@@ -10,7 +10,9 @@ import { users, wallets, partnerUsers } from '@ntzs/db'
 const BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 
 const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const USDT_CONTRACT_BASE = '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2'
 const USDC_DECIMALS = 6
+const USDT_DECIMALS = 6
 
 /**
  * GET /api/v1/users/:id — Get user profile and nTZS balance
@@ -54,9 +56,10 @@ export async function GET(
     .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
     .limit(1)
 
-  // Read nTZS and USDC balances in parallel
+  // Read nTZS, USDC, and USDT balances in parallel
   let balanceTzs = 0
   let balanceUsdc = 0
+  let balanceUsdt = 0
 
   if (wallet?.address && !wallet.address.startsWith('0x_pending_')) {
     const rpcUrl = BASE_RPC_URL
@@ -67,14 +70,17 @@ export async function GET(
         const provider = new ethers.JsonRpcProvider(rpcUrl)
         const ntzsToken = new ethers.Contract(ntzsAddress, BALANCE_ABI, provider)
         const usdcToken = new ethers.Contract(USDC_CONTRACT_BASE, BALANCE_ABI, provider)
+        const usdtToken = new ethers.Contract(USDT_CONTRACT_BASE, BALANCE_ABI, provider)
 
-        const [ntzsWei, usdcRaw] = await Promise.all([
+        const [ntzsWei, usdcRaw, usdtRaw] = await Promise.all([
           ntzsToken.balanceOf(wallet.address) as Promise<bigint>,
           usdcToken.balanceOf(wallet.address) as Promise<bigint>,
+          usdtToken.balanceOf(wallet.address) as Promise<bigint>,
         ])
 
         balanceTzs = Number(ntzsWei / (BigInt(10) ** BigInt(18)))
         balanceUsdc = Number(usdcRaw) / 10 ** USDC_DECIMALS
+        balanceUsdt = Number(usdtRaw) / 10 ** USDT_DECIMALS
       } catch (err) {
         console.warn('[v1/users] Failed to read on-chain balances:', err instanceof Error ? err.message : err)
       }
@@ -89,5 +95,6 @@ export async function GET(
     walletAddress: wallet?.address || null,
     balanceTzs,
     balanceUsdc,
+    balanceUsdt,
   })
 }
