@@ -62,8 +62,8 @@ export default function SettingsPage() {
 
       <div className="flex items-center gap-3 mb-6">
         <div className="w-4 h-px bg-emerald-400/60" />
-        <span className="text-[10px] tracking-widest text-white/30 uppercase">Dashboard / Settings</span>
-        <div className="flex-1 h-px bg-white/5" />
+        <span className="text-[10px] tracking-widest text-white/40 uppercase">Dashboard / Settings</span>
+        <div className="flex-1 h-px bg-white/10" />
       </div>
 
       <form onSubmit={handleSave} className="space-y-5">
@@ -73,33 +73,33 @@ export default function SettingsPage() {
           <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-white/20" />
           <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-white/20" />
 
-          <p className="text-[10px] tracking-widest text-white/30 uppercase mb-4">Business Profile</p>
+          <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-4">Business Profile</p>
 
           <div className="space-y-4">
             <div>
-              <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Business Name</label>
+              <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">Business Name</label>
               <input
                 type="text"
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
                 placeholder="My Business"
-                className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/50 focus:outline-none"
+                className="w-full border border-white/15 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Handle</label>
-              <div className="flex items-center gap-2 border border-white/5 bg-white/[0.02] px-4 py-2.5">
-                <span className="text-white/25 text-sm">@</span>
-                <span className="text-sm text-white/60 flex-1">{merchant.handle}</span>
+              <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">Handle</label>
+              <div className="flex items-center gap-2 border border-white/10 bg-white/[0.03] px-4 py-2.5">
+                <span className="text-white/40 text-sm">@</span>
+                <span className="text-sm text-white/70 flex-1">{merchant.handle}</span>
               </div>
-              <p className="mt-1.5 text-[10px] text-white/20">Handle is permanent and cannot be changed</p>
+              <p className="mt-1.5 text-xs text-white/35">Handle is permanent and cannot be changed</p>
             </div>
 
             <div>
-              <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Wallet Address</label>
-              <div className="flex items-center gap-2 border border-white/5 bg-white/[0.02] px-4 py-2.5">
-                <span className="flex-1 truncate text-[11px] text-white/35">{merchant.walletAddress}</span>
+              <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">Wallet Address</label>
+              <div className="flex items-center gap-2 border border-white/10 bg-white/[0.03] px-4 py-2.5">
+                <span className="flex-1 truncate text-xs text-white/50">{merchant.walletAddress}</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -121,15 +121,15 @@ export default function SettingsPage() {
           <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-white/20" />
           <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-white/20" />
 
-          <p className="text-[10px] tracking-widest text-white/30 uppercase mb-1">Auto-Settlement</p>
-          <p className="text-xs text-white/25 mb-5 leading-relaxed">
+          <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Auto-Settlement</p>
+          <p className="text-xs text-white/40 mb-5 leading-relaxed">
             Set a percentage of every confirmed collection to be automatically sent to your mobile money number.
           </p>
 
           <div className="space-y-5">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-[10px] tracking-widest text-white/40 uppercase">Settlement Percentage</label>
+                <label className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Settlement Percentage</label>
                 <span className="text-sm font-bold text-emerald-400">{settlePct}%</span>
               </div>
               <input
@@ -141,7 +141,7 @@ export default function SettingsPage() {
                 onChange={(e) => setSettlePct(Number(e.target.value))}
                 className="w-full accent-emerald-500"
               />
-              <div className="flex justify-between text-[10px] text-white/20 mt-1.5 tracking-wide">
+              <div className="flex justify-between text-[10px] text-white/40 mt-1.5 tracking-wide">
                 <span>0% — Off</span>
                 <span>100%</span>
               </div>
@@ -150,38 +150,38 @@ export default function SettingsPage() {
             {settlePct > 0 && (
               <>
                 <div>
-                  <label className="mb-2 block text-[10px] tracking-widest text-white/40 uppercase">Mobile Money Phone</label>
+                  <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">Mobile Money Phone</label>
                   <input
                     type="tel"
                     placeholder="07XX XXX XXX"
                     value={settlementPhone}
                     onChange={(e) => setSettlementPhone(e.target.value)}
-                    className="w-full border border-white/10 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-emerald-500/50 focus:outline-none"
+                    className="w-full border border-white/15 bg-black px-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
                   />
                 </div>
 
                 {netPreview > 0 ? (
-                  <div className="border border-emerald-500/15 bg-emerald-500/[0.03] px-4 py-3">
-                    <p className="text-[10px] tracking-widest text-emerald-500/50 uppercase mb-1">Payout Preview</p>
-                    <p className="text-xs text-white/40 leading-relaxed">
+                  <div className="border border-emerald-500/20 bg-emerald-500/[0.05] px-4 py-3">
+                    <p className="text-[10px] font-medium tracking-widest text-emerald-400/80 uppercase mb-1">Payout Preview</p>
+                    <p className="text-xs text-white/60 leading-relaxed">
                       For a 10,000 TZS collection, you receive{' '}
                       <span className="font-bold text-emerald-400">{netPreview.toLocaleString()} TZS</span>
                       {settlementPhone && ` to ${settlementPhone}`}
-                      <span className="block mt-0.5 text-[10px] text-white/20">
+                      <span className="block mt-0.5 text-[10px] text-white/40">
                         After 1,500 TZS transfer fee + 0.5% platform fee
                       </span>
                     </p>
                   </div>
                 ) : netPreview <= 0 && settlePct > 0 ? (
-                  <div className="border border-amber-500/15 bg-amber-500/[0.03] px-4 py-3">
-                    <p className="text-xs text-amber-400/70 leading-relaxed">
+                  <div className="border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3">
+                    <p className="text-xs text-amber-400 leading-relaxed">
                       Settlement percentage too low to cover transfer fees on a 10,000 TZS collection.
                       Raise the percentage or wait for a larger collection.
                     </p>
                   </div>
                 ) : null}
 
-                <p className="text-[10px] text-white/20 leading-relaxed">
+                <p className="text-xs text-white/40 leading-relaxed">
                   Minimum payout threshold: 5,000 TZS. Collections below this accumulate until the threshold is reached.
                 </p>
               </>

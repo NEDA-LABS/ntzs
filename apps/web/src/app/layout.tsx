@@ -17,6 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.ntzs.co.tz'),
   title: "nTZS",
   description: "nTZS issuance portal",
   icons: {

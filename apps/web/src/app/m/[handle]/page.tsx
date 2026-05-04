@@ -1,5 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
 import { db } from '@/lib/merchant/db';
 import { merchantAccounts, merchantPaymentLinks } from '@ntzs/db';
 import { MerchantPayForm } from './MerchantPayForm';
@@ -7,6 +8,77 @@ import { MerchantPayForm } from './MerchantPayForm';
 interface Props {
   params: Promise<{ handle: string }>;
   searchParams: Promise<{ link?: string; amount?: string }>;
+}
+
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+  const { handle } = await params;
+  const { link: linkId } = await searchParams;
+
+  const [merchant] = await db
+    .select({
+      id: merchantAccounts.id,
+      businessName: merchantAccounts.businessName,
+      handle: merchantAccounts.handle,
+    })
+    .from(merchantAccounts)
+    .where(eq(merchantAccounts.handle, handle.toLowerCase()))
+    .limit(1);
+
+  if (!merchant) return { title: 'nTZS Biashara' };
+
+  const displayName = merchant.businessName || `@${merchant.handle}`;
+  let title = `Pay ${displayName}`;
+  let description = `Send a secure mobile payment to ${displayName} via nTZS`;
+  let ogImage: string | undefined;
+
+  if (linkId) {
+    const [link] = await db
+      .select()
+      .from(merchantPaymentLinks)
+      .where(
+        and(
+          eq(merchantPaymentLinks.id, linkId),
+          eq(merchantPaymentLinks.merchantId, merchant.id),
+          eq(merchantPaymentLinks.isActive, true),
+        )
+      )
+      .limit(1);
+
+    if (link) {
+      if (link.productName) title = `${link.productName} · ${displayName}`;
+
+      const parts: string[] = [];
+      if (link.amountTzs) parts.push(`${link.amountTzs.toLocaleString()} TZS`);
+      if (link.discountPct && link.originalAmountTzs) parts.push(`${link.discountPct}% off`);
+      if (link.description) parts.push(link.description);
+      parts.push(`Pay via nTZS`);
+      description = parts.join(' · ');
+
+      // Only use as OG image if it's a real public URL — base64 data URIs don't work in OG
+      if (link.imageUrl && (link.imageUrl.startsWith('http://') || link.imageUrl.startsWith('https://'))) {
+        ogImage = link.imageUrl;
+      }
+    }
+  }
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      ...(ogImage && {
+        images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
+      }),
+    },
+    twitter: {
+      card: ogImage ? 'summary_large_image' : 'summary',
+      title,
+      description,
+      ...(ogImage && { images: [ogImage] }),
+    },
+  };
 }
 
 export default async function MerchantPayPage({ params, searchParams }: Props) {

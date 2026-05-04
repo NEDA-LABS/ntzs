@@ -60,8 +60,8 @@ const THEME_SWATCHES: { id: PortalTheme; label: string; swatch: string }[] = [
 
 const NAV = [
   { href: '/merchant/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/merchant/dashboard/links', label: 'Payment Links', icon: Link2 },
-  { href: '/merchant/dashboard/collections', label: 'Collections', icon: Clock },
+  { href: '/merchant/dashboard/links', label: 'Products', icon: Link2 },
+  { href: '/merchant/dashboard/collections', label: 'Orders', icon: Clock },
   { href: '/merchant/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -199,52 +199,95 @@ export default function MerchantDashboardLayout({ children }: { children: React.
       {/* Light theme: sidebar stays dark, only main content area is overridden */}
       {theme === 'light' && (
         <style>{`
+          /* ── Backgrounds ── */
           .portal-main { background-color: #f4f4f5 !important; }
           .portal-main .bg-black { background-color: #ffffff !important; }
           .portal-main .bg-white\\/\\[0\\.02\\],
-          .portal-main .bg-white\\/\\[0\\.03\\] { background-color: rgba(0,0,0,0.035) !important; }
-          .portal-main .border-white\\/5  { border-color: rgba(0,0,0,0.07) !important; }
-          .portal-main .border-white\\/10 { border-color: rgba(0,0,0,0.10) !important; }
-          .portal-main .divide-white\\/\\[0\\.04\\] > * + * { border-color: rgba(0,0,0,0.08) !important; }
+          .portal-main .bg-white\\/\\[0\\.03\\],
+          .portal-main .bg-white\\/\\[0\\.04\\] { background-color: rgba(0,0,0,0.04) !important; }
+          .portal-main .hover\\:bg-white\\/\\[0\\.03\\]:hover { background-color: rgba(0,0,0,0.05) !important; }
           .portal-main .hover\\:bg-white\\/5:hover,
           .portal-main .hover\\:bg-white\\/\\[0\\.02\\]:hover { background-color: rgba(0,0,0,0.04) !important; }
-          .portal-main table thead tr { background-color: rgba(0,0,0,0.03) !important; }
-          .portal-main table tbody tr:hover { background-color: rgba(0,0,0,0.03) !important; }
 
-          /* Text — map white/opacity variants to zinc grays */
+          /* ── Borders ── */
+          .portal-main .border-white\\/5   { border-color: rgba(0,0,0,0.07) !important; }
+          .portal-main .border-white\\/10  { border-color: rgba(0,0,0,0.11) !important; }
+          .portal-main .border-white\\/15  { border-color: rgba(0,0,0,0.15) !important; }
+          .portal-main .border-white\\/20  { border-color: rgba(0,0,0,0.18) !important; }
+          .portal-main .border-white\\/25  { border-color: rgba(0,0,0,0.22) !important; }
+          .portal-main .divide-white\\/\\[0\\.04\\] > * + *,
+          .portal-main .divide-white\\/\\[0\\.06\\] > * + * { border-color: rgba(0,0,0,0.08) !important; }
+          .portal-main .hover\\:border-white\\/20:hover { border-color: rgba(0,0,0,0.22) !important; }
+
+          /* ── Tables ── */
+          .portal-main table thead tr { background-color: rgba(0,0,0,0.035) !important; }
+          .portal-main table tbody tr:hover { background-color: rgba(0,0,0,0.03) !important; }
+          .portal-main table td, .portal-main table th { border-color: rgba(0,0,0,0.08) !important; }
+
+          /* ── Text — 5-level zinc scale ── */
           .portal-main .text-white                  { color: #09090b !important; }
-          .portal-main .text-white\\/80,
-          .portal-main .text-white\\/70             { color: #18181b !important; }
-          .portal-main .text-white\\/60             { color: #27272a !important; }
-          .portal-main .text-white\\/50             { color: #3f3f46 !important; }
-          .portal-main .text-white\\/40             { color: #52525b !important; }
+          .portal-main .text-white\\/90             { color: #18181b !important; }
+          .portal-main .text-white\\/80             { color: #18181b !important; }
+          .portal-main .text-white\\/70             { color: #27272a !important; }
+          .portal-main .text-white\\/60             { color: #3f3f46 !important; }
+          .portal-main .text-white\\/50             { color: #52525b !important; }
+          .portal-main .text-white\\/40             { color: #71717a !important; }
           .portal-main .text-white\\/35             { color: #71717a !important; }
-          .portal-main .text-white\\/30             { color: #71717a !important; }
-          .portal-main .text-white\\/25,
-          .portal-main .text-white\\/20,
-          .portal-main .text-white\\/15             { color: #a1a1aa !important; }
+          .portal-main .text-white\\/30             { color: #a1a1aa !important; }
+          .portal-main .text-white\\/25             { color: #a1a1aa !important; }
+          .portal-main .text-white\\/20             { color: #a1a1aa !important; }
           .portal-main .text-zinc-300,
           .portal-main .text-zinc-400              { color: #3f3f46 !important; }
           .portal-main .text-zinc-500,
           .portal-main .text-zinc-600              { color: #71717a !important; }
 
-          /* Emerald accent — darken for legibility on white */
-          .portal-main .text-emerald-400            { color: #059669 !important; }
-          .portal-main .text-emerald-500\\/60       { color: rgba(5,150,105,0.7) !important; }
+          /* ── Emerald accent ── */
+          .portal-main .text-emerald-400            { color: #047857 !important; }
+          .portal-main .text-emerald-400\\/70,
+          .portal-main .text-emerald-400\\/80       { color: rgba(4,120,87,0.85) !important; }
+          .portal-main .text-emerald-400\\/60       { color: rgba(4,120,87,0.70) !important; }
+          .portal-main .border-emerald-500\\/25,
           .portal-main .border-emerald-500\\/20,
-          .portal-main .border-emerald-500\\/15     { border-color: rgba(5,150,105,0.25) !important; }
-          .portal-main .border-emerald-500\\/40     { border-color: rgba(5,150,105,0.40) !important; }
-          .portal-main .bg-emerald-500\\/10         { background-color: rgba(5,150,105,0.10) !important; }
+          .portal-main .border-emerald-500\\/15     { border-color: rgba(4,120,87,0.28) !important; }
+          .portal-main .border-emerald-500\\/35,
+          .portal-main .border-emerald-500\\/40     { border-color: rgba(4,120,87,0.45) !important; }
+          .portal-main .border-emerald-500\\/50     { border-color: rgba(4,120,87,0.55) !important; }
+          .portal-main .bg-emerald-500\\/10         { background-color: rgba(4,120,87,0.10) !important; }
+          .portal-main .bg-emerald-500\\/20         { background-color: rgba(4,120,87,0.16) !important; }
           .portal-main .bg-emerald-500\\/5,
-          .portal-main .bg-emerald-500\\/\\[0\\.03\\] { background-color: rgba(5,150,105,0.06) !important; }
+          .portal-main .bg-emerald-500\\/\\[0\\.03\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.04\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.05\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.06\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.07\\],
+          .portal-main .bg-emerald-500\\/\\[0\\.08\\] { background-color: rgba(4,120,87,0.07) !important; }
+          .portal-main .from-emerald-500\\/\\[0\\.07\\] { --tw-gradient-from: rgba(4,120,87,0.07) !important; }
 
-          /* Amber/rose alerts */
-          .portal-main .border-amber-500\\/20       { border-color: rgba(217,119,6,0.25) !important; }
-          .portal-main .bg-amber-500\\/\\[0\\.03\\]   { background-color: rgba(217,119,6,0.06) !important; }
-          .portal-main .border-rose-500\\/20        { border-color: rgba(220,38,38,0.20) !important; }
-          .portal-main .bg-rose-500\\/\\[0\\.03\\]    { background-color: rgba(220,38,38,0.04) !important; }
+          /* ── Amber / warning ── */
+          .portal-main .text-amber-400             { color: #b45309 !important; }
+          .portal-main .text-amber-400\\/70,
+          .portal-main .text-amber-400\\/80         { color: rgba(180,83,9,0.85) !important; }
+          .portal-main .text-amber-400\\/60         { color: rgba(180,83,9,0.70) !important; }
+          .portal-main .border-amber-500\\/25,
+          .portal-main .border-amber-500\\/20       { border-color: rgba(180,83,9,0.28) !important; }
+          .portal-main .bg-amber-500\\/\\[0\\.03\\],
+          .portal-main .bg-amber-500\\/\\[0\\.04\\],
+          .portal-main .bg-amber-500\\/\\[0\\.05\\]   { background-color: rgba(180,83,9,0.07) !important; }
 
-          /* Input fields */
+          /* ── Rose / error ── */
+          .portal-main .text-rose-300,
+          .portal-main .text-rose-400              { color: #be123c !important; }
+          .portal-main .border-rose-500\\/20        { border-color: rgba(190,18,60,0.25) !important; }
+          .portal-main .bg-rose-500\\/5,
+          .portal-main .bg-rose-500\\/\\[0\\.03\\]    { background-color: rgba(190,18,60,0.06) !important; }
+
+          /* ── Status dots ── */
+          .portal-main .bg-emerald-400             { background-color: #059669 !important; }
+          .portal-main .bg-rose-400                { background-color: #e11d48 !important; }
+          .portal-main .bg-amber-400               { background-color: #d97706 !important; }
+          .portal-main .bg-emerald-500             { background-color: #059669 !important; }
+
+          /* ── Input fields ── */
           .portal-main input[type="text"],
           .portal-main input[type="email"],
           .portal-main input[type="tel"],
@@ -252,9 +295,13 @@ export default function MerchantDashboardLayout({ children }: { children: React.
           .portal-main input[type="url"] {
             background-color: #ffffff !important;
             color: #09090b !important;
-            border-color: rgba(0,0,0,0.15) !important;
+            border-color: rgba(0,0,0,0.18) !important;
           }
           .portal-main input::placeholder { color: #a1a1aa !important; }
+          .portal-main input:focus { border-color: rgba(4,120,87,0.55) !important; }
+
+          /* ── Store card gradient ── */
+          .portal-main .from-emerald-500\\/\\[0\\.07\\] { --tw-gradient-from: rgba(4,120,87,0.05) !important; }
         `}</style>
       )}
       <div className={`flex h-screen ${s.root} text-white overflow-hidden font-mono`}>

@@ -1,7 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+
+const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+function MoneyCounterText({
+  text,
+  className = '',
+  delay = 0,
+}: {
+  text: string
+  className?: string
+  delay?: number
+}) {
+  const chars = text.split('')
+  const [display, setDisplay] = useState<string[]>(() =>
+    chars.map(c => (c === ' ' || c === '.' || c === '/' || c === ',')
+      ? c
+      : SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
+    )
+  )
+  const idRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    const FRAME_MS = 48
+    const STAGGER = 38
+    const DURATION = 620
+    let elapsed = -delay
+
+    idRef.current = setInterval(() => {
+      elapsed += FRAME_MS
+      let allDone = true
+
+      setDisplay(
+        chars.map((char, i) => {
+          if (char === ' ' || char === '.' || char === '/' || char === ',') return char
+          const t = elapsed - i * STAGGER
+          if (t < 0) { allDone = false; return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)] }
+          if (t >= DURATION) return char
+          allDone = false
+          return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
+        })
+      )
+
+      if (allDone && idRef.current) clearInterval(idRef.current)
+    }, FRAME_MS)
+
+    return () => { if (idRef.current) clearInterval(idRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return <span className={className}>{display.join('')}</span>
+}
 
 type Step = 'email' | 'otp';
 
@@ -187,15 +238,45 @@ export function MerchantSignIn() {
 
           {/* Brand — slides up */}
           <div className="brand-reveal mb-10">
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-5">
               <div className="w-6 h-px bg-emerald-400/60" />
               <span className="text-[10px] tracking-widest text-emerald-500/60 uppercase">001</span>
               <div className="flex-1 h-px bg-white/10" />
             </div>
-            <h1 className="text-3xl font-bold text-white tracking-wider uppercase mb-2">Biashara</h1>
-            <p className="text-xs text-white/35 tracking-wide leading-relaxed">
-              Accept mobile money payments.<br />No app. No wallet. Just an email.
+
+            <p className="text-[11px] font-medium tracking-[0.32em] text-white/25 uppercase mb-4">
+              Biashara
             </p>
+
+            {/* Money-counter headline */}
+            <div className="space-y-0.5">
+              <MoneyCounterText
+                text="KUZA BIASHARA"
+                className="block text-3xl font-bold tracking-wider uppercase leading-tight text-white"
+                delay={80}
+              />
+              <MoneyCounterText
+                text="YAKO."
+                className="block text-3xl font-bold tracking-wider uppercase leading-tight text-emerald-400"
+                delay={500}
+              />
+              <div className="h-1" />
+              <MoneyCounterText
+                text="POKEA MALIPO"
+                className="block text-3xl font-bold tracking-wider uppercase leading-tight text-white"
+                delay={860}
+              />
+              <MoneyCounterText
+                text="HARAKA KUPITIA"
+                className="block text-3xl font-bold tracking-wider uppercase leading-tight text-white/50"
+                delay={1180}
+              />
+              <MoneyCounterText
+                text="MTANDAO WOWOTE."
+                className="block text-3xl font-bold tracking-wider uppercase leading-tight text-emerald-400/65"
+                delay={1480}
+              />
+            </div>
           </div>
 
           {/* Form card — slides up, glows */}

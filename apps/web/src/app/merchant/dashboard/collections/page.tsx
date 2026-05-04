@@ -64,8 +64,8 @@ export default function CollectionsPage() {
 
       <div className="flex items-center gap-3 mb-6">
         <div className="w-4 h-px bg-emerald-400/60" />
-        <span className="text-[10px] tracking-widest text-white/30 uppercase">Dashboard / Collections</span>
-        <div className="flex-1 h-px bg-white/5" />
+        <span className="text-[10px] tracking-widest text-white/40 uppercase">Dashboard / Orders</span>
+        <div className="flex-1 h-px bg-white/10" />
         {loading && (
           <div className="flex items-center gap-1.5">
             <div className="w-1 h-1 rounded-full bg-white/30 animate-pulse" />
@@ -76,44 +76,44 @@ export default function CollectionsPage() {
       </div>
 
       {items.length === 0 && !loading ? (
-        <div className="border border-white/5 p-12 text-center">
-          <p className="text-xs text-white/30 tracking-wide">No collections yet</p>
-          <p className="mt-1 text-[10px] text-white/15">Share your payment link to start accepting payments</p>
+        <div className="border border-white/10 p-12 text-center">
+          <p className="text-sm text-white/50 tracking-wide">No orders yet</p>
+          <p className="mt-1.5 text-xs text-white/35">Share your payment link to start accepting payments</p>
         </div>
       ) : (
         <>
-          <div className="border border-white/5 overflow-hidden">
+          <div className="border border-white/10 overflow-hidden">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-white/5 bg-white/[0.02]">
-                  <th className="px-4 py-3 text-left text-[10px] font-medium tracking-widest text-white/30 uppercase">Payer</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-medium tracking-widest text-white/30 uppercase">Amount</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-medium tracking-widest text-white/30 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-medium tracking-widest text-white/30 uppercase">Settlement</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-medium tracking-widest text-white/30 uppercase">Time</th>
+                <tr className="border-b border-white/10 bg-white/[0.03]">
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold tracking-widest text-white/50 uppercase">Payer</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold tracking-widest text-white/50 uppercase">Amount</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold tracking-widest text-white/50 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold tracking-widest text-white/50 uppercase">Settlement</th>
+                  <th className="px-4 py-3 text-right text-[10px] font-semibold tracking-widest text-white/50 uppercase">Time</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((c) => {
-                  const status = STATUS_CONFIG[c.collectionStatus] ?? { label: c.collectionStatus, className: 'text-white/40' };
-                  const settle = SETTLE_CONFIG[c.settlementStatus] ?? { label: c.settlementStatus, className: 'text-white/30' };
+                  const status = STATUS_CONFIG[c.collectionStatus] ?? { label: c.collectionStatus, className: 'text-white/50' };
+                  const settle = SETTLE_CONFIG[c.settlementStatus] ?? { label: c.settlementStatus, className: 'text-white/40' };
                   return (
-                    <tr key={c.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3 text-white/70">{c.payerName || 'Anonymous'}</td>
-                      <td className="px-4 py-3 font-bold text-emerald-400">+{c.amountTzs.toLocaleString()} TZS</td>
-                      <td className="px-4 py-3">
-                        <span className={`border px-2 py-0.5 text-[10px] tracking-wide uppercase ${status.className}`}>
+                    <tr key={c.id} className="border-b border-white/[0.06] last:border-0 hover:bg-white/[0.03] transition-colors">
+                      <td className="px-4 py-3.5 text-sm text-white/80">{c.payerName || 'Anonymous'}</td>
+                      <td className="px-4 py-3.5 font-bold text-emerald-400">+{c.amountTzs.toLocaleString()} TZS</td>
+                      <td className="px-4 py-3.5">
+                        <span className={`border px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase ${status.className}`}>
                           {status.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-[10px] tracking-wide ${settle.className}`}>
+                      <td className="px-4 py-3.5">
+                        <span className={`text-xs font-medium tracking-wide ${settle.className}`}>
                           {c.settlementStatus === 'completed' && c.settlementAmountTzs
                             ? `+${c.settlementAmountTzs.toLocaleString()} TZS`
                             : settle.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-[10px] text-white/25">{timeAgo(c.createdAt)}</td>
+                      <td className="px-4 py-3.5 text-right text-xs text-white/40">{timeAgo(c.createdAt)}</td>
                     </tr>
                   );
                 })}
@@ -125,7 +125,7 @@ export default function CollectionsPage() {
             <button
               onClick={() => load(nextCursor)}
               disabled={loading}
-              className="mt-3 w-full border border-white/5 py-2.5 text-[10px] tracking-widest text-white/30 uppercase hover:bg-white/[0.02] disabled:opacity-30 transition-colors"
+              className="mt-3 w-full border border-white/10 py-3 text-xs tracking-widest text-white/50 uppercase hover:bg-white/[0.03] disabled:opacity-40 transition-colors"
             >
               {loading ? 'Loading...' : 'Load More'}
             </button>
