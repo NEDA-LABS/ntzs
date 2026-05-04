@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useMerchant } from './layout';
 import Link from 'next/link';
 import { Copy, Share2, Plus, MessageCircle, ArrowRight, Package } from 'lucide-react';
+import { OnboardingTips } from './_components/OnboardingTips';
 
 interface Stats {
   totalCollected: number;
@@ -207,7 +208,8 @@ export default function MerchantOverviewPage() {
             <div className="w-3 h-px bg-emerald-400/50" />
             <span className="text-[10px] tracking-widest text-white/50 uppercase">Your Products</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <OnboardingTips autoOpen={activeLinks.length === 0 && collections.length === 0} />
             {activeLinks.length > 0 && (
               <Link
                 href="/merchant/dashboard/links"

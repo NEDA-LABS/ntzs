@@ -20,12 +20,15 @@ export interface MerchantAccount {
 }
 
 export type PortalTheme = 'dark' | 'midnight' | 'forest' | 'slate' | 'rose' | 'jade' | 'light' | 'pink';
+export type PortalFont  = 'mono' | 'sans' | 'round';
 
 interface MerchantCtx {
   merchant: MerchantAccount | null;
   refresh: () => Promise<void>;
   theme: PortalTheme;
   setTheme: (t: PortalTheme) => void;
+  font: PortalFont;
+  setFont: (f: PortalFont) => void;
 }
 
 const Ctx = createContext<MerchantCtx>({
@@ -33,6 +36,8 @@ const Ctx = createContext<MerchantCtx>({
   refresh: async () => {},
   theme: 'dark',
   setTheme: () => {},
+  font: 'mono',
+  setFont: () => {},
 });
 export const useMerchant = () => useContext(Ctx);
 
@@ -66,14 +71,22 @@ const NAV = [
   { href: '/merchant/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
+const FONT_OPTIONS: { id: PortalFont; label: string; style: React.CSSProperties }[] = [
+  { id: 'mono',  label: 'Mono',  style: { fontFamily: 'var(--font-geist-mono)' } },
+  { id: 'sans',  label: 'Sans',  style: { fontFamily: 'var(--font-poppins)' } },
+  { id: 'round', label: 'Round', style: { fontFamily: 'var(--font-montserrat)' } },
+];
+
 function Sidebar({
-  merchant, onLogout, onClose, theme, setTheme,
+  merchant, onLogout, onClose, theme, setTheme, font, setFont,
 }: {
   merchant: MerchantAccount | null;
   onLogout: () => void;
   onClose?: () => void;
   theme: PortalTheme;
   setTheme: (t: PortalTheme) => void;
+  font: PortalFont;
+  setFont: (f: PortalFont) => void;
 }) {
   const pathname = usePathname();
   const s = THEME_STYLES[theme];
@@ -126,22 +139,44 @@ function Sidebar({
         })}
       </nav>
 
-      {/* Theme switcher */}
-      <div className={`px-5 py-4 border-t ${s.border}`}>
-        <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2.5">Theme</p>
-        <div className="grid grid-cols-4 gap-1.5">
-          {THEME_SWATCHES.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTheme(t.id)}
-              title={t.label}
-              className={`w-5 h-5 transition-all ${t.swatch} ${
-                theme === t.id
-                  ? 'ring-2 ring-offset-1 ring-white/40 opacity-100'
-                  : 'opacity-35 hover:opacity-65'
-              }`}
-            />
-          ))}
+      {/* Theme + Font switcher */}
+      <div className={`px-5 py-4 border-t ${s.border} space-y-3`}>
+        <div>
+          <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2.5">Theme</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {THEME_SWATCHES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTheme(t.id)}
+                title={t.label}
+                className={`w-5 h-5 transition-all ${t.swatch} ${
+                  theme === t.id
+                    ? 'ring-2 ring-offset-1 ring-white/40 opacity-100'
+                    : 'opacity-35 hover:opacity-65'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2">Font</p>
+          <div className="flex gap-1.5">
+            {FONT_OPTIONS.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFont(f.id)}
+                title={f.label}
+                style={f.style}
+                className={`flex-1 py-1 text-xs border transition-all ${
+                  font === f.id
+                    ? 'border-white/40 text-white bg-white/10'
+                    : 'border-white/10 text-white/30 hover:text-white/50 hover:border-white/20'
+                }`}
+              >
+                Aa
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -163,16 +198,24 @@ export default function MerchantDashboardLayout({ children }: { children: React.
   const [merchant, setMerchant] = useState<MerchantAccount | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setThemeState] = useState<PortalTheme>('dark');
+  const [font, setFontState] = useState<PortalFont>('mono');
   const router = useRouter();
 
   useEffect(() => {
     const saved = localStorage.getItem('biashara-theme') as PortalTheme | null;
     if (saved && (saved in THEME_STYLES)) setThemeState(saved);
+    const savedFont = localStorage.getItem('biashara-font') as PortalFont | null;
+    if (savedFont && ['mono', 'sans', 'round'].includes(savedFont)) setFontState(savedFont);
   }, []);
 
   function setTheme(t: PortalTheme) {
     setThemeState(t);
     localStorage.setItem('biashara-theme', t);
+  }
+
+  function setFont(f: PortalFont) {
+    setFontState(f);
+    localStorage.setItem('biashara-font', f);
   }
 
   const refresh = async () => {
@@ -194,9 +237,10 @@ export default function MerchantDashboardLayout({ children }: { children: React.
   };
 
   const s = THEME_STYLES[theme];
+  const fontVar = font === 'sans' ? 'var(--font-poppins)' : font === 'round' ? 'var(--font-montserrat)' : null;
 
   return (
-    <Ctx.Provider value={{ merchant, refresh, theme, setTheme }}>
+    <Ctx.Provider value={{ merchant, refresh, theme, setTheme, font, setFont }}>
       {/* Light theme: sidebar stays dark, only main content area is overridden */}
       {theme === 'light' && (
         <style>{`
@@ -338,10 +382,14 @@ export default function MerchantDashboardLayout({ children }: { children: React.
         `}</style>
       )}
 
-      <div className={`flex h-screen ${s.root} text-white overflow-hidden font-mono`}>
+      {fontVar && (
+        <style>{`.portal-root, .portal-root * { font-family: ${fontVar} !important; }`}</style>
+      )}
+
+      <div className={`portal-root flex h-screen ${s.root} text-white overflow-hidden font-mono`}>
         {/* Desktop sidebar */}
         <div className="hidden lg:flex flex-col h-full">
-          <Sidebar merchant={merchant} onLogout={handleLogout} theme={theme} setTheme={setTheme} />
+          <Sidebar merchant={merchant} onLogout={handleLogout} theme={theme} setTheme={setTheme} font={font} setFont={setFont} />
         </div>
 
         {/* Mobile sidebar */}
@@ -349,7 +397,7 @@ export default function MerchantDashboardLayout({ children }: { children: React.
           <>
             <div className="fixed inset-0 bg-black/70 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
             <div className="fixed left-0 top-0 h-full z-40 lg:hidden">
-              <Sidebar merchant={merchant} onLogout={handleLogout} onClose={() => setSidebarOpen(false)} theme={theme} setTheme={setTheme} />
+              <Sidebar merchant={merchant} onLogout={handleLogout} onClose={() => setSidebarOpen(false)} theme={theme} setTheme={setTheme} font={font} setFont={setFont} />
             </div>
           </>
         )}
