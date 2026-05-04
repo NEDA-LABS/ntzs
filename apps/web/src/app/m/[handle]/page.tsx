@@ -54,9 +54,11 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       parts.push(`Pay via nTZS`);
       description = parts.join(' · ');
 
-      // Only use as OG image if it's a real public URL — base64 data URIs don't work in OG
-      if (link.imageUrl && (link.imageUrl.startsWith('http://') || link.imageUrl.startsWith('https://'))) {
-        ogImage = link.imageUrl;
+      // Route ALL images through the proxy — handles both base64 uploads and external URLs.
+      // WhatsApp's OG crawler requires a real HTTPS URL; data: URIs are silently ignored.
+      if (link.imageUrl) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.ntzs.co.tz';
+        ogImage = `${appUrl}/api/merchant/image/${linkId}`;
       }
     }
   }
