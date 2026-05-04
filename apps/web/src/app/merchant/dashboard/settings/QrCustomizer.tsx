@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Download, Copy, Check, Printer, Upload, X } from 'lucide-react';
+import { Download, Copy, Check, Printer, Upload, X, Link } from 'lucide-react';
 
 type DotStyle = 'square' | 'rounded' | 'dots' | 'classy-rounded' | 'extra-rounded';
 type CornerStyle = 'square' | 'extra-rounded' | 'dot';
@@ -15,25 +15,27 @@ interface QrOptions {
   logoSize: number;
 }
 
+const QR_SIZE = 240;
+
 const DOT_STYLES: { value: DotStyle; label: string }[] = [
-  { value: 'square', label: 'Square' },
-  { value: 'rounded', label: 'Rounded' },
-  { value: 'dots', label: 'Dots' },
-  { value: 'classy-rounded', label: 'Classy' },
-  { value: 'extra-rounded', label: 'Smooth' },
+  { value: 'square',         label: 'Square'  },
+  { value: 'rounded',        label: 'Rounded' },
+  { value: 'dots',           label: 'Dots'    },
+  { value: 'classy-rounded', label: 'Classy'  },
+  { value: 'extra-rounded',  label: 'Smooth'  },
 ];
 
 const CORNER_STYLES: { value: CornerStyle; label: string }[] = [
-  { value: 'square', label: 'Square' },
+  { value: 'square',        label: 'Square'  },
   { value: 'extra-rounded', label: 'Rounded' },
-  { value: 'dot', label: 'Dot' },
+  { value: 'dot',           label: 'Dot'     },
 ];
 
 const PRESETS: { label: string; opts: Partial<QrOptions> }[] = [
-  { label: 'Default', opts: { fgColor: '#ffffff', bgColor: '#000000', dotStyle: 'square', cornerStyle: 'square' } },
-  { label: 'Emerald', opts: { fgColor: '#4ade80', bgColor: '#000000', dotStyle: 'rounded', cornerStyle: 'extra-rounded' } },
-  { label: 'Minimal', opts: { fgColor: '#000000', bgColor: '#ffffff', dotStyle: 'dots', cornerStyle: 'dot' } },
-  { label: 'Classy', opts: { fgColor: '#e2e8f0', bgColor: '#0f172a', dotStyle: 'classy-rounded', cornerStyle: 'extra-rounded' } },
+  { label: 'Default', opts: { fgColor: '#ffffff', bgColor: '#000000', dotStyle: 'square',         cornerStyle: 'square'        } },
+  { label: 'Emerald', opts: { fgColor: '#4ade80', bgColor: '#000000', dotStyle: 'rounded',        cornerStyle: 'extra-rounded' } },
+  { label: 'Minimal', opts: { fgColor: '#000000', bgColor: '#ffffff', dotStyle: 'dots',           cornerStyle: 'dot'           } },
+  { label: 'Classy',  opts: { fgColor: '#e2e8f0', bgColor: '#0f172a', dotStyle: 'classy-rounded', cornerStyle: 'extra-rounded' } },
 ];
 
 export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: string }) {
@@ -55,10 +57,10 @@ export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: strin
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const buildConfig = useCallback((o: QrOptions): any => ({
-    width: 300,
-    height: 300,
+    width: QR_SIZE,
+    height: QR_SIZE,
     data: payUrl,
-    margin: 16,
+    margin: 12,
     qrOptions: { errorCorrectionLevel: (o.logoDataUrl ? 'H' : 'M') as 'H' | 'M' },
     dotsOptions: { type: o.dotStyle, color: o.fgColor },
     backgroundOptions: { color: o.bgColor },
@@ -70,7 +72,6 @@ export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: strin
     }),
   }), [payUrl]);
 
-  // Mount QR instance
   useEffect(() => {
     let mounted = true;
     import('qr-code-styling').then(({ default: QRCodeStyling }) => {
@@ -80,15 +81,11 @@ export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: strin
       qrRef.current.append(containerRef.current);
     });
     return () => { mounted = false; };
-    // only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update QR when opts change
   useEffect(() => {
-    if (qrRef.current) {
-      qrRef.current.update(buildConfig(opts));
-    }
+    if (qrRef.current) qrRef.current.update(buildConfig(opts));
   }, [opts, buildConfig]);
 
   function applyPreset(preset: Partial<QrOptions>) {
@@ -99,26 +96,16 @@ export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: strin
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setOpts((prev) => ({ ...prev, logoDataUrl: dataUrl }));
-    };
+    reader.onload = (ev) => setOpts((prev) => ({ ...prev, logoDataUrl: ev.target?.result as string }));
     reader.readAsDataURL(file);
     e.target.value = '';
-  }
-
-  function removeLogo() {
-    setOpts((prev) => ({ ...prev, logoDataUrl: null }));
   }
 
   async function download(ext: 'png' | 'svg') {
     if (!qrRef.current) return;
     setDownloading(true);
-    try {
-      await qrRef.current.download({ name: `biashara-qr-${handle}`, extension: ext });
-    } finally {
-      setDownloading(false);
-    }
+    try { await qrRef.current.download({ name: `biashara-qr-${handle}`, extension: ext }); }
+    finally { setDownloading(false); }
   }
 
   function copyLink() {
@@ -153,194 +140,199 @@ export function QrCustomizer({ payUrl, handle }: { payUrl: string; handle: strin
   }
 
   return (
-    <section className="relative border border-white/10 p-5 font-mono">
-      <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-emerald-500/30" />
-      <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-emerald-500/30" />
+    <div className="flex flex-col lg:flex-row gap-8">
 
-      <p className="text-[10px] tracking-widest text-white/30 uppercase mb-5">QR Code</p>
+      {/* ── Left: preview ── */}
+      <div className="flex flex-col items-center gap-4 shrink-0">
 
-      <div className="flex flex-col lg:flex-row gap-6">
-
-        {/* Preview */}
-        <div className="flex flex-col items-center gap-4 shrink-0">
+        {/* QR frame */}
+        <div className="relative border border-white/10">
+          <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-emerald-500/40" />
+          <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-emerald-500/40" />
+          <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-emerald-500/40" />
+          <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-emerald-500/40" />
           <div
             ref={containerRef}
-            className="border border-white/10 overflow-hidden"
-            style={{ width: 200, height: 200 }}
+            style={{ width: QR_SIZE, height: QR_SIZE, display: 'block' }}
           />
-          <p className="text-[10px] tracking-widest text-white/25 uppercase">@{handle}</p>
-
-          {/* Actions */}
-          <div className="flex flex-wrap gap-2 justify-center">
-            <button
-              onClick={() => download('png')}
-              disabled={downloading}
-              className="flex items-center gap-1.5 border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors disabled:opacity-30"
-            >
-              <Download size={10} />PNG
-            </button>
-            <button
-              onClick={() => download('svg')}
-              disabled={downloading}
-              className="flex items-center gap-1.5 border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors disabled:opacity-30"
-            >
-              <Download size={10} />SVG
-            </button>
-            <button
-              onClick={print}
-              className="flex items-center gap-1.5 border border-white/10 px-3 py-1.5 text-[10px] tracking-wider text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors"
-            >
-              <Printer size={10} />Print
-            </button>
-            <button
-              onClick={copyLink}
-              className="flex items-center gap-1.5 border border-emerald-500/20 bg-emerald-500/5 px-3 py-1.5 text-[10px] tracking-wider text-emerald-400/70 uppercase hover:bg-emerald-500/15 transition-colors"
-            >
-              {copied ? <Check size={10} /> : <Copy size={10} />}
-              {copied ? 'Copied' : 'Copy Link'}
-            </button>
-          </div>
         </div>
 
-        {/* Customization */}
-        <div className="flex-1 space-y-5 min-w-0">
+        {/* Caption */}
+        <div className="text-center">
+          <p className="text-[10px] tracking-widest text-white/35 uppercase">@{handle}</p>
+          <p className="text-[9px] text-white/20 mt-0.5 max-w-[240px] truncate">{payUrl}</p>
+        </div>
 
-          {/* Presets */}
-          <div>
-            <p className="text-[10px] tracking-widest text-white/30 uppercase mb-2">Presets</p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  onClick={() => applyPreset(p.opts)}
-                  className="border border-white/10 py-1.5 text-[10px] text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Dot style */}
-          <div>
-            <p className="text-[10px] tracking-widest text-white/30 uppercase mb-2">Dot Style</p>
-            <div className="grid grid-cols-5 gap-1.5">
-              {DOT_STYLES.map((s) => (
-                <button
-                  key={s.value}
-                  onClick={() => setOpts((o) => ({ ...o, dotStyle: s.value }))}
-                  className={`border py-1.5 text-[10px] uppercase transition-colors ${
-                    opts.dotStyle === s.value
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                      : 'border-white/10 text-white/35 hover:bg-white/5'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Corner style */}
-          <div>
-            <p className="text-[10px] tracking-widest text-white/30 uppercase mb-2">Corner Style</p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {CORNER_STYLES.map((s) => (
-                <button
-                  key={s.value}
-                  onClick={() => setOpts((o) => ({ ...o, cornerStyle: s.value }))}
-                  className={`border py-1.5 text-[10px] uppercase transition-colors ${
-                    opts.cornerStyle === s.value
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                      : 'border-white/10 text-white/35 hover:bg-white/5'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Colors */}
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <p className="text-[10px] tracking-widest text-white/30 uppercase mb-2">QR Color</p>
-              <div className="flex items-center gap-2 border border-white/10 bg-black px-3 py-2">
-                <input
-                  type="color"
-                  value={opts.fgColor}
-                  onChange={(e) => setOpts((o) => ({ ...o, fgColor: e.target.value }))}
-                  className="w-5 h-5 rounded-none border-0 bg-transparent cursor-pointer p-0"
-                />
-                <span className="text-xs text-white/40 font-mono">{opts.fgColor.toUpperCase()}</span>
-              </div>
-            </div>
-            <div className="flex-1">
-              <p className="text-[10px] tracking-widest text-white/30 uppercase mb-2">Background</p>
-              <div className="flex items-center gap-2 border border-white/10 bg-black px-3 py-2">
-                <input
-                  type="color"
-                  value={opts.bgColor}
-                  onChange={(e) => setOpts((o) => ({ ...o, bgColor: e.target.value }))}
-                  className="w-5 h-5 rounded-none border-0 bg-transparent cursor-pointer p-0"
-                />
-                <span className="text-xs text-white/40 font-mono">{opts.bgColor.toUpperCase()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Logo upload */}
-          <div>
-            <p className="text-[10px] tracking-widest text-white/30 uppercase mb-2">Center Logo</p>
-            {opts.logoDataUrl ? (
-              <div className="flex items-center gap-3 border border-white/10 bg-white/[0.02] px-3 py-2">
-                <img src={opts.logoDataUrl} alt="logo" className="w-8 h-8 object-contain" />
-                <span className="flex-1 text-[10px] text-white/40 truncate">Logo uploaded</span>
-                <button
-                  onClick={removeLogo}
-                  className="text-white/25 hover:text-rose-400 transition-colors"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 border border-dashed border-white/15 w-full px-4 py-3 text-[10px] tracking-wider text-white/25 uppercase hover:border-white/30 hover:text-white/40 transition-colors"
-              >
-                <Upload size={11} />
-                Upload image (PNG, JPG, SVG)
-              </button>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleLogoUpload}
-            />
-            {opts.logoDataUrl && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-[10px] tracking-widest text-white/25 uppercase">Logo Size</p>
-                  <span className="text-[10px] text-white/35">{Math.round(opts.logoSize * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.1}
-                  max={0.4}
-                  step={0.05}
-                  value={opts.logoSize}
-                  onChange={(e) => setOpts((o) => ({ ...o, logoSize: Number(e.target.value) }))}
-                  className="w-full accent-emerald-500"
-                />
-              </div>
-            )}
-          </div>
-
+        {/* Actions */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => download('png')}
+            disabled={downloading}
+            title="Download PNG"
+            className="flex items-center gap-1.5 border border-white/10 px-3 py-2 text-[10px] tracking-wider text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors disabled:opacity-30"
+          >
+            <Download size={10} />PNG
+          </button>
+          <button
+            onClick={() => download('svg')}
+            disabled={downloading}
+            title="Download SVG"
+            className="flex items-center gap-1.5 border border-white/10 px-3 py-2 text-[10px] tracking-wider text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors disabled:opacity-30"
+          >
+            <Download size={10} />SVG
+          </button>
+          <button
+            onClick={print}
+            title="Print"
+            className="border border-white/10 px-3 py-2 text-white/40 hover:bg-white/5 hover:text-white/60 transition-colors"
+          >
+            <Printer size={12} />
+          </button>
+          <button
+            onClick={copyLink}
+            title="Copy payment link"
+            className={`flex items-center gap-1.5 border px-3 py-2 text-[10px] tracking-wider uppercase transition-colors ${
+              copied
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                : 'border-white/10 text-white/40 hover:border-emerald-500/30 hover:text-emerald-400/70'
+            }`}
+          >
+            {copied ? <Check size={10} /> : <Link size={10} />}
+            {copied ? 'Copied' : 'Copy Link'}
+          </button>
         </div>
       </div>
-    </section>
+
+      {/* ── Right: controls ── */}
+      <div className="flex-1 space-y-5 min-w-0">
+
+        {/* Presets */}
+        <div>
+          <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2">Presets</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {PRESETS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => applyPreset(p.opts)}
+                className="border border-white/10 py-2 text-[10px] text-white/40 uppercase hover:bg-white/5 hover:text-white/60 transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Dot style */}
+        <div>
+          <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2">Dot Style</p>
+          <div className="grid grid-cols-5 gap-1.5">
+            {DOT_STYLES.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setOpts((o) => ({ ...o, dotStyle: s.value }))}
+                className={`border py-2 text-[10px] uppercase transition-colors ${
+                  opts.dotStyle === s.value
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                    : 'border-white/10 text-white/35 hover:bg-white/5 hover:text-white/55'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Corner style */}
+        <div>
+          <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2">Corner Style</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {CORNER_STYLES.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setOpts((o) => ({ ...o, cornerStyle: s.value }))}
+                className={`border py-2 text-[10px] uppercase transition-colors ${
+                  opts.cornerStyle === s.value
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                    : 'border-white/10 text-white/35 hover:bg-white/5 hover:text-white/55'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Colors */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { key: 'fgColor' as const, label: 'QR Color' },
+            { key: 'bgColor' as const, label: 'Background' },
+          ].map(({ key, label }) => (
+            <div key={key}>
+              <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2">{label}</p>
+              <label className="flex items-center gap-2.5 border border-white/10 bg-black/40 px-3 py-2.5 cursor-pointer hover:border-white/20 transition-colors group">
+                <div
+                  className="w-5 h-5 shrink-0 border border-white/20"
+                  style={{ background: opts[key] }}
+                />
+                <span className="text-[11px] text-white/45 font-mono flex-1 group-hover:text-white/60 transition-colors">
+                  {opts[key].toUpperCase()}
+                </span>
+                <input
+                  type="color"
+                  value={opts[key]}
+                  onChange={(e) => setOpts((o) => ({ ...o, [key]: e.target.value }))}
+                  className="w-0 h-0 opacity-0 absolute"
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+
+        {/* Logo upload */}
+        <div>
+          <p className="text-[9px] tracking-widest text-white/25 uppercase mb-2">Center Logo</p>
+          {opts.logoDataUrl ? (
+            <div className="flex items-center gap-3 border border-white/10 bg-white/[0.02] px-3 py-2.5">
+              <img src={opts.logoDataUrl} alt="logo" className="w-7 h-7 object-contain" />
+              <span className="flex-1 text-[10px] text-white/40 truncate">Logo uploaded</span>
+              <button
+                onClick={() => setOpts((o) => ({ ...o, logoDataUrl: null }))}
+                className="text-white/25 hover:text-rose-400 transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center justify-center gap-2 border border-dashed border-white/15 w-full py-3 text-[10px] tracking-wider text-white/25 uppercase hover:border-white/30 hover:text-white/40 transition-colors"
+            >
+              <Upload size={10} />
+              Upload image (PNG, JPG, SVG)
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+
+          {opts.logoDataUrl && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[9px] tracking-widest text-white/25 uppercase">Logo Size</p>
+                <span className="text-[10px] text-white/35 tabular-nums">{Math.round(opts.logoSize * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={0.1} max={0.4} step={0.05}
+                value={opts.logoSize}
+                onChange={(e) => setOpts((o) => ({ ...o, logoSize: Number(e.target.value) }))}
+                className="w-full accent-emerald-500"
+              />
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
   );
 }
