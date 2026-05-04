@@ -41,6 +41,24 @@ interface PayLink {
   createdAt: string;
 }
 
+function useCountUp(target: number | null, duration = 900) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    if (target === null) return;
+    if (target === 0) { setValue(0); return; }
+    let raf: number;
+    const start = Date.now();
+    const tick = () => {
+      const p = Math.min((Date.now() - start) / duration, 1);
+      setValue(Math.round((1 - Math.pow(1 - p, 3)) * target));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
+}
+
 function formatTzs(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -85,22 +103,57 @@ export default function MerchantOverviewPage() {
     window.open(`https://wa.me/?text=${text}`, '_blank');
   }
 
+  const totalCount  = useCountUp(stats?.totalCollected ?? null);
+  const monthCount  = useCountUp(stats?.thisMonth ?? null);
+  const todayCount  = useCountUp(stats?.today ?? null);
+
   if (!merchant) return null;
 
   const activeLinks = links.filter(l => l.isActive);
 
   return (
     <div className="p-5 lg:p-7 max-w-3xl mx-auto font-mono space-y-5">
+      <style>{`
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(18px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50%       { transform: translateY(-7px); }
+        }
+        @keyframes shimmer {
+          0%   { background-position: -400px 0; }
+          100% { background-position: 400px 0; }
+        }
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.94); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        .anim-1 { animation: fadeUp 0.45s ease-out 0.05s both; }
+        .anim-2 { animation: fadeUp 0.45s ease-out 0.12s both; }
+        .anim-3 { animation: fadeUp 0.45s ease-out 0.20s both; }
+        .anim-4 { animation: fadeUp 0.45s ease-out 0.28s both; }
+        .anim-5 { animation: fadeUp 0.45s ease-out 0.36s both; }
+        .anim-float { animation: float 3.5s ease-in-out infinite; }
+        .stat-shimmer {
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+          background-size: 400px 100%;
+          animation: shimmer 1.6s ease-in-out infinite;
+          border-radius: 2px;
+        }
+        .card-enter { animation: scaleIn 0.35s ease-out both; }
+      `}</style>
 
       {/* Breadcrumb */}
-      <div className="flex items-center gap-3">
+      <div className="anim-1 flex items-center gap-3">
         <div className="w-4 h-px bg-emerald-400/60" />
         <span className="text-[10px] tracking-widest text-white/40 uppercase">Dashboard / Overview</span>
         <div className="flex-1 h-px bg-white/10" />
       </div>
 
       {/* ── STORE CARD ── */}
-      <div className="relative overflow-hidden border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.07] via-transparent to-transparent">
+      <div className="anim-2 relative overflow-hidden border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.07] via-transparent to-transparent">
         <div className="absolute top-0 left-0 w-5 h-5 border-t border-l border-emerald-500/50" />
         <div className="absolute top-0 right-0 w-5 h-5 border-t border-r border-emerald-500/50" />
         <div className="absolute bottom-0 left-0 w-5 h-5 border-b border-l border-emerald-500/50" />
@@ -130,7 +183,9 @@ export default function MerchantOverviewPage() {
             <p className="text-[10px] tracking-widest text-white/40 uppercase mb-2">Total Collected</p>
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-bold text-white tabular-nums leading-none">
-                {stats ? formatTzs(stats.totalCollected) : '—'}
+                {stats ? formatTzs(totalCount) : (
+                  <span className="inline-block w-24 h-10 stat-shimmer" />
+                )}
               </span>
               <span className="text-xl text-white/40 font-medium">TZS</span>
             </div>
@@ -146,21 +201,21 @@ export default function MerchantOverviewPage() {
             <div className="flex-1">
               <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">This Month</p>
               <p className="text-sm font-bold text-white/70 tabular-nums">
-                {stats ? `${formatTzs(stats.thisMonth)} TZS` : '—'}
+                {stats ? `${formatTzs(monthCount)} TZS` : <span className="inline-block w-16 h-4 stat-shimmer" />}
               </p>
             </div>
             <div className="w-px h-8 bg-white/10" />
             <div className="flex-1 px-4">
               <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">Today</p>
               <p className="text-sm font-bold text-white/70 tabular-nums">
-                {stats ? `${formatTzs(stats.today)} TZS` : '—'}
+                {stats ? `${formatTzs(todayCount)} TZS` : <span className="inline-block w-12 h-4 stat-shimmer" />}
               </p>
             </div>
             <div className="w-px h-8 bg-white/10" />
             <div className="flex-1 pl-4">
               <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">Products</p>
               <p className="text-sm font-bold text-white/70 tabular-nums">
-                {stats ? stats.activeLinks : '—'} active
+                {stats ? stats.activeLinks : <span className="inline-block w-8 h-4 stat-shimmer" />} active
               </p>
             </div>
           </div>
@@ -187,7 +242,7 @@ export default function MerchantOverviewPage() {
 
       {/* Settlement banner */}
       {stats && stats.settlementPendingTzs > 0 && merchant.settlePct > 0 && (
-        <div className="border border-amber-500/25 bg-amber-500/[0.04] px-5 py-4 flex items-center justify-between">
+        <div className="anim-3 border border-amber-500/25 bg-amber-500/[0.04] px-5 py-4 flex items-center justify-between">
           <div>
             <p className="text-[10px] tracking-widest text-amber-400/80 uppercase mb-1">Settlement Accumulating</p>
             <p className="text-xs text-white/50">Building toward the 5,000 TZS payout threshold</p>
@@ -202,7 +257,7 @@ export default function MerchantOverviewPage() {
       )}
 
       {/* ── PRODUCTS SHELF ── */}
-      <div>
+      <div className="anim-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className="w-3 h-px bg-emerald-400/50" />
@@ -234,7 +289,7 @@ export default function MerchantOverviewPage() {
             className="group flex flex-col items-center justify-center border border-dashed border-white/15 hover:border-emerald-500/30 py-14 transition-all"
           >
             <div className="flex h-11 w-11 items-center justify-center border border-white/15 group-hover:border-emerald-500/30 mb-3 transition-colors">
-              <Package size={18} className="text-white/30 group-hover:text-emerald-400/60 transition-colors" />
+              <Package size={18} className="anim-float text-white/30 group-hover:text-emerald-400/60 transition-colors" />
             </div>
             <p className="text-sm text-white/40 tracking-wide">No products yet</p>
             <p className="mt-1 text-xs text-white/30">Add a product or service to start selling</p>
@@ -245,10 +300,11 @@ export default function MerchantOverviewPage() {
           </Link>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {activeLinks.slice(0, 6).map((link) => (
+            {activeLinks.slice(0, 6).map((link, i) => (
               <ProductCard
                 key={link.id}
                 link={link}
+                index={i}
                 url={`${base}/m/${merchant.handle}?link=${link.id}`}
               />
             ))}
@@ -268,7 +324,7 @@ export default function MerchantOverviewPage() {
       </div>
 
       {/* ── RECENT ORDERS ── */}
-      <div>
+      <div className="anim-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className="w-3 h-px bg-white/25" />
@@ -289,8 +345,8 @@ export default function MerchantOverviewPage() {
           </div>
         ) : (
           <div className="border border-white/10 divide-y divide-white/[0.06]">
-            {collections.map((c) => (
-              <div key={c.id} className="flex items-center justify-between px-4 py-3.5 hover:bg-white/[0.03] transition-colors">
+            {collections.map((c, i) => (
+              <div key={c.id} className="card-enter flex items-center justify-between px-4 py-3.5 hover:bg-white/[0.03] transition-colors" style={{ animationDelay: `${i * 60}ms` }}>
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-white/15 bg-white/[0.04] text-xs font-bold text-white/50">
                     {(c.payerName || 'A')[0].toUpperCase()}
@@ -326,7 +382,7 @@ export default function MerchantOverviewPage() {
   );
 }
 
-function ProductCard({ link, url }: { link: PayLink; url: string }) {
+function ProductCard({ link, url, index = 0 }: { link: PayLink; url: string; index?: number }) {
   const hasDiscount = link.discountPct > 0 && link.originalAmountTzs;
   const [sent, setSent] = useState(false);
 
@@ -341,7 +397,7 @@ function ProductCard({ link, url }: { link: PayLink; url: string }) {
   }
 
   return (
-    <div className="group flex flex-col overflow-hidden border border-white/10 hover:border-white/20 bg-white/[0.03] transition-all">
+    <div className="card-enter group flex flex-col overflow-hidden border border-white/10 hover:border-white/20 bg-white/[0.03] transition-all" style={{ animationDelay: `${index * 70}ms` }}>
       {/* Thumbnail */}
       <div className="relative h-28 w-full overflow-hidden bg-white/[0.04] flex items-center justify-center shrink-0">
         {link.imageUrl ? (
