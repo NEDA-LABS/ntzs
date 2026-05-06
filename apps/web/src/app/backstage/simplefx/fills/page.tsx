@@ -3,7 +3,7 @@ import Link from 'next/link'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpFills, lpAccounts } from '@ntzs/db'
+import { lpFills, lpAccounts, partners } from '@ntzs/db'
 import { formatDateEAT } from '@/lib/format-date'
 
 const TOKEN_SYMBOLS: Record<string, string> = {
@@ -22,23 +22,23 @@ function shortHash(hash: string | null) {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`
 }
 
-function SourceBadge({ source }: { source: string | null }) {
+function SourceBadge({ source, partnerName }: { source: string | null; partnerName: string | null }) {
   if (source === 'waas') {
     return (
-      <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-400">
-        WaaS
+      <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-violet-400">
+        {partnerName ?? 'WaaS'}
       </span>
     )
   }
   if (source === 'app') {
     return (
-      <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-400">
+      <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-blue-400">
         App
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+    <span className="inline-flex items-center rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-500">
       —
     </span>
   )
@@ -64,9 +64,11 @@ export default async function SwapFillsPage() {
       lpId: lpFills.lpId,
       lpEmail: lpAccounts.email,
       lpDisplayName: lpAccounts.displayName,
+      partnerName: partners.name,
     })
     .from(lpFills)
     .leftJoin(lpAccounts, eq(lpFills.lpId, lpAccounts.id))
+    .leftJoin(partners, eq(lpFills.partnerId, partners.id))
     .orderBy(desc(lpFills.createdAt))
     .limit(500)
 
@@ -79,7 +81,6 @@ export default async function SwapFillsPage() {
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
       <div className="border-b border-white/10 bg-zinc-950/50 px-8 py-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -140,7 +141,7 @@ export default async function SwapFillsPage() {
                         {formatDateEAT(f.createdAt)}
                       </td>
                       <td className="px-5 py-3.5">
-                        <SourceBadge source={f.source} />
+                        <SourceBadge source={f.source} partnerName={f.partnerName ?? null} />
                       </td>
                       <td className="px-5 py-3.5">
                         {f.lpId ? (

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { desc, eq } from 'drizzle-orm'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpFills, lpAccounts } from '@ntzs/db'
+import { lpFills, lpAccounts, partners } from '@ntzs/db'
 
 const TOKEN_SYMBOLS: Record<string, string> = {
   '0xf476ba983de2f1ad532380630e2cf1d1b8b10688': 'nTZS',
@@ -44,14 +44,17 @@ export async function GET(_req: NextRequest) {
       inTxHash: lpFills.inTxHash,
       outTxHash: lpFills.outTxHash,
       chain: lpFills.chain,
+      partnerName: partners.name,
     })
     .from(lpFills)
     .leftJoin(lpAccounts, eq(lpFills.lpId, lpAccounts.id))
+    .leftJoin(partners, eq(lpFills.partnerId, partners.id))
     .orderBy(desc(lpFills.createdAt))
 
   const headers = [
     'Timestamp (EAT)',
     'Source',
+    'Partner',
     'LP Email',
     'LP Name',
     'LP ID',
@@ -73,6 +76,7 @@ export async function GET(_req: NextRequest) {
     return [
       ts,
       f.source ?? 'unknown',
+      f.partnerName ?? '',
       f.lpEmail ?? '',
       f.lpDisplayName ?? '',
       f.lpId,

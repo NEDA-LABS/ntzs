@@ -907,6 +907,7 @@ export const lpFills = pgTable(
     inTxHash: text('in_tx_hash').notNull(),
     outTxHash: text('out_tx_hash').notNull(),
     source: text('source'),
+    partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

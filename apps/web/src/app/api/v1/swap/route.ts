@@ -210,6 +210,7 @@ export async function POST(request: NextRequest) {
                 inTxHash: _result.inTxHash,
                 outTxHash: _result.outTxHash,
                 source: 'waas',
+                partnerId: partner.id,
               })
 
               const outTokenAddr = toTokenMeta.address.toLowerCase()
