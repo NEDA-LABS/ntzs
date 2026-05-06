@@ -95,6 +95,12 @@ export default async function SimpleFXBackstagePage() {
             {pendingKyc > 0 && (
               <span className="rounded-full bg-amber-500/10 px-3 py-1 text-amber-400">{pendingKyc} KYC pending</span>
             )}
+            <Link
+              href="/backstage/simplefx/fills"
+              className="rounded-full bg-blue-500/10 px-3 py-1 text-blue-400 hover:bg-blue-500/20 transition-colors"
+            >
+              Swap History →
+            </Link>
           </div>
         </div>
       </div>

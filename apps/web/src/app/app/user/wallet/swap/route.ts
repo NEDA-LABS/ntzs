@@ -222,6 +222,7 @@ export async function POST(request: NextRequest) {
                 spreadEarned: spread.toFixed(toDecimals),
                 inTxHash: _result.inTxHash,
                 outTxHash: _result.outTxHash,
+                source: 'app',
               })
 
               const outTokenAddr = toTokenMeta.address.toLowerCase()

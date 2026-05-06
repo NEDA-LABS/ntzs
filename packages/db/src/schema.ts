@@ -906,6 +906,7 @@ export const lpFills = pgTable(
     spreadEarned: numeric('spread_earned', { precision: 36, scale: 18 }).notNull().default('0'),
     inTxHash: text('in_tx_hash').notNull(),
     outTxHash: text('out_tx_hash').notNull(),
+    source: text('source'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

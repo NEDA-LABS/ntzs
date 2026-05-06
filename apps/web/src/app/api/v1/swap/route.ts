@@ -2,9 +2,9 @@ import { NextRequest } from 'next/server'
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
-import { partnerUsers, partners, lpFxPairs, lpAccounts } from '@ntzs/db'
-import { eq, and } from 'drizzle-orm'
-import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
+import { partnerUsers, partners, lpFxPairs, lpAccounts, lpFills, lpPoolPositions } from '@ntzs/db'
+import { eq, and, sql } from 'drizzle-orm'
+import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
 import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 
 export const runtime = 'nodejs'
@@ -175,10 +175,74 @@ export async function POST(request: NextRequest) {
           minOutput,
           recipientAddress,
         })) {
-          send(update)
-          if (update.status === 'FILLED' || update.status === 'FAILED' || update.status === 'PARTIAL_FILL_EXHAUSTED') {
-            break
+          const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
+          send(clientUpdate)
+
+          if (update.status === 'FILLED' && _result) {
+            let toTokenMeta: { decimals: number; address: string }
+            try {
+              toTokenMeta = getChainToken(toChain, toToken)
+            } catch {
+              toTokenMeta = SWAP_TOKENS[toToken]
+            }
+            let fromTokenMeta: { decimals: number; address: string }
+            try {
+              fromTokenMeta = getChainToken(fromChain, fromToken)
+            } catch {
+              fromTokenMeta = SWAP_TOKENS[fromToken]
+            }
+            const toDecimals = toTokenMeta.decimals
+
+            const midOutput = fromToken === 'NTZS'
+              ? amount / midRate
+              : amount * midRate
+            const spread = Math.max(0, midOutput - parseFloat(_result.amountOut))
+
+            try {
+              await db.insert(lpFills).values({
+                lpId: bestLP.id,
+                userAddress: recipientAddress,
+                fromToken: fromTokenMeta.address,
+                toToken: toTokenMeta.address,
+                amountIn: _result.amountIn,
+                amountOut: _result.amountOut,
+                spreadEarned: spread.toFixed(toDecimals),
+                inTxHash: _result.inTxHash,
+                outTxHash: _result.outTxHash,
+                source: 'waas',
+              })
+
+              const outTokenAddr = toTokenMeta.address.toLowerCase()
+              await db
+                .update(lpPoolPositions)
+                .set({
+                  earned: sql`${lpPoolPositions.earned} + ${spread.toFixed(toDecimals)}::numeric`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(lpPoolPositions.lpId, bestLP.id),
+                  eq(lpPoolPositions.chain, toChain),
+                  eq(lpPoolPositions.tokenAddress, outTokenAddr),
+                ))
+
+              const inTokenAddr = fromTokenMeta.address.toLowerCase()
+              await db
+                .update(lpPoolPositions)
+                .set({
+                  contributed: sql`${lpPoolPositions.contributed} + ${_result.amountIn}::numeric`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(lpPoolPositions.lpId, bestLP.id),
+                  eq(lpPoolPositions.chain, fromChain),
+                  eq(lpPoolPositions.tokenAddress, inTokenAddr),
+                ))
+            } catch (err) {
+              console.error('[waas/swap] Failed to record fill:', err)
+            }
           }
+
+          if (['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'].includes(update.status)) break
         }
       } catch (err) {
         send({

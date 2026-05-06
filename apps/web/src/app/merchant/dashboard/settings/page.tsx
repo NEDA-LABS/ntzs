@@ -7,7 +7,7 @@ import { QrCustomizer } from './QrCustomizer';
 
 type Tab = 'profile' | 'settlement' | 'security' | 'qr';
 
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { id: 'profile',    label: 'Profile',    icon: User },
   { id: 'settlement', label: 'Settlement', icon: ArrowDownUp },
   { id: 'security',   label: 'Security',   icon: Shield },
