@@ -146,7 +146,7 @@ export default async function MerchantPayPage({ params, searchParams }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 font-mono">
+    <div className="min-h-screen bg-zinc-50 font-mono text-zinc-900" style={{ colorScheme: 'light' }}>
 
       {/* Top bar */}
       <div className="border-b border-zinc-100 bg-white px-6 py-3 flex items-center justify-between">

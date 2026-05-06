@@ -95,7 +95,7 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
   // Status screen
   if (depositId && payStatus) {
     return (
-      <div className="py-8 text-center font-mono">
+      <div className="py-8 text-center font-mono" style={{ colorScheme: 'light' }}>
         {payStatus === 'success' ? (
           <>
             <div className="mx-auto flex h-14 w-14 items-center justify-center border border-emerald-200 bg-emerald-50 mb-5">
@@ -153,7 +153,7 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5 font-mono">
+    <form onSubmit={handleSubmit} className="space-y-5 font-mono" style={{ colorScheme: 'light' }}>
       {description && (
         <div className="border border-zinc-100 bg-zinc-50 px-4 py-3">
           <p className="text-[10px] tracking-widest text-zinc-400 uppercase mb-0.5">Payment For</p>
