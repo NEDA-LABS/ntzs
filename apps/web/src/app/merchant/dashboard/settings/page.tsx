@@ -2,16 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useMerchant } from '../layout';
-import { Copy, Check, User, ArrowDownUp, Shield, QrCode, Lock, Eye, EyeOff } from 'lucide-react';
+import { Copy, Check, User, ArrowDownUp, Shield, QrCode, Lock, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { QrCustomizer } from './QrCustomizer';
+import { useAiAssistant } from '../_components/AiAssistant';
 
-type Tab = 'profile' | 'settlement' | 'security' | 'qr';
+type Tab = 'profile' | 'settlement' | 'security' | 'qr' | 'ai';
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { id: 'profile',    label: 'Profile',    icon: User },
   { id: 'settlement', label: 'Settlement', icon: ArrowDownUp },
   { id: 'security',   label: 'Security',   icon: Shield },
   { id: 'qr',         label: 'QR Code',    icon: QrCode },
+  { id: 'ai',         label: 'AI Agent',   icon: Sparkles },
 ];
 
 function passwordStrength(p: string): { level: 0 | 1 | 2 | 3; label: string; color: string } {
@@ -519,6 +521,91 @@ export default function SettingsPage() {
         <div key="qr" className="tab-content">
           <QrCustomizer payUrl={payUrl} handle={merchant.handle} />
         </div>
+      )}
+
+      {/* ── AI AGENT TAB ── */}
+      {tab === 'ai' && <AiAgentSettings />}
+    </div>
+  );
+}
+
+function AiAgentSettings() {
+  const { agentName, setAgentName, agentEnabled, setAgentEnabled } = useAiAssistant();
+  const [nameInput, setNameInput] = useState(agentName);
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    const trimmed = nameInput.trim() || 'Ubongo AI';
+    setAgentName(trimmed);
+    setNameInput(trimmed);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div className="tab-content space-y-6">
+      {/* Enable toggle */}
+      <div className="flex items-center justify-between border border-white/10 px-5 py-4">
+        <div>
+          <p className="text-sm font-medium text-white/80">AI Agent</p>
+          <p className="text-[10px] text-white/35 tracking-wide mt-0.5">
+            {agentEnabled ? 'Active — visible in your dashboard' : 'Inactive — hidden from dashboard'}
+          </p>
+        </div>
+        <button
+          onClick={() => setAgentEnabled(!agentEnabled)}
+          className={`relative h-6 w-11 shrink-0 transition-colors duration-200 ${agentEnabled ? 'bg-emerald-500' : 'bg-white/15'}`}
+        >
+          <span className={`absolute top-0.5 h-5 w-5 bg-white transition-transform duration-200 ${agentEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+
+      {agentEnabled && (
+        <>
+          {/* Name */}
+          <div>
+            <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">
+              Agent Name
+            </label>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={e => { setNameInput(e.target.value); setSaved(false); }}
+              onKeyDown={e => e.key === 'Enter' && save()}
+              placeholder="Ubongo AI"
+              maxLength={32}
+              className="w-full border border-white/15 bg-black px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-emerald-500/50 focus:outline-none transition-colors"
+            />
+            <p className="mt-1.5 text-[10px] text-white/25">
+              This name appears in the chat header and the AI introduces itself by it.
+            </p>
+          </div>
+
+          {/* Preview */}
+          <div className="border border-white/8 bg-white/[0.02] p-4 space-y-2">
+            <p className="text-[9px] tracking-widest text-white/30 uppercase mb-3">Preview</p>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center border border-emerald-500/30 bg-emerald-500/10">
+                <Sparkles size={13} className="text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs font-bold tracking-wider text-white uppercase">{nameInput || 'Ubongo AI'}</p>
+                <p className="text-[10px] text-white/30">msaidizi wa duka lako</p>
+              </div>
+              <div className="ml-auto flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[9px] text-emerald-400/60 tracking-widest uppercase">Active</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={save}
+            className="w-full border border-emerald-500/40 bg-emerald-500/10 py-3 text-[10px] font-semibold tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors"
+          >
+            {saved ? '✓ Saved' : 'Save Agent Settings'}
+          </button>
+        </>
       )}
     </div>
   );

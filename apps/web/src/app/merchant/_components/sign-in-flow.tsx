@@ -184,9 +184,11 @@ export function MerchantSignIn() {
         .trace-br-v    { animation: traceV 0.5s ease-out 0.75s both; }
       `}</style>
 
-      <div className="page-reveal relative flex min-h-screen items-center justify-center bg-zinc-50 font-mono px-6 py-16">
+      <div className="page-reveal relative flex min-h-screen items-center justify-center font-mono px-6 py-16 overflow-hidden bg-white">
+        <div className="absolute inset-0" style={{ backgroundImage: "url('/BIASHARA%20BG.png')", backgroundSize: 'cover', backgroundPosition: 'center', filter: 'invert(1) hue-rotate(180deg) contrast(1.3) saturate(1.2)', opacity: 0.32 }} />
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse 70% 80% at center, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.4) 55%, rgba(255,255,255,0) 100%)' }} />
 
-        <div className="w-full max-w-sm">
+        <div className="relative z-10 w-full max-w-sm">
 
           {/* Top bar label */}
           <div className="brand-reveal mb-14">

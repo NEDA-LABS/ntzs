@@ -41,50 +41,7 @@ export default function LandingSections() {
   return (
     <div className="relative">
       {/* ─────────────────────────────────────────────────── */}
-      {/* SECTION 1: ABOUT                                    */}
-      {/* ─────────────────────────────────────────────────── */}
-      <div id="about-section">
-        <ScrollExpandSection
-          videoSrc="/HERO VIDEO.mp4"
-          overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
-        >
-        <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
-          <div className="grid items-center gap-12 md:grid-cols-2">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-4 h-px bg-blue-400/60" />
-                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">002 / About</span>
-              </div>
-              <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
-                Tanzania&apos;s First
-                <br />
-                Digital Reserve.
-              </h2>
-              <p className="mt-6 text-sm leading-relaxed text-zinc-300 font-mono">
-                Real money. Instant movement.
-                <br />
-                nTZS is programmable Tanzanian Shillings — backed 1:1 by regulated deposits, settled in real time, secured on-chain.
-              </p>
-              <div className="mt-8">
-                <Link
-                  href="/landing"
-                  className="inline-flex items-center gap-2 border border-white/15 px-6 py-2.5 text-[10px] tracking-widest text-white/60 uppercase hover:bg-white/[0.04] hover:text-white/90 transition-colors"
-                >
-                  Learn more about nTZS
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                  </svg>
-                </Link>
-              </div>
-            </div>
-            <div className="hidden md:block" />
-          </div>
-        </div>
-        </ScrollExpandSection>
-      </div>
-
-      {/* ─────────────────────────────────────────────────── */}
-      {/* SECTION 2: WALLET                                   */}
+      {/* SECTION 1: WALLET                                   */}
       {/* ─────────────────────────────────────────────────── */}
       <div id="wallet-section">
         <ScrollExpandSection
@@ -101,7 +58,7 @@ export default function LandingSections() {
             <FadeIn delay={0.1} className="order-1 md:order-2">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-4 h-px bg-blue-400/60" />
-                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">003 / Wallet</span>
+                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">002 / Wallet</span>
               </div>
               <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
                 One Wallet.
@@ -143,11 +100,54 @@ export default function LandingSections() {
       </div>
 
       {/* ─────────────────────────────────────────────────── */}
+      {/* SECTION 2: ABOUT                                    */}
+      {/* ─────────────────────────────────────────────────── */}
+      <div id="about-section">
+        <ScrollExpandSection
+          videoSrc="/Stablecoin_Image_To_Video_Generation.mp4"
+          overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
+        >
+        <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
+          <div className="grid items-center gap-12 md:grid-cols-2">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-4 h-px bg-blue-400/60" />
+                <span className="text-[9px] tracking-widest text-blue-400/60 uppercase">003 / About</span>
+              </div>
+              <h2 className="text-3xl font-bold leading-tight tracking-wider text-white uppercase sm:text-4xl lg:text-5xl">
+                Tanzania&apos;s First
+                <br />
+                Digital Reserve.
+              </h2>
+              <p className="mt-6 text-sm leading-relaxed text-zinc-300 font-mono">
+                Real money. Instant movement.
+                <br />
+                nTZS is programmable Tanzanian Shillings — backed 1:1 by regulated deposits, settled in real time, secured on-chain.
+              </p>
+              <div className="mt-8">
+                <Link
+                  href="/landing"
+                  className="inline-flex items-center gap-2 border border-white/15 px-6 py-2.5 text-[10px] tracking-widest text-white/60 uppercase hover:bg-white/[0.04] hover:text-white/90 transition-colors"
+                >
+                  Learn more about nTZS
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                  </svg>
+                </Link>
+              </div>
+            </div>
+            <div className="hidden md:block" />
+          </div>
+        </div>
+        </ScrollExpandSection>
+      </div>
+
+      {/* ─────────────────────────────────────────────────── */}
       {/* SECTION 3: DEVELOPERS / DOCS                        */}
       {/* ─────────────────────────────────────────────────── */}
       <div id="developers-section">
         <ScrollExpandSection
-          videoSrc="/Stablecoin_Image_To_Video_Generation.mp4"
+          videoSrc="/HERO VIDEO.mp4"
           overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
         >
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
