@@ -204,7 +204,7 @@ export function AiAssistant() {
       <button
         onClick={() => setOpen(!open)}
         aria-label="Ubongo AI"
-        className={`fixed bottom-6 right-6 z-50 group flex items-center gap-0 overflow-hidden border border-emerald-500/50 bg-emerald-500/15 text-emerald-400 shadow-lg shadow-emerald-900/30 backdrop-blur hover:bg-emerald-500/25 transition-colors h-12 pl-3.5 pr-3.5 hover:gap-2 hover:pr-4 ${!open ? 'ubongo-btn-idle' : ''}`}
+        className={`fixed bottom-6 right-6 z-50 group items-center gap-0 overflow-hidden border border-emerald-500/50 bg-emerald-500/15 text-emerald-400 shadow-lg shadow-emerald-900/30 backdrop-blur hover:bg-emerald-500/25 transition-colors h-12 pl-3.5 pr-3.5 hover:gap-2 hover:pr-4 ${!open ? 'ubongo-btn-idle' : ''} ${open ? 'hidden sm:flex' : 'flex'}`}
       >
         {/* Pulse rings — closed only */}
         {!open && (
@@ -360,8 +360,9 @@ function AiPanel() {
             </div>
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <button onClick={() => setOpen(false)} className="text-white/30 hover:text-white/70 transition-colors ml-1">
-                <X size={15} />
+              <button onClick={() => setOpen(false)} className="flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto text-white/30 hover:text-white/70 transition-colors ml-1">
+                <X size={18} className="sm:hidden" />
+                <X size={15} className="hidden sm:block" />
               </button>
             </div>
           </div>
@@ -437,9 +438,9 @@ function AiPanel() {
 
           {/* Starters */}
           {messages.length <= 1 && !loading && (
-            <div className="px-4 pb-2 flex flex-wrap gap-1.5 shrink-0">
+            <div className="px-4 pb-2 flex flex-wrap gap-2 sm:gap-1.5 shrink-0">
               {STARTERS.map(s => (
-                <button key={s} onClick={() => send(s)} className="px-2.5 py-1 border border-white/10 text-[10px] text-white/40 hover:border-emerald-500/30 hover:text-emerald-400/80 transition-colors">
+                <button key={s} onClick={() => send(s)} className="px-3 py-2 sm:px-2.5 sm:py-1 border border-white/10 text-xs sm:text-[10px] text-white/40 hover:border-emerald-500/30 hover:text-emerald-400/80 transition-colors">
                   {s}
                 </button>
               ))}
@@ -459,12 +460,13 @@ function AiPanel() {
           )}
 
           {/* Input row */}
-          <div className="border-t border-white/8 px-3 py-3 flex items-center gap-2 bg-black/30 shrink-0">
+          <div className="border-t border-white/8 px-3 py-3 sm:px-3 sm:py-3 flex items-center gap-3 sm:gap-2 bg-black/30 shrink-0">
             <label
-              className={`flex h-7 w-7 shrink-0 items-center justify-center text-white/25 hover:text-emerald-400/70 transition-colors cursor-pointer ${loading ? 'pointer-events-none opacity-30' : ''}`}
+              className={`flex h-11 w-11 sm:h-7 sm:w-7 shrink-0 items-center justify-center text-white/25 hover:text-emerald-400/70 transition-colors cursor-pointer ${loading ? 'pointer-events-none opacity-30' : ''}`}
               title="Pakia picha"
             >
-              <ImagePlus size={14} />
+              <ImagePlus size={20} className="sm:hidden" />
+              <ImagePlus size={14} className="hidden sm:block" />
               <input type="file" accept="image/*" className="sr-only" onChange={onFileChange} disabled={loading} />
             </label>
             <input
@@ -474,15 +476,16 @@ function AiPanel() {
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send()}
               placeholder="Andika hapa..."
-              className="flex-1 bg-transparent text-xs text-white/80 placeholder-white/25 outline-none"
+              className="flex-1 bg-transparent text-sm sm:text-xs text-white/80 placeholder-white/25 outline-none"
               disabled={loading}
             />
             <button
               onClick={() => send()}
               disabled={!canSend}
-              className="flex h-7 w-7 shrink-0 items-center justify-center border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 disabled:opacity-30 hover:bg-emerald-500/20 transition-colors"
+              className="flex h-11 w-11 sm:h-7 sm:w-7 shrink-0 items-center justify-center border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 disabled:opacity-30 hover:bg-emerald-500/20 transition-colors"
             >
-              <Send size={11} />
+              <Send size={16} className="sm:hidden" />
+              <Send size={11} className="hidden sm:block" />
             </button>
           </div>
         </div>
