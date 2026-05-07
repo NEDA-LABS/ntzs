@@ -2,10 +2,57 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useEffect, useRef, useState } from 'react'
 import LandingSections from './LandingSections'
-import { CodeRevealText } from '@/components/CodeRevealText'
+
+const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+function MoneyCounterText({ text, className = '', delay = 0 }: { text: string; className?: string; delay?: number }) {
+  const chars = text.split('')
+  const [display, setDisplay] = useState<string[]>(() =>
+    chars.map(c => (' .,\'/&-'.includes(c)) ? c : SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
+  ))
+  const idRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    const FRAME_MS = 48, STAGGER = 38, DURATION = 620
+    let elapsed = -delay
+    idRef.current = setInterval(() => {
+      elapsed += FRAME_MS
+      let allDone = true
+      setDisplay(chars.map((char, i) => {
+        if (' .,\'/&-'.includes(char)) return char
+        const t = elapsed - i * STAGGER
+        if (t < 0) { allDone = false; return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)] }
+        if (t >= DURATION) return char
+        allDone = false
+        return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
+      }))
+      if (allDone && idRef.current) clearInterval(idRef.current)
+    }, FRAME_MS)
+    return () => { if (idRef.current) clearInterval(idRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return <span className={className}>{display.join('')}</span>
+}
+
+function useOnChainSupply() {
+  const [supply, setSupply] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/coingecko/supply/total')
+      .then(r => r.text())
+      .then(raw => {
+        const whole = raw.split('.')[0]
+        setSupply(Number(whole).toLocaleString('en-US'))
+      })
+      .catch(() => null)
+  }, [])
+  return supply
+}
 
 export default function MasterLandingPage() {
+  const onChainSupply = useOnChainSupply()
   return (
     <div className="bg-black font-mono text-white">
 
@@ -17,7 +64,7 @@ export default function MasterLandingPage() {
           autoPlay loop muted playsInline preload="auto"
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"
         >
-          <source src="/HERO VIDEO.mp4" type="video/mp4" />
+          <source src="/Video_For_Wallet_Service.mp4" type="video/mp4" />
         </video>
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/80 via-black/65 to-black/95" />
 
@@ -28,17 +75,17 @@ export default function MasterLandingPage() {
         <div className="pointer-events-none absolute bottom-0 right-0 w-12 h-12 border-b border-r border-white/25 z-20" />
 
         {/* ── Top nav bar ── */}
-        <header className="relative z-50 border-b border-white/10 bg-black/30 backdrop-blur-sm">
+        <header className="relative z-50 border-b border-gray-100 bg-white shadow-sm">
           <div className="flex items-center justify-between px-6 py-3 lg:px-12">
 
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <Image src="/ntzs-logo.png" alt="nTZS" width={28} height={28} className="rounded-md opacity-90" />
-              <span className="text-base font-bold tracking-widest uppercase">
-                n<span className="text-blue-400">TZS</span>
+              <Image src="/ntzs-logo.png" alt="nTZS" width={28} height={28} className="rounded-md" />
+              <span className="text-base font-bold tracking-widest uppercase text-gray-900">
+                n<span className="text-blue-600">TZS</span>
               </span>
-              <div className="hidden lg:flex items-center gap-2 ml-3 pl-3 border-l border-white/10">
-                <span className="text-[9px] tracking-widest text-white/30 uppercase">Tanzania Shilling Network</span>
+              <div className="hidden lg:flex items-center gap-2 ml-3 pl-3 border-l border-gray-200">
+                <span className="text-[9px] tracking-widest text-gray-400 uppercase">Tanzania Shilling Network</span>
               </div>
             </div>
 
@@ -52,21 +99,21 @@ export default function MasterLandingPage() {
                 <button
                   key={id}
                   onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  className="px-4 py-2 text-white/40 hover:text-white/80 hover:bg-white/[0.04] transition-colors"
+                  className="px-4 py-2 text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
                 >
                   {label}
                 </button>
               ))}
-              <div className="w-px h-4 bg-white/10 mx-1" />
+              <div className="w-px h-4 bg-gray-200 mx-1" />
               <Link
                 href="/merchant"
-                className="px-4 py-2 border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                className="px-4 py-2 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-colors"
               >
                 Biashara
               </Link>
               <Link
                 href={process.env.NEXT_PUBLIC_FX_URL ?? 'http://localhost:3001'}
-                className="px-4 py-2 border border-white/15 text-white/50 hover:bg-white/[0.04] hover:text-white/80 transition-colors"
+                className="px-4 py-2 border border-blue-500/40 bg-blue-500/10 text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors"
               >
                 SimpleFX
               </Link>
@@ -76,13 +123,13 @@ export default function MasterLandingPage() {
             <div className="md:hidden flex items-center gap-1.5">
               <Link
                 href="/merchant"
-                className="px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[10px] tracking-widest text-emerald-400 uppercase"
+                className="px-3 py-1.5 border border-emerald-600/40 bg-emerald-500/10 text-[10px] tracking-widest text-emerald-600 uppercase hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-colors"
               >
                 Biashara
               </Link>
               <Link
                 href={process.env.NEXT_PUBLIC_FX_URL ?? 'http://localhost:3001'}
-                className="px-3 py-1.5 border border-white/15 text-[10px] tracking-widest text-white/50 uppercase"
+                className="px-3 py-1.5 border border-blue-500/40 bg-blue-500/10 text-[10px] tracking-widest text-blue-600 uppercase hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors"
               >
                 SimpleFX
               </Link>
@@ -90,20 +137,26 @@ export default function MasterLandingPage() {
           </div>
 
           {/* Metadata strip — desktop only */}
-          <div className="hidden lg:flex items-center justify-between border-t border-white/5 px-12 py-1.5">
-            <div className="flex items-center gap-4 text-[9px] tracking-widest text-white/20 uppercase">
+          <div className="hidden lg:flex items-center justify-between border-t border-gray-100 px-12 py-1.5">
+            <div className="flex items-center gap-4 text-[9px] tracking-widest text-gray-400 uppercase">
               <span>LAT: -6.7924°</span>
-              <div className="w-px h-2.5 bg-white/10" />
+              <div className="w-px h-2.5 bg-gray-200" />
               <span>LONG: 39.2083°</span>
-              <div className="w-px h-2.5 bg-white/10" />
+              <div className="w-px h-2.5 bg-gray-200" />
               <span>Dar es Salaam, Tanzania</span>
             </div>
-            <div className="flex items-center gap-4 text-[9px] tracking-widest text-white/20 uppercase">
+            <div className="flex items-center gap-4 text-[9px] tracking-widest text-gray-400 uppercase">
+              {onChainSupply && (
+                <>
+                  <span className="text-blue-600 font-medium">{onChainSupply} nTZS</span>
+                  <div className="w-px h-2.5 bg-gray-200" />
+                </>
+              )}
               <div className="flex items-center gap-1.5">
-                <div className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+                <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
                 <span>Base Mainnet</span>
               </div>
-              <div className="w-px h-2.5 bg-white/10" />
+              <div className="w-px h-2.5 bg-gray-200" />
               <span>V1.0.0</span>
             </div>
           </div>
@@ -129,9 +182,10 @@ export default function MasterLandingPage() {
                   }}
                 />
                 <h1 className="text-3xl lg:text-6xl font-bold text-white leading-tight tracking-wider uppercase">
-                  Tanzania&apos;s
-                  <span className="block text-blue-400 mt-1">
-                    Digital Shilling
+                  <MoneyCounterText text="Tanzania's" delay={0} />
+                  <span className="block mt-1">
+                    <MoneyCounterText text="Programmable Payment " delay={500} />
+                    <MoneyCounterText text="Infrastructure" className="text-blue-400" delay={900} />
                   </span>
                 </h1>
               </div>
@@ -145,24 +199,20 @@ export default function MasterLandingPage() {
 
               {/* Description */}
               <p className="text-sm lg:text-base text-zinc-300 mb-6 leading-relaxed opacity-80">
-                <CodeRevealText text="Issue wallets. Move money. Build financial products." />
-                <br />
-                <CodeRevealText text="Powered by nTZS — backed 1:1 by regulated deposits." />
+                <MoneyCounterText text="Built for instant settlement, digital wallets, stable-value payments & next-gen financial applications." delay={1000} />
               </p>
 
               {/* CTA Buttons */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link
                   href="/app"
-                  className="relative inline-flex items-center justify-center border border-blue-500/50 bg-blue-500/10 px-6 py-2.5 text-[11px] tracking-widest text-blue-400 uppercase hover:bg-blue-500/20 transition-colors group"
+                  className="inline-flex items-center justify-center border border-blue-500/50 bg-blue-500/10 px-6 py-2.5 text-[11px] tracking-widest text-blue-300 uppercase hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors"
                 >
-                  <span className="absolute -top-px -left-px w-2 h-2 border-t border-l border-blue-400/60 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <span className="absolute -bottom-px -right-px w-2 h-2 border-b border-r border-blue-400/60 opacity-0 group-hover:opacity-100 transition-opacity" />
                   Create Wallet
                 </Link>
                 <Link
                   href="/landing"
-                  className="inline-flex items-center justify-center border border-white/15 px-6 py-2.5 text-[11px] tracking-widest text-white/50 uppercase hover:bg-white/[0.04] hover:text-white/80 transition-colors"
+                  className="inline-flex items-center justify-center border border-white/20 bg-white/5 px-6 py-2.5 text-[11px] tracking-widest text-white/50 uppercase hover:bg-gray-600 hover:text-white hover:border-gray-600 transition-colors"
                 >
                   Explore Infrastructure
                 </Link>

@@ -45,7 +45,7 @@ export default function LandingSections() {
       {/* ─────────────────────────────────────────────────── */}
       <div id="about-section">
         <ScrollExpandSection
-          videoSrc="/ntzs_demo.mp4"
+          videoSrc="/HERO VIDEO.mp4"
           overlayClassName="bg-gradient-to-t from-black/90 via-black/60 to-black/80"
         >
         <div className="mx-auto w-full max-w-6xl px-6 lg:px-12">
@@ -88,7 +88,7 @@ export default function LandingSections() {
       {/* ─────────────────────────────────────────────────── */}
       <div id="wallet-section">
         <ScrollExpandSection
-          videoSrc="/Video_For_Wallet_Service.mp4"
+          videoSrc="/ntzs_demo.mp4"
           videoEndTime={6}
           overlayClassName="bg-gradient-to-t from-black/90 via-black/50 to-black/70"
         >
