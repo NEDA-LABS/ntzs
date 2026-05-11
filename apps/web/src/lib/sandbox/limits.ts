@@ -13,13 +13,13 @@ const COUNTED_DEPOSIT_STATUSES = [
   'submitted', 'kyc_pending', 'kyc_approved', 'awaiting_fiat',
   'fiat_confirmed', 'bank_approved', 'platform_approved',
   'mint_pending', 'mint_requires_safe', 'mint_processing', 'minted',
-]
+] as const
 
 // Burn statuses that count toward user limits
 const COUNTED_BURN_STATUSES = [
   'requested', 'approved', 'requires_second_approval',
   'burn_submitted', 'burned',
-]
+] as const
 
 export type LimitError = {
   code: 'per_txn_cap' | 'daily_user_cap' | 'monthly_user_cap'
