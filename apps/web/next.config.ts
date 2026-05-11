@@ -15,17 +15,17 @@ dotenv.config({ path: path.join(repoRoot, '.env') })
 dotenv.config({ path: path.join(repoRoot, '.env.local'), override: true })
 dotenv.config({ path: path.join(webRoot, '.env.local'), override: true })
 
-// Compatibility: some setups may use NEON_AUTH_URL. The SDK expects NEON_AUTH_BASE_URL.
-if (!process.env.NEON_AUTH_BASE_URL && process.env.NEON_AUTH_URL) {
-  process.env.NEON_AUTH_BASE_URL = process.env.NEON_AUTH_URL
-}
+// Resolve the auth URL — SDK requires NEON_AUTH_BASE_URL; some envs only have NEON_AUTH_URL.
+// Compute once so it's correctly set in both the main process and the compiled bundle.
+const neonAuthBaseUrl = process.env.NEON_AUTH_BASE_URL ?? process.env.NEON_AUTH_URL ?? ''
+process.env.NEON_AUTH_BASE_URL = neonAuthBaseUrl
 
 const nextConfig: NextConfig = {
   turbopack: {
     root: repoRoot,
   },
   env: {
-    NEON_AUTH_BASE_URL: process.env.NEON_AUTH_BASE_URL,
+    NEON_AUTH_BASE_URL: neonAuthBaseUrl,
   },
   serverExternalPackages: [
     '@hyperbridge/sdk',
