@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { depositRequests, burnRequests } from '@ntzs/db'
 
@@ -65,7 +65,7 @@ export async function checkUserPeriodLimits(
           and(
             eq(depositRequests.userId, userId),
             gte(depositRequests.createdAt, startOfToday),
-            sql`${depositRequests.status} = any(${COUNTED_DEPOSIT_STATUSES})`,
+            inArray(depositRequests.status, COUNTED_DEPOSIT_STATUSES),
           )
         ),
       db
@@ -75,7 +75,7 @@ export async function checkUserPeriodLimits(
           and(
             eq(burnRequests.userId, userId),
             gte(burnRequests.createdAt, startOfToday),
-            sql`${burnRequests.status} = any(${COUNTED_BURN_STATUSES})`,
+            inArray(burnRequests.status, COUNTED_BURN_STATUSES),
           )
         ),
     ]),
@@ -89,7 +89,7 @@ export async function checkUserPeriodLimits(
           and(
             eq(depositRequests.userId, userId),
             gte(depositRequests.createdAt, thirtyDaysAgo),
-            sql`${depositRequests.status} = any(${COUNTED_DEPOSIT_STATUSES})`,
+            inArray(depositRequests.status, COUNTED_DEPOSIT_STATUSES),
           )
         ),
       db
@@ -99,7 +99,7 @@ export async function checkUserPeriodLimits(
           and(
             eq(burnRequests.userId, userId),
             gte(burnRequests.createdAt, thirtyDaysAgo),
-            sql`${burnRequests.status} = any(${COUNTED_BURN_STATUSES})`,
+            inArray(burnRequests.status, COUNTED_BURN_STATUSES),
           )
         ),
     ]),
