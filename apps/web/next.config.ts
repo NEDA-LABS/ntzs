@@ -15,17 +15,17 @@ dotenv.config({ path: path.join(repoRoot, '.env') })
 dotenv.config({ path: path.join(repoRoot, '.env.local'), override: true })
 dotenv.config({ path: path.join(webRoot, '.env.local'), override: true })
 
-// Resolve the auth URL — SDK requires NEON_AUTH_BASE_URL; some envs only have NEON_AUTH_URL.
-// Compute once so it's correctly set in both the main process and the compiled bundle.
-const neonAuthBaseUrl = process.env.NEON_AUTH_BASE_URL ?? process.env.NEON_AUTH_URL ?? ''
-process.env.NEON_AUTH_BASE_URL = neonAuthBaseUrl
+// Resolve the auth URL for local dev — SDK requires NEON_AUTH_BASE_URL; .env only has NEON_AUTH_URL.
+// This assignment is for the local dev main process only. On Vercel, NEON_AUTH_BASE_URL must be
+// set explicitly in the project environment variables — do NOT add it to `env:` config below,
+// as that would cause Turbopack to inline an empty string at build time, breaking the middleware.
+if (!process.env.NEON_AUTH_BASE_URL && process.env.NEON_AUTH_URL) {
+  process.env.NEON_AUTH_BASE_URL = process.env.NEON_AUTH_URL
+}
 
 const nextConfig: NextConfig = {
   turbopack: {
     root: repoRoot,
-  },
-  env: {
-    NEON_AUTH_BASE_URL: neonAuthBaseUrl,
   },
   serverExternalPackages: [
     '@hyperbridge/sdk',
