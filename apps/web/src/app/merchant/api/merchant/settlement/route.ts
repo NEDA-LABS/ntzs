@@ -3,7 +3,7 @@ import { getSessionFromCookies } from '@/lib/merchant/auth';
 import { db } from '@/lib/merchant/db';
 import { merchantAccounts } from '@ntzs/db';
 import { eq } from 'drizzle-orm';
-import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp/snippe';
+import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp';
 
 export async function GET() {
   const session = await getSessionFromCookies();

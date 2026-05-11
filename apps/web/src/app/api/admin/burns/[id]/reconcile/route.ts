@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { checkPayoutStatus } from '@/lib/psp/snippe'
+import { checkPayoutStatus } from '@/lib/psp'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { burnRequests, wallets } from '@ntzs/db'

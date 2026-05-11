@@ -3,7 +3,8 @@ import { eq, and } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { merchantAccounts, merchantCollections, merchantPaymentLinks, users, wallets, depositRequests } from '@ntzs/db';
 import { db } from '@/lib/merchant/db';
-import { initiatePayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp/snippe';
+import { initiatePayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp';
+import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits';
 import { getDb } from '@/lib/db';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz';
@@ -24,6 +25,12 @@ export async function POST(req: NextRequest) {
 
   if (!amountTzs || !Number.isFinite(amountTzs) || amountTzs < 100) {
     return NextResponse.json({ error: 'amountTzs must be at least 100' }, { status: 400 });
+  }
+
+  // BoT Sandbox Parameter #3 — per-transaction cap
+  const perTxnErr = checkPerTransactionCap(amountTzs);
+  if (perTxnErr) {
+    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 });
   }
 
   if (!isValidTanzanianPhone(phone)) {

@@ -48,6 +48,12 @@ export default async function AppLayout({
       ]
     }
 
+    if (role === 'bot_regulator') {
+      return [
+        { href: '/app/compliance', label: 'Compliance Portal' },
+      ]
+    }
+
     return [
       { href: '/app/admin', label: 'Admin' },
       { href: '/app/oversight', label: 'Oversight' },

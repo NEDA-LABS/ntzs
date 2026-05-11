@@ -4,7 +4,8 @@ import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { initiatePayment, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp/snippe'
+import { initiatePayment, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp'
+import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
 type PaymentMethod = 'mobile_money' | 'card'
@@ -67,6 +68,18 @@ export async function POST(request: NextRequest) {
       { error: 'Minimum deposit amount is 500 TZS' },
       { status: 400 }
     )
+  }
+
+  // BoT Sandbox Parameter #3 — per-transaction cap
+  const perTxnErr = checkPerTransactionCap(amountTzs)
+  if (perTxnErr) {
+    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
+  }
+
+  // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
+  const periodErr = await checkUserPeriodLimits(userId, amountTzs)
+  if (periodErr) {
+    return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
   }
 
   if (paymentMethod !== 'mobile_money' && paymentMethod !== 'card') {

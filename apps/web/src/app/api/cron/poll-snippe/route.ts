@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
 import { eq, and, lt, isNotNull, inArray } from 'drizzle-orm'
-import { checkPaymentStatus } from '@/lib/psp/snippe'
+import { checkPaymentStatus } from '@/lib/psp'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
 const SAFE_MINT_THRESHOLD_TZS = 100000

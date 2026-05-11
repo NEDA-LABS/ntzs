@@ -12,7 +12,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
-import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp/snippe'
+import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp'
+import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { users, wallets, depositRequests } from '@ntzs/db'
 
 function verifySecret(req: NextRequest): boolean {
@@ -42,6 +43,12 @@ export async function POST(request: NextRequest) {
 
   if (amountTzs < 500) {
     return NextResponse.json({ error: 'Minimum deposit is 500 TZS' }, { status: 400 })
+  }
+
+  // BoT Sandbox Parameter #3 — per-transaction cap
+  const perTxnErr = checkPerTransactionCap(amountTzs)
+  if (perTxnErr) {
+    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
   }
 
   if (!isValidTanzanianPhone(phoneNumber)) {
@@ -77,6 +84,12 @@ export async function POST(request: NextRequest) {
     } else {
       lpUser = created
     }
+  }
+
+  // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
+  const periodErr = await checkUserPeriodLimits(lpUser.id, amountTzs)
+  if (periodErr) {
+    return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
   }
 
   // Resolve or create wallet record for this LP address

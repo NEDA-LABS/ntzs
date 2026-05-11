@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromCookies } from '@/lib/fx/auth'
 import { db } from '@/lib/fx/db'
 import { lpAccounts, users, wallets, depositRequests } from '@ntzs/db'
-import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp/snippe'
+import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp'
 import { getDb } from '@/lib/db'
 
 const PRODUCTION_URL = 'https://www.ntzs.co.tz'

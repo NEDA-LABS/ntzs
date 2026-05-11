@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp/snippe'
+import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
 import { partners } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 

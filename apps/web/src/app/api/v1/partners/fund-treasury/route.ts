@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { initiatePayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp/snippe'
+import { initiatePayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
 import { users, wallets, depositRequests, partners } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 

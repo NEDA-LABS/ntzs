@@ -7,6 +7,7 @@ import { BASE_RPC_URL as ENV_BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE as ENV_CON
 import { authenticatePartner } from '@/lib/waas/auth'
 import { signAndSendTransfer, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
+import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, transfers, auditLogs, partners, users } from '@ntzs/db'
 
 const TRANSFER_ABI = [
@@ -140,6 +141,18 @@ export async function POST(request: NextRequest) {
       },
       { status: 400 }
     )
+  }
+
+  // BoT Sandbox Parameters #3, #4, #5 — limits apply to nTZS only (USDC/USDT are not TZS-pegged)
+  if (token === 'ntzs') {
+    const perTxnErr = checkPerTransactionCap(amountNum)
+    if (perTxnErr) {
+      return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
+    }
+    const periodErr = await checkUserPeriodLimits(fromUserId, amountNum)
+    if (periodErr) {
+      return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+    }
   }
 
   if (toUserId && fromUserId === toUserId) {

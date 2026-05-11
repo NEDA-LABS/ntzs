@@ -1,9 +1,19 @@
+/**
+ * GET /api/cron/poll-zenopay
+ *
+ * LEGACY — polls ZenoPay for any deposits that were initiated before the
+ * migration to Snippe and are still stuck in 'submitted' status.
+ *
+ * This cron should become a no-op naturally once all historic ZenoPay
+ * deposits have reached a terminal status. It is safe to keep running.
+ *
+ * Skips gracefully if ZENOPAY_API_KEY is not configured.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
 import { eq, and, lt, isNotNull } from 'drizzle-orm'
-
-import { checkPaymentStatus } from '@/lib/psp/snippe'
+import { getZenoPayOrderStatus } from '@/lib/psp/zenopay'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
 const SAFE_MINT_THRESHOLD_TZS = 100000
@@ -19,13 +29,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!process.env.SNIPPE_API_KEY) {
-      return NextResponse.json({ status: 'skipped', reason: 'SNIPPE_API_KEY not configured' })
+    if (!process.env.ZENOPAY_API_KEY) {
+      return NextResponse.json({ status: 'skipped', reason: 'ZENOPAY_API_KEY not configured — ZenoPay is legacy' })
     }
 
     const { db } = getDb()
 
-    // Find submitted Snippe deposits older than 30 seconds that have a psp reference
+    // Find submitted ZenoPay deposits older than 30 seconds that have a psp_reference (order_id)
     const thirtySecondsAgo = new Date(Date.now() - 30 * 1000)
 
     const pendingDeposits = await db
@@ -38,7 +48,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(depositRequests.status, 'submitted'),
-          eq(depositRequests.paymentProvider, 'snippe'),
+          eq(depositRequests.paymentProvider, 'zenopay'),
           isNotNull(depositRequests.pspReference),
           lt(depositRequests.createdAt, thirtySecondsAgo)
         )
@@ -49,10 +59,13 @@ export async function GET(request: NextRequest) {
     const results: Array<{ depositId: string; status: string; reference?: string }> = []
 
     for (const deposit of pendingDeposits) {
-      try {
-        const statusResult = await checkPaymentStatus(deposit.pspReference!)
+      if (!deposit.pspReference) continue
 
-        if (statusResult.status === 'completed') {
+      try {
+        const zenoStatus = await getZenoPayOrderStatus(deposit.pspReference)
+        const orderData = zenoStatus.data?.[0]
+
+        if (orderData?.payment_status === 'COMPLETED') {
           const newStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS
             ? 'mint_requires_safe'
             : 'mint_pending'
@@ -61,26 +74,27 @@ export async function GET(request: NextRequest) {
             .update(depositRequests)
             .set({
               status: newStatus,
+              pspChannel: orderData.channel || null,
               fiatConfirmedAt: new Date(),
               updatedAt: new Date(),
             })
             .where(and(eq(depositRequests.id, deposit.id), eq(depositRequests.status, 'submitted')))
 
-          results.push({ depositId: deposit.id, status: newStatus, reference: deposit.pspReference! })
-          console.log(`[cron/poll-snippe] Deposit ${deposit.id} -> ${newStatus}`)
-        } else if (statusResult.status === 'failed' || statusResult.status === 'expired') {
+          results.push({ depositId: deposit.id, status: newStatus, reference: deposit.pspReference })
+          console.log(`[cron/poll-zenopay] Deposit ${deposit.id} -> ${newStatus}`)
+        } else if (orderData?.payment_status === 'FAILED') {
           await db
             .update(depositRequests)
             .set({ status: 'rejected', updatedAt: new Date() })
             .where(and(eq(depositRequests.id, deposit.id), eq(depositRequests.status, 'submitted')))
 
           results.push({ depositId: deposit.id, status: 'rejected' })
-          console.log(`[cron/poll-snippe] Deposit ${deposit.id} -> rejected (${statusResult.status})`)
+          console.log(`[cron/poll-zenopay] Deposit ${deposit.id} -> rejected`)
         } else {
           results.push({ depositId: deposit.id, status: 'pending' })
         }
       } catch (err) {
-        console.error(`[cron/poll-snippe] Error polling ${deposit.id}:`, err instanceof Error ? err.message : err)
+        console.error(`[cron/poll-zenopay] Error polling ${deposit.id}:`, err instanceof Error ? err.message : err)
         results.push({ depositId: deposit.id, status: 'error' })
       }
     }
@@ -91,7 +105,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (err) {
-    console.error('[cron/poll-snippe] Unhandled error:', err instanceof Error ? err.message : err)
+    console.error('[cron/poll-zenopay] Unhandled error:', err instanceof Error ? err.message : err)
     return NextResponse.json({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
   }
 }

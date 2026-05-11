@@ -5,7 +5,8 @@ import { ethers } from 'ethers'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { isValidTanzanianPhone } from '@/lib/psp/snippe'
+import { isValidTanzanianPhone } from '@/lib/psp'
+import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 
@@ -97,6 +98,18 @@ export async function POST(request: NextRequest) {
   // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate))
   const burnAmountTzs = Math.ceil((receiveAmountTzs + SNIPPE_FLAT_FEE_TZS) / (1 - feePercent / 100))
   const platformFeeTzs = burnAmountTzs - receiveAmountTzs - SNIPPE_FLAT_FEE_TZS
+
+  // BoT Sandbox Parameter #3 — per-transaction cap (applied to nTZS burned)
+  const perTxnErr = checkPerTransactionCap(burnAmountTzs)
+  if (perTxnErr) {
+    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
+  }
+
+  // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
+  const periodErr = await checkUserPeriodLimits(userId, burnAmountTzs)
+  if (periodErr) {
+    return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  }
 
   // Get wallet
   const [wallet] = await db

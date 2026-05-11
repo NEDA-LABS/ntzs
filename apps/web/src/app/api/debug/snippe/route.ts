@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getBalance } from '@/lib/psp/snippe'
+import { getBalance } from '@/lib/psp'
 
 export async function GET() {
   try {

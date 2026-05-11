@@ -9,7 +9,7 @@ import {
   BURNER_PRIVATE_KEY,
   MINTER_PRIVATE_KEY,
 } from '@/lib/env'
-import { sendPayout, sendBankPayout } from '@/lib/psp/snippe'
+import { sendPayout, sendBankPayout } from '@/lib/psp'
 import { partners, auditLogs } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 

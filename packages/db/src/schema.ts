@@ -21,6 +21,7 @@ export const userRole = pgEnum('user_role', [
   'platform_compliance',
   'super_admin',
   'fund_manager',
+  'bot_regulator',
 ])
 
 export const kycStatus = pgEnum('kyc_status', ['pending', 'approved', 'rejected'])

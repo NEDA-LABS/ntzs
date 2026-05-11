@@ -13,7 +13,7 @@ import {
   initiateCardPayment,
   normalizePhone,
   isValidTanzanianPhone,
-} from '@/lib/psp/snippe'
+} from '@/lib/psp'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
 
