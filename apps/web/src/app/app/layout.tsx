@@ -36,24 +36,19 @@ export default async function AppLayout({
     )
   }
 
+  // Compliance portal manages its own full layout — no shared header or wrapper
+  if (role === 'platform_compliance' || role === 'bot_regulator') {
+    return (
+      <CdpProvider>
+        <div className="min-h-screen">{children}</div>
+      </CdpProvider>
+    )
+  }
+
   const navItems: { href: string; label: string }[] = (() => {
     if (role === 'bank_admin') {
       return [{ href: '/app/bank', label: 'Bank' }]
     }
-
-    if (role === 'platform_compliance') {
-      return [
-        { href: '/app/compliance', label: 'Compliance' },
-        { href: '/app/oversight', label: 'Oversight' },
-      ]
-    }
-
-    if (role === 'bot_regulator') {
-      return [
-        { href: '/app/compliance', label: 'Compliance Portal' },
-      ]
-    }
-
     return [
       { href: '/app/admin', label: 'Admin' },
       { href: '/app/oversight', label: 'Oversight' },
