@@ -14,6 +14,7 @@ import {
   burnRequests,
 } from '@ntzs/db'
 import { ExportReportButton } from './_components/ExportReportButton'
+import { OversightSidebar } from './_components/OversightSidebar'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 
@@ -217,7 +218,10 @@ export default async function OversightDashboard() {
   const capPct = Math.min(100, (issuedToday / capToday) * 100)
 
   return (
-    <div className="min-h-screen bg-black font-mono text-white">
+    <div className="flex min-h-screen bg-black font-mono text-white">
+      <OversightSidebar />
+
+      <div className="flex-1 lg:ml-60">
 
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="border-b border-white/8 px-6 py-5 lg:px-10">
@@ -569,6 +573,8 @@ export default async function OversightDashboard() {
           <div className="w-px h-2.5 bg-white/8" />
           <span>Dar es Salaam, Tanzania</span>
         </div>
+
+      </div>
 
       </div>
     </div>
