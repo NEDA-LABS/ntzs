@@ -421,20 +421,6 @@ function KycSection({ data, d }: { data: OversightData; d: boolean }) {
         <Metric label="Rejected" value={n(data.kycStats.rejected)} sub="Did not pass verification" d={d} valueColor={d ? 'text-red-400' : 'text-red-600'} />
       </div>
 
-      <div className={`border divide-y ${border} ${divider}`}>
-        <div className={`border-b px-5 py-3 ${border}`}>
-          <span className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>Deposit pipeline — count and value by status</span>
-        </div>
-        {data.statusBreakdown.map(s => (
-          <div key={s.status} className="flex items-center justify-between px-5 py-3">
-            <Badge status={s.status} d={d} />
-            <div className="flex items-center gap-6">
-              <span className={`font-mono text-sm font-bold tabular-nums ${t1}`}>{n(s.count)}</span>
-              <span className={`font-mono text-sm tabular-nums ${d ? 'text-zinc-400' : 'text-gray-500'}`}>{n(s.total)} TZS</span>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -490,6 +476,22 @@ function DepositsSection({ data, d }: { data: OversightData; d: boolean }) {
             <FlowStep label="minted" sub="nTZS issued on Base · tx hash logged" d={d} highlight={d ? 'border-emerald-500/30' : 'border-emerald-300'} />
           </div>
         </div>
+      </div>
+
+      {/* 30-day status breakdown */}
+      <div className={`border divide-y ${border} ${divider}`}>
+        <div className={`border-b px-5 py-3 ${border}`}>
+          <span className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>Deposit pipeline — last 30 days by status</span>
+        </div>
+        {data.statusBreakdown.map(s => (
+          <div key={s.status} className="flex items-center justify-between px-5 py-3">
+            <Badge status={s.status} d={d} />
+            <div className="flex items-center gap-6">
+              <span className={`font-mono text-sm font-bold tabular-nums ${t1}`}>{n(s.count)}</span>
+              <span className={`font-mono text-sm tabular-nums ${t2}`}>{n(s.total)} TZS</span>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Table */}

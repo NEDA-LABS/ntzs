@@ -101,6 +101,7 @@ export default async function OversightDashboard() {
     .orderBy(desc(auditLogs.createdAt))
     .limit(15)
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   const statusBreakdown = await db
     .select({
       status: depositRequests.status,
@@ -108,6 +109,7 @@ export default async function OversightDashboard() {
       total: sql<number>`coalesce(sum(${depositRequests.amountTzs}), 0)`.mapWith(Number),
     })
     .from(depositRequests)
+    .where(sql`${depositRequests.createdAt} >= ${thirtyDaysAgo}`)
     .groupBy(depositRequests.status)
 
   const recentBurnsRaw = await db
