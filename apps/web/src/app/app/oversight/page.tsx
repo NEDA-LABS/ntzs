@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, gte, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
@@ -109,7 +109,7 @@ export default async function OversightDashboard() {
       total: sql<number>`coalesce(sum(${depositRequests.amountTzs}), 0)`.mapWith(Number),
     })
     .from(depositRequests)
-    .where(sql`${depositRequests.createdAt} >= ${thirtyDaysAgo}`)
+    .where(gte(depositRequests.createdAt, thirtyDaysAgo))
     .groupBy(depositRequests.status)
 
   const recentBurnsRaw = await db
