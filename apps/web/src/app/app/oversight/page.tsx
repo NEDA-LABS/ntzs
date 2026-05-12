@@ -14,6 +14,7 @@ import {
   burnRequests,
 } from '@ntzs/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { getBalance, ACTIVE_PSP_NAME } from '@/lib/psp'
 import { OversightPortal, type OversightData } from './_components/OversightPortal'
 
 const CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
@@ -40,15 +41,17 @@ export default async function OversightDashboard() {
 
   const { db } = getDb()
 
-  const [stats] = await db
-    .select({
-      totalUsers: sql<number>`count(distinct ${users.id})`.mapWith(Number),
-      totalDeposits: sql<number>`count(${depositRequests.id})`.mapWith(Number),
-      totalMinted: sql<number>`coalesce(sum(case when ${depositRequests.status} = 'minted' then ${depositRequests.amountTzs} else 0 end), 0)`.mapWith(Number),
-      totalPending: sql<number>`coalesce(sum(case when ${depositRequests.status} in ('submitted', 'mint_pending', 'mint_processing') then ${depositRequests.amountTzs} else 0 end), 0)`.mapWith(Number),
-    })
-    .from(depositRequests)
-    .leftJoin(users, eq(users.id, depositRequests.userId))
+  const [stats, pspBalanceRaw] = await Promise.all([
+    db
+      .select({
+        totalUsers: sql<number>`count(distinct ${users.id})`.mapWith(Number),
+        totalDeposits: sql<number>`count(${depositRequests.id})`.mapWith(Number),
+      })
+      .from(depositRequests)
+      .leftJoin(users, eq(users.id, depositRequests.userId))
+      .then(r => r[0]),
+    getBalance().catch(() => ({ available: 0, pending: 0, currency: 'TZS' })),
+  ])
 
   const [kycStats] = await db
     .select({
@@ -148,8 +151,12 @@ export default async function OversightDashboard() {
     stats: {
       totalUsers: stats?.totalUsers ?? 0,
       totalDeposits: stats?.totalDeposits ?? 0,
-      totalMinted: stats?.totalMinted ?? 0,
-      totalPending: stats?.totalPending ?? 0,
+    },
+    pspBalance: {
+      available: pspBalanceRaw.available,
+      pending: pspBalanceRaw.pending,
+      currency: pspBalanceRaw.currency,
+      pspName: ACTIVE_PSP_NAME,
     },
     kycStats: {
       total: kycStats?.total ?? 0,

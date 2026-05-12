@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-
 import { ExportReportButton } from '../../oversight/_components/ExportReportButton'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -32,70 +31,60 @@ export interface ComplianceData {
   burns24hTzs: number
   contractAddress: string
   safeAddress: string
-  recentEnforcement: Array<{
-    action: string
-    actorEmail: string | null
-    createdAt: string | null
-  }>
+  recentEnforcement: Array<{ action: string; actorEmail: string | null; createdAt: string | null }>
   avg30dDailyRedemptions: number | null
 }
 
 type ParamStatus = 'implemented' | 'in_progress' | 'pending' | 'process_item'
+interface BotParam { ref: string; description: string; status: ParamStatus; note?: string }
 
-interface BotParam {
-  ref: string
-  description: string
-  status: ParamStatus
-  note?: string
-}
-
-// ── Nav sections ──────────────────────────────────────────────────────────────
+// ── Nav ───────────────────────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'reserves', label: 'Reserve Integrity' },
-  { id: 'issuance', label: 'Issuance Controls' },
-  { id: 'kyc', label: 'KYC & Users' },
-  { id: 'parameters', label: 'BoT Parameters' },
-  { id: 'governance', label: 'Governance' },
-  { id: 'activity', label: 'Activity' },
-  { id: 'export', label: 'Export' },
+  { id: 'overview',     label: 'Overview' },
+  { id: 'money-safety', label: 'Money Safety' },
+  { id: 'protections',  label: 'Spending Limits' },
+  { id: 'users',        label: 'Users & Identity' },
+  { id: 'commitments',  label: 'Our Commitments' },
+  { id: 'governance',   label: 'Governance' },
+  { id: 'activity',     label: 'Recent Activity' },
+  { id: 'download',     label: 'Download Report' },
 ]
 
 // ── BoT compliance declarations ───────────────────────────────────────────────
 
 const BLOCKING_PARAMS: BotParam[] = [
-  { ref: 'Para #3', description: 'Per-transaction cap (TZS 1,000,000)', status: 'implemented', note: 'Enforced in all deposit, burn and transfer APIs' },
-  { ref: 'Para #4', description: 'Daily per-user limit (TZS 2,000,000)', status: 'implemented', note: 'Rolling 24-hour sum across deposits and burns' },
-  { ref: 'Para #5', description: 'Monthly per-user cap (TZS 60,000,000)', status: 'implemented', note: '30-day rolling window' },
-  { ref: 'Para #6', description: 'Platform daily issuance cap (TZS 100,000,000)', status: 'implemented', note: 'dailyIssuance table enforced by worker cron' },
-  { ref: 'Para #2', description: 'Sandbox user cap (100 participants)', status: 'pending', note: 'Scoped to new bank/PSP corridor' },
-  { ref: 'Para #8', description: 'Biometric KYC + OTP verification', status: 'pending', note: 'Smile Identity integration planned' },
-  { ref: 'Para #8', description: 'PEP screening + sanctions checks', status: 'pending', note: 'UN / BoT / OFAC screening before wallet activation' },
-  { ref: 'Para #14', description: 'Multi-signature minting keys (Gnosis Safe)', status: 'in_progress', note: 'Safe deployed; mint_requires_safe flow pending full wiring' },
-  { ref: 'Para #7 / LR-2', description: 'Automated daily reserve report to BoT at 10:00 EAT', status: 'pending' },
-  { ref: 'LR-1', description: 'Operational liquidity buffer (20% of 30-day avg redemptions)', status: 'pending' },
-  { ref: 'Para #12', description: 'TZS-only display to end users — no nTZS terminology', status: 'pending', note: 'UI audit required' },
+  { ref: 'Para #3',          description: 'Maximum single transaction: TZS 1,000,000',             status: 'implemented', note: 'Automatically blocked at all entry points — no exceptions' },
+  { ref: 'Para #4',          description: 'Maximum per customer per day: TZS 2,000,000',            status: 'implemented', note: 'Rolling 24-hour window across all transaction types' },
+  { ref: 'Para #5',          description: 'Maximum per customer per month: TZS 60,000,000',         status: 'implemented', note: '30-day rolling window' },
+  { ref: 'Para #6',          description: 'Maximum platform issuance per day: TZS 100,000,000',     status: 'implemented', note: 'Hard cap enforced by automated scheduler' },
+  { ref: 'Para #2',          description: 'Sandbox limited to 100 participants',                    status: 'pending',     note: 'Scoped to the new bank/PSP corridor' },
+  { ref: 'Para #8',          description: 'Biometric identity verification for all users',          status: 'pending',     note: 'Smile Identity integration planned before commencement' },
+  { ref: 'Para #8',          description: 'Politically exposed persons & sanctions screening',      status: 'pending',     note: 'UN / BoT / OFAC screening before any wallet is activated' },
+  { ref: 'Para #14',         description: 'Multi-party approval required to issue new shillings',   status: 'in_progress', note: 'Multi-signature wallet deployed; final wiring in progress' },
+  { ref: 'Para #7 / LR-2',   description: 'Automated daily reserve report to BoT by 10:00 EAT',   status: 'pending' },
+  { ref: 'LR-1',             description: 'Maintain 20% liquidity buffer of 30-day average redemptions', status: 'pending' },
+  { ref: 'Para #12',         description: 'All customer-facing screens show TZS — not token names', status: 'pending', note: 'User interface audit required' },
 ]
 
 const OPERATIONAL_PARAMS: BotParam[] = [
-  { ref: 'AML-1 to AML-7', description: 'AML/CFT programme (EDD, STR workflow, FIU reporting)', status: 'pending' },
-  { ref: 'R-11', description: 'Consumer complaint SLA (90% resolved within 5 days)', status: 'pending' },
-  { ref: 'Para #9', description: 'Tax compliance reporting (VAT/WHT + TRA)', status: 'pending' },
-  { ref: 'Para #16', description: 'Monthly BoT operational report', status: 'pending' },
-  { ref: 'R-2', description: 'Quarterly BoT progress report', status: 'pending' },
-  { ref: 'TR-1 to TR-4', description: 'FATF Travel Rule — cross-border transfers above TZS 2,500,000', status: 'pending' },
-  { ref: 'ST-1 to ST-4', description: 'Quarterly stress testing framework (5 scenarios)', status: 'pending' },
-  { ref: 'BC-1 to BC-3', description: 'BCP/DR documentation (RTO 4 hours, RPO 1 hour)', status: 'pending' },
+  { ref: 'AML-1 to AML-7', description: 'Anti-money laundering programme — enhanced checks, suspicious transaction reporting, FIU filings', status: 'pending' },
+  { ref: 'R-11',            description: 'Customer complaints resolved within 5 days (90% target)',  status: 'pending' },
+  { ref: 'Para #9',         description: 'Tax compliance reporting to TRA (VAT and withholding tax)', status: 'pending' },
+  { ref: 'Para #16',        description: 'Monthly operational report to BoT',                        status: 'pending' },
+  { ref: 'R-2',             description: 'Quarterly progress report to BoT',                         status: 'pending' },
+  { ref: 'TR-1 to TR-4',   description: 'FATF travel rule — cross-border transfers above TZS 2,500,000', status: 'pending' },
+  { ref: 'ST-1 to ST-4',   description: 'Quarterly stress testing (5 scenarios)',                    status: 'pending' },
+  { ref: 'BC-1 to BC-3',   description: 'Business continuity plan — system recovers within 4 hours, data within 1 hour', status: 'pending' },
 ]
 
 const PRE_TESTING_PARAMS: BotParam[] = [
-  { ref: 'Para #7(a)', description: 'Executed Testing Environment Agreement', status: 'process_item' },
-  { ref: 'Para #7(b)', description: 'Formal PSP partnership confirmation letter', status: 'process_item' },
-  { ref: 'Para #7(c)', description: 'nTZS issuance/redemption protocol + token flow diagram', status: 'process_item' },
-  { ref: 'Para #7(d)', description: 'Risk Management Plan (including fake e-money creation risk)', status: 'process_item' },
-  { ref: 'PD-1', description: 'Register with Personal Data Protection Commission', status: 'process_item' },
-  { ref: 'R-10', description: 'Evidence of IP ownership and smart contract registration', status: 'process_item' },
+  { ref: 'Para #7(a)', description: 'Signed Testing Environment Agreement with BoT',            status: 'process_item' },
+  { ref: 'Para #7(b)', description: 'Formal confirmation letter from payment service partner',   status: 'process_item' },
+  { ref: 'Para #7(c)', description: 'Issuance and redemption protocol with money flow diagram',  status: 'process_item' },
+  { ref: 'Para #7(d)', description: 'Risk Management Plan',                                      status: 'process_item' },
+  { ref: 'PD-1',       description: 'Registration with Personal Data Protection Commission',     status: 'process_item' },
+  { ref: 'R-10',       description: 'Evidence of software ownership and registration',           status: 'process_item' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -103,100 +92,108 @@ const PRE_TESTING_PARAMS: BotParam[] = [
 function fmt(n: number) {
   return `TZS ${n.toLocaleString('en-TZ', { maximumFractionDigits: 0 })}`
 }
-
 function pct(used: number, total: number) {
   if (!total) return 0
   return Math.min(100, Math.round((used / total) * 100))
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Status badge ──────────────────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<ParamStatus, string> = {
-  implemented: 'Implemented',
-  in_progress: 'In Progress',
-  pending: 'Pending',
-  process_item: 'Process Item',
+  implemented:  'Live',
+  in_progress:  'In Progress',
+  pending:      'Planned',
+  process_item: 'To Submit',
 }
 
-function StatusBadge({ status, dark }: { status: ParamStatus; dark: boolean }) {
-  const styles: Record<ParamStatus, { light: string; dk: string }> = {
-    implemented: { light: 'bg-green-50 text-green-700', dk: 'bg-green-900/30 text-green-400' },
-    in_progress:  { light: 'bg-blue-50 text-blue-700',  dk: 'bg-blue-900/30 text-blue-400'  },
-    pending:      { light: 'bg-amber-50 text-amber-700', dk: 'bg-amber-900/30 text-amber-400' },
-    process_item: { light: 'bg-gray-100 text-gray-500',  dk: 'bg-gray-800 text-gray-400'      },
+function StatusBadge({ status }: { status: ParamStatus }) {
+  const styles: Record<ParamStatus, string> = {
+    implemented:  'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+    in_progress:  'bg-blue-50 text-blue-700 ring-blue-600/20',
+    pending:      'bg-amber-50 text-amber-700 ring-amber-600/20',
+    process_item: 'bg-gray-100 text-gray-600 ring-gray-500/20',
   }
-  const s = styles[status]
   return (
-    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${dark ? s.dk : s.light}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${styles[status]}`}>
+      {status === 'implemented' && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />}
       {STATUS_LABEL[status]}
     </span>
   )
 }
 
-function Card({ children, dark, className = '' }: { children: React.ReactNode; dark: boolean; className?: string }) {
+// ── Shared card ───────────────────────────────────────────────────────────────
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'} ${className}`}>
+    <div className={`rounded-2xl border border-gray-200 bg-white shadow-sm ${className}`}>
       {children}
     </div>
   )
 }
 
-function MetricCard({ label, value, sub, dark }: { label: string; value: string; sub?: string; dark: boolean }) {
+// ── Section wrapper ───────────────────────────────────────────────────────────
+
+function Section({ id, eyebrow, title, sub, children }: {
+  id: string; eyebrow: string; title: string; sub?: string; children: React.ReactNode
+}) {
   return (
-    <Card dark={dark} className="p-6">
-      <div className={`text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{label}</div>
-      <div className={`mt-2 text-3xl font-bold tracking-tight ${dark ? 'text-white' : 'text-gray-900'}`}>{value}</div>
-      {sub && <div className={`mt-1 text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{sub}</div>}
+    <section id={id} className="scroll-mt-20 space-y-6">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">{eyebrow}</p>
+        <h2 className="mt-1 text-2xl font-bold text-gray-900">{title}</h2>
+        {sub && <p className="mt-2 max-w-2xl text-sm text-gray-500">{sub}</p>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────────
+
+function Stat({ label, value, sub, accent = false }: { label: string; value: string; sub?: string; accent?: boolean }) {
+  return (
+    <Card className="p-6">
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className={`mt-2 text-3xl font-bold tracking-tight ${accent ? 'text-indigo-600' : 'text-gray-900'}`}>{value}</p>
+      {sub && <p className="mt-1 text-xs text-gray-400">{sub}</p>}
     </Card>
   )
 }
 
-function SectionTitle({ id, title, sub, dark }: { id: string; title: string; sub?: string; dark: boolean }) {
+// ── Commitment table ──────────────────────────────────────────────────────────
+
+function CommitmentTable({ params, groupLabel }: { params: BotParam[]; groupLabel: string }) {
+  const implemented = params.filter(p => p.status === 'implemented').length
   return (
-    <div id={id} className={`border-t pt-10 ${dark ? 'border-gray-800' : 'border-gray-100'}`}>
-      <h2 className={`text-xl font-semibold ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</h2>
-      {sub && <p className={`mt-1 text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{sub}</p>}
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-700">{groupLabel}</p>
+        <span className="text-xs text-gray-400">{implemented}/{params.length} live</span>
+      </div>
+      <Card className="overflow-hidden">
+        <table className="min-w-full text-sm">
+          <tbody className="divide-y divide-gray-100">
+            {params.map((p, i) => (
+              <tr key={i} className="hover:bg-gray-50/60 transition-colors">
+                <td className="w-32 px-5 py-3.5 align-top font-mono text-xs text-gray-400">{p.ref}</td>
+                <td className="px-5 py-3.5 text-gray-700">
+                  {p.description}
+                  {p.note && <div className="mt-0.5 text-xs text-gray-400">{p.note}</div>}
+                </td>
+                <td className="px-5 py-3.5 align-top"><StatusBadge status={p.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </div>
-  )
-}
-
-function ParamTable({ params, dark }: { params: BotParam[]; dark: boolean }) {
-  return (
-    <Card dark={dark} className="overflow-hidden">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className={dark ? 'bg-gray-800/50' : 'bg-gray-50'}>
-            <th className={`w-32 px-5 py-3 text-left text-xs font-medium ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Ref</th>
-            <th className={`px-5 py-3 text-left text-xs font-medium ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Requirement</th>
-            <th className={`w-32 px-5 py-3 text-left text-xs font-medium ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Status</th>
-          </tr>
-        </thead>
-        <tbody className={`divide-y ${dark ? 'divide-gray-800' : 'divide-gray-100'}`}>
-          {params.map((p, i) => (
-            <tr key={i} className={dark ? 'hover:bg-gray-800/30' : 'hover:bg-gray-50/80'}>
-              <td className={`px-5 py-3 align-top font-mono text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{p.ref}</td>
-              <td className={`px-5 py-3 ${dark ? 'text-gray-200' : 'text-gray-700'}`}>
-                {p.description}
-                {p.note && <div className={`mt-0.5 text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{p.note}</div>}
-              </td>
-              <td className="px-5 py-3 align-top"><StatusBadge status={p.status} dark={dark} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
   )
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CompliancePortal({ data }: { data: ComplianceData }) {
-  const [isDark, setIsDark] = useState(false)
   const [activeSection, setActiveSection] = useState('overview')
-
-  useEffect(() => {
-    if (localStorage.getItem('compliance-theme') === 'dark') setIsDark(true)
-  }, [])
 
   useEffect(() => {
     const onScroll = () => {
@@ -211,39 +208,31 @@ export function CompliancePortal({ data }: { data: ComplianceData }) {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  function toggleTheme() {
-    const next = !isDark
-    setIsDark(next)
-    localStorage.setItem('compliance-theme', next ? 'dark' : 'light')
-  }
-
   // Derived
-  const pspPending = data.pspConfirmedTotal - data.pspMintedTotal
   const variance = Math.round(data.onChainSupply - (data.pspMintedTotal + data.reconAdjustments))
   const fullyReconciled = Math.abs(variance) < 1
   const dailyCapPct = pct(data.issuedToday, data.platformDailyCap)
   const requiredLiqBuffer = data.avg30dDailyRedemptions != null
     ? Math.round(data.avg30dDailyRedemptions * 30 * 0.20)
     : null
-
-  const d = isDark
-  const bg = d ? 'bg-gray-950' : 'bg-gray-50'
-  const sidebarBg = d ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
-  const textPrimary = d ? 'text-white' : 'text-gray-900'
-  const textSecondary = d ? 'text-gray-400' : 'text-gray-500'
-  const textMuted = d ? 'text-gray-500' : 'text-gray-400'
-  const divider = d ? 'border-gray-800' : 'border-gray-100'
+  const allParams = [...BLOCKING_PARAMS, ...OPERATIONAL_PARAMS, ...PRE_TESTING_PARAMS]
+  const implementedCount = allParams.filter(p => p.status === 'implemented').length
 
   return (
-    <div className={`flex min-h-screen ${bg}`}>
+    <div className="flex min-h-screen bg-gray-50">
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r lg:flex ${sidebarBg}`}>
-        <div className={`px-6 py-6 border-b ${divider}`}>
-          <div className={`font-semibold ${textPrimary}`}>nTZS Compliance</div>
-          <div className={`text-xs mt-0.5 ${textMuted}`}>NEDA LABS Limited</div>
+      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-gray-200 bg-white lg:flex">
+        {/* Brand */}
+        <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-5">
+          <img src="/ntzs-icon.svg" alt="nTZS" className="h-8 w-8 rounded-lg" />
+          <div>
+            <p className="text-sm font-semibold text-gray-900">nTZS Compliance</p>
+            <p className="text-xs text-gray-400">NEDA LABS Limited</p>
+          </div>
         </div>
 
+        {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
           {SECTIONS.map(s => (
             <button
@@ -251,8 +240,8 @@ export function CompliancePortal({ data }: { data: ComplianceData }) {
               onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
                 activeSection === s.id
-                  ? d ? 'bg-gray-800 text-white font-medium' : 'bg-gray-100 text-gray-900 font-medium'
-                  : d ? 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  ? 'bg-indigo-50 text-indigo-700 font-medium'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
               }`}
             >
               {s.label}
@@ -260,351 +249,349 @@ export function CompliancePortal({ data }: { data: ComplianceData }) {
           ))}
         </nav>
 
-        <div className={`border-t px-3 py-4 space-y-1 ${divider}`}>
+        {/* Footer links */}
+        <div className="border-t border-gray-100 px-3 py-4 space-y-1">
           <Link
             href="/app/oversight"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${d ? 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
           >
             <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
             </svg>
-            Oversight
+            Operations Dashboard
           </Link>
-          <button
-            onClick={toggleTheme}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${d ? 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
-          >
-            {d ? (
-              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-              </svg>
-            ) : (
-              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-              </svg>
-            )}
-            {d ? 'Light mode' : 'Dark mode'}
-          </button>
         </div>
       </aside>
 
-      {/* ── Main ─────────────────────────────────────────────────────────── */}
+      {/* ── Main ────────────────────────────────────────────────────────────── */}
       <main className="flex-1 lg:ml-56">
-        {/* Header bar */}
-        <div className={`sticky top-0 z-20 border-b px-6 py-4 ${d ? 'bg-gray-950/95 border-gray-800 backdrop-blur' : 'bg-gray-50/95 border-gray-200 backdrop-blur'}`}>
+
+        {/* Sticky header */}
+        <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur px-6 py-4">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
-            <div>
-              <span className={`font-semibold ${textPrimary}`}>Compliance Portal</span>
-              <span className={`ml-3 text-sm hidden sm:inline ${textSecondary}`}>Bank of Tanzania Sandbox · Ref. {data.botApprovalRef}</span>
-            </div>
             <div className="flex items-center gap-3">
-              <ExportReportButton />
-              <button onClick={toggleTheme} className={`lg:hidden p-2 rounded-lg ${d ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
-                {d ? (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
-                ) : (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>
-                )}
-              </button>
+              <span className="font-semibold text-gray-900">Compliance Portal</span>
+              <span className="hidden text-sm text-gray-400 sm:inline">·</span>
+              <span className="hidden text-sm text-gray-500 sm:inline">Bank of Tanzania Sandbox · Ref. {data.botApprovalRef}</span>
             </div>
+            <ExportReportButton />
           </div>
-        </div>
+        </header>
 
-        <div className="mx-auto max-w-4xl space-y-12 px-6 py-10">
+        <div className="mx-auto max-w-4xl space-y-16 px-6 py-12">
 
-          {/* ── Overview ─────────────────────────────────────────────────── */}
-          <div id="overview" className="grid gap-4 sm:grid-cols-3">
-            {/* Countdown */}
-            <Card dark={d} className="sm:col-span-1 p-6 flex flex-col justify-between">
-              <div className={`text-sm ${textSecondary}`}>Days to commencement</div>
-              <div className={`mt-4 text-6xl font-bold tracking-tight ${data.daysToDeadline <= 30 ? 'text-amber-500' : textPrimary}`}>
-                {data.daysToDeadline}
-              </div>
-              <div className={`mt-2 text-xs ${textMuted}`}>Deadline 23 June 2026</div>
-            </Card>
+          {/* ── Hero / Overview ──────────────────────────────────────────────── */}
+          <section id="overview" className="scroll-mt-20">
 
-            {/* Sandbox details */}
-            <Card dark={d} className="sm:col-span-2 p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className={`text-sm font-medium ${textPrimary}`}>Bank of Tanzania Fintech Regulatory Sandbox</div>
-                  <div className={`mt-1 text-sm ${textSecondary}`}>Approval date: 23 April 2026 · Commencement deadline: 23 June 2026</div>
+            {/* Mission hero */}
+            <div className="rounded-3xl bg-gradient-to-br from-indigo-600 to-indigo-800 px-8 py-10 text-white sm:px-12 sm:py-14">
+              <div className="flex flex-wrap items-start justify-between gap-6">
+                <div className="max-w-xl">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium ring-1 ring-white/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    {data.sandboxPhase} · Bank of Tanzania Fintech Regulatory Sandbox
+                  </span>
+                  <h1 className="mt-4 text-3xl font-bold leading-snug sm:text-4xl">
+                    Tanzania's first regulated<br />digital shilling.
+                  </h1>
+                  <p className="mt-3 text-base text-indigo-200">
+                    Every digital shilling issued by NEDA LABS is backed 1-for-1 by real Tanzanian shillings held with a licensed payment service provider. Customers can redeem at any time.
+                  </p>
                 </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${data.daysToDeadline > 0 ? (d ? 'bg-amber-900/40 text-amber-400' : 'bg-amber-50 text-amber-700') : (d ? 'bg-green-900/40 text-green-400' : 'bg-green-50 text-green-700')}`}>
-                  {data.sandboxPhase}
-                </span>
-              </div>
-              <div className={`mt-4 grid grid-cols-2 gap-4 border-t pt-4 text-sm ${divider}`}>
-                <div>
-                  <div className={textMuted}>Approval reference</div>
-                  <div className={`mt-0.5 font-mono font-medium ${textPrimary}`}>{data.botApprovalRef}</div>
-                </div>
-                <div>
-                  <div className={textMuted}>Applicant</div>
-                  <div className={`mt-0.5 font-medium ${textPrimary}`}>NEDA LABS Company Limited</div>
+
+                {/* Countdown */}
+                <div className="rounded-2xl bg-white/10 p-6 text-center ring-1 ring-white/20 min-w-[140px]">
+                  <p className="text-xs font-medium uppercase tracking-widest text-indigo-300">Days to commencement</p>
+                  <p className={`mt-2 text-6xl font-bold tabular-nums ${data.daysToDeadline <= 30 ? 'text-amber-300' : 'text-white'}`}>
+                    {data.daysToDeadline}
+                  </p>
+                  <p className="mt-2 text-xs text-indigo-300">Deadline 23 June 2026</p>
                 </div>
               </div>
-            </Card>
-          </div>
 
-          {/* ── Reserve Integrity ────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="reserves"
-              title="Reserve Integrity"
-              sub="Snippe-confirmed fiat receipts versus on-chain token supply. The on-chain totalSupply() is the authoritative circulation figure."
-              dark={d}
-            />
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard
-                label="On-chain supply"
+              {/* Key facts strip */}
+              <div className="mt-8 grid grid-cols-2 gap-4 border-t border-white/10 pt-8 sm:grid-cols-4">
+                {[
+                  { label: 'Approval reference', value: data.botApprovalRef },
+                  { label: 'Approval date', value: '23 April 2026' },
+                  { label: 'Applicant', value: 'NEDA LABS Company Limited' },
+                  { label: 'Commitments live', value: `${implementedCount} of ${allParams.length}` },
+                ].map(f => (
+                  <div key={f.label}>
+                    <p className="text-xs text-indigo-300">{f.label}</p>
+                    <p className="mt-0.5 text-sm font-semibold text-white">{f.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ── Money Safety ─────────────────────────────────────────────────── */}
+          <Section
+            id="money-safety"
+            eyebrow="Reserve Integrity"
+            title="Every shilling is accounted for."
+            sub="The number of digital shillings in circulation must always equal the real Tanzanian shillings held in reserve. This is verified independently on a public blockchain — anyone can check."
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat
+                label="Digital shillings in circulation"
                 value={fmt(data.onChainSupply)}
-                sub="Base mainnet totalSupply()"
-                dark={d}
+                sub="Verified on public blockchain"
+                accent
               />
-              <MetricCard
-                label="PSP confirmed (Snippe)"
+              <Stat
+                label="Real shillings received"
                 value={fmt(data.pspConfirmedTotal)}
-                sub="Webhook-confirmed fiat received"
-                dark={d}
+                sub="Confirmed by payment partner"
               />
-              <MetricCard
-                label="Minted from PSP receipts"
+              <Stat
+                label="Matched and issued"
                 value={fmt(data.pspMintedTotal)}
-                sub="Snippe-confirmed and on-chain"
-                dark={d}
+                sub="Confirmed and on-chain"
               />
-              <MetricCard
-                label="Pending pipeline"
-                value={fmt(pspPending)}
-                sub="Confirmed, awaiting mint"
-                dark={d}
+              <Stat
+                label="Awaiting issue"
+                value={fmt(data.pspConfirmedTotal - data.pspMintedTotal)}
+                sub="Received · pending approval"
               />
             </div>
 
-            <Card dark={d} className="mt-4 p-5">
+            {/* Reserve ratio card */}
+            <Card className="p-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <div className={`text-sm font-medium ${textPrimary}`}>
-                    Variance
-                    <span className={`ml-3 font-semibold ${fullyReconciled ? 'text-green-500' : 'text-red-500'}`}>
-                      {fullyReconciled ? 'TZS 0 — fully reconciled' : `${variance > 0 ? '+' : ''}${fmt(Math.abs(variance))}`}
+                  <p className="text-sm text-gray-500">Reserve status</p>
+                  <div className="mt-1 flex items-baseline gap-3">
+                    <span className={`text-2xl font-bold ${fullyReconciled ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {fullyReconciled ? '100% — Fully reconciled' : `Variance: ${fmt(Math.abs(variance))}`}
                     </span>
                   </div>
-                  <div className={`mt-0.5 text-xs ${textMuted}`}>
-                    On-chain vs. (PSP minted + reconciliation adjustments of {fmt(data.reconAdjustments)})
-                  </div>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Every digital shilling issued is backed by a real shilling in reserve.
+                    Enforced by a two-step approval process before any issuance.
+                  </p>
                 </div>
-                <div className={`text-sm ${textSecondary}`}>
-                  Reserve ratio: <span className="font-semibold text-green-500">100%</span>
-                  <span className={`ml-1 ${textMuted}`}>— enforced by dual-approval workflow</span>
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-sm font-semibold text-emerald-700">1:1 Backing maintained</span>
                 </div>
               </div>
+
               {requiredLiqBuffer != null && (
-                <div className={`mt-3 border-t pt-3 text-sm ${divider}`}>
-                  <span className={textSecondary}>Liquidity buffer required (LR-1):</span>
-                  <span className={`ml-2 font-semibold text-amber-500`}>{fmt(requiredLiqBuffer)}</span>
-                  <span className={`ml-1 text-xs ${textMuted}`}>20% × 30-day avg redemptions</span>
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  <p className="text-sm text-gray-500">
+                    Liquidity buffer required <span className="text-gray-400 text-xs">(LR-1 — 20% of 30-day average redemptions)</span>
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-amber-600">{fmt(requiredLiqBuffer)}</p>
+                  <p className="text-xs text-gray-400">Planned — to be maintained before sandbox commencement.</p>
                 </div>
               )}
             </Card>
 
-            <div className="mt-3">
-              <a
-                href={`https://basescan.org/token/${data.contractAddress}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`text-xs underline underline-offset-2 ${textMuted} hover:${textSecondary}`}
-              >
-                Verify supply at Basescan
-              </a>
-            </div>
-          </div>
+            <a
+              href={`https://basescan.org/token/${data.contractAddress}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-indigo-600 underline underline-offset-2 hover:text-indigo-800"
+            >
+              Independently verify the circulating supply on Basescan
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+            </a>
+          </Section>
 
-          {/* ── Issuance Controls ────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="issuance"
-              title="Issuance Controls"
-              sub="All limits enforced at the API layer with a full audit trail on every transaction."
-              dark={d}
-            />
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {/* Platform daily cap — live bar */}
-              <Card dark={d} className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className={`text-sm ${textSecondary}`}>Para #6 — Platform daily cap</div>
-                  <span className={`text-xs font-medium rounded-full px-2.5 py-0.5 ${d ? 'bg-green-900/40 text-green-400' : 'bg-green-50 text-green-700'}`}>Enforced</span>
+          {/* ── Spending Limits ───────────────────────────────────────────────── */}
+          <Section
+            id="protections"
+            eyebrow="Customer Protection"
+            title="Built-in spending limits protect every customer."
+            sub="These limits are hard-coded. No employee can override them. Every transaction is checked before it is processed."
+          >
+            {/* Platform daily cap with live bar */}
+            <Card className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Platform-wide daily limit</p>
+                  <p className="mt-2 text-3xl font-bold text-gray-900">{fmt(data.platformDailyCap)}</p>
+                  <p className="mt-1 text-sm text-gray-500">Maximum total issuance across all customers per day</p>
                 </div>
-                <div className={`mt-3 text-3xl font-bold tracking-tight ${textPrimary}`}>{fmt(data.platformDailyCap)}</div>
-                <div className="mt-4">
-                  <div className={`mb-1.5 flex justify-between text-xs ${textMuted}`}>
-                    <span>Issued today: {fmt(data.issuedToday)}</span>
-                    <span>{dailyCapPct}%</span>
-                  </div>
-                  <div className={`h-1.5 rounded-full overflow-hidden ${d ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                    <div
-                      className={`h-full rounded-full ${dailyCapPct > 90 ? 'bg-red-500' : dailyCapPct > 70 ? 'bg-amber-500' : 'bg-green-500'}`}
-                      style={{ width: `${dailyCapPct}%` }}
-                    />
-                  </div>
+                <StatusBadge status="implemented" />
+              </div>
+              <div className="mt-5">
+                <div className="mb-2 flex justify-between text-xs text-gray-500">
+                  <span>Issued today: <span className="font-medium text-gray-900">{fmt(data.issuedToday)}</span></span>
+                  <span className="font-medium">{dailyCapPct}% used</span>
                 </div>
-              </Card>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      dailyCapPct > 90 ? 'bg-red-500' : dailyCapPct > 70 ? 'bg-amber-400' : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${dailyCapPct}%` }}
+                  />
+                </div>
+              </div>
+            </Card>
 
+            <div className="grid gap-4 sm:grid-cols-3">
               {[
-                { ref: 'Para #3', label: 'Per-transaction cap', limit: data.perTxnCap, note: 'Hard-rejected at API — no exceptions' },
-                { ref: 'Para #4', label: 'Daily per-user limit', limit: data.dailyUserCap, note: 'Rolling 24-hour window' },
-                { ref: 'Para #5', label: 'Monthly per-user cap', limit: data.monthlyUserCap, note: '30-day rolling window' },
-              ].map(({ ref, label, limit, note }) => (
-                <Card key={ref} dark={d} className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className={`text-sm ${textSecondary}`}>{ref} — {label}</div>
-                    <span className={`text-xs font-medium rounded-full px-2.5 py-0.5 ${d ? 'bg-green-900/40 text-green-400' : 'bg-green-50 text-green-700'}`}>Enforced</span>
+                { label: 'Maximum per transaction', value: fmt(data.perTxnCap), note: 'Automatically rejected — no exceptions' },
+                { label: 'Maximum per customer per day', value: fmt(data.dailyUserCap), note: 'Rolling 24-hour window' },
+                { label: 'Maximum per customer per month', value: fmt(data.monthlyUserCap), note: '30-day rolling window' },
+              ].map(({ label, value, note }) => (
+                <Card key={label} className="p-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-gray-500">{label}</p>
+                    <StatusBadge status="implemented" />
                   </div>
-                  <div className={`mt-3 text-3xl font-bold tracking-tight ${textPrimary}`}>{fmt(limit)}</div>
-                  <div className={`mt-2 text-xs ${textMuted}`}>{note}</div>
+                  <p className="mt-3 text-2xl font-bold text-gray-900">{value}</p>
+                  <p className="mt-1 text-xs text-gray-400">{note}</p>
                 </Card>
               ))}
             </div>
-          </div>
+          </Section>
 
-          {/* ── KYC & Users ──────────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="kyc"
-              title="KYC & Users"
-              sub="Identity verification status and registered participant summary."
-              dark={d}
-            />
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard label="KYC Approved" value={String(data.kycApproved)} dark={d} />
-              <MetricCard label="KYC Pending" value={String(data.kycPending)} dark={d} />
-              <MetricCard label="KYC Rejected" value={String(data.kycRejected)} dark={d} />
-              <MetricCard label="End users" value={String(data.endUserCount)} sub="Sandbox cap: 100" dark={d} />
+          {/* ── Users & Identity ──────────────────────────────────────────────── */}
+          <Section
+            id="users"
+            eyebrow="Identity & KYC"
+            title="Every user is verified before they can transact."
+            sub="Identity verification ensures that only eligible participants can use the platform during the sandbox period."
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label="Identity verified" value={String(data.kycApproved)} sub="Approved and active" accent />
+              <Stat label="Under review" value={String(data.kycPending)} sub="Pending manual review" />
+              <Stat label="Not eligible" value={String(data.kycRejected)} sub="Did not meet requirements" />
+              <Stat label="Registered users" value={String(data.endUserCount)} sub="Sandbox cap: 100 participants" />
             </div>
-            <Card dark={d} className="mt-4 p-4">
-              <p className={`text-sm ${textSecondary}`}>
-                <span className={`font-medium ${textPrimary}`}>Para #8 — Pending.</span> Biometric selfie verification (Smile Identity) and PEP/sanctions
-                screening are not yet integrated. Current KYC is national ID and document upload with manual review.
-              </p>
+
+            <Card className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                  <svg className="h-3 w-3 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Biometric verification — Planned before commencement</p>
+                  <p className="mt-0.5 text-sm text-gray-500">
+                    Current verification uses national ID and document upload with manual review. Biometric selfie verification and politically exposed persons / sanctions screening will be integrated before the sandbox begins.
+                  </p>
+                </div>
+              </div>
             </Card>
-          </div>
+          </Section>
 
-          {/* ── BoT Parameters ───────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="parameters"
-              title="BoT Parameter Compliance"
-              sub="Implemented means live in production. Process Item is a documentation or registration task."
-              dark={d}
-            />
-            <div className="mt-6 space-y-8">
-              <div>
-                <div className={`mb-3 flex items-center gap-2 text-sm font-medium ${textSecondary}`}>
-                  <span className="h-2 w-2 rounded-full bg-red-500" />
-                  Blocking — required before commencement
-                </div>
-                <ParamTable params={BLOCKING_PARAMS} dark={d} />
-              </div>
-              <div>
-                <div className={`mb-3 flex items-center gap-2 text-sm font-medium ${textSecondary}`}>
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Required during sandbox operation
-                </div>
-                <ParamTable params={OPERATIONAL_PARAMS} dark={d} />
-              </div>
-              <div>
-                <div className={`mb-3 flex items-center gap-2 text-sm font-medium ${textSecondary}`}>
-                  <span className="h-2 w-2 rounded-full bg-blue-500" />
-                  Pre-testing documents to submit to BoT
-                </div>
-                <ParamTable params={PRE_TESTING_PARAMS} dark={d} />
-              </div>
+          {/* ── Our Commitments ───────────────────────────────────────────────── */}
+          <Section
+            id="commitments"
+            eyebrow="Regulatory Commitments"
+            title="What we have committed to the Bank of Tanzania."
+            sub="These are the conditions under which NEDA LABS operates this sandbox. Each item is tracked and reported."
+          >
+            <div className="space-y-8">
+              <CommitmentTable
+                params={BLOCKING_PARAMS}
+                groupLabel="Required before sandbox commencement"
+              />
+              <CommitmentTable
+                params={OPERATIONAL_PARAMS}
+                groupLabel="Ongoing obligations during sandbox operation"
+              />
+              <CommitmentTable
+                params={PRE_TESTING_PARAMS}
+                groupLabel="Documents to be submitted to the Bank of Tanzania"
+              />
             </div>
-          </div>
+          </Section>
 
-          {/* ── Governance ───────────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="governance"
-              title="Governance & Smart Contract"
-              sub="On-chain contract details, role accountability, and enforcement actions."
-              dark={d}
-            />
-            <div className="mt-6 grid gap-4 lg:grid-cols-2">
-              <Card dark={d} className="p-6">
-                <div className={`mb-4 text-sm font-semibold ${textPrimary}`}>Smart Contract</div>
-                <dl className={`space-y-4 text-sm ${textSecondary}`}>
-                  <div className="flex justify-between gap-2">
-                    <dt>Network</dt>
-                    <dd className={`font-medium text-right ${textPrimary}`}>Base Mainnet — Chain ID 8453</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt>Contract type</dt>
-                    <dd className={`font-medium text-right ${textPrimary}`}>NTZSV2 UUPS ERC-20</dd>
-                  </div>
-                  <div className={`border-t pt-4 ${divider}`}>
-                    <div className={textMuted}>Proxy address</div>
-                    <a
-                      href={`https://basescan.org/token/${data.contractAddress}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`mt-1 block break-all font-mono text-xs underline underline-offset-2 ${d ? 'text-blue-400' : 'text-blue-600'}`}
-                    >
-                      {data.contractAddress}
-                    </a>
-                  </div>
-                  <div>
-                    <div className={textMuted}>Gnosis Safe (admin)</div>
-                    <a
-                      href={`https://basescan.org/address/${data.safeAddress}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`mt-1 block break-all font-mono text-xs underline underline-offset-2 ${d ? 'text-blue-400' : 'text-blue-600'}`}
-                    >
-                      {data.safeAddress}
-                    </a>
-                  </div>
-                  <div className={`rounded-lg px-3 py-2 text-xs ${d ? 'bg-amber-900/20 text-amber-400' : 'bg-amber-50 text-amber-700'}`}>
-                    Third-party audit required before sandbox commencement.
-                  </div>
-                </dl>
+          {/* ── Governance ────────────────────────────────────────────────────── */}
+          <Section
+            id="governance"
+            eyebrow="Governance"
+            title="Who controls what — and how it is protected."
+            sub="Issuance is controlled by software rules, not individuals. Administrative changes require multiple authorised signatories."
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card className="p-6">
+                <p className="text-sm font-semibold text-gray-900">Issuance & Redemption Rules</p>
+                <div className="mt-4 space-y-3">
+                  {[
+                    ['Issue digital shillings', 'Requires fiat confirmation from payment partner + internal approval'],
+                    ['Redeem digital shillings', 'Triggered by customer request — burns token, releases fiat'],
+                    ['Pause all transactions', 'Emergency power for regulatory response'],
+                    ['Freeze a customer wallet', 'Compliance or court order enforcement'],
+                    ['Block an address permanently', 'AML / sanctions enforcement'],
+                  ].map(([action, desc]) => (
+                    <div key={action} className="flex items-start gap-3 rounded-lg border border-gray-100 p-3">
+                      <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{action}</p>
+                        <p className="text-xs text-gray-500">{desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </Card>
 
               <div className="space-y-4">
-                <Card dark={d} className="p-6">
-                  <div className={`mb-4 text-sm font-semibold ${textPrimary}`}>Contract Roles</div>
-                  <table className="min-w-full text-xs">
-                    <tbody className={`divide-y ${d ? 'divide-gray-800' : 'divide-gray-100'}`}>
-                      {[
-                        ['MINTER_ROLE', 'Mint nTZS after fiat confirmation'],
-                        ['BURNER_ROLE', 'Burn nTZS on redemption'],
-                        ['PAUSER_ROLE', 'Emergency pause all transfers'],
-                        ['FREEZER_ROLE', 'Freeze individual wallet'],
-                        ['BLACKLISTER_ROLE', 'Permanently block address'],
-                        ['WIPER_ROLE', 'Burn balance of blacklisted address'],
-                      ].map(([role, desc]) => (
-                        <tr key={role}>
-                          <td className={`py-2 pr-4 font-mono ${textMuted}`}>{role}</td>
-                          <td className={`py-2 ${textSecondary}`}>{desc}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <Card className="p-6">
+                  <p className="text-sm font-semibold text-gray-900">Technical Records</p>
+                  <dl className="mt-4 space-y-3 text-sm">
+                    <div>
+                      <dt className="text-gray-400">Public blockchain</dt>
+                      <dd className="mt-0.5 font-medium text-gray-900">Base — Ethereum Layer 2 (Coinbase)</dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-400">Token standard</dt>
+                      <dd className="mt-0.5 font-medium text-gray-900">Upgradeable ERC-20 — auditable and extensible</dd>
+                    </div>
+                    <div className="border-t border-gray-100 pt-3">
+                      <dt className="text-gray-400">Token contract address</dt>
+                      <dd className="mt-0.5">
+                        <a
+                          href={`https://basescan.org/token/${data.contractAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="break-all font-mono text-xs text-indigo-600 underline underline-offset-2"
+                        >
+                          {data.contractAddress}
+                        </a>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-400">Multi-signature admin wallet</dt>
+                      <dd className="mt-0.5">
+                        <a
+                          href={`https://basescan.org/address/${data.safeAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="break-all font-mono text-xs text-indigo-600 underline underline-offset-2"
+                        >
+                          {data.safeAddress}
+                        </a>
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 ring-1 ring-amber-200">
+                    Independent security audit required before sandbox commencement.
+                  </div>
                 </Card>
 
                 {data.recentEnforcement.length > 0 && (
-                  <Card dark={d} className="p-6">
-                    <div className={`mb-4 text-sm font-semibold ${textPrimary}`}>Recent Enforcement</div>
-                    <div className="space-y-3">
+                  <Card className="p-6">
+                    <p className="text-sm font-semibold text-gray-900">Recent Enforcement Actions</p>
+                    <div className="mt-4 space-y-3">
                       {data.recentEnforcement.map((e, i) => (
                         <div key={i} className="flex items-start justify-between gap-2 text-xs">
                           <div>
-                            <span className={`font-medium ${textPrimary}`}>{e.action.replace(/_/g, ' ')}</span>
-                            {e.actorEmail && <span className={`ml-1 ${textMuted}`}>by {e.actorEmail}</span>}
+                            <span className="font-medium text-gray-800">{e.action.replace(/_/g, ' ')}</span>
+                            {e.actorEmail && <span className="ml-1 text-gray-400">by {e.actorEmail}</span>}
                           </div>
                           {e.createdAt && (
-                            <span className={`shrink-0 ${textMuted}`}>
+                            <span className="shrink-0 text-gray-400">
                               {new Date(e.createdAt).toLocaleDateString('en-TZ')}
                             </span>
                           )}
@@ -615,89 +602,85 @@ export function CompliancePortal({ data }: { data: ComplianceData }) {
                 )}
               </div>
             </div>
-          </div>
+          </Section>
 
-          {/* ── Activity ─────────────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="activity"
-              title="Activity — Last 24 Hours"
-              sub="Platform deposit and redemption summary."
-              dark={d}
-            />
-            <Card dark={d} className="mt-6 overflow-hidden">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className={d ? 'bg-gray-800/50' : 'bg-gray-50'}>
-                    <th className={`px-6 py-3 text-left text-xs font-medium ${textMuted}`}>Category</th>
-                    <th className={`px-6 py-3 text-right text-xs font-medium ${textMuted}`}>Count</th>
-                    <th className={`px-6 py-3 text-right text-xs font-medium ${textMuted}`}>Volume</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y ${d ? 'divide-gray-800' : 'divide-gray-100'}`}>
-                  {[
-                    { label: 'Deposits initiated', count: data.deposits24hCount, tzs: data.deposits24hTzs, warn: false },
-                    { label: 'Redemptions completed', count: data.burns24hCount, tzs: data.burns24hTzs, warn: false },
-                    { label: 'Rejected / failed deposits', count: data.deposits24hRejected, tzs: null, warn: data.deposits24hRejected > 0 },
-                  ].map(row => (
-                    <tr key={row.label}>
-                      <td className={`px-6 py-4 ${textSecondary}`}>{row.label}</td>
-                      <td className={`px-6 py-4 text-right font-semibold ${row.warn ? 'text-red-500' : textPrimary}`}>{row.count}</td>
-                      <td className={`px-6 py-4 text-right ${row.tzs != null ? textPrimary : textMuted}`}>
-                        {row.tzs != null ? fmt(row.tzs) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-            <p className={`mt-2 text-xs ${textMuted}`}>
-              Full tables are in the{' '}
-              <Link href="/app/oversight" className="underline underline-offset-2">Oversight Dashboard</Link>.
+          {/* ── Recent Activity ───────────────────────────────────────────────── */}
+          <Section
+            id="activity"
+            eyebrow="Platform Activity"
+            title="What happened in the last 24 hours."
+            sub="A summary of customer deposits and redemptions. Full transaction history is available in the Operations Dashboard."
+          >
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                { label: 'Deposits received', count: data.deposits24hCount, volume: data.deposits24hTzs, ok: true },
+                { label: 'Redemptions completed', count: data.burns24hCount, volume: data.burns24hTzs, ok: true },
+                { label: 'Rejected transactions', count: data.deposits24hRejected, volume: null, ok: data.deposits24hRejected === 0 },
+              ].map(row => (
+                <Card key={row.label} className="p-6">
+                  <p className="text-sm text-gray-500">{row.label}</p>
+                  <p className={`mt-2 text-3xl font-bold ${row.ok ? 'text-gray-900' : 'text-red-600'}`}>{row.count}</p>
+                  {row.volume != null && (
+                    <p className="mt-1 text-sm font-medium text-gray-600">{fmt(row.volume)}</p>
+                  )}
+                </Card>
+              ))}
+            </div>
+
+            <p className="text-xs text-gray-400">
+              Full tables, transaction detail, and audit logs are in the{' '}
+              <Link href="/app/oversight" className="text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
+                Operations Dashboard
+              </Link>
+              , which requires separate authorisation.
             </p>
-          </div>
+          </Section>
 
-          {/* ── Export ───────────────────────────────────────────────────── */}
-          <div>
-            <SectionTitle
-              id="export"
-              title="Export & Documents"
-              sub="Download the compliance report or access submission documents for BoT."
-              dark={d}
-            />
-            <Card dark={d} className="mt-6 p-6">
+          {/* ── Download ──────────────────────────────────────────────────────── */}
+          <Section
+            id="download"
+            eyebrow="Documentation"
+            title="Download the compliance report."
+            sub="A printable summary of this page — reserve proof, commitments, issuance controls, and activity."
+          >
+            <Card className="p-8">
               <div className="flex flex-wrap items-start justify-between gap-8">
                 <div>
-                  <div className={`font-medium ${textPrimary}`}>Reserves & Compliance Report</div>
-                  <div className={`mt-1 text-sm ${textSecondary}`}>
-                    On-chain supply, reserve verification, KYC, issuance controls, recent activity.
-                  </div>
-                  <div className="mt-4">
+                  <p className="text-lg font-semibold text-gray-900">Reserves & Compliance Report</p>
+                  <p className="mt-1 text-sm text-gray-500 max-w-sm">
+                    Includes on-chain supply verification, 1:1 reserve proof, KYC summary, spending limits, and recent activity.
+                  </p>
+                  <div className="mt-5">
                     <ExportReportButton />
                   </div>
                 </div>
                 <div>
-                  <div className={`mb-3 text-sm font-medium ${textPrimary}`}>Pre-testing documents</div>
-                  {[
-                    'Testing Environment Agreement — pending',
-                    'PSP partnership confirmation — pending',
-                    'Risk Management Plan — pending',
-                    'nTZS token flow diagram — pending',
-                  ].map(doc => (
-                    <div key={doc} className={`text-xs py-0.5 ${textMuted}`}>{doc}</div>
-                  ))}
+                  <p className="text-sm font-semibold text-gray-900 mb-3">Pre-testing documents</p>
+                  <div className="space-y-2">
+                    {[
+                      'Testing Environment Agreement',
+                      'PSP partnership confirmation letter',
+                      'Risk Management Plan',
+                      'Token issuance flow diagram',
+                    ].map(doc => (
+                      <div key={doc} className="flex items-center gap-2 text-xs text-gray-500">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                        {doc} — pending
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </Card>
-          </div>
+          </Section>
 
           {/* Footer */}
-          <div className={`border-t pt-6 text-xs ${divider} ${textMuted}`}>
+          <footer className="border-t border-gray-100 pt-6 text-xs text-gray-400">
             <div className="flex flex-wrap justify-between gap-2">
               <span>NEDA LABS Company Limited · Dar es Salaam, Tanzania</span>
-              <span>Generated {data.generatedAt} EAT · Refresh for latest data</span>
+              <span>Data as of {data.generatedAt} EAT · Refresh page for latest</span>
             </div>
-          </div>
+          </footer>
 
         </div>
       </main>

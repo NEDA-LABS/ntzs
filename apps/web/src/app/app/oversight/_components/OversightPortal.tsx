@@ -8,7 +8,8 @@ import { formatDateTimeEAT } from '@/lib/format-date'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface OversightData {
-  stats: { totalUsers: number; totalDeposits: number; totalMinted: number; totalPending: number }
+  stats: { totalUsers: number; totalDeposits: number }
+  pspBalance: { available: number; pending: number; currency: string; pspName: string }
   kycStats: { total: number; approved: number; pending: number; rejected: number }
   todayIssuance: { issuedTzs: number; capTzs: number } | null
   recentDeposits: Array<{
@@ -165,7 +166,7 @@ function OverviewSection({ data, d, onNavigate }: { data: OversightData; d: bool
 
       {/* 4 summary metrics */}
       <div className={`grid gap-px sm:grid-cols-2 lg:grid-cols-4 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
-        <Metric label="Deposits processed" value={n(data.stats.totalDeposits)} sub={`${n(data.stats.totalMinted)} TZS minted total`} d={d} />
+        <Metric label="Deposits processed" value={n(data.stats.totalDeposits)} sub={`${n(data.pspBalance.available)} ${data.pspBalance.currency} settled`} d={d} />
         <Metric label="KYC verified" value={n(data.kycStats.approved)} sub={`${n(data.kycStats.pending)} pending review`} d={d} valueColor={d ? 'text-emerald-400' : 'text-emerald-600'} />
         <Metric
           label="Daily cap used"
@@ -268,12 +269,12 @@ function ReservesSection({ data, d }: { data: OversightData; d: boolean }) {
           </div>
         </div>
         <div className={`p-7 ${surface}`}>
-          <div className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>DB-tracked mints (all providers)</div>
-          <div className={`mt-2 text-4xl font-bold tabular-nums tracking-tight ${d ? 'text-zinc-300' : 'text-gray-600'}`}>{n(data.stats.totalMinted)}</div>
-          <div className={`mt-1 font-mono text-[10px] ${t3}`}>Source: Database · status = minted</div>
+          <div className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>PSP settled balance ({data.pspBalance.pspName})</div>
+          <div className={`mt-2 text-4xl font-bold tabular-nums tracking-tight ${d ? 'text-emerald-400' : 'text-emerald-600'}`}>{n(data.pspBalance.available)}</div>
+          <div className={`mt-1 font-mono text-[10px] ${t3}`}>Live from {data.pspBalance.pspName} · {data.pspBalance.currency} · 1:1 nTZS backing</div>
           <p className={`mt-3 font-mono text-[10px] leading-relaxed ${d ? 'text-zinc-600' : 'text-gray-400'}`}>
-            DB total is higher than on-chain supply because it includes test deposits and non-mainnet
-            activity. The on-chain figure is the authoritative reserve number.
+            This is the live balance from the active PSP — the source of truth for reserve backing.
+            Switching providers updates this automatically.
           </p>
         </div>
       </div>
@@ -449,13 +450,26 @@ function DepositsSection({ data, d }: { data: OversightData; d: boolean }) {
   const divider = d ? 'divide-white/5' : 'divide-gray-100'
   const tblHdr = d ? 'bg-white/[0.02]' : 'bg-gray-50'
   const rowHov = d ? 'hover:bg-white/[0.02]' : 'hover:bg-gray-50'
+  const { available, pending, currency, pspName } = data.pspBalance
 
   return (
     <div className="space-y-5">
       <div className={`grid gap-px sm:grid-cols-3 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
         <Metric label="Total deposits" value={n(data.stats.totalDeposits)} sub="All time" d={d} />
-        <Metric label="Total minted" value={`${n(data.stats.totalMinted)} TZS`} sub="Confirmed and on-chain" d={d} valueColor={d ? 'text-emerald-400' : 'text-emerald-600'} />
-        <Metric label="Pending" value={`${n(data.stats.totalPending)} TZS`} sub="In approval pipeline" d={d} valueColor={d ? 'text-amber-400' : 'text-amber-600'} />
+        <Metric
+          label="Settled balance"
+          value={`${n(available)} ${currency}`}
+          sub={`Live from ${pspName} · 1:1 nTZS backing`}
+          d={d}
+          valueColor={d ? 'text-emerald-400' : 'text-emerald-600'}
+        />
+        <Metric
+          label="Pending settlement"
+          value={`${n(pending)} ${currency}`}
+          sub={`Received by ${pspName} · not yet settled`}
+          d={d}
+          valueColor={d ? 'text-amber-400' : 'text-amber-600'}
+        />
       </div>
 
       {/* Deposit flow */}

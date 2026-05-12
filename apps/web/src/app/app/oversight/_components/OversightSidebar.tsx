@@ -112,14 +112,7 @@ export function OversightSidebar({ isDark, onToggle, activeSection, onNavigate }
     >
       {/* Header — same height as content header */}
       <div className="flex items-center gap-3 px-5 py-6 shrink-0" style={{ borderBottom: `1px solid ${borderColor}` }}>
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600/20"
-          style={{ border: '1px solid rgba(99,102,241,0.3)' }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4 text-indigo-400">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-          </svg>
-        </div>
+        <img src="/ntzs-icon.svg" alt="nTZS" className="h-9 w-9 shrink-0 rounded-xl" />
         <div>
           <div className={`font-mono text-sm font-bold tracking-wider ${hdrLabel}`}>Oversight</div>
           <div className={`font-mono text-[9px] tracking-widest uppercase ${hdrSub}`}>Operations Portal</div>
