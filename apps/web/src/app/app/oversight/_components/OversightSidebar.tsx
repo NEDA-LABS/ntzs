@@ -78,8 +78,14 @@ const SECTIONS = [
   },
 ]
 
-export function OversightSidebar() {
+interface OversightSidebarProps {
+  isDark: boolean
+  onToggle: () => void
+}
+
+export function OversightSidebar({ isDark, onToggle }: OversightSidebarProps) {
   const [active, setActive] = useState('overview')
+  const d = isDark
 
   useEffect(() => {
     const onScroll = () => {
@@ -98,11 +104,33 @@ export function OversightSidebar() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  // Theme tokens
+  const bg        = d ? 'bg-black'              : 'bg-white'
+  const border    = d ? 'rgba(255,255,255,0.06)' : 'rgb(229,231,235)'
+  const hdrLabel  = d ? 'text-white'             : 'text-gray-900'
+  const hdrSub    = d ? 'text-zinc-600'          : 'text-gray-400'
+  const navLabel  = d ? 'text-zinc-700'          : 'text-gray-400'
+  const activeBtn = d ? 'bg-white/[0.06] text-white'                         : 'bg-gray-100 text-gray-900'
+  const inactiveBtn = d ? 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'
+  const activeIcon = d ? 'text-white'            : 'text-gray-900'
+  const inactiveIcon = d ? 'text-zinc-600'       : 'text-gray-400'
+  const activeDot = d ? 'bg-blue-400'            : 'bg-blue-500'
+  const liveCard  = d ? 'bg-white/[0.03]'        : 'bg-gray-50'
+  const liveTxt   = d ? 'text-zinc-500'          : 'text-gray-500'
+  const footerCard = d ? 'bg-white/[0.03]'       : 'bg-gray-50'
+  const footerName = d ? 'text-zinc-300'         : 'text-gray-700'
+  const footerSub  = d ? 'text-zinc-600'         : 'text-gray-400'
+  const toggleBg   = d ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-100'
+  const toggleTxt  = d ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'
+
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-black lg:flex" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+    <aside
+      className={`fixed inset-y-0 left-0 z-30 hidden w-60 flex-col ${bg} lg:flex`}
+      style={{ borderRight: `1px solid ${border}` }}
+    >
 
       {/* Header */}
-      <div className="px-5 py-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="px-5 py-6" style={{ borderBottom: `1px solid ${border}` }}>
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/20" style={{ border: '1px solid rgba(99,102,241,0.3)' }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4 text-indigo-400">
@@ -110,15 +138,15 @@ export function OversightSidebar() {
             </svg>
           </div>
           <div>
-            <div className="font-mono text-sm font-bold tracking-wider text-white">Oversight</div>
-            <div className="font-mono text-[9px] tracking-widest text-zinc-600 uppercase">Regulator Portal</div>
+            <div className={`font-mono text-sm font-bold tracking-wider ${hdrLabel}`}>Oversight</div>
+            <div className={`font-mono text-[9px] tracking-widest uppercase ${hdrSub}`}>Operations Portal</div>
           </div>
         </div>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-4 py-5">
-        <div className="mb-3 px-1 font-mono text-[9px] tracking-widest text-zinc-700 uppercase">Navigation</div>
+        <div className={`mb-3 px-1 font-mono text-[9px] tracking-widest uppercase ${navLabel}`}>Navigation</div>
         <div className="space-y-0.5">
           {SECTIONS.map(s => {
             const isActive = active === s.id
@@ -127,38 +155,57 @@ export function OversightSidebar() {
                 key={s.id}
                 onClick={() => scrollTo(s.id)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all ${
-                  isActive
-                    ? 'bg-white/[0.06] text-white'
-                    : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+                  isActive ? activeBtn : inactiveBtn
                 }`}
               >
-                <span className={isActive ? 'text-white' : 'text-zinc-600'}>{s.icon}</span>
+                <span className={isActive ? activeIcon : inactiveIcon}>{s.icon}</span>
                 <span className="font-mono text-xs tracking-wide">{s.label}</span>
-                {isActive && <span className="ml-auto h-1 w-1 rounded-full bg-blue-400" />}
+                {isActive && <span className={`ml-auto h-1 w-1 rounded-full ${activeDot}`} />}
               </button>
             )
           })}
         </div>
 
         {/* Live data card */}
-        <div className="mt-6 rounded-xl bg-white/[0.03] p-4" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className={`mt-6 rounded-xl p-4 ${liveCard}`} style={{ border: `1px solid ${border}` }}>
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-mono text-xs font-semibold text-emerald-400">Live Data</span>
           </div>
-          <p className="mt-2 font-mono text-[10px] leading-relaxed text-zinc-500">
+          <p className={`mt-2 font-mono text-[10px] leading-relaxed ${liveTxt}`}>
             All metrics update in real-time from blockchain and database.
           </p>
         </div>
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="rounded-xl bg-white/[0.03] px-4 py-3" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="font-mono text-xs font-semibold text-zinc-300">nTZS Stablecoin</div>
+      {/* Theme toggle + Footer */}
+      <div className="px-4 pb-4 pt-3" style={{ borderTop: `1px solid ${border}` }}>
+
+        {/* Theme toggle button */}
+        <button
+          onClick={onToggle}
+          className={`mb-3 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 transition-colors ${toggleBg} ${toggleTxt}`}
+        >
+          {d ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+            </svg>
+          )}
+          <span className="font-mono text-[10px] tracking-widest uppercase">
+            {d ? 'Light mode' : 'Dark mode'}
+          </span>
+        </button>
+
+        {/* Brand card */}
+        <div className={`rounded-xl px-4 py-3 ${footerCard}`} style={{ border: `1px solid ${border}` }}>
+          <div className={`font-mono text-xs font-semibold ${footerName}`}>nTZS Stablecoin</div>
           <div className="mt-0.5 flex items-center gap-1.5">
             <div className="h-1 w-1 rounded-full bg-blue-400" />
-            <span className="font-mono text-[9px] tracking-widest text-zinc-600 uppercase">Base Mainnet</span>
+            <span className={`font-mono text-[9px] tracking-widest uppercase ${footerSub}`}>Base Mainnet</span>
           </div>
         </div>
       </div>
