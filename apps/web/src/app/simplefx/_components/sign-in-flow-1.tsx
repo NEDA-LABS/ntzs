@@ -464,7 +464,11 @@ export const SignInPage = ({ className }: SignInPageProps) => {
             body: JSON.stringify({ email, code: fullCode }),
           });
           if (!res.ok) {
-            setAuthError("Invalid code. Please try again.");
+            const body = await res.json().catch(() => ({}));
+            const msg = res.status === 401
+              ? "Invalid code. Please try again."
+              : (body.error ?? "Something went wrong. Please request a new code.");
+            setAuthError(msg);
             setCode(["", "", "", "", "", ""]);
             setTimeout(() => codeInputRefs.current[0]?.focus(), 50);
             return;

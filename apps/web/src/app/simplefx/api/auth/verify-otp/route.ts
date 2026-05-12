@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyOtp } from '@/lib/fx/otp';
+import { verifyOtp, consumeOtp } from '@/lib/fx/otp';
 import { createSession, setSessionCookie } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
 import { lpAccounts } from '@ntzs/db';
@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'email and code required' }, { status: 400 });
     }
 
-    const valid = await verifyOtp(email, code);
-    if (!valid) {
+    const otpId = await verifyOtp(email, code);
+    if (!otpId) {
       return NextResponse.json({ error: 'Invalid or expired code' }, { status: 401 });
     }
 
@@ -50,9 +50,12 @@ export async function POST(req: NextRequest) {
     const token = await createSession(lp.id);
     await setSessionCookie(token);
 
+    // Mark OTP as used only after the full flow succeeds
+    await consumeOtp(otpId);
+
     return NextResponse.json({ ok: true, lpId: lp.id });
   } catch (err) {
     console.error('[verify-otp]', err);
-    return NextResponse.json({ error: 'Verification failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Server error. Please try again.' }, { status: 500 });
   }
 }

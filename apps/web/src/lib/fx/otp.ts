@@ -14,7 +14,7 @@ export function hashOtp(code: string): string {
 export async function storeOtp(email: string, code: string): Promise<void> {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 min
-  const normalized = email.toLowerCase();
+  const normalized = email.toLowerCase().trim();
 
   await db
     .delete(lpOtpCodes)
@@ -32,28 +32,29 @@ export async function storeOtp(email: string, code: string): Promise<void> {
   });
 }
 
-export async function verifyOtp(email: string, code: string): Promise<boolean> {
+export async function verifyOtp(email: string, code: string): Promise<string | null> {
   const rows = await db
     .select()
     .from(lpOtpCodes)
     .where(
       and(
-        eq(lpOtpCodes.email, email.toLowerCase()),
-        eq(lpOtpCodes.codeHash, hashOtp(code)),
+        eq(lpOtpCodes.email, email.toLowerCase().trim()),
+        eq(lpOtpCodes.codeHash, hashOtp(code.trim())),
         eq(lpOtpCodes.used, false),
         gt(lpOtpCodes.expiresAt, new Date())
       )
     )
     .limit(1);
 
-  if (!rows.length) return false;
+  if (!rows.length) return null;
+  return rows[0].id;
+}
 
+export async function consumeOtp(id: string): Promise<void> {
   await db
     .update(lpOtpCodes)
     .set({ used: true })
-    .where(eq(lpOtpCodes.id, rows[0].id));
-
-  return true;
+    .where(eq(lpOtpCodes.id, id));
 }
 
 export async function sendOtpEmail(email: string, code: string): Promise<void> {

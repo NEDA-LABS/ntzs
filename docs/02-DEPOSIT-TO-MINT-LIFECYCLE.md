@@ -1,110 +1,238 @@
-# Deposit to Mint Lifecycle
+# 02 — Deposit to Mint Lifecycle
 
-This document describes the end-to-end lifecycle for issuance of nTZS.
+**Document owner**: NEDA Labs Limited  
+**Last updated**: May 2026  
+**Classification**: Regulatory — Bank of Tanzania Sandbox Submission
 
-## State Machine
+---
 
-Primary entity: `deposit_requests`.
+## 1. Overview
+
+This document describes the complete end-to-end lifecycle for nTZS issuance — from a user initiating a TZS deposit through to tokens appearing in their on-chain wallet.
+
+The primary off-chain record is the `deposit_requests` table. Every state transition is logged to `audit_logs`.
+
+---
+
+## 2. Deposit State Machine
 
 ```mermaid
 stateDiagram-v2
-  [*] --> submitted
+    direction LR
 
-  submitted --> mint_pending: payment confirmed and approvals satisfied
-  submitted --> mint_requires_safe: payment confirmed and amount >= SAFE threshold
+    [*] --> submitted : User initiates deposit
 
-  mint_pending --> mint_processing: worker claims job
-  mint_processing --> minted: on-chain mint succeeds
-  mint_processing --> mint_failed: on-chain mint fails
+    submitted --> kyc_pending : KYC check required
+    kyc_pending --> kyc_approved : KYC approved by compliance
+    kyc_pending --> kyc_rejected : KYC rejected
+    kyc_approved --> awaiting_fiat : Awaiting payment confirmation
+    submitted --> awaiting_fiat : KYC already approved
 
-  mint_failed --> mint_pending: retry
+    awaiting_fiat --> fiat_confirmed : PSP webhook / polling confirms payment
+    fiat_confirmed --> bank_approved : Bank approval recorded
+    bank_approved --> platform_approved : Platform compliance approval
+    platform_approved --> mint_pending : Ready for minting
 
-  submitted --> cancelled: payment initiation failed (for ZenoPay)
-  submitted --> rejected: rejected during compliance/bank review
+    mint_pending --> mint_processing : Worker claims job (row lock)
+    mint_processing --> minted : On-chain mint confirmed ✓
+    mint_processing --> mint_failed : On-chain mint failed
 
-  mint_requires_safe --> minted: Safe-approved mint confirmed and recorded
+    mint_failed --> mint_pending : Admin retries
+
+    submitted --> cancelled : Payment initiation failed
+    submitted --> rejected : Rejected during compliance review
+    kyc_approved --> rejected : Rejected post-KYC
 ```
 
-## How deposits are created
+### State Descriptions
 
-### User flow (ZenoPay / mobile money)
+| State | Meaning |
+|---|---|
+| `submitted` | Deposit record created; PSP payment order issued |
+| `kyc_pending` | User identity verification in progress |
+| `kyc_approved` | KYC passed; awaiting fiat confirmation |
+| `kyc_rejected` | KYC failed; deposit cannot proceed |
+| `awaiting_fiat` | Waiting for mobile money / bank transfer confirmation |
+| `fiat_confirmed` | PSP has confirmed receipt of TZS funds |
+| `bank_approved` | Bank has reviewed and approved the deposit |
+| `platform_approved` | Platform compliance has approved the deposit |
+| `mint_pending` | Deposit queued for on-chain minting |
+| `mint_processing` | Worker has claimed the job (row-locked) |
+| `minted` | Tokens successfully minted to user wallet ✓ |
+| `mint_failed` | On-chain mint transaction failed; retryable |
+| `cancelled` | User or system cancelled before fiat confirmation |
+| `rejected` | Rejected by compliance or bank; not minted |
+
+---
+
+## 3. How Deposits Are Created
+
+### 3.1 Mobile Money (Snippe — primary PSP)
 
 File: `apps/web/src/app/app/user/deposits/new/actions.ts`
 
-- User submits amount and phone.
-- App inserts a `deposit_requests` row with:
-  - `status = submitted`
-  - `payment_provider = zenopay`
-  - `buyer_phone` formatted to Tanzanian format
-- App calls ZenoPay `create payment` with:
-  - `order_id = deposit_requests.id`
-  - `webhook_url = {NEXT_PUBLIC_APP_URL}/api/webhooks/zenopay`
+1. User submits amount (TZS) and mobile phone number.
+2. App inserts a `deposit_requests` row:
+   - `status = submitted`
+   - `payment_provider = snippe`
+   - `buyer_phone` formatted to Tanzanian E.164 format
+3. App calls Snippe API to create a payment order:
+   - `order_id = deposit_requests.id`
+   - `webhook_url = {APP_URL}/api/webhooks/snippe/payment`
+4. Snippe pushes a USSD / M-Pesa prompt to the user's phone.
 
-### User flow (bank transfer)
+### 3.2 Card / Alternative (ZenoPay — secondary PSP)
 
-- Deposit is created as `submitted` with `payment_provider = bank_transfer`.
-- Fiat confirmation is handled through the admin/compliance workflow (out-of-band transfer verification).
+1. Same flow as above with `payment_provider = zenopay`.
+2. Webhook: `POST /api/webhooks/zenopay`
 
-## How a deposit advances from `submitted`
+### 3.3 Bank Transfer
 
-There are two mechanisms:
+1. Deposit created as `submitted` with `payment_provider = bank_transfer`.
+2. Fiat confirmation handled through admin/compliance workflow (out-of-band bank statement verification).
+3. Admin manually advances deposit after verification.
 
-### A) Webhook (preferred)
+---
 
-Endpoint: `POST /api/webhooks/zenopay`
+## 4. Payment Confirmation Mechanisms
 
-- ZenoPay sends webhook payload containing `order_id` and `payment_status`.
-- When `payment_status == COMPLETED`, the web app updates the deposit:
-  - `status = mint_pending` if amount < threshold
-  - `status = mint_requires_safe` if amount >= threshold
-  - Stores PSP reference fields (`pspReference`, `pspChannel`)
+### 4.1 Webhook (preferred path)
 
-### B) Polling (fallback)
+```mermaid
+sequenceDiagram
+    participant PSP as Snippe / ZenoPay
+    participant WH as Webhook Handler
+    participant DB as Database
 
-- Worker polls ZenoPay order status for deposits still in `submitted`.
-- If ZenoPay indicates completion, the worker updates the deposit to `mint_pending` or `mint_requires_safe`.
+    PSP->>WH: POST /api/webhooks/snippe/payment
+    Note over WH: Verify HMAC-SHA256 signature
+    WH->>DB: Fetch deposit_request by order_id
+    WH->>DB: Update → fiat_confirmed
+    WH->>DB: Write audit_log entry
+```
 
-### Manual fallback (admin)
+- Snippe webhooks are HMAC-SHA256 signed using `SNIPPE_WEBHOOK_SECRET`.
+- Handler verifies signature before processing.
+- Handler only advances deposits in `submitted` / `awaiting_fiat` state.
 
-- Backstage includes a manual transaction-id input for cases where the PSP order-status endpoint is unreliable.
-- This allows an admin to advance a deposit only when they have verified payment in the PSP dashboard.
+### 4.2 Polling (fallback)
 
-## Minting thresholds and Safe flow
+- Cron job (`/api/cron/poll-snippe`, `/api/cron/poll-zenopay`) periodically calls the PSP order-status API.
+- Advances deposits where the PSP confirms payment but the webhook was not received.
 
-- `SAFE_MINT_THRESHOLD_TZS = 9000`
-- For deposits at or above the threshold:
-  - Deposit becomes `mint_requires_safe` and is expected to be minted via a multisig Safe.
-  - After Safe execution, admin records the tx hash and the system verifies the mint via transfer logs and updates the DB.
+### 4.3 Manual Admin Override
 
-## Minting worker process
+- Available in Backstage for cases where PSP data is unreliable.
+- Admin enters the PSP transaction ID after verifying it independently in the PSP dashboard.
+- All manual overrides are recorded in `audit_logs` with the acting admin's user ID.
 
-File: `apps/worker/src/index.ts`
+---
+
+## 5. Dual Approval Requirement
+
+Before a deposit can reach `mint_pending`, it must pass two approval gates:
+
+```mermaid
+flowchart LR
+    FC[fiat_confirmed] --> BA{Bank Admin\nApproval}
+    BA -->|Approved| BA2[bank_approved]
+    BA -->|Rejected| REJ[rejected]
+    BA2 --> PA{Platform Compliance\nApproval}
+    PA -->|Approved| MP[mint_pending]
+    PA -->|Rejected| REJ
+```
+
+Both approvals are recorded in the `deposit_approvals` table with:
+- Approver `user_id`
+- Decision timestamp
+- Optional notes
+
+This two-gate structure ensures no single actor can unilaterally trigger token issuance.
+
+---
+
+## 6. Minting Worker Process
+
+File: `apps/worker/src/index.ts` and `apps/web/src/app/api/cron/process-mints/route.ts`
+
+```mermaid
+flowchart TD
+    A[Poll for mint_pending deposits] --> B{Daily cap\nheadroom?}
+    B -- No --> C[Skip — return to pending]
+    B -- Yes --> D[Atomic claim\nFOR UPDATE SKIP LOCKED]
+    D --> E[Reserve daily issuance]
+    E --> F[Build mint transaction]
+    F --> G[Submit to Base L2]
+    G --> H{On-chain\nconfirmed?}
+    H -- Yes --> I[Record mint_transactions\nUpdate → minted\nRelease daily reservation]
+    H -- No --> J[Update → mint_failed\nRelease reservation]
+```
 
 Key properties:
 
-- Claims one mint job at a time using an atomic update query with `for update skip locked`.
-- Uses `daily_issuance` to enforce a daily issuance cap.
-- Uses `ethers` to submit a mint transaction.
-- Records:
-  - `mint_transactions.tx_hash`
-  - `mint_transactions.status`
-  - `deposit_requests.status`
-  - `audit_logs`
+| Property | Implementation |
+|---|---|
+| **Atomic job claim** | `FOR UPDATE SKIP LOCKED` — prevents double-processing |
+| **Daily cap enforcement** | `daily_issuance` table; `reserved_tzs + issued_tzs ≤ cap_tzs` |
+| **Single mint record** | `mint_transactions` has unique constraint on `deposit_request_id` |
+| **On-chain verification** | Transaction receipt checked for successful `Transfer(0x0 → user, amount)` event |
+| **Idempotency** | UUID deposit IDs used as PSP `order_id`; row conflict on re-insert |
 
-## Idempotency and safety properties
+---
 
-- Deposit IDs are UUIDs; ZenoPay uses them as `order_id`.
-- Minting job claim is atomic and uses row locking to prevent double-processing.
-- `mint_transactions` uses `deposit_request_id` as a conflict target so repeated processing updates the same row.
-- Safe flow confirmation verifies the actual on-chain mint via the `Transfer` event.
+## 7. Daily Issuance Cap
 
-## Failure modes
+The `daily_issuance` table enforces a configurable per-day ceiling:
 
-- Webhook not received:
-  - Worker polling provides a fallback.
-- PSP order-status returns empty/invalid response:
-  - Admin can manually input transaction ID after verification.
-- RPC or mint failure:
-  - Deposit transitions to `mint_failed` and can be retried.
-- Daily issuance cap exceeded:
-  - Job is returned to `mint_pending` and `mint_transactions` is marked as cap exceeded.
+| Column | Purpose |
+|---|---|
+| `day` | UTC date (primary key) |
+| `cap_tzs` | Maximum TZS issuable this day (default: 100,000,000) |
+| `reserved_tzs` | Sum of in-flight (claimed but not yet minted) amounts |
+| `issued_tzs` | Sum of successfully minted amounts for the day |
+
+- **Reserve**: incremented atomically when worker claims a job
+- **Release**: decremented if mint fails; converted to issued if mint succeeds
+- **Rollover**: new row created automatically at UTC midnight
+
+This cap applies to all minting paths including the standard worker flow.
+
+---
+
+## 8. Failure Modes and Recovery
+
+| Failure | Symptom | Recovery |
+|---|---|---|
+| Webhook not received | Deposit stuck in `awaiting_fiat` | Cron polling picks it up automatically |
+| PSP order-status unavailable | Polling cannot confirm | Admin manually advances via Backstage after PSP dashboard verification |
+| RPC / network error | Deposit moves to `mint_failed` | Admin triggers retry from Backstage |
+| Daily cap exceeded | Job skipped, remains `mint_pending` | Waits for UTC midnight rollover; or cap can be raised by super admin |
+| Duplicate webhook delivery | Second webhook finds deposit no longer in advanceable state | No-op — state check prevents double-advancement |
+| Mint transaction under-priced | `mint_failed` with gas error | Admin retries; worker uses current gas oracle |
+
+---
+
+## 9. Reconciliation
+
+After minting, the on-chain `Transfer` event from the zero address is the canonical proof of issuance.
+
+If the on-chain total supply diverges from `DB Minted`:
+
+1. Identify the divergent transaction on-chain via Basescan.
+2. Determine if a corresponding `deposit_request` exists.
+3. If no corresponding deposit: create a `reconciliation_entries` row (types: `untracked_mint`, `test_mint`, `manual_correction`, `double_mint`, `opening_balance`, `other`).
+4. Verify: **On-Chain Supply = DB Minted + Reconciliation Entries**.
+
+The Oversight dashboard shows this calculation in real time.
+
+---
+
+## 10. Auditor Checks
+
+- Verify `deposit_request` state transitions are monotonic and use authorized actors only.
+- Verify every `minted` deposit has a corresponding `mint_transactions` row with a valid `tx_hash`.
+- Verify `Transfer(from=0x0)` events on-chain match the `mint_transactions` records.
+- Verify dual-approval (`deposit_approvals`) exists for all minted deposits.
+- Verify daily issuance arithmetic: `reserved_tzs + issued_tzs ≤ cap_tzs` for each day.
+- Verify no deposits were minted while in a non-approved state.
+- Verify webhook signature validation is enforced on the Snippe handler (`SNIPPE_WEBHOOK_SECRET`).

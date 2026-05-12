@@ -96,6 +96,10 @@ export async function POST(request: NextRequest) {
     return new Response((e as Error).message, { status: 503 })
   }
 
+  if (!toCfg.solverPrivateKey) {
+    return new Response('Swap service not available', { status: 503 })
+  }
+
   let fromTokenAddress: string, toTokenAddress: string
   try {
     fromTokenAddress = getChainToken(fromChain, fromToken).address.toLowerCase()

@@ -1,4 +1,57 @@
-# WaaS Partner API Reference
+# 09 — WaaS Partner API Reference
+
+**Document owner**: NEDA Labs Limited  
+**Last updated**: May 2026  
+**Classification**: Regulatory — Bank of Tanzania Sandbox Submission
+
+---
+
+## 1. Overview
+
+The WaaS (Wallet-as-a-Service) API allows licensed partner applications to embed nTZS functionality — wallet provisioning, deposits, withdrawals, swaps, and transfers — under their own brand. Partners authenticate with a bearer token scoped to their sub-wallet namespace.
+
+All endpoints are under `/api/v1/` on the base URL `https://www.ntzs.co.tz`.
+
+### Partner Onboarding Flow
+
+```mermaid
+flowchart LR
+    A[Partner signs agreement] --> B[NEDA Labs provisions\npartner account + API key]
+    B --> C[Partner receives\nBearer token]
+    C --> D[Partner calls\nPOST /api/v1/users\nto provision wallets]
+    D --> E[Partner users\ncan deposit, swap, withdraw]
+```
+
+### Swap Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant PA as Partner App
+    participant API as nTZS API
+
+    PA->>API: GET /swap/rate?from=USDT&to=NTZS&amount=100
+    API-->>PA: { expectedOutput, minOutput, expiresAt }
+    Note over PA: Show rate to user, wait for confirmation
+    PA->>API: POST /swap (SSE stream)
+    API-->>PA: SSE: CHECKING → SENDING → FILLING → FILLED
+    Note over PA: Display txHash and output amount to user
+```
+
+### Supported Operations
+
+| Capability | Endpoint |
+|---|---|
+| Exchange rate quote | `GET /api/v1/swap/rate` |
+| Execute swap | `POST /api/v1/swap` (SSE) |
+| Create user + wallet | `POST /api/v1/users` |
+| Get user profile | `GET /api/v1/users/:id` |
+| List sub-wallets | `GET /api/v1/partners/sub-wallets` |
+| LP pool balances | `GET /api/v1/mm/balances` |
+| LP withdraw | `POST /api/v1/mm/withdraw` |
+| LP activate/deactivate pool | `PATCH /api/v1/mm/activate` |
+| Regenerate API key | `POST /api/v1/partners/regenerate-key` |
+
+---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
 
