@@ -13,12 +13,6 @@ import {
   wallets,
   burnRequests,
 } from '@ntzs/db'
-import {
-  IconChain,
-  IconCoins,
-  IconClock,
-  IconUsers,
-} from '@/app/app/_components/icons'
 import { ExportReportButton } from './_components/ExportReportButton'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
@@ -42,12 +36,77 @@ async function getOnChainTotalSupply(): Promise<string> {
   }
 }
 
+// ── Design system helpers ─────────────────────────────────────────────────────
+
+function SectionLabel({ index, label }: { index: string; label: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-5 h-px bg-blue-400/50" />
+      <span className="font-mono text-[9px] tracking-widest text-blue-400/60 uppercase">{index} / {label}</span>
+      <div className="flex-1 h-px bg-white/5" />
+    </div>
+  )
+}
+
+function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="border border-white/8 bg-white/[0.02] p-5">
+      <div className="font-mono text-[9px] tracking-widest text-zinc-500 uppercase">{label}</div>
+      <div className="mt-3 font-mono text-2xl font-bold tabular-nums text-white">{value}</div>
+      {sub && <div className="mt-1.5 font-mono text-xs text-zinc-600">{sub}</div>}
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    minted:           'border-emerald-500/40 text-emerald-400',
+    submitted:        'border-blue-500/40 text-blue-400',
+    fiat_confirmed:   'border-blue-500/40 text-blue-400',
+    bank_approved:    'border-violet-500/40 text-violet-400',
+    platform_approved:'border-violet-500/40 text-violet-400',
+    mint_pending:     'border-amber-500/40 text-amber-400',
+    mint_requires_safe:'border-amber-500/40 text-amber-400',
+    mint_processing:  'border-amber-500/40 text-amber-400',
+    mint_failed:      'border-red-500/40 text-red-400',
+    rejected:         'border-red-500/40 text-red-400',
+    cancelled:        'border-zinc-600/40 text-zinc-500',
+    burned:           'border-emerald-500/40 text-emerald-400',
+    failed:           'border-red-500/40 text-red-400',
+    requires_second_approval: 'border-amber-500/40 text-amber-400',
+    kyc_pending:      'border-amber-500/40 text-amber-400',
+    kyc_approved:     'border-emerald-500/40 text-emerald-400',
+    kyc_rejected:     'border-red-500/40 text-red-400',
+    awaiting_fiat:    'border-zinc-500/40 text-zinc-400',
+  }
+  const s = styles[status] ?? 'border-zinc-600/40 text-zinc-500'
+  return (
+    <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${s}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  )
+}
+
+function TxLink({ hash, explorer = 'tx' }: { hash: string; explorer?: 'tx' | 'token' | 'address' }) {
+  return (
+    <a
+      href={`https://basescan.org/${explorer}/${hash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono text-[10px] text-blue-400/70 hover:text-blue-400 underline underline-offset-2"
+    >
+      {hash.slice(0, 10)}...
+    </a>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function OversightDashboard() {
   await requireAnyRole(['platform_compliance', 'super_admin'])
 
   const { db } = getDb()
 
-  // Get aggregate stats
   const [stats] = await db
     .select({
       totalUsers: sql<number>`count(distinct ${users.id})`.mapWith(Number),
@@ -58,7 +117,6 @@ export default async function OversightDashboard() {
     .from(depositRequests)
     .leftJoin(users, eq(users.id, depositRequests.userId))
 
-  // KYC stats
   const [kycStats] = await db
     .select({
       total: sql<number>`count(*)`.mapWith(Number),
@@ -68,7 +126,6 @@ export default async function OversightDashboard() {
     })
     .from(kycCases)
 
-  // Today's issuance
   const today = new Date().toISOString().slice(0, 10)
   const [todayIssuance] = await db
     .select()
@@ -76,7 +133,6 @@ export default async function OversightDashboard() {
     .where(eq(dailyIssuance.day, today))
     .limit(1)
 
-  // Recent deposits with full details
   const recentDeposits = await db
     .select({
       id: depositRequests.id,
@@ -94,7 +150,6 @@ export default async function OversightDashboard() {
     .orderBy(desc(depositRequests.createdAt))
     .limit(20)
 
-  // Recent audit logs
   const recentAuditLogs = await db
     .select({
       id: auditLogs.id,
@@ -110,7 +165,6 @@ export default async function OversightDashboard() {
     .orderBy(desc(auditLogs.createdAt))
     .limit(15)
 
-  // Deposit status breakdown
   const statusBreakdown = await db
     .select({
       status: depositRequests.status,
@@ -120,7 +174,6 @@ export default async function OversightDashboard() {
     .from(depositRequests)
     .groupBy(depositRequests.status)
 
-  // Recent burns (withdrawals) with full details
   const recentBurns = await db
     .select({
       id: burnRequests.id,
@@ -140,7 +193,6 @@ export default async function OversightDashboard() {
     .orderBy(desc(burnRequests.createdAt))
     .limit(20)
 
-  // Burn stats
   const [burnStats] = await db
     .select({
       totalBurned: sql<number>`coalesce(sum(case when ${burnRequests.status} = 'burned' then ${burnRequests.amountTzs} else 0 end), 0)`.mapWith(Number),
@@ -149,500 +201,376 @@ export default async function OversightDashboard() {
     })
     .from(burnRequests)
 
-  // On-chain total supply
   const onChainSupply = await getOnChainTotalSupply()
 
-  // User count
   const [userCount] = await db
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(users)
 
-  // Wallet count
   const [walletCount] = await db
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(wallets)
 
-  const formatNumber = (n: number) => n.toLocaleString()
-
-  const statusColors: Record<string, string> = {
-    minted: 'bg-emerald-500/20 text-emerald-300',
-    submitted: 'bg-blue-500/20 text-blue-300',
-    mint_pending: 'bg-amber-500/20 text-amber-300',
-    mint_processing: 'bg-violet-500/20 text-violet-300',
-    mint_failed: 'bg-red-500/20 text-red-300',
-    rejected: 'bg-red-500/20 text-red-300',
-  }
+  const n = (v: number) => v.toLocaleString()
+  const issuedToday = todayIssuance?.issuedTzs ?? 0
+  const capToday = todayIssuance?.capTzs ?? 100_000_000
+  const capPct = Math.min(100, (issuedToday / capToday) * 100)
 
   return (
-    <main className="space-y-6 p-6">
-      {/* Header */}
-      <section id="overview" className="scroll-mt-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Regulator Oversight Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Real-time transparency into nTZS issuance, reserves, and compliance
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-black font-mono text-white">
+
+      {/* ── Page header ─────────────────────────────────────────────────── */}
+      <div className="border-b border-white/8 px-6 py-5 lg:px-10">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-1 h-4 bg-blue-400" />
+              <h1 className="text-sm font-bold tracking-widest uppercase text-white">
+                Oversight Dashboard
+              </h1>
+            </div>
+            <div className="mt-1.5 flex items-center gap-3 text-[9px] tracking-widest text-zinc-600 uppercase">
+              <span>nTZS Stablecoin Platform</span>
+              <div className="w-px h-2.5 bg-white/10" />
+              <span>Real-time Operations</span>
+              <div className="w-px h-2.5 bg-white/10" />
+              <div className="flex items-center gap-1.5">
+                <div className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+                <span className="text-blue-400/60">Live</span>
+              </div>
+            </div>
+          </div>
           <ExportReportButton />
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-2 ring-1 ring-emerald-500/20">
-            <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-            <span className="text-sm font-medium text-emerald-300">Live Data</span>
-          </div>
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Supply (On-Chain)"
-          value={`${formatNumber(parseFloat(onChainSupply))} nTZS`}
-          subtitle="Verified on Base Mainnet"
-          icon={<IconChain className="h-5 w-5" />}
-          color="emerald"
-        />
-        <MetricCard
-          title="Total Minted (DB)"
-          value={`${formatNumber(stats?.totalMinted || 0)} TZS`}
-          subtitle={`${stats?.totalDeposits || 0} deposits processed`}
-          icon={<IconCoins className="h-5 w-5" />}
-          color="violet"
-        />
-        <MetricCard
-          title="Pending Issuance"
-          value={`${formatNumber(stats?.totalPending || 0)} TZS`}
-          subtitle="Awaiting confirmation"
-          icon={<IconClock className="h-5 w-5" />}
-          color="amber"
-        />
-        <MetricCard
-          title="Registered Users"
-          value={formatNumber(userCount?.count || 0)}
-          subtitle={`${walletCount?.count || 0} wallets linked`}
-          icon={<IconUsers className="h-5 w-5" />}
-          color="blue"
-        />
-      </div>
+      <div className="space-y-10 px-6 py-8 lg:px-10">
 
-      </section>
-
-      {/* Reserve Verification */}
-      <section id="reserves" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <h2 className="text-lg font-semibold text-white">Reserve Verification</h2>
-        <p className="mt-1 text-sm text-zinc-400">
-          1:1 backing verification between on-chain tokens and fiat reserves
-        </p>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">On-Chain Supply</p>
-            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(parseFloat(onChainSupply))}</p>
-            <p className="mt-1 text-xs text-zinc-500">nTZS tokens</p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Confirmed Deposits</p>
-            <p className="mt-2 text-2xl font-bold text-white">{formatNumber(stats?.totalMinted || 0)}</p>
-            <p className="mt-1 text-xs text-zinc-500">TZS received</p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Reserve Status</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-400">✓ Backed</p>
-            <p className="mt-1 text-xs text-zinc-500">1:1 ratio maintained</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Daily Issuance Cap */}
-      <section id="issuance" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <h2 className="text-lg font-semibold text-white">Daily Issuance Control</h2>
-        <p className="mt-1 text-sm text-zinc-400">Today's issuance against regulatory cap</p>
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-400">Issued Today</span>
-            <span className="font-medium text-white">
-              {formatNumber(todayIssuance?.issuedTzs || 0)} / {formatNumber(todayIssuance?.capTzs || 100000000)} TZS
-            </span>
-          </div>
-          <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-500 transition-all"
-              style={{
-                width: `${Math.min(100, ((todayIssuance?.issuedTzs || 0) / (todayIssuance?.capTzs || 100000000)) * 100)}%`,
-              }}
+        {/* ── 01 / Key Metrics ────────────────────────────────────────────── */}
+        <section id="overview">
+          <SectionLabel index="01" label="Key Metrics" />
+          <div className="grid gap-px border border-white/8 bg-white/8 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              label="On-chain supply"
+              value={`${n(Math.floor(parseFloat(onChainSupply)))} nTZS`}
+              sub="Base mainnet totalSupply()"
+            />
+            <MetricCard
+              label="Total minted (DB)"
+              value={`${n(stats?.totalMinted ?? 0)} TZS`}
+              sub={`${n(stats?.totalDeposits ?? 0)} deposits processed`}
+            />
+            <MetricCard
+              label="Pending issuance"
+              value={`${n(stats?.totalPending ?? 0)} TZS`}
+              sub="Awaiting confirmation"
+            />
+            <MetricCard
+              label="Registered users"
+              value={n(userCount?.count ?? 0)}
+              sub={`${n(walletCount?.count ?? 0)} wallets linked`}
             />
           </div>
-          <div className="mt-2 flex justify-between text-xs text-zinc-500">
-            <span>0%</span>
-            <span>
-              {(((todayIssuance?.issuedTzs || 0) / (todayIssuance?.capTzs || 100000000)) * 100).toFixed(2)}% utilized
-            </span>
-            <span>100%</span>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Two Column Layout */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* KYC/AML Overview */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-          <h2 className="text-lg font-semibold text-white">KYC/AML Overview</h2>
-          <p className="mt-1 text-sm text-zinc-400">User verification status</p>
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20">
-                  <span className="text-emerald-300">✓</span>
-                </div>
-                <span className="text-sm text-zinc-300">Approved</span>
-              </div>
-              <span className="font-semibold text-white">{kycStats?.approved || 0}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/20">
-                  <span className="text-amber-300">⏳</span>
-                </div>
-                <span className="text-sm text-zinc-300">Pending Review</span>
-              </div>
-              <span className="font-semibold text-white">{kycStats?.pending || 0}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/20">
-                  <span className="text-red-300">✗</span>
-                </div>
-                <span className="text-sm text-zinc-300">Rejected</span>
-              </div>
-              <span className="font-semibold text-white">{kycStats?.rejected || 0}</span>
+        {/* ── 02 / Reserve Verification ───────────────────────────────────── */}
+        <section id="reserves">
+          <SectionLabel index="02" label="Reserve Verification" />
+          <div className="grid gap-px border border-white/8 bg-white/8 md:grid-cols-3">
+            <MetricCard
+              label="On-chain supply"
+              value={n(Math.floor(parseFloat(onChainSupply)))}
+              sub="nTZS tokens — Base mainnet"
+            />
+            <MetricCard
+              label="Confirmed deposits (DB)"
+              value={n(stats?.totalMinted ?? 0)}
+              sub="TZS received and minted"
+            />
+            <MetricCard
+              label="Reserve status"
+              value="1:1 Backed"
+              sub="Dual-approval workflow enforced"
+            />
+          </div>
+          <div className="mt-3 border border-white/5 px-4 py-3">
+            <div className="flex items-center gap-2 text-[9px] tracking-widest text-zinc-600 uppercase">
+              <span>Contract</span>
+              <div className="w-px h-2.5 bg-white/8" />
+              <a
+                href={`https://basescan.org/token/${CONTRACT_ADDRESS}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-blue-400/60 hover:text-blue-400 underline underline-offset-2"
+              >
+                {CONTRACT_ADDRESS || 'Not configured'}
+              </a>
+              <div className="w-px h-2.5 bg-white/8" />
+              <span>Base Mainnet · Chain ID 8453</span>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Deposit Status Breakdown */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-          <h2 className="text-lg font-semibold text-white">Deposit Status Distribution</h2>
-          <p className="mt-1 text-sm text-zinc-400">Current pipeline breakdown</p>
-          <div className="mt-4 space-y-2">
-            {statusBreakdown.map((s) => (
-              <div key={s.status} className="flex items-center justify-between rounded-lg bg-black/20 p-3">
-                <div className="flex items-center gap-3">
-                  <span className={`rounded-lg px-2 py-1 text-xs font-medium ${statusColors[s.status] || 'bg-zinc-500/20 text-zinc-300'}`}>
-                    {s.status}
-                  </span>
+        {/* ── 03 / Daily Issuance Control ─────────────────────────────────── */}
+        <section id="issuance">
+          <SectionLabel index="03" label="Daily Issuance Control" />
+          <div className="border border-white/8 bg-white/[0.02] p-6">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <div className="text-[9px] tracking-widest text-zinc-500 uppercase">Issued today</div>
+                <div className="mt-2 font-mono text-2xl font-bold tabular-nums text-white">{n(issuedToday)} TZS</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[9px] tracking-widest text-zinc-500 uppercase">Daily cap</div>
+                <div className="mt-2 font-mono text-2xl font-bold tabular-nums text-zinc-400">{n(capToday)} TZS</div>
+              </div>
+            </div>
+            <div className="mt-5">
+              <div className="h-1.5 bg-white/5 w-full overflow-hidden">
+                <div
+                  className={`h-full transition-all ${capPct > 90 ? 'bg-red-500' : capPct > 70 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                  style={{ width: `${capPct}%` }}
+                />
+              </div>
+              <div className="mt-2 flex justify-between text-[9px] tracking-widest text-zinc-600 uppercase">
+                <span>0%</span>
+                <span>{capPct.toFixed(2)}% utilized</span>
+                <span>100%</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── 04 / KYC & Deposit Pipeline ─────────────────────────────────── */}
+        <section id="kyc">
+          <SectionLabel index="04" label="KYC & Deposit Pipeline" />
+          <div className="grid gap-6 lg:grid-cols-2">
+
+            {/* KYC stats */}
+            <div className="border border-white/8 bg-white/[0.02]">
+              <div className="border-b border-white/8 px-5 py-3">
+                <div className="text-[9px] tracking-widest text-zinc-500 uppercase">Identity Verification</div>
+              </div>
+              <div className="divide-y divide-white/5">
+                {[
+                  { label: 'Approved', value: kycStats?.approved ?? 0, color: 'text-emerald-400' },
+                  { label: 'Pending Review', value: kycStats?.pending ?? 0, color: 'text-amber-400' },
+                  { label: 'Rejected', value: kycStats?.rejected ?? 0, color: 'text-red-400' },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between px-5 py-4">
+                    <span className="font-mono text-xs tracking-wider text-zinc-400 uppercase">{row.label}</span>
+                    <span className={`font-mono text-lg font-bold tabular-nums ${row.color}`}>{n(row.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Status breakdown */}
+            <div className="border border-white/8 bg-white/[0.02]">
+              <div className="border-b border-white/8 px-5 py-3">
+                <div className="text-[9px] tracking-widest text-zinc-500 uppercase">Deposit Status Distribution</div>
+              </div>
+              <div className="divide-y divide-white/5">
+                {statusBreakdown.map(s => (
+                  <div key={s.status} className="flex items-center justify-between px-5 py-3">
+                    <StatusBadge status={s.status} />
+                    <div className="text-right">
+                      <span className="font-mono text-sm font-bold text-white">{n(s.count)}</span>
+                      <span className="ml-2 font-mono text-xs text-zinc-600">{n(s.total)} TZS</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── 05 / Recent Deposits ────────────────────────────────────────── */}
+        <section id="deposits">
+          <SectionLabel index="05" label="Recent Deposits" />
+          <div className="border border-white/8 overflow-x-auto">
+            <table className="min-w-full divide-y divide-white/5 text-xs">
+              <thead>
+                <tr className="bg-white/[0.02]">
+                  {['ID', 'User', 'Amount', 'Provider', 'Reference', 'Status', 'TX Hash', 'Created'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[9px] tracking-widest text-zinc-600 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {recentDeposits.map(dep => (
+                  <tr key={dep.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <code className="font-mono text-[10px] text-zinc-500">{dep.id.slice(0, 8)}</code>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-zinc-300">{dep.userEmail ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-sm font-semibold tabular-nums text-white">{n(dep.amountTzs)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${dep.paymentProvider === 'snippe' || dep.paymentProvider === 'snippe_card' ? 'border-emerald-500/30 text-emerald-400' : dep.paymentProvider === 'zenopay' ? 'border-violet-500/30 text-violet-400' : 'border-zinc-600/30 text-zinc-500'}`}>
+                        {dep.paymentProvider ?? 'bank'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {dep.pspReference
+                        ? <code className="font-mono text-[10px] text-zinc-400">{dep.pspReference}</code>
+                        : <span className="text-zinc-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={dep.status} /></td>
+                    <td className="px-4 py-3">
+                      {dep.txHash ? <TxLink hash={dep.txHash} /> : <span className="text-zinc-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-zinc-600">{formatDateTimeEAT(dep.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* ── 06 / Withdrawals ────────────────────────────────────────────── */}
+        <section id="withdrawals">
+          <SectionLabel index="06" label="Withdrawals" />
+          <div className="mb-3 flex items-center gap-4 font-mono text-[9px] tracking-widest text-zinc-600 uppercase">
+            <span>Total burned: <span className="text-emerald-400">{n(burnStats?.totalBurned ?? 0)} TZS</span></span>
+            <div className="w-px h-2.5 bg-white/8" />
+            <span>Platform fees: <span className="text-violet-400">{n(burnStats?.totalPlatformFees ?? 0)} TZS</span></span>
+            <div className="w-px h-2.5 bg-white/8" />
+            <span>Burns: <span className="text-white">{n(burnStats?.burnCount ?? 0)}</span></span>
+          </div>
+          <div className="border border-white/8 overflow-x-auto">
+            <table className="min-w-full divide-y divide-white/5 text-xs">
+              <thead>
+                <tr className="bg-white/[0.02]">
+                  {['ID', 'User', 'Burned', 'Fee', 'Recipient', 'Burn Status', 'Payout', 'Burn TX', 'Fee TX', 'Created'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[9px] tracking-widest text-zinc-600 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {recentBurns.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-10 text-center font-mono text-xs text-zinc-700">No withdrawals yet</td>
+                  </tr>
+                ) : recentBurns.map(burn => (
+                  <tr key={burn.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <code className="font-mono text-[10px] text-zinc-500">{burn.id.slice(0, 8)}</code>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-zinc-300">{burn.userEmail ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-sm font-semibold tabular-nums text-white">{n(burn.amountTzs)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-violet-400">
+                      {burn.platformFeeTzs ? `+${n(burn.platformFeeTzs)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {burn.recipientPhone
+                        ? <code className="font-mono text-[10px] text-zinc-400">{burn.recipientPhone}</code>
+                        : <span className="text-zinc-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={burn.status} /></td>
+                    <td className="px-4 py-3">
+                      {burn.payoutStatus ? (
+                        <div>
+                          <StatusBadge status={burn.payoutStatus} />
+                          {burn.payoutReference && (
+                            <div className="mt-0.5 font-mono text-[9px] text-zinc-600">#{burn.payoutReference.slice(0, 8)}</div>
+                          )}
+                        </div>
+                      ) : <span className="text-zinc-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {burn.txHash ? <TxLink hash={burn.txHash} /> : <span className="text-zinc-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {burn.feeTxHash ? <TxLink hash={burn.feeTxHash} /> : <span className="text-zinc-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-zinc-600">{formatDateTimeEAT(burn.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* ── 07 / Audit Trail ────────────────────────────────────────────── */}
+        <section id="audit">
+          <SectionLabel index="07" label="Audit Trail" />
+          <div className="border border-white/8 divide-y divide-white/5">
+            {recentAuditLogs.length === 0 ? (
+              <div className="px-5 py-10 text-center font-mono text-xs text-zinc-700">No audit logs yet</div>
+            ) : recentAuditLogs.map(log => (
+              <div key={log.id} className="flex items-start gap-5 px-5 py-4 hover:bg-white/[0.015] transition-colors">
+                <div className="w-24 shrink-0 font-mono text-[9px] tracking-wider text-zinc-600 uppercase pt-0.5">
+                  {formatDateTimeEAT(log.createdAt)}
                 </div>
-                <div className="text-right">
-                  <span className="font-semibold text-white">{s.count}</span>
-                  <span className="ml-2 text-xs text-zinc-500">({formatNumber(s.total)} TZS)</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-semibold tracking-wider uppercase text-white">
+                      {log.action.replace(/_/g, ' ')}
+                    </span>
+                    {log.entityType && (
+                      <span className="border border-white/10 font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 text-zinc-500">
+                        {log.entityType}
+                      </span>
+                    )}
+                    {log.actorEmail && (
+                      <span className="font-mono text-[10px] text-zinc-600">by {log.actorEmail}</span>
+                    )}
+                  </div>
+                  {log.entityId && (
+                    <div className="mt-1 font-mono text-[10px] text-zinc-700">entity: {log.entityId.slice(0, 16)}...</div>
+                  )}
+                  {log.metadata != null && (
+                    <pre className="mt-2 max-h-16 overflow-auto border border-white/5 bg-white/[0.02] p-2 font-mono text-[9px] text-zinc-600">
+                      {JSON.stringify(log.metadata as Record<string, unknown>, null, 2)}
+                    </pre>
+                  )}
                 </div>
               </div>
             ))}
           </div>
+        </section>
+
+        {/* ── 08 / Contract ───────────────────────────────────────────────── */}
+        <section id="contract">
+          <SectionLabel index="08" label="Smart Contract" />
+          <div className="grid gap-px border border-white/8 bg-white/8 md:grid-cols-2">
+            <div className="bg-black p-5">
+              <div className="font-mono text-[9px] tracking-widest text-zinc-500 uppercase">Proxy Address</div>
+              <a
+                href={`https://basescan.org/address/${CONTRACT_ADDRESS}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 block break-all font-mono text-xs text-blue-400/70 hover:text-blue-400 underline underline-offset-2"
+              >
+                {CONTRACT_ADDRESS || 'Not configured'}
+              </a>
+              <div className="mt-1.5 font-mono text-[9px] text-zinc-700">Base Mainnet · Chain ID 8453 · NTZSV2 UUPS ERC-20</div>
+            </div>
+            <div className="bg-black p-5">
+              <div className="font-mono text-[9px] tracking-widest text-zinc-500 uppercase">Block Explorer</div>
+              <a
+                href={`https://basescan.org/token/${CONTRACT_ADDRESS}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 block font-mono text-xs text-blue-400/70 hover:text-blue-400 underline underline-offset-2"
+              >
+                View token on Basescan
+              </a>
+              <div className="mt-1.5 font-mono text-[9px] text-zinc-700">All transactions publicly verifiable</div>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <div className="flex items-center gap-4 border-t border-white/5 pt-6 font-mono text-[9px] tracking-widest text-zinc-700 uppercase">
+          <span>nTZS Network</span>
+          <div className="w-px h-2.5 bg-white/8" />
+          <span>NEDA LABS Company Limited</span>
+          <div className="w-px h-2.5 bg-white/8" />
+          <span>Dar es Salaam, Tanzania</span>
         </div>
+
       </div>
-
-      {/* Recent Deposits Table */}
-      <section id="deposits" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Recent Deposit Activity</h2>
-            <p className="mt-1 text-sm text-zinc-400">Last 20 deposit requests</p>
-          </div>
-        </div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/10 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
-                <th className="pb-3 pr-4">ID</th>
-                <th className="pb-3 pr-4">User</th>
-                <th className="pb-3 pr-4">Amount</th>
-                <th className="pb-3 pr-4">Provider</th>
-                <th className="pb-3 pr-4">Reference</th>
-                <th className="pb-3 pr-4">Status</th>
-                <th className="pb-3 pr-4">TX Hash</th>
-                <th className="pb-3">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {recentDeposits.map((dep) => (
-                <tr key={dep.id} className="text-sm">
-                  <td className="py-3 pr-4">
-                    <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-zinc-400">
-                      {dep.id.slice(0, 8)}
-                    </code>
-                  </td>
-                  <td className="py-3 pr-4 text-zinc-300">{dep.userEmail || '—'}</td>
-                  <td className="py-3 pr-4 font-medium text-white">{formatNumber(dep.amountTzs)}</td>
-                  <td className="py-3 pr-4">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-                      dep.paymentProvider === 'zenopay' ? 'bg-violet-500/20 text-violet-300' : 'bg-zinc-500/20 text-zinc-300'
-                    }`}>
-                      {dep.paymentProvider || 'bank'}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    {dep.pspReference ? (
-                      <code className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-xs text-emerald-400">
-                        {dep.pspReference}
-                      </code>
-                    ) : (
-                      <span className="text-zinc-600">—</span>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className={`rounded-lg px-2 py-1 text-xs font-medium ${statusColors[dep.status] || 'bg-zinc-500/20 text-zinc-300'}`}>
-                      {dep.status}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    {dep.txHash ? (
-                      <a
-                        href={`https://basescan.org/tx/${dep.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs text-blue-400 hover:bg-blue-500/20"
-                      >
-                        {dep.txHash.slice(0, 10)}...
-                      </a>
-                    ) : (
-                      <span className="text-zinc-600">—</span>
-                    )}
-                  </td>
-                  <td className="py-3 text-xs text-zinc-500">{formatDateTimeEAT(dep.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Withdrawal Activity */}
-      <section id="withdrawals" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Withdrawal Activity</h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Last 20 burn / off-ramp requests &nbsp;·&nbsp;
-              <span className="text-emerald-400">{formatNumber(burnStats?.totalBurned || 0)} TZS</span> total burned &nbsp;·&nbsp;
-              <span className="text-violet-400">{formatNumber(burnStats?.totalPlatformFees || 0)} TZS</span> platform fees collected
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/10 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
-                <th className="pb-3 pr-4">ID</th>
-                <th className="pb-3 pr-4">User</th>
-                <th className="pb-3 pr-4">Burned (TZS)</th>
-                <th className="pb-3 pr-4">Platform Fee</th>
-                <th className="pb-3 pr-4">Recipient</th>
-                <th className="pb-3 pr-4">Burn Status</th>
-                <th className="pb-3 pr-4">Payout</th>
-                <th className="pb-3 pr-4">Burn TX</th>
-                <th className="pb-3 pr-4">Fee TX</th>
-                <th className="pb-3">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {recentBurns.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="py-8 text-center text-sm text-zinc-500">No withdrawals yet</td>
-                </tr>
-              ) : (
-                recentBurns.map((burn) => (
-                  <tr key={burn.id} className="text-sm">
-                    <td className="py-3 pr-4">
-                      <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-zinc-400">
-                        {burn.id.slice(0, 8)}
-                      </code>
-                    </td>
-                    <td className="py-3 pr-4 text-zinc-300">{burn.userEmail || '—'}</td>
-                    <td className="py-3 pr-4 font-medium text-white">{formatNumber(burn.amountTzs)}</td>
-                    <td className="py-3 pr-4 text-xs text-violet-400">
-                      {burn.platformFeeTzs ? `+${formatNumber(burn.platformFeeTzs)}` : '—'}
-                    </td>
-                    <td className="py-3 pr-4">
-                      {burn.recipientPhone ? (
-                        <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-zinc-300">
-                          {burn.recipientPhone}
-                        </code>
-                      ) : <span className="text-zinc-600">—</span>}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className={`rounded-lg px-2 py-1 text-xs font-medium ${
-                        burn.status === 'burned' ? 'bg-emerald-500/20 text-emerald-300' :
-                        burn.status === 'failed' ? 'bg-red-500/20 text-red-300' :
-                        burn.status === 'requires_second_approval' ? 'bg-amber-500/20 text-amber-300' :
-                        'bg-zinc-500/20 text-zinc-300'
-                      }`}>
-                        {burn.status}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      {burn.payoutStatus ? (
-                        <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          burn.payoutStatus === 'pending' ? 'bg-blue-500/20 text-blue-300' :
-                          burn.payoutStatus === 'failed' ? 'bg-red-500/20 text-red-300' :
-                          'bg-zinc-500/20 text-zinc-300'
-                        }`}>
-                          {burn.payoutStatus}
-                          {burn.payoutReference && (
-                            <span className="ml-1 opacity-60">#{burn.payoutReference.slice(0, 8)}</span>
-                          )}
-                        </span>
-                      ) : <span className="text-zinc-600">—</span>}
-                    </td>
-                    <td className="py-3 pr-4">
-                      {burn.txHash ? (
-                        <a
-                          href={`https://basescan.org/tx/${burn.txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs text-blue-400 hover:bg-blue-500/20"
-                        >
-                          {burn.txHash.slice(0, 10)}...
-                        </a>
-                      ) : <span className="text-zinc-600">—</span>}
-                    </td>
-                    <td className="py-3 pr-4">
-                      {burn.feeTxHash ? (
-                        <a
-                          href={`https://basescan.org/tx/${burn.feeTxHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-xs text-emerald-400 hover:bg-emerald-500/20"
-                          title="Platform fee minted to treasury"
-                        >
-                          {burn.feeTxHash.slice(0, 10)}...
-                        </a>
-                      ) : <span className="text-zinc-600">—</span>}
-                    </td>
-                    <td className="py-3 text-xs text-zinc-500">{formatDateTimeEAT(burn.createdAt)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Audit Trail */}
-      <section id="audit" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Audit Trail</h2>
-            <p className="mt-1 text-sm text-zinc-400">System activity log for compliance review</p>
-          </div>
-        </div>
-        <div className="mt-4 space-y-2">
-          {recentAuditLogs.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-500">No audit logs yet</p>
-          ) : (
-            recentAuditLogs.map((log) => (
-              <div key={log.id} className="flex items-start gap-4 rounded-xl bg-black/20 p-4">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white/5">
-                  {log.action === 'mint_completed' && <span className="text-emerald-400">✓</span>}
-                  {log.action === 'mint_failed' && <span className="text-red-400">✗</span>}
-                  {log.action === 'kyc_approved' && <span className="text-blue-400">👤</span>}
-                  {!['mint_completed', 'mint_failed', 'kyc_approved'].includes(log.action) && (
-                    <span className="text-zinc-400">📝</span>
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-white">{log.action}</span>
-                    {log.entityType && (
-                      <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-zinc-400">
-                        {log.entityType}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-zinc-400">
-                    {log.entityId && (
-                      <code className="mr-2 rounded bg-black/30 px-1 py-0.5 font-mono text-xs">
-                        {log.entityId.slice(0, 8)}...
-                      </code>
-                    )}
-                    {log.actorEmail && <span>by {log.actorEmail}</span>}
-                  </p>
-                  {log.metadata ? (
-                    <pre className="mt-2 max-h-20 overflow-auto rounded bg-black/30 p-2 text-xs text-zinc-500">
-                      {JSON.stringify(log.metadata, null, 2)}
-                    </pre>
-                  ) : null}
-                </div>
-                <div className="text-xs text-zinc-600">{formatDateTimeEAT(log.createdAt)}</div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {/* Contract Info */}
-      <section id="contract" className="scroll-mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <h2 className="text-lg font-semibold text-white">Smart Contract Details</h2>
-        <p className="mt-1 text-sm text-zinc-400">On-chain verification links</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Contract Address</p>
-            <a
-              href={`https://basescan.org/address/${CONTRACT_ADDRESS}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 block font-mono text-sm text-blue-400 hover:text-blue-300"
-            >
-              {CONTRACT_ADDRESS || 'Not configured'}
-            </a>
-            <p className="mt-1 text-xs text-zinc-500">Base Mainnet</p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Block Explorer</p>
-            <a
-              href={`https://basescan.org/token/${CONTRACT_ADDRESS}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 block text-sm text-blue-400 hover:text-blue-300"
-            >
-              View Token on BaseScan →
-            </a>
-            <p className="mt-1 text-xs text-zinc-500">Verify all transactions publicly</p>
-          </div>
-        </div>
-      </section>
-    </main>
-  )
-}
-
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  icon,
-  color,
-}: {
-  title: string
-  value: string
-  subtitle: string
-  icon: React.ReactNode
-  color: 'emerald' | 'violet' | 'amber' | 'blue'
-}) {
-  const colorClasses = {
-    emerald: 'from-emerald-500/20 to-emerald-500/5 ring-emerald-500/20 text-emerald-400',
-    violet: 'from-violet-500/20 to-violet-500/5 ring-violet-500/20 text-violet-400',
-    amber: 'from-amber-500/20 to-amber-500/5 ring-amber-500/20 text-amber-400',
-    blue: 'from-blue-500/20 to-blue-500/5 ring-blue-500/20 text-blue-400',
-  }
-
-  return (
-    <div className={`rounded-2xl bg-gradient-to-br ${colorClasses[color]} p-5 ring-1`}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">{title}</span>
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10">
-          {icon}
-        </div>
-      </div>
-      <p className="mt-3 text-2xl font-bold text-white">{value}</p>
-      <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
     </div>
   )
 }
