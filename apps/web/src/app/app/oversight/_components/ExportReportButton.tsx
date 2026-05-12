@@ -54,127 +54,176 @@ export function ExportReportButton() {
       const doc = new jsPDF({ unit: 'pt', format: 'a4' })
       const W = doc.internal.pageSize.getWidth()
       const H = doc.internal.pageSize.getHeight()
-      const mX = 44
+      const mX = 48
       const cW = W - mX * 2
       let y = 0
       let pageNo = 1
 
-      // ── Colour palette ──────────────────────────────────────────────────
+      // ── Colour palette (light / professional) ───────────────────────────
       const C = {
-        black:   [0, 0, 0] as const,
-        bg:      [8, 8, 8] as const,
-        surface: [16, 16, 16] as const,
-        border:  [32, 32, 32] as const,
         white:   [255, 255, 255] as const,
-        zinc4:   [161, 161, 170] as const,
-        zinc6:   [82, 82, 91] as const,
-        zinc7:   [63, 63, 70] as const,
-        blue4:   [96, 165, 250] as const,
-        blue6:   [37, 99, 235] as const,
-        emerald: [52, 211, 153] as const,
-        amber:   [251, 191, 36] as const,
-        red:     [248, 113, 113] as const,
-        violet:  [167, 139, 250] as const,
+        bg:      [249, 250, 251] as const,   // gray-50
+        tblAlt:  [243, 244, 246] as const,   // gray-100 (alt row)
+        border:  [229, 231, 235] as const,   // gray-200
+        text1:   [17,  24,  39]  as const,   // gray-900
+        text2:   [75,  85,  99]  as const,   // gray-600
+        text3:   [156, 163, 175] as const,   // gray-400
+        blue:    [37,  99,  235] as const,   // blue-600
+        blueLt:  [219, 234, 254] as const,   // blue-200
+        emerald: [5,   150, 105] as const,   // emerald-600
+        amber:   [161, 98,  7]   as const,   // amber-700
+        red:     [185, 28,  28]  as const,   // red-700
+        violet:  [109, 40,  217] as const,   // violet-700
       }
 
       const fill  = (c: readonly [number,number,number]) => doc.setFillColor(c[0], c[1], c[2])
       const draw  = (c: readonly [number,number,number]) => doc.setDrawColor(c[0], c[1], c[2])
-      const text  = (c: readonly [number,number,number]) => doc.setTextColor(c[0], c[1], c[2])
+      const color = (c: readonly [number,number,number]) => doc.setTextColor(c[0], c[1], c[2])
       const n     = (v: number) => v.toLocaleString()
       const pct   = (a: number, b: number) => (b > 0 ? ((a / b) * 100).toFixed(1) : '0.0')
 
-      // ── Header / footer ─────────────────────────────────────────────────
+      // ── Status color map ─────────────────────────────────────────────────
+      const statusColor = (s: string): readonly [number,number,number] => {
+        if (s === 'minted' || s === 'burned' || s === 'approved')   return C.emerald
+        if (s.includes('pending') || s.includes('processing') || s.includes('confirmed')) return C.amber
+        if (s === 'rejected' || s.includes('failed'))               return C.red
+        if (s === 'requires_second_approval')                        return C.violet
+        return C.text3
+      }
+
+      // ── Page helpers ─────────────────────────────────────────────────────
+      const drawPageBackground = () => {
+        fill(C.white)
+        doc.rect(0, 0, W, H, 'F')
+      }
+
       const header = () => {
-        // Full black background
-        fill(C.black); doc.rect(0, 0, W, H, 'F')
+        drawPageBackground()
 
-        // Top bar
-        fill(C.surface); doc.rect(0, 0, W, 56, 'F')
-        draw(C.border); doc.line(0, 56, W, 56)
+        // Blue header bar
+        fill(C.blue)
+        doc.rect(0, 0, W, 64, 'F')
 
-        // Left accent bar
-        fill(C.blue6); doc.rect(0, 0, 3, 56, 'F')
+        // Left lighter-blue accent stripe (blue-600 + 15% white blended)
+        fill([70, 122, 238] as const)
+        doc.rect(0, 0, 4, 64, 'F')
 
-        // Title
-        doc.setFont('courier', 'bold')
-        doc.setFontSize(11)
-        text(C.white)
-        doc.text('nTZS OVERSIGHT DASHBOARD', mX + 4, 22)
-
-        doc.setFont('courier', 'normal')
-        doc.setFontSize(7.5)
-        text(C.zinc6)
-        doc.text(`NEDA LABS COMPANY LIMITED  ·  RESERVES & COMPLIANCE REPORT`, mX + 4, 36)
-        doc.text(`Generated: ${data.generatedAt}`, mX + 4, 48)
-
-        // Right: network pill
-        doc.setFont('courier', 'normal')
+        // Company + title
+        doc.setFont('helvetica', 'bold')
         doc.setFontSize(7)
-        text(C.blue4)
-        const netLabel = `BASE MAINNET  ·  CHAIN ID 8453`
-        doc.text(netLabel, W - mX - doc.getTextWidth(netLabel), 30)
+        color(C.blueLt)
+        doc.text('NEDA LABS COMPANY LIMITED', mX, 20)
 
-        // Blue pulse dot
-        fill(C.blue4); doc.circle(W - mX - doc.getTextWidth(netLabel) - 8, 27, 2, 'F')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(14)
+        color(C.white)
+        doc.text('Oversight & Reserves Report', mX, 38)
 
-        y = 72
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        color(C.blueLt)
+        doc.text('nTZS Stablecoin · Base Mainnet · Confidential', mX, 54)
+
+        // Right: date + network
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        color(C.white)
+        const dateLabel = data.generatedAt
+        doc.text(dateLabel, W - mX - doc.getTextWidth(dateLabel), 28)
+        const netLabel = 'Chain ID 8453 · NTZSV2 UUPS ERC-20'
+        color(C.blueLt)
+        doc.text(netLabel, W - mX - doc.getTextWidth(netLabel), 42)
+
+        // Thin blue-200 line below header
+        draw(C.blueLt)
+        doc.setLineWidth(0.5)
+        doc.line(0, 64, W, 64)
+
+        y = 82
       }
 
       const footer = (p: number) => {
-        draw(C.border); doc.line(mX, H - 28, W - mX, H - 28)
-        doc.setFont('courier', 'normal')
-        doc.setFontSize(7)
-        text(C.zinc7)
-        doc.text(`CONTRACT: ${data.contractAddress || 'N/A'}`, mX, H - 16)
-        const pg = `PAGE ${p}`
-        doc.text(pg, W - mX - doc.getTextWidth(pg), H - 16)
+        draw(C.border)
+        doc.setLineWidth(0.3)
+        doc.line(mX, H - 30, W - mX, H - 30)
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6.5)
+        color(C.text3)
+        const contractText = `Contract: ${data.contractAddress || 'N/A'}`
+        doc.text(contractText, mX, H - 16)
+
+        const pageText = `Page ${p}`
+        doc.text(pageText, W - mX - doc.getTextWidth(pageText), H - 16)
+
+        const centerText = 'nTZS · NEDA LABS · Confidential'
+        doc.text(centerText, (W - doc.getTextWidth(centerText)) / 2, H - 16)
       }
 
       const newPage = () => {
         footer(pageNo)
         doc.addPage()
         pageNo++
-        fill(C.black); doc.rect(0, 0, W, H, 'F')
-        fill(C.surface); doc.rect(0, 0, W, 32, 'F')
-        draw(C.border); doc.line(0, 32, W, 32)
-        fill(C.blue6); doc.rect(0, 0, 3, 32, 'F')
-        doc.setFont('courier', 'bold'); doc.setFontSize(7.5)
-        text(C.zinc6)
-        doc.text('nTZS OVERSIGHT DASHBOARD  (CONTINUED)', mX + 4, 21)
-        y = 46
+        drawPageBackground()
+
+        // Compact continuation header
+        fill(C.blue)
+        doc.rect(0, 0, W, 32, 'F')
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7)
+        color(C.white)
+        doc.text('nTZS Oversight & Reserves Report  (continued)', mX, 21)
+
+        const pg = `Page ${pageNo}`
+        color(C.blueLt)
+        doc.text(pg, W - mX - doc.getTextWidth(pg), 21)
+
+        y = 50
       }
 
-      const space = (need: number) => { if (y + need > H - 36) newPage() }
+      const space = (need: number) => { if (y + need > H - 40) newPage() }
 
-      // ── Section label (landing-page style) ──────────────────────────────
-      const sectionLabel = (index: string, label: string, title: string) => {
-        space(48)
-        // Short line + label
-        draw(C.blue4); doc.setLineWidth(0.5)
-        doc.line(mX, y + 5, mX + 14, y + 5)
-        doc.setFont('courier', 'normal'); doc.setFontSize(7)
-        text(C.blue4)
-        doc.text(`${index} / ${label.toUpperCase()}`, mX + 18, y + 8)
-        // Long divider
-        const labelEnd = mX + 18 + doc.getTextWidth(`${index} / ${label.toUpperCase()}`) + 6
-        doc.line(labelEnd, y + 5, W - mX, y + 5)
-        y += 16
-        // Section title
-        doc.setFont('courier', 'bold'); doc.setFontSize(10)
-        text(C.white)
-        doc.text(title.toUpperCase(), mX, y)
-        y += 18
+      // ── Section label ────────────────────────────────────────────────────
+      const sectionLabel = (index: string, label: string) => {
+        space(40)
+        y += 6
+
+        // Left blue accent bar
+        fill(C.blue)
+        doc.rect(mX, y, 3, 22, 'F')
+
+        // Index
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        color(C.blue)
+        doc.text(index, mX + 10, y + 9)
+
+        // Title
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(11)
+        color(C.text1)
+        doc.text(label, mX + 10, y + 20)
+
+        y += 30
+
+        // Thin divider
+        draw(C.border)
         doc.setLineWidth(0.3)
+        doc.line(mX, y, W - mX, y)
+        y += 10
       }
 
       // ── Metric card grid ─────────────────────────────────────────────────
-      const metricGrid = (items: Array<{ label: string; value: string; sub?: string }>, cols = 3) => {
-        space(72)
-        const gap = 8
+      const metricGrid = (
+        items: Array<{ label: string; value: string; sub?: string; accent?: readonly [number,number,number] }>,
+        cols = 3
+      ) => {
+        const gap = 10
         const cardW = (cW - gap * (cols - 1)) / cols
-        const cardH = 58
+        const cardH = 60
         const rows = Math.ceil(items.length / cols)
-        space(rows * (cardH + gap))
+        space(rows * (cardH + gap) + 8)
 
         items.forEach((it, i) => {
           const col = i % cols
@@ -182,202 +231,268 @@ export function ExportReportButton() {
           const x = mX + col * (cardW + gap)
           const yy = y + row * (cardH + gap)
 
-          fill(C.surface); draw(C.border)
+          // Card background + border
+          fill(C.white)
+          draw(C.border)
           doc.setLineWidth(0.5)
           doc.rect(x, yy, cardW, cardH, 'FD')
 
-          // Left accent strip
-          fill(C.blue6); doc.rect(x, yy, 2, cardH, 'F')
+          // Top blue accent line
+          fill(it.accent ?? C.blue)
+          doc.rect(x, yy, cardW, 2.5, 'F')
 
-          doc.setFont('courier', 'normal'); doc.setFontSize(6.5)
-          text(C.zinc6)
-          doc.text(it.label.toUpperCase(), x + 8, yy + 14)
+          // Label
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(6.5)
+          color(C.text3)
+          doc.text(it.label.toUpperCase(), x + 10, yy + 16)
 
-          doc.setFont('courier', 'bold'); doc.setFontSize(13)
-          text(C.white)
-          doc.text(it.value, x + 8, yy + 36)
+          // Value
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(14)
+          color(it.accent ?? C.text1)
+          doc.text(it.value, x + 10, yy + 38)
 
+          // Sub
           if (it.sub) {
-            doc.setFont('courier', 'normal'); doc.setFontSize(6.5)
-            text(C.zinc7)
-            doc.text(it.sub, x + 8, yy + 50)
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(6.5)
+            color(C.text3)
+            doc.text(it.sub, x + 10, yy + 52)
           }
         })
 
-        y += rows * (cardH + gap) + 4
+        y += rows * (cardH + gap) + 8
       }
 
       // ── Table ────────────────────────────────────────────────────────────
       const table = (
         cols: Array<{ header: string; width: number; align?: 'left' | 'right' }>,
-        rows: Array<Array<{ text: string; color?: readonly [number,number,number] }>>
+        rows: Array<Array<{ text: string; color?: readonly [number,number,number]; mono?: boolean }>>
       ) => {
-        const tableW = cols.reduce((a, c) => a + c.width, 0)
-        const hdrH = 20, rowH = 16
-        space(hdrH + rowH * Math.min(6, rows.length) + 8)
+        const hdrH = 22
+        const rowH = 17
+        space(hdrH + rowH * Math.min(5, rows.length) + 10)
 
         // Header row
-        fill(C.surface); draw(C.border)
-        doc.setLineWidth(0.5)
-        doc.rect(mX, y, tableW, hdrH, 'FD')
-        fill(C.blue6); doc.rect(mX, y, tableW, 1.5, 'F')
+        fill(C.bg)
+        draw(C.border)
+        doc.setLineWidth(0.3)
+        doc.rect(mX, y, cW, hdrH, 'FD')
 
-        doc.setFont('courier', 'bold'); doc.setFontSize(6.5)
-        text(C.zinc6)
+        // Header bottom border accent
+        fill(C.blue)
+        doc.rect(mX, y + hdrH - 1.5, cW, 1.5, 'F')
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(6.5)
+        color(C.text2)
         let cx = mX
         cols.forEach(c => {
-          const tx = c.align === 'right' ? cx + c.width - 6 - doc.getTextWidth(c.header.toUpperCase()) : cx + 6
-          doc.text(c.header.toUpperCase(), tx, y + 13)
+          const tx = c.align === 'right'
+            ? cx + c.width - 8 - doc.getTextWidth(c.header.toUpperCase())
+            : cx + 8
+          doc.text(c.header.toUpperCase(), tx, y + 14)
           cx += c.width
         })
         y += hdrH
 
         // Data rows
-        doc.setFont('courier', 'normal'); doc.setFontSize(7)
         rows.forEach((row, ri) => {
           space(rowH + 2)
-          if (ri % 2 === 0) { fill(C.surface); doc.rect(mX, y, tableW, rowH, 'F') }
-          draw(C.border); doc.line(mX, y + rowH, mX + tableW, y + rowH)
+          if (ri % 2 !== 0) {
+            fill(C.bg)
+            doc.rect(mX, y, cW, rowH, 'F')
+          }
+          draw(C.border)
+          doc.line(mX, y + rowH, mX + cW, y + rowH)
 
           let cx2 = mX
           row.forEach((cell, ci) => {
             const col = cols[ci]
-            text(cell.color ?? C.zinc4)
+            if (cell.mono) {
+              doc.setFont('courier', 'normal')
+              doc.setFontSize(6.5)
+            } else {
+              doc.setFont('helvetica', 'normal')
+              doc.setFontSize(7.5)
+            }
+            color(cell.color ?? C.text2)
             const tw = doc.getTextWidth(cell.text)
-            const tx = col.align === 'right' ? cx2 + col.width - 6 - tw : cx2 + 6
-            doc.text(cell.text, tx, y + 11)
+            const tx = col.align === 'right'
+              ? cx2 + col.width - 8 - tw
+              : cx2 + 8
+            doc.text(cell.text, tx, y + 12)
             cx2 += col.width
           })
           y += rowH
         })
-        y += 10
+        y += 12
+      }
+
+      // ── Progress bar ─────────────────────────────────────────────────────
+      const progressBar = (value: number, max: number) => {
+        space(22)
+        const barH = 8
+        const ratio = max > 0 ? Math.min(1, value / max) : 0
+        const pctVal = (ratio * 100)
+
+        // Track
+        fill(C.bg)
+        draw(C.border)
+        doc.setLineWidth(0.3)
+        doc.rect(mX, y, cW, barH, 'FD')
+
+        // Fill — color by utilisation
+        if (ratio > 0) {
+          const barColor = pctVal > 90 ? C.red : pctVal > 70 ? C.amber : C.blue
+          fill(barColor)
+          doc.rect(mX, y, cW * ratio, barH, 'F')
+        }
+
+        // Labels
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6.5)
+        color(C.text3)
+        doc.text('0%', mX, y + barH + 10)
+        const pctLabel = `${pctVal.toFixed(1)}% utilized`
+        doc.text(pctLabel, (W - doc.getTextWidth(pctLabel)) / 2, y + barH + 10)
+        doc.text('100%', W - mX - doc.getTextWidth('100%'), y + barH + 10)
+
+        y += barH + 16
+      }
+
+      // ── Info strip (single wide row) ─────────────────────────────────────
+      const infoStrip = (items: Array<{ label: string; value: string }>) => {
+        space(32)
+        fill(C.bg)
+        draw(C.border)
+        doc.setLineWidth(0.3)
+        doc.rect(mX, y, cW, 28, 'FD')
+
+        const itemW = cW / items.length
+        items.forEach((it, i) => {
+          const x = mX + i * itemW + 10
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(6.5)
+          color(C.text3)
+          doc.text(it.label.toUpperCase(), x, y + 10)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(8)
+          color(C.text1)
+          doc.text(it.value, x, y + 22)
+        })
+        y += 36
       }
 
       // ════════════════════════════════════════════════════════════════════
       header()
-      y += 4
 
-      // ── 01 / Key metrics ─────────────────────────────────────────────────
-      sectionLabel('01', 'Key Metrics', 'Executive Summary')
+      // ── 01 / Executive Summary ───────────────────────────────────────────
+      sectionLabel('01', 'Executive Summary')
       metricGrid([
-        { label: 'On-chain supply', value: `${n(data.onChainSupply)} nTZS`, sub: 'Base mainnet totalSupply()' },
-        { label: 'Total minted (DB)', value: `${n(data.stats.totalMinted)} TZS`, sub: `${n(data.stats.totalDeposits)} deposits` },
-        { label: 'Pending issuance', value: `${n(data.stats.totalPending)} TZS`, sub: 'Awaiting confirmation' },
-        { label: 'Daily cap utilisation', value: `${pct(data.dailyIssuance.issued, data.dailyIssuance.cap)}%`, sub: `Issued: ${n(data.dailyIssuance.issued)} TZS` },
-        { label: 'Registered users', value: n(data.stats.totalUsers), sub: `${n(data.stats.totalWallets)} wallets linked` },
-        { label: 'Reserve status', value: '1:1 BACKED', sub: 'Dual-approval enforced' },
+        { label: 'On-chain supply',      value: `${n(data.onChainSupply)} nTZS`, sub: 'Base mainnet totalSupply()',         accent: C.blue    },
+        { label: 'Total minted (DB)',    value: `${n(data.stats.totalMinted)} TZS`, sub: `${n(data.stats.totalDeposits)} deposits processed`, accent: C.emerald },
+        { label: 'Pending issuance',     value: `${n(data.stats.totalPending)} TZS`, sub: 'In approval pipeline',           accent: C.amber   },
+        { label: 'Daily cap utilisation',value: `${pct(data.dailyIssuance.issued, data.dailyIssuance.cap)}%`, sub: `${n(data.dailyIssuance.issued)} of ${n(data.dailyIssuance.cap)} TZS`, accent: C.blue },
+        { label: 'Registered users',     value: n(data.stats.totalUsers), sub: `${n(data.stats.totalWallets)} wallets`,     accent: C.text1   },
+        { label: 'Reserve integrity',    value: '1 : 1',                   sub: 'Dual-approval enforced',                   accent: C.emerald },
       ])
 
-      // ── 02 / Reserve verification ─────────────────────────────────────────
-      sectionLabel('02', 'Reserve Verification', 'Reserve Integrity')
+      // ── 02 / Reserve Verification ────────────────────────────────────────
+      sectionLabel('02', 'Reserve Verification')
       table(
         [
-          { header: 'Metric', width: 220 },
-          { header: 'Value', width: 160, align: 'right' },
-          { header: 'Note', width: cW - 380 },
+          { header: 'Metric',    width: 220 },
+          { header: 'Value',     width: 160, align: 'right' },
+          { header: 'Note',      width: cW - 380 },
         ],
         [
           [
-            { text: 'On-chain supply', color: C.white },
-            { text: `${n(data.onChainSupply)} nTZS`, color: C.blue4 },
+            { text: 'On-chain supply (authoritative)',  color: C.text1 },
+            { text: `${n(data.onChainSupply)} nTZS`,   color: C.blue   },
             { text: 'Base mainnet contract totalSupply()' },
           ],
           [
-            { text: 'Confirmed deposits (DB)', color: C.white },
+            { text: 'DB confirmed mints',              color: C.text1 },
             { text: `${n(data.stats.totalMinted)} TZS`, color: C.emerald },
-            { text: 'Minted after dual-approval' },
+            { text: 'Post dual-approval minted deposits' },
           ],
           [
-            { text: 'Pending issuance', color: C.white },
+            { text: 'Pending issuance',                color: C.text1 },
             { text: `${n(data.stats.totalPending)} TZS`, color: C.amber },
-            { text: 'In approval pipeline' },
+            { text: 'Submitted or in processing' },
           ],
           [
-            { text: 'Reserve ratio', color: C.white },
-            { text: '1:1', color: C.emerald },
-            { text: 'Enforced by workflow — not computed' },
+            { text: 'Reserve ratio',                   color: C.text1 },
+            { text: '1 : 1',                           color: C.emerald },
+            { text: 'Enforced by workflow — not computed from ratio' },
+          ],
+          [
+            { text: 'Contract address',                color: C.text1 },
+            { text: data.contractAddress ? data.contractAddress.slice(0, 28) + '...' : 'N/A', color: C.text2, mono: true },
+            { text: 'Base Mainnet · Chain ID 8453' },
           ],
         ]
       )
 
-      // ── 03 / Issuance controls ────────────────────────────────────────────
-      sectionLabel('03', 'Issuance Controls', 'Daily Issuance Cap')
+      // ── 03 / Daily Issuance Cap ───────────────────────────────────────────
+      sectionLabel('03', 'Daily Issuance Control')
+      infoStrip([
+        { label: 'Report date',     value: data.dailyIssuance.date },
+        { label: 'Daily cap',       value: `TZS ${n(data.dailyIssuance.cap)}` },
+        { label: 'Issued today',    value: `TZS ${n(data.dailyIssuance.issued)}` },
+        { label: 'Remaining',       value: `TZS ${n(Math.max(0, data.dailyIssuance.cap - data.dailyIssuance.issued))}` },
+      ])
+      progressBar(data.dailyIssuance.issued, data.dailyIssuance.cap)
+
+      // ── 04 / KYC Status ───────────────────────────────────────────────────
+      sectionLabel('04', 'KYC & Identity Verification')
       metricGrid([
-        { label: 'Daily cap', value: `${n(data.dailyIssuance.cap)} TZS`, sub: 'Platform-wide regulatory limit' },
-        { label: 'Issued today', value: `${n(data.dailyIssuance.issued)} TZS`, sub: `${pct(data.dailyIssuance.issued, data.dailyIssuance.cap)}% utilised` },
-        { label: 'Remaining', value: `${n(Math.max(0, data.dailyIssuance.cap - data.dailyIssuance.issued))} TZS`, sub: 'Available capacity' },
+        { label: 'KYC Approved', value: n(data.kyc.approved), sub: 'Verified participants',   accent: C.emerald },
+        { label: 'KYC Pending',  value: n(data.kyc.pending),  sub: 'Awaiting review',         accent: C.amber   },
+        { label: 'KYC Rejected', value: n(data.kyc.rejected), sub: 'Failed verification',     accent: C.red     },
       ], 3)
 
-      // Progress bar
-      space(20)
-      const barW = cW
-      const barH = 6
-      fill(C.surface); draw(C.border)
-      doc.rect(mX, y, barW, barH, 'FD')
-      const usedW = Math.min(barW, (data.dailyIssuance.issued / data.dailyIssuance.cap) * barW)
-      if (usedW > 0) { fill(C.blue4); doc.rect(mX, y, usedW, barH, 'F') }
-      y += 16
-
-      // ── 04 / KYC overview ─────────────────────────────────────────────────
-      sectionLabel('04', 'KYC & Compliance', 'Identity Verification Status')
-      metricGrid([
-        { label: 'KYC Approved', value: n(data.kyc.approved), sub: 'Active participants' },
-        { label: 'KYC Pending', value: n(data.kyc.pending), sub: 'Awaiting review' },
-        { label: 'KYC Rejected', value: n(data.kyc.rejected), sub: 'Failed verification' },
-      ], 3)
-
-      // ── 05 / Deposit pipeline ─────────────────────────────────────────────
-      sectionLabel('05', 'Deposit Pipeline', 'Status Distribution')
+      // ── 05 / Deposit Pipeline ─────────────────────────────────────────────
+      sectionLabel('05', 'Deposit Status Breakdown')
       table(
         [
-          { header: 'Status', width: 180 },
-          { header: 'Count', width: 80, align: 'right' },
-          { header: 'Total (TZS)', width: 140, align: 'right' },
-          { header: '% of volume', width: cW - 400, align: 'right' },
+          { header: 'Status',      width: 190 },
+          { header: 'Count',       width: 80,         align: 'right' },
+          { header: 'Total (TZS)', width: 150,        align: 'right' },
+          { header: '% of volume', width: cW - 420,  align: 'right' },
         ],
-        data.statusBreakdown.map(s => {
-          const statusColor = s.status === 'minted' ? C.emerald
-            : s.status.includes('pending') || s.status.includes('processing') ? C.amber
-            : s.status === 'rejected' || s.status.includes('failed') ? C.red
-            : C.zinc4
-          return [
-            { text: s.status.replace(/_/g, ' ').toUpperCase(), color: statusColor },
-            { text: n(s.count), color: C.white },
-            { text: n(s.totalTzs), color: C.white },
-            { text: `${pct(s.totalTzs, data.stats.totalMinted + data.stats.totalPending)}%` },
-          ]
-        })
+        data.statusBreakdown.map(s => ([
+          { text: s.status.replace(/_/g, ' '), color: statusColor(s.status) },
+          { text: n(s.count), color: C.text1 },
+          { text: n(s.totalTzs), color: C.text1 },
+          { text: `${pct(s.totalTzs, data.stats.totalMinted + data.stats.totalPending)}%`, color: C.text2 },
+        ]))
       )
 
-      // ── 06 / Recent deposits ──────────────────────────────────────────────
-      sectionLabel('06', 'Recent Activity', 'Latest Deposit Requests')
+      // ── 06 / Recent Deposit Activity ─────────────────────────────────────
+      sectionLabel('06', 'Recent Deposit Activity')
       table(
         [
-          { header: 'ID', width: 68 },
+          { header: 'ID',           width: 65  },
           { header: 'Amount (TZS)', width: 110, align: 'right' },
-          { header: 'Status', width: 120 },
-          { header: 'Provider', width: 80 },
-          { header: 'TX Hash', width: cW - 378 },
+          { header: 'Status',       width: 130 },
+          { header: 'Provider',     width: 80  },
+          { header: 'TX Hash',      width: cW - 385 },
         ],
-        data.recentDeposits.slice(0, 14).map(d => {
-          const statusColor = d.status === 'minted' ? C.emerald
-            : d.status.includes('pending') || d.status.includes('processing') ? C.amber
-            : d.status === 'rejected' || d.status.includes('failed') ? C.red
-            : C.zinc4
-          return [
-            { text: d.id.slice(0, 8), color: C.zinc6 },
-            { text: n(d.amountTzs), color: C.white },
-            { text: d.status.replace(/_/g, ' ').toUpperCase(), color: statusColor },
-            { text: (d.provider ?? 'bank').toUpperCase(), color: C.zinc4 },
-            { text: d.txHash ? `${d.txHash.slice(0, 18)}...` : '—', color: d.txHash ? C.blue4 : C.zinc7 },
-          ]
-        })
+        data.recentDeposits.slice(0, 15).map(d => ([
+          { text: d.id.slice(0, 8), color: C.text3, mono: true },
+          { text: n(d.amountTzs),   color: C.text1 },
+          { text: d.status.replace(/_/g, ' '), color: statusColor(d.status) },
+          { text: (d.provider ?? 'bank'), color: C.text2 },
+          { text: d.txHash ? `${d.txHash.slice(0, 20)}…` : '—', color: d.txHash ? C.blue : C.text3, mono: true },
+        ]))
       )
 
       footer(pageNo)
 
-      const filename = `nTZS-Report-${data.dailyIssuance.date}.pdf`
-      doc.save(filename)
+      doc.save(`nTZS-Oversight-Report-${data.dailyIssuance.date}.pdf`)
     } catch (err) {
       console.error('PDF generation failed:', err)
       alert('Failed to generate report. Please try again.')
