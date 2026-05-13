@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 
 interface Collection {
   id: string;
+  depositRequestId: string;
   amountTzs: number;
   payerName: string | null;
   payerPhone: string | null;
@@ -91,6 +92,7 @@ export default function CollectionsPage() {
                   <th className="px-4 py-3 text-left text-[10px] font-semibold tracking-widest text-white/50 uppercase">Status</th>
                   <th className="px-4 py-3 text-left text-[10px] font-semibold tracking-widest text-white/50 uppercase">Settlement</th>
                   <th className="px-4 py-3 text-right text-[10px] font-semibold tracking-widest text-white/50 uppercase">Time</th>
+                  <th className="px-4 py-3 text-right text-[10px] font-semibold tracking-widest text-white/50 uppercase">Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -114,6 +116,23 @@ export default function CollectionsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-right text-xs text-white/40">{timeAgo(c.createdAt)}</td>
+                      <td className="px-4 py-3.5 text-right">
+                        {c.collectionStatus === 'minted' ? (
+                          <a
+                            href={`/receipt/${c.depositRequestId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View receipt"
+                            className="inline-flex items-center justify-center w-7 h-7 border border-white/10 text-white/30 transition-colors hover:border-white/30 hover:text-white/70"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </a>
+                        ) : (
+                          <span className="inline-block w-7 h-7" />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

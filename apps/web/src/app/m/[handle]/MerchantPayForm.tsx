@@ -104,10 +104,21 @@ export function MerchantPayForm({ handle, displayName, fixedAmount, description,
               </svg>
             </div>
             <p className="text-[10px] tracking-widest text-emerald-500 uppercase mb-2">Payment Confirmed</p>
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-zinc-600 mb-5">
               <span className="font-bold text-zinc-900">{Number(amount).toLocaleString()} TZS</span>{' '}
               sent to {displayName}
             </p>
+            <a
+              href={`/receipt/${depositId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 border border-zinc-200 bg-white px-5 py-2.5 text-[10px] font-medium tracking-widest text-zinc-600 uppercase transition-colors hover:border-zinc-300 hover:bg-zinc-50"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              View Receipt
+            </a>
           </>
         ) : payStatus === 'failed' ? (
           <>
