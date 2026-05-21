@@ -9,10 +9,13 @@ import { getDb } from '@/lib/db'
 import { depositRequests, kycCases, banks } from '@ntzs/db'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import {
+  ACTIVE_PSP_PROVIDER,
+  ACTIVE_PSP_PAYMENT_WEBHOOK_PATH,
   initiatePayment,
   initiateCardPayment,
   normalizePhone,
   isValidTanzanianPhone,
+  lookupAccountName,
 } from '@/lib/psp'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
@@ -76,12 +79,12 @@ export async function createDepositRequestAction(formData: FormData) {
       amountTzs: Math.trunc(amountTzs),
       idempotencyKey,
       status: 'submitted',
-      paymentProvider: paymentMethod === 'mpesa' ? 'snippe' : 'snippe_card',
+      paymentProvider: paymentMethod === 'mpesa' ? ACTIVE_PSP_PROVIDER : 'snippe_card',
       buyerPhone: paymentMethod === 'mpesa' ? normalizePhone(buyerPhone) : null,
     })
     .returning({ id: depositRequests.id })
 
-  // If mobile money, trigger Snippe payment
+  // If mobile money, trigger AzamPay MNO checkout
   if (paymentMethod === 'mpesa') {
     try {
       const response = await initiatePayment({
@@ -89,7 +92,7 @@ export async function createDepositRequestAction(formData: FormData) {
         phoneNumber: buyerPhone,
         customerEmail: dbUser.email,
         customerFirstname: dbUser.email.split('@')[0],
-        webhookUrl: `${APP_URL}/api/webhooks/snippe/payment`,
+        webhookUrl: `${APP_URL}${ACTIVE_PSP_PAYMENT_WEBHOOK_PATH}`,
         metadata: { deposit_request_id: deposit.id },
       })
 
@@ -101,13 +104,18 @@ export async function createDepositRequestAction(formData: FormData) {
         throw new Error(response.error || 'Failed to initiate mobile money payment')
       }
 
-      // Store Snippe payment reference for status polling
+      // Store AzamPay externalId as pspReference + detected MNO as pspChannel
+      // pspChannel is required for status polling (AzamPay needs provider enum)
       await db
         .update(depositRequests)
-        .set({ pspReference: response.reference, updatedAt: new Date() })
+        .set({
+          pspReference: response.reference,
+          pspChannel: (response as { provider?: string }).provider ?? null,
+          updatedAt: new Date(),
+        })
         .where(eq(depositRequests.id, deposit.id))
 
-      console.log(`[snippe] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
+      console.log(`[${ACTIVE_PSP_PROVIDER}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
     } catch (error) {
       await db
         .update(depositRequests)
@@ -190,4 +198,15 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
   console.log(`[snippe] card payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
 
   return { paymentUrl: response.paymentUrl }
+}
+
+/**
+ * Look up the AzamPay-registered name for a mobile money phone number.
+ * Called from the deposit form to show "Paying as: John Doe" before the user confirms.
+ * Returns { name: null } on any failure — never throws.
+ */
+export async function lookupAccountNameAction(phone: string): Promise<{ name: string | null }> {
+  await requireAnyRole(['end_user', 'super_admin'])
+  if (!phone) return { name: null }
+  return lookupAccountName(phone)
 }

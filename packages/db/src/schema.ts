@@ -58,7 +58,7 @@ export const approvalType = pgEnum('approval_type', ['bank', 'platform'])
 
 export const approvalDecision = pgEnum('approval_decision', ['approved', 'rejected'])
 
-export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe', 'snippe_card'])
+export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe', 'snippe_card', 'azampay'])
 
 export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
 

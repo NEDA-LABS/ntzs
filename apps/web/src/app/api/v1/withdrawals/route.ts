@@ -5,16 +5,23 @@ import { ethers } from 'ethers'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { isValidTanzanianPhone } from '@/lib/psp'
+import {
+  ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
+  isMobilePspConfigured,
+  isValidTanzanianPhone,
+  normalizePhone,
+  sendPayout,
+  checkPayoutStatus,
+  lookupRecipientName,
+} from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 
-const SAFE_MINT_THRESHOLD_TZS = 100000
-const SNIPPE_FLAT_FEE_TZS = 1500
+const SAFE_MINT_THRESHOLD_TZS = 1000000
+// ⚠ Replace with AzamPay's actual fee once confirmed via sandbox/support
+const PSP_FLAT_FEE_TZS = 1500
 const DEFAULT_PLATFORM_FEE_PERCENT = 0.5
-const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
-const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
@@ -96,8 +103,8 @@ export async function POST(request: NextRequest) {
       : null
 
   // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate))
-  const burnAmountTzs = Math.ceil((receiveAmountTzs + SNIPPE_FLAT_FEE_TZS) / (1 - feePercent / 100))
-  const platformFeeTzs = burnAmountTzs - receiveAmountTzs - SNIPPE_FLAT_FEE_TZS
+  const burnAmountTzs = Math.ceil((receiveAmountTzs + PSP_FLAT_FEE_TZS) / (1 - feePercent / 100))
+  const platformFeeTzs = burnAmountTzs - receiveAmountTzs - PSP_FLAT_FEE_TZS
 
   // BoT Sandbox Parameter #3 — per-transaction cap (applied to nTZS burned)
   const perTxnErr = checkPerTransactionCap(burnAmountTzs)
@@ -144,7 +151,7 @@ export async function POST(request: NextRequest) {
         {
           error: 'insufficient_balance',
           message: `Insufficient balance. Available: ${balanceTzs} TZS, need ${burnAmountTzs} TZS to pay out ${receiveAmountTzs} TZS (incl. fees).`,
-          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, snippeFeeTzs: SNIPPE_FLAT_FEE_TZS },
+          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: PSP_FLAT_FEE_TZS },
         },
         { status: 400 }
       )
@@ -183,8 +190,8 @@ export async function POST(request: NextRequest) {
         amountTzs: burn.amountTzs,
         receiveAmountTzs,
         platformFeeTzs,
-        snippeFeeTzs: SNIPPE_FLAT_FEE_TZS,
-        message: 'Withdrawal requires admin approval for amounts >= 100,000 TZS.',
+        pspFeeTzs: PSP_FLAT_FEE_TZS,
+        message: 'Withdrawal requires admin approval for amounts >= 1,000,000 TZS.',
       },
       { status: 201 }
     )
@@ -333,56 +340,50 @@ export async function POST(request: NextRequest) {
     await finalizeRevert(reason, res.remintTxHash, res.feeBurnTxHash, res.error)
   }
 
-  // Trigger Snippe payout
-  if (SNIPPE_API_KEY) {
-    let phone = phoneNumber.replace(/[\s\-+]/g, '')
-    if (phone.startsWith('0')) phone = '255' + phone.substring(1)
-    if (!phone.startsWith('255')) phone = '255' + phone
+  // Trigger AzamPay payout
+  if (isMobilePspConfigured()) {
+    const phone = normalizePhone(phoneNumber)
+    const webhookUrl = `${APP_URL}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`
 
-    const webhookUrl = `${APP_URL}/api/webhooks/snippe/payout`
+    // Name lookup — non-fatal, result stored for audit trail
+    const recipientInfo = await lookupRecipientName(phone)
+    if (recipientInfo.name) {
+      console.log(`[v1/withdrawals] Recipient name verified: ${recipientInfo.name} (${phone})`)
+    }
 
     try {
-      const payoutResp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // Snippe `amount` = net to recipient; Snippe debits its flat fee separately.
-          amount: receiveAmountTzs,
-          channel: 'mobile',
-          recipient_phone: phone,
-          recipient_name: 'nTZS User',
-          narration: 'nTZS withdrawal',
-          ...(webhookUrl.startsWith('https://') ? { webhook_url: webhookUrl } : {}),
-          metadata: { burn_request_id: burnRequestId },
-        }),
+      const payoutResult = await sendPayout({
+        amountTzs: receiveAmountTzs,
+        recipientPhone: phone,
+        recipientName: recipientInfo.name || 'nTZS User',
+        narration: 'nTZS withdrawal',
+        webhookUrl,
+        metadata: { burn_request_id: burnRequestId },
       })
-      const payoutResult = await payoutResp.json() as { status: string; message?: string; data?: { reference: string } }
 
-      if (payoutResult.status === 'success' && payoutResult.data?.reference) {
-        const payoutRef = payoutResult.data.reference
-        await db.update(burnRequests).set({ payoutReference: payoutRef, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      if (payoutResult.success && payoutResult.reference) {
+        const payoutRef = payoutResult.reference
+        await db.update(burnRequests)
+          .set({ payoutReference: payoutRef, payoutStatus: 'pending', updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
 
-        // Poll Snippe for completion — don't rely solely on webhook
-        // Checks at 3s, 6s, 12s intervals to catch quick completions
+        // Poll AzamPay for quick completions — webhook is the primary path
+        // Checks at 3s, 6s, 12s intervals
         void (async () => {
           const delays = [3000, 6000, 12000]
           for (const delay of delays) {
             await new Promise((r) => setTimeout(r, delay))
             try {
-              const statusResp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${payoutRef}`, {
-                headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` },
-                signal: AbortSignal.timeout(5000),
-              })
-              const statusResult = await statusResp.json() as { status: string; data?: { status: string; failure_reason?: string } }
-              if (statusResult.status !== 'success' || !statusResult.data) continue
-              const ps = statusResult.data.status
-              if (ps === 'completed') {
-                await db.update(burnRequests).set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+              const ps = await checkPayoutStatus(payoutRef)
+              if (ps.status === 'completed') {
+                await db.update(burnRequests)
+                  .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
+                  .where(eq(burnRequests.id, burnRequestId))
                 console.log(`[v1/withdrawals] Payout ${payoutRef} completed (polled)`)
                 break
-              } else if (ps === 'failed' || ps === 'reversed') {
-                console.warn(`[v1/withdrawals] Payout ${payoutRef} failed (polled): ${statusResult.data.failure_reason}`)
-                await revertBurnForUser(statusResult.data.failure_reason || 'Payout failed (polled)')
+              } else if (ps.status === 'failed' || ps.status === 'reversed') {
+                console.warn(`[v1/withdrawals] Payout ${payoutRef} failed (polled): ${ps.failureReason}`)
+                await revertBurnForUser(ps.failureReason || 'Payout failed (polled)')
                 break
               }
             } catch {
@@ -391,35 +392,24 @@ export async function POST(request: NextRequest) {
           }
         })()
       } else {
-        // Snippe returned an error body from /v1/payouts/send. We do NOT
-        // auto-revert here: a non-success HTTP response is ambiguous
-        // (could be a clean reject, could be a partial dispatch). Only
-        // signed webhook events or status-endpoint `failed`/`reversed`
-        // values are authoritative. Mark for reconciliation and let an
-        // operator verify with Snippe before touching funds.
-        const reason = payoutResult.message ?? 'Payout initiation failed'
+        // PSP returned a failure. We do NOT auto-revert — a failed initiation
+        // is ambiguous (could be a clean reject or a partial dispatch).
+        // Only signed webhook events or status-endpoint values are authoritative.
+        // Mark for reconciliation and let an operator verify before touching funds.
+        const reason = payoutResult.error ?? 'Payout initiation failed'
         console.error('[v1/withdrawals] Payout initiation failed (NOT auto-reverting):', reason)
         await db
           .update(burnRequests)
-          .set({
-            payoutStatus: 'reconcile_required',
-            payoutError: reason,
-            updatedAt: new Date(),
-          })
+          .set({ payoutStatus: 'reconcile_required', payoutError: reason, updatedAt: new Date() })
           .where(eq(burnRequests.id, burnRequestId))
       }
     } catch (payoutErr) {
-      // Network / fetch exception — state is unknown. Same rule: no
-      // auto-revert, mark for reconciliation.
+      // Network / fetch exception — state is unknown. Same rule: no auto-revert.
       const msg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
       console.error('[v1/withdrawals] Payout error (NOT auto-reverting):', msg)
       await db
         .update(burnRequests)
-        .set({
-          payoutStatus: 'reconcile_required',
-          payoutError: msg,
-          updatedAt: new Date(),
-        })
+        .set({ payoutStatus: 'reconcile_required', payoutError: msg, updatedAt: new Date() })
         .where(eq(burnRequests.id, burnRequestId))
     }
   }
@@ -469,7 +459,7 @@ export async function POST(request: NextRequest) {
       amountTzs: burn.amountTzs,
       receiveAmountTzs,
       platformFeeTzs,
-      snippeFeeTzs: SNIPPE_FLAT_FEE_TZS,
+      pspFeeTzs: PSP_FLAT_FEE_TZS,
       feeRecipient,
       message: 'Withdrawal processed successfully.',
     },

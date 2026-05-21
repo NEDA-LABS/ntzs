@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nTZS Web App",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--workspace", "apps/web", "run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "SimpleFX Portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--workspace", "apps/fx", "run", "dev"],
+      "port": 3001
+    },
+    {
+      "name": "Worker",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--workspace", "apps/worker", "run", "dev"]
+    }
+  ]
+}

@@ -22,6 +22,13 @@ export const MINTER_PRIVATE_KEY = sanitizeEnv(process.env.MINTER_PRIVATE_KEY)
 export const BURNER_PRIVATE_KEY = sanitizeEnv(process.env.BURNER_PRIVATE_KEY)
 export const SNIPPE_API_KEY = sanitizeEnv(process.env.SNIPPE_API_KEY)
 
+export const AZAMPAY_APP_NAME = sanitizeEnv(process.env.AZAMPAY_APP_NAME)
+export const AZAMPAY_CLIENT_ID = sanitizeEnv(process.env.AZAMPAY_CLIENT_ID)
+export const AZAMPAY_CLIENT_SECRET = sanitizeEnv(process.env.AZAMPAY_CLIENT_SECRET)
+export const AZAMPAY_WEBHOOK_SECRET = sanitizeEnv(process.env.AZAMPAY_WEBHOOK_SECRET)
+export const AZAMPAY_BANK_NAME = sanitizeEnv(process.env.AZAMPAY_BANK_NAME, 'nmb')
+export const AZAMPAY_ENV = sanitizeEnv(process.env.AZAMPAY_ENV, 'sandbox')
+
 /**
  * Address that receives withdrawal platform fees (minted on burn).
  * Used as a fallback when a burn is not associated with a partner that has

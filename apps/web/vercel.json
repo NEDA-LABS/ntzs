@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/poll-azampay",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/poll-snippe",
       "schedule": "* * * * *"
     },
