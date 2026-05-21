@@ -244,6 +244,7 @@ export async function GET(request: NextRequest) {
       .select({
         id: depositRequests.id,
         userId: depositRequests.userId,
+        walletId: depositRequests.walletId,
         amountTzs: depositRequests.amountTzs,
         status: depositRequests.status,
         pspReference: depositRequests.pspReference,
@@ -282,6 +283,7 @@ export async function GET(request: NextRequest) {
       .select({
         id: depositRequests.id,
         userId: depositRequests.userId,
+        walletId: depositRequests.walletId,
         amountTzs: depositRequests.amountTzs,
         status: depositRequests.status,
         pspChannel: depositRequests.pspChannel,
@@ -419,20 +421,40 @@ export async function GET(request: NextRequest) {
     toAddress: t.toAddress || null,
   }))
 
-  // 13. Enrich deposit rows
+  // 13. Batch-resolve deposit destination wallet addresses (walletId → address)
+  const allDepositWalletIds = [
+    ...rawDeposits.map((d) => d.walletId),
+    ...rawPendingDeposits.map((d) => d.walletId),
+  ].filter((id): id is string => id != null)
+  const uniqueDepositWalletIds = [...new Set(allDepositWalletIds)]
+
+  const walletAddressMap: Record<string, string> = {}
+  if (uniqueDepositWalletIds.length > 0) {
+    const walletAddrRows = await db
+      .select({ id: wallets.id, address: wallets.address })
+      .from(wallets)
+      .where(inArray(wallets.id, uniqueDepositWalletIds))
+    for (const w of walletAddrRows) {
+      walletAddressMap[w.id] = w.address
+    }
+  }
+
+  // 14. Enrich deposit rows
   const depositRows = rawDeposits.map((d) => ({
     ...d,
     userEmail: userLookup[d.userId]?.email || null,
     userName: userLookup[d.userId]?.name || null,
+    destWalletAddress: d.walletId ? (walletAddressMap[d.walletId] ?? null) : null,
   }))
 
   const pendingDepositRows = rawPendingDeposits.map((d) => ({
     ...d,
     userEmail: userLookup[d.userId]?.email || null,
     userName: userLookup[d.userId]?.name || null,
+    destWalletAddress: d.walletId ? (walletAddressMap[d.walletId] ?? null) : null,
   }))
 
-  // 14. Recent activity — merged timeline of last 20 events
+  // 15. Recent activity — merged timeline of last 20 events
   const recentActivity = [
     ...transferRows.slice(0, 20).map((t) => ({
       type: 'transfer' as const,

@@ -89,6 +89,7 @@ interface DashboardDeposit {
   mintedAt: string | null
   createdAt: string
   updatedAt: string
+  destWalletAddress: string | null
 }
 
 interface DashboardSubWallet {
@@ -2143,6 +2144,7 @@ export default function PartnerDashboardPage() {
                       <tr className="border-b border-white/10 bg-white/5">
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">ID</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">User</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Destination</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Payer</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-white/40">Amount</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Status</th>
@@ -2156,17 +2158,31 @@ export default function PartnerDashboardPage() {
                     <tbody>
                       {deposits.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="px-4 py-8 text-center text-white/40">
+                          <td colSpan={11} className="px-4 py-8 text-center text-white/40">
                             No deposits yet.
                           </td>
                         </tr>
                       ) : (
-                        deposits.map((d) => (
+                        deposits.map((d) => {
+                          const isTreasury = d.destWalletAddress != null &&
+                            partner.treasuryWalletAddress != null &&
+                            d.destWalletAddress.toLowerCase() === partner.treasuryWalletAddress.toLowerCase()
+                          return (
                           <tr key={d.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                             <td className="px-4 py-3 font-mono text-xs text-white/50">{d.id.slice(0, 8)}...</td>
                             <td className="px-4 py-3 text-xs text-white/70">
                               <div>{d.userName || d.userEmail || d.userId.slice(0, 8)}</div>
                               {d.userName && d.userEmail && <div className="text-[10px] text-white/30">{d.userEmail}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-xs">
+                              {d.destWalletAddress ? (
+                                <div>
+                                  {isTreasury && (
+                                    <span className="inline-block mb-0.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-widest bg-violet-500/20 text-violet-300">Treasury</span>
+                                  )}
+                                  <div className="font-mono text-[10px] text-white/40">{d.destWalletAddress.slice(0, 6)}…{d.destWalletAddress.slice(-4)}</div>
+                                </div>
+                              ) : <span className="text-white/20">—</span>}
                             </td>
                             <td className="px-4 py-3 text-xs text-white/50">
                               <div>{d.payerName || '—'}</div>
@@ -2182,7 +2198,8 @@ export default function PartnerDashboardPage() {
                             <td className="px-4 py-3 text-xs text-white/40">{d.fiatConfirmedAt ? formatDateEAT(d.fiatConfirmedAt) : '—'}</td>
                             <td className="px-4 py-3 text-xs">{d.mintedAt ? <span className="text-emerald-400">{formatDateEAT(d.mintedAt)}</span> : <span className="text-white/30">—</span>}</td>
                           </tr>
-                        ))
+                          )
+                        })
                       )}
                     </tbody>
                   </table>

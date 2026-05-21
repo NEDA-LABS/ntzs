@@ -763,11 +763,13 @@ while (true) {
               code={`import crypto from 'crypto'
 
 app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res) => {
-  // Verify signature
-  const sig = req.headers['x-ntzs-signature'] as string
+  // Verify signature — nTZS signs timestamp.body with HMAC-SHA256
+  const sig = req.headers['x-webhook-signature'] as string
+  const timestamp = req.headers['x-webhook-timestamp'] as string
+  const signedPayload = \`\${timestamp}.\${req.body.toString()}\`
   const expected = crypto
     .createHmac('sha256', process.env.NTZS_WEBHOOK_SECRET!)
-    .update(req.body)
+    .update(signedPayload)
     .digest('hex')
 
   if (sig !== expected) {
@@ -793,10 +795,12 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
 })`}
             />
             <Note variant="neutral">
-              Configure your webhook URL and secret in the{' '}
+              Configure your webhook URL in the{' '}
               <Link href="/developers/dashboard" className="text-blue-400 hover:underline">partner dashboard</Link>{' '}
-              under Settings. Events are signed with HMAC-SHA256 — always verify the signature before
-              processing.
+              under Settings. Your webhook secret is returned once when you create your account — store it
+              securely (contact support to rotate it if lost). Events are signed with HMAC-SHA256 over{' '}
+              <code className="text-xs bg-white/10 px-1 py-0.5 rounded">timestamp.body</code> — always verify
+              the signature before processing.
             </Note>
           </DocSection>
 

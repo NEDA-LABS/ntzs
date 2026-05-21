@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
 
     // Resolve or create treasury wallet record
     let [treasuryWallet] = await db
-      .select({ id: wallets.id })
+      .select({ id: wallets.id, address: wallets.address })
       .from(wallets)
       .where(and(eq(wallets.userId, treasuryUser.id), eq(wallets.chain, 'base')))
       .limit(1)
@@ -201,14 +201,21 @@ export async function POST(request: NextRequest) {
         .insert(wallets)
         .values({ userId: treasuryUser.id, chain: 'base', address: partnerRow.treasuryWalletAddress, provider: 'external' })
         .onConflictDoNothing()
-        .returning({ id: wallets.id })
+        .returning({ id: wallets.id, address: wallets.address })
       if (!created) {
-        const [refetch] = await db.select({ id: wallets.id }).from(wallets).where(and(eq(wallets.userId, treasuryUser.id), eq(wallets.chain, 'base'))).limit(1)
+        const [refetch] = await db.select({ id: wallets.id, address: wallets.address }).from(wallets).where(and(eq(wallets.userId, treasuryUser.id), eq(wallets.chain, 'base'))).limit(1)
         if (!refetch) return NextResponse.json({ error: 'Failed to resolve treasury wallet record' }, { status: 500 })
         treasuryWallet = refetch
       } else {
         treasuryWallet = created
       }
+    } else if (treasuryWallet.address !== partnerRow.treasuryWalletAddress) {
+      // Partner changed their treasury address — sync the wallet record so minting
+      // goes to the current address rather than the stale one.
+      await db
+        .update(wallets)
+        .set({ address: partnerRow.treasuryWalletAddress, updatedAt: new Date() })
+        .where(eq(wallets.id, treasuryWallet.id))
     }
 
     walletId = treasuryWallet.id
