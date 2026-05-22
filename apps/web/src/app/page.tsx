@@ -112,6 +112,12 @@ export default function MasterLandingPage() {
                 Biashara
               </Link>
               <Link
+                href="/enterprise/login"
+                className="px-4 py-2 border border-indigo-500/40 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-colors"
+              >
+                Enterprise
+              </Link>
+              <Link
                 href={process.env.NEXT_PUBLIC_FX_URL ?? 'http://localhost:3001'}
                 className="px-4 py-2 border border-blue-500/40 bg-blue-500/10 text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors"
               >
@@ -126,6 +132,12 @@ export default function MasterLandingPage() {
                 className="px-3 py-1.5 border border-emerald-600/40 bg-emerald-500/10 text-[10px] tracking-widest text-emerald-600 uppercase hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-colors"
               >
                 Biashara
+              </Link>
+              <Link
+                href="/enterprise/login"
+                className="px-3 py-1.5 border border-indigo-500/40 bg-indigo-500/10 text-[10px] tracking-widest text-indigo-600 uppercase hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-colors"
+              >
+                Enterprise
               </Link>
               <Link
                 href={process.env.NEXT_PUBLIC_FX_URL ?? 'http://localhost:3001'}
