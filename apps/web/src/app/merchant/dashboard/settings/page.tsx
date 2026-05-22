@@ -48,6 +48,28 @@ export default function SettingsPage() {
   const [settleSaved, setSettleSaved] = useState(false);
   const [settleError, setSettleError] = useState('');
 
+  // Financing
+  type FinancingStatus = {
+    isUnderLender: boolean
+    lenderName: string | null
+    lenderSplitPct: number
+    lenderControlsSettlement: boolean
+    withdrawalLimitTzs: number
+    settlePct: number
+    loan: { loanStatus: string | null; principalTzs: number | null; totalOwedTzs: number | null; repaidTzs: number | null; interestRatePct: number | null } | null
+    pendingInvite: { id: string; proposedSplitPct: number | null; message: string | null; enterpriseName: string; createdAt: string } | null
+    pendingApplication: { id: string; createdAt: string } | null
+  }
+  const [financing, setFinancing] = useState<FinancingStatus | null>(null)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState('')
+  const [inviteResponding, setInviteResponding] = useState(false)
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawPhone, setWithdrawPhone] = useState('')
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [withdrawError, setWithdrawError] = useState('')
+  const [withdrawSuccess, setWithdrawSuccess] = useState('')
+
   // Security
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -65,6 +87,15 @@ export default function SettingsPage() {
       setSettlementPhone(merchant.settlementPhone ?? '');
     }
   }, [merchant]);
+
+  useEffect(() => {
+    if (tab === 'settlement') {
+      fetch('/merchant/api/merchant/financing/status')
+        .then(r => r.json())
+        .then(setFinancing)
+        .catch(() => {})
+    }
+  }, [tab]);
 
   async function handleProfileSave(e: React.FormEvent) {
     e.preventDefault();
@@ -106,6 +137,55 @@ export default function SettingsPage() {
     } finally {
       setSettleSaving(false);
     }
+  }
+
+  async function handleApply() {
+    setApplying(true); setApplyError('');
+    try {
+      const res = await fetch('/merchant/api/merchant/financing/apply', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { setApplyError(data.error ?? 'Failed to apply'); return; }
+      const updated = await fetch('/merchant/api/merchant/financing/status').then(r => r.json());
+      setFinancing(updated);
+    } catch { setApplyError('Network error'); }
+    finally { setApplying(false); }
+  }
+
+  async function handleCancelApplication() {
+    await fetch('/merchant/api/merchant/financing/apply', { method: 'DELETE' });
+    const updated = await fetch('/merchant/api/merchant/financing/status').then(r => r.json());
+    setFinancing(updated);
+  }
+
+  async function handleInviteRespond(inviteId: string, action: 'accept' | 'reject') {
+    setInviteResponding(true);
+    try {
+      await fetch(`/merchant/api/merchant/financing/invites/${inviteId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const updated = await fetch('/merchant/api/merchant/financing/status').then(r => r.json());
+      setFinancing(updated);
+    } finally { setInviteResponding(false); }
+  }
+
+  async function handleWithdraw(e: React.FormEvent) {
+    e.preventDefault();
+    setWithdrawError(''); setWithdrawSuccess('');
+    setWithdrawing(true);
+    try {
+      const res = await fetch('/merchant/api/merchant/financing/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amountTzs: Number(withdrawAmount), phone: withdrawPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setWithdrawError(data.error ?? 'Withdrawal failed'); return; }
+      setWithdrawSuccess(`TZS ${Number(withdrawAmount).toLocaleString()} withdrawal requested. You'll receive it shortly.`);
+      setWithdrawAmount(''); setWithdrawPhone('');
+    } catch { setWithdrawError('Network error'); }
+    finally { setWithdrawing(false); }
   }
 
   async function handlePasswordChange(e: React.FormEvent) {
@@ -275,119 +355,294 @@ export default function SettingsPage() {
 
       {/* ── SETTLEMENT TAB ── */}
       {tab === 'settlement' && (
-        <form key="settlement" onSubmit={handleSettlementSave} className="tab-content space-y-6">
+        <div key="settlement" className="tab-content space-y-6">
 
-          {/* Slider */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-[10px] font-medium tracking-widest text-white/50 uppercase">
-                Auto-Settlement Rate
-              </label>
-              <span className="text-2xl font-bold text-emerald-400 tabular-nums">{settlePct}%</span>
-            </div>
-
-            {/* Quick presets */}
-            <div className="grid grid-cols-5 gap-1.5 mb-3">
-              {[0, 25, 50, 75, 100].map((v) => (
+          {/* Pending invite banner */}
+          {financing?.pendingInvite && !financing.lenderControlsSettlement && (
+            <div className="border border-amber-500/30 bg-amber-500/[0.06] p-4 space-y-3">
+              <p className="text-[10px] tracking-widest text-amber-400/70 uppercase">Financing Invite</p>
+              <p className="text-sm text-white font-medium">
+                {financing.pendingInvite.enterpriseName} has invited you to their financing programme
+              </p>
+              {financing.pendingInvite.proposedSplitPct != null && (
+                <p className="text-xs text-white/50">
+                  Proposed repayment split: <span className="text-amber-400">{financing.pendingInvite.proposedSplitPct}%</span> of each collection
+                </p>
+              )}
+              {financing.pendingInvite.message && (
+                <p className="text-xs text-white/40 italic">&ldquo;{financing.pendingInvite.message}&rdquo;</p>
+              )}
+              <div className="flex gap-2 pt-1">
                 <button
-                  key={v}
                   type="button"
-                  onClick={() => setSettlePct(v)}
-                  className={`py-1.5 text-[10px] tracking-wide border transition-colors ${
-                    settlePct === v
-                      ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400'
-                      : 'border-white/10 text-white/30 hover:border-white/20 hover:text-white/50'
-                  }`}
+                  disabled={inviteResponding}
+                  onClick={() => handleInviteRespond(financing.pendingInvite!.id, 'accept')}
+                  className="px-4 py-2 text-[10px] tracking-widest uppercase border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
                 >
-                  {v === 0 ? 'Off' : `${v}%`}
+                  Accept
                 </button>
-              ))}
+                <button
+                  type="button"
+                  disabled={inviteResponding}
+                  onClick={() => handleInviteRespond(financing.pendingInvite!.id, 'reject')}
+                  className="px-4 py-2 text-[10px] tracking-widest uppercase border border-white/10 text-white/40 hover:text-white/60 disabled:opacity-40 transition-colors"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STATE C: Under lender control */}
+          {financing?.lenderControlsSettlement ? (
+            <div className="space-y-6">
+              {/* Lock notice */}
+              <div className="flex items-center gap-3 border border-indigo-500/30 bg-indigo-500/[0.06] px-4 py-3">
+                <Lock size={14} className="text-indigo-400 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-indigo-400">Settlement managed by {financing.lenderName ?? 'your lender'}</p>
+                  <p className="text-[10px] text-white/35 mt-0.5">Your repayment split is set by your lender as part of the financing agreement.</p>
+                </div>
+              </div>
+
+              {/* 3-way split preview */}
+              <div className="border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <p className="text-[10px] tracking-widest text-white/35 uppercase mb-2">Payment split per collection</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: financing.lenderName ?? 'Lender', pct: financing.lenderSplitPct, color: 'text-indigo-400' },
+                    { label: 'You (settlement)', pct: financing.settlePct, color: 'text-emerald-400' },
+                    { label: 'NEDApay', pct: Math.max(0, 100 - financing.lenderSplitPct - financing.settlePct), color: 'text-white/40' },
+                  ].map(s => (
+                    <div key={s.label} className="border border-white/5 bg-black p-3 text-center">
+                      <p className="text-[9px] text-white/35 mb-1 leading-tight">{s.label}</p>
+                      <p className={`text-lg font-bold tabular-nums ${s.color}`}>{s.pct}%</p>
+                    </div>
+                  ))}
+                </div>
+                {financing.loan && financing.loan.totalOwedTzs && (
+                  <div className="space-y-1.5 pt-3 border-t border-white/[0.07]">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-white/40">Loan principal</span>
+                      <span className="text-white/60 tabular-nums">TZS {financing.loan.principalTzs?.toLocaleString() ?? '—'}</span>
+                    </div>
+                    {(financing.loan.interestRatePct ?? 0) > 0 && (
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-white/40">Interest ({financing.loan.interestRatePct}% flat)</span>
+                        <span className="text-white/60 tabular-nums">TZS {((financing.loan.totalOwedTzs ?? 0) - (financing.loan.principalTzs ?? 0)).toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[10px] pt-1 border-t border-white/[0.07]">
+                      <span className="text-white/50 font-semibold uppercase tracking-wide">Repaid</span>
+                      <span className="text-emerald-400 font-semibold tabular-nums">
+                        TZS {financing.loan.repaidTzs?.toLocaleString() ?? '0'} / {financing.loan.totalOwedTzs.toLocaleString()}
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="h-1.5 w-full bg-white/10 overflow-hidden mt-1">
+                      <div
+                        className="h-full bg-emerald-500 transition-all"
+                        style={{ width: `${Math.min(100, Math.round(((financing.loan.repaidTzs ?? 0) / financing.loan.totalOwedTzs) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Withdrawal panel */}
+              {financing.withdrawalLimitTzs > 0 && (
+                <div className="border border-white/10 bg-white/[0.02] p-4 space-y-4">
+                  <div>
+                    <p className="text-[10px] tracking-widest text-white/50 uppercase mb-1">Withdraw Funds</p>
+                    <p className="text-[10px] text-white/30">
+                      Cap per request: <span className="text-indigo-400">TZS {financing.withdrawalLimitTzs.toLocaleString()}</span>
+                    </p>
+                  </div>
+                  <form onSubmit={handleWithdraw} className="space-y-3">
+                    <div>
+                      <label className="mb-1.5 block text-[10px] text-white/40 uppercase tracking-wider">Amount (TZS)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={financing.withdrawalLimitTzs}
+                        value={withdrawAmount}
+                        onChange={e => setWithdrawAmount(e.target.value)}
+                        placeholder={`Max ${financing.withdrawalLimitTzs.toLocaleString()}`}
+                        className="w-full border border-white/15 bg-black px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-indigo-500/50 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[10px] text-white/40 uppercase tracking-wider">Mobile Money Number</label>
+                      <input
+                        type="tel"
+                        value={withdrawPhone}
+                        onChange={e => setWithdrawPhone(e.target.value)}
+                        placeholder="07XX XXX XXX"
+                        className="w-full border border-white/15 bg-black px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-indigo-500/50 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    {withdrawError && <p className="text-xs text-rose-400">{withdrawError}</p>}
+                    {withdrawSuccess && <p className="text-xs text-emerald-400">{withdrawSuccess}</p>}
+                    <button
+                      type="submit"
+                      disabled={withdrawing || !withdrawAmount || !withdrawPhone}
+                      className="w-full border border-indigo-500/40 bg-indigo-500/10 py-3 text-[10px] font-semibold tracking-widest text-indigo-400 uppercase hover:bg-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {withdrawing ? 'Processing…' : 'Request Withdrawal'}
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
 
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={settlePct}
-              onChange={(e) => setSettlePct(Number(e.target.value))}
-              className="w-full accent-emerald-500"
-            />
-          </div>
+          ) : financing?.pendingApplication ? (
+            /* STATE B: Application pending */
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 border border-white/15 bg-white/[0.03] px-4 py-3">
+                <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-white">Application pending</p>
+                  <p className="text-[10px] text-white/35 mt-0.5">Ramani is reviewing your profile. Settlement controls are locked until resolved.</p>
+                </div>
+              </div>
 
-          {/* Payment split visualisation */}
-          {settlePct > 0 && (
-            <div className="border border-white/10 bg-white/[0.02] p-4 space-y-3">
-              <p className="text-[10px] tracking-widest text-white/35 uppercase mb-3">For a 10,000 TZS payment</p>
+              {/* Disabled slider */}
+              <div className="opacity-40 pointer-events-none select-none">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Auto-Settlement Rate</label>
+                  <span className="text-2xl font-bold text-emerald-400 tabular-nums">{merchant.settlePct}%</span>
+                </div>
+                <input type="range" min={0} max={100} step={5} value={merchant.settlePct} readOnly className="w-full accent-emerald-500" />
+              </div>
 
-              {/* Bar */}
-              <div className="h-2 w-full bg-white/10 overflow-hidden flex">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${settlePct}%` }}
+              <button
+                type="button"
+                onClick={handleCancelApplication}
+                className="w-full border border-white/10 py-3 text-[10px] tracking-widest text-white/30 uppercase hover:text-white/50 transition-colors"
+              >
+                Cancel Application
+              </button>
+            </div>
+
+          ) : (
+            /* STATE A: No lender — normal settlement form + Apply CTA */
+            <form onSubmit={handleSettlementSave} className="space-y-6">
+
+              {/* Slider */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-[10px] font-medium tracking-widest text-white/50 uppercase">
+                    Auto-Settlement Rate
+                  </label>
+                  <span className="text-2xl font-bold text-emerald-400 tabular-nums">{settlePct}%</span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 mb-3">
+                  {[0, 25, 50, 75, 100].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setSettlePct(v)}
+                      className={`py-1.5 text-[10px] tracking-wide border transition-colors ${
+                        settlePct === v
+                          ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400'
+                          : 'border-white/10 text-white/30 hover:border-white/20 hover:text-white/50'
+                      }`}
+                    >
+                      {v === 0 ? 'Off' : `${v}%`}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={settlePct}
+                  onChange={(e) => setSettlePct(Number(e.target.value))}
+                  className="w-full accent-emerald-500"
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-white/35">
-                <span className="text-emerald-400">{settlePct}% → Mobile Money</span>
-                <span>{100 - settlePct}% stays in wallet</span>
+
+              {settlePct > 0 && (
+                <div className="border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                  <p className="text-[10px] tracking-widest text-white/35 uppercase mb-3">For a 10,000 TZS payment</p>
+                  <div className="h-2 w-full bg-white/10 overflow-hidden flex">
+                    <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${settlePct}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-white/35">
+                    <span className="text-emerald-400">{settlePct}% → Mobile Money</span>
+                    <span>{100 - settlePct}% stays in wallet</span>
+                  </div>
+                  <div className="space-y-2 pt-1 border-t border-white/[0.07]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-white/40">Gross settlement</span>
+                      <span className="text-xs text-white/60 tabular-nums">{grossPreview.toLocaleString()} TZS</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-white/40">Transfer fee</span>
+                      <span className="text-xs text-rose-400/70 tabular-nums">− 1,500 TZS</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-white/40">Platform fee (0.5%)</span>
+                      <span className="text-xs text-rose-400/70 tabular-nums">− {Math.trunc((grossPreview - 1500) * 0.005).toLocaleString()} TZS</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-white/[0.07] pt-2">
+                      <span className="text-[10px] font-semibold text-white/60 uppercase tracking-wide">You receive</span>
+                      <span className={`text-sm font-bold tabular-nums ${netPreview > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {netPreview > 0 ? `${netPreview.toLocaleString()} TZS` : 'Too low to cover fees'}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-white/25 leading-relaxed pt-1">
+                    Minimum payout threshold: 5,000 TZS. Smaller collections accumulate until the threshold is reached.
+                  </p>
+                </div>
+              )}
+
+              {settlePct > 0 && (
+                <div>
+                  <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">
+                    Mobile Money Number
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="07XX XXX XXX"
+                    value={settlementPhone}
+                    onChange={(e) => setSettlementPhone(e.target.value)}
+                    className="w-full border border-white/15 bg-black px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-emerald-500/50 focus:outline-none transition-colors"
+                  />
+                </div>
+              )}
+
+              {settleError && (
+                <p className="border border-rose-500/20 bg-rose-500/[0.04] px-4 py-2.5 text-xs text-rose-300">{settleError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={settleSaving}
+                className="w-full border border-emerald-500/40 bg-emerald-500/10 py-3 text-[10px] font-semibold tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {settleSaving ? 'Saving...' : settleSaved ? '✓ Saved' : 'Save Settlement'}
+              </button>
+
+              {/* Apply for working capital CTA */}
+              <div className="border border-white/[0.06] bg-white/[0.01] p-4 space-y-3">
+                <p className="text-[10px] tracking-widest text-white/30 uppercase">Working Capital</p>
+                <p className="text-xs text-white/50">Apply for revenue-based financing. Ramani deploys capital to your wallet and takes a % of each collection as repayment.</p>
+                {applyError && <p className="text-xs text-rose-400">{applyError}</p>}
+                <button
+                  type="button"
+                  onClick={handleApply}
+                  disabled={applying}
+                  className="w-full border border-indigo-500/30 bg-indigo-500/[0.07] py-2.5 text-[10px] font-semibold tracking-widest text-indigo-400 uppercase hover:bg-indigo-500/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {applying ? 'Applying…' : 'Apply for Working Capital'}
+                </button>
               </div>
-
-              {/* Breakdown rows */}
-              <div className="space-y-2 pt-1 border-t border-white/[0.07]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-white/40">Gross settlement</span>
-                  <span className="text-xs text-white/60 tabular-nums">{grossPreview.toLocaleString()} TZS</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-white/40">Transfer fee</span>
-                  <span className="text-xs text-rose-400/70 tabular-nums">− 1,500 TZS</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-white/40">Platform fee (0.5%)</span>
-                  <span className="text-xs text-rose-400/70 tabular-nums">− {Math.trunc((grossPreview - 1500) * 0.005).toLocaleString()} TZS</span>
-                </div>
-                <div className="flex items-center justify-between border-t border-white/[0.07] pt-2">
-                  <span className="text-[10px] font-semibold text-white/60 uppercase tracking-wide">You receive</span>
-                  <span className={`text-sm font-bold tabular-nums ${netPreview > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {netPreview > 0 ? `${netPreview.toLocaleString()} TZS` : 'Too low to cover fees'}
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-white/25 leading-relaxed pt-1">
-                Minimum payout threshold: 5,000 TZS. Smaller collections accumulate until the threshold is reached.
-              </p>
-            </div>
+            </form>
           )}
-
-          {/* Phone */}
-          {settlePct > 0 && (
-            <div>
-              <label className="mb-2 block text-[10px] font-medium tracking-widest text-white/50 uppercase">
-                Mobile Money Number
-              </label>
-              <input
-                type="tel"
-                placeholder="07XX XXX XXX"
-                value={settlementPhone}
-                onChange={(e) => setSettlementPhone(e.target.value)}
-                className="w-full border border-white/15 bg-black px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-emerald-500/50 focus:outline-none transition-colors"
-              />
-            </div>
-          )}
-
-          {settleError && (
-            <p className="border border-rose-500/20 bg-rose-500/[0.04] px-4 py-2.5 text-xs text-rose-300">{settleError}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={settleSaving}
-            className="w-full border border-emerald-500/40 bg-emerald-500/10 py-3 text-[10px] font-semibold tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {settleSaving ? 'Saving...' : settleSaved ? '✓ Saved' : 'Save Settlement'}
-          </button>
-        </form>
+        </div>
       )}
 
       {/* ── SECURITY TAB ── */}

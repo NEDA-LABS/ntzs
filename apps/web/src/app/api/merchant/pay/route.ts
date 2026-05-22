@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       businessName: merchantAccounts.businessName,
       walletAddress: merchantAccounts.walletAddress,
       settlePct: merchantAccounts.settlePct,
+      lenderSplitPct: merchantAccounts.lenderSplitPct,
       isActive: merchantAccounts.isActive,
     })
     .from(merchantAccounts)
@@ -155,8 +156,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 });
   }
 
-  // Record merchant collection (snapshots settlePct for auto-settlement)
+  // Record merchant collection (snapshots settlePct + lenderPct for auto-settlement)
   const settlePct = merchant.settlePct;
+  const lenderPct = merchant.lenderSplitPct ?? 0;
+  const lenderAmountTzs = lenderPct > 0 ? Math.floor(amountInt * lenderPct / 100) : null;
   const [collection] = await db
     .insert(merchantCollections)
     .values({
@@ -168,6 +171,9 @@ export async function POST(req: NextRequest) {
       payerName: payerName || null,
       settlePct,
       settlementStatus: settlePct > 0 ? 'pending' : 'skipped',
+      lenderPct,
+      lenderAmountTzs,
+      lenderSettlementStatus: lenderPct > 0 ? 'pending' : 'skipped',
     })
     .returning({ id: merchantCollections.id });
 

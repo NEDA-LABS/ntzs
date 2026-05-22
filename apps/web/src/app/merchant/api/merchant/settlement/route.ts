@@ -10,19 +10,38 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const [merchant] = await db
-    .select({ settlePct: merchantAccounts.settlePct, settlementPhone: merchantAccounts.settlementPhone })
+    .select({
+      settlePct: merchantAccounts.settlePct,
+      settlementPhone: merchantAccounts.settlementPhone,
+      lenderControlsSettlement: merchantAccounts.lenderControlsSettlement,
+    })
     .from(merchantAccounts)
     .where(eq(merchantAccounts.id, session.merchantId))
     .limit(1);
 
   if (!merchant) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json({ settlePct: merchant.settlePct, settlementPhone: merchant.settlementPhone });
+  return NextResponse.json({
+    settlePct: merchant.settlePct,
+    settlementPhone: merchant.settlementPhone,
+    lenderControlsSettlement: merchant.lenderControlsSettlement,
+  });
 }
 
 export async function PATCH(req: NextRequest) {
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const [merchant] = await db
+    .select({ lenderControlsSettlement: merchantAccounts.lenderControlsSettlement })
+    .from(merchantAccounts)
+    .where(eq(merchantAccounts.id, session.merchantId))
+    .limit(1);
+
+  if (!merchant) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (merchant.lenderControlsSettlement) {
+    return NextResponse.json({ error: 'Settlement is managed by your lender.' }, { status: 403 });
+  }
 
   const body = await req.json();
   const settlePct = Number(body.settlePct);

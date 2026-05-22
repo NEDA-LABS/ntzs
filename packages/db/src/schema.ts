@@ -1006,6 +1006,12 @@ export const merchantAccounts = pgTable(
     settlementPhone: varchar('settlement_phone', { length: 32 }),
     settlementPendingTzs: bigint('settlement_pending_tzs', { mode: 'number' }).notNull().default(0),
 
+    lenderPartnerId: uuid('lender_partner_id').references(() => partners.id, { onDelete: 'set null' }),
+    lenderSplitPct: integer('lender_split_pct').notNull().default(0),
+    lenderPendingTzs: bigint('lender_pending_tzs', { mode: 'number' }).notNull().default(0),
+    lenderControlsSettlement: boolean('lender_controls_settlement').notNull().default(false),
+    withdrawalLimitTzs: bigint('withdrawal_limit_tzs', { mode: 'number' }).notNull().default(0),
+
     passwordHash: text('password_hash'),
 
     isActive: boolean('is_active').notNull().default(true),
@@ -1090,6 +1096,10 @@ export const merchantCollections = pgTable(
     settlementStatus: merchantSettlementStatus('settlement_status').notNull().default('skipped'),
     settlementBurnRequestId: uuid('settlement_burn_request_id'),
 
+    lenderPct: integer('lender_pct').notNull().default(0),
+    lenderAmountTzs: bigint('lender_amount_tzs', { mode: 'number' }),
+    lenderSettlementStatus: merchantSettlementStatus('lender_settlement_status').notNull().default('skipped'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1099,5 +1109,191 @@ export const merchantCollections = pgTable(
     collectionStatusIdx: index('merchant_collections_collection_status_idx').on(t.collectionStatus),
     settlementStatusIdx: index('merchant_collections_settlement_status_idx').on(t.settlementStatus),
     createdIdx: index('merchant_collections_created_at_idx').on(t.createdAt),
+  })
+)
+
+// ─── Enterprise ──────────────────────────────────────────────────────────────
+
+export const enterpriseAccountType = pgEnum('enterprise_account_type', [
+  'capital_lender',
+  'disbursement_client',
+])
+
+export const enterpriseLoanStatus = pgEnum('enterprise_loan_status', [
+  'active',
+  'repaid',
+  'terminated',
+])
+
+export const enterpriseDisbursementBatchStatus = pgEnum('enterprise_disbursement_batch_status', [
+  'pending_review',
+  'awaiting_funds',
+  'approved',
+  'processing',
+  'completed',
+  'failed',
+])
+
+export const enterpriseDisbursementRowStatus = pgEnum('enterprise_disbursement_row_status', [
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+])
+
+export const enterpriseAccounts = pgTable(
+  'enterprise_accounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    email: varchar('email', { length: 320 }).notNull(),
+    phone: varchar('phone', { length: 32 }),
+    type: enterpriseAccountType('type').notNull(),
+    partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'set null' }),
+    passwordHash: text('password_hash'),
+    isActive: boolean('is_active').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex('enterprise_accounts_email_uq').on(t.email),
+    partnerIdx: index('enterprise_accounts_partner_id_idx').on(t.partnerId),
+  })
+)
+
+export const enterpriseOtpCodes = pgTable(
+  'enterprise_otp_codes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    email: varchar('email', { length: 320 }).notNull(),
+    codeHash: text('code_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    used: boolean('used').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailIdx: index('enterprise_otp_codes_email_idx').on(t.email),
+    expiresIdx: index('enterprise_otp_codes_expires_at_idx').on(t.expiresAt),
+  })
+)
+
+export const enterpriseInviteTokens = pgTable(
+  'enterprise_invite_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    enterpriseId: uuid('enterprise_id')
+      .notNull()
+      .references(() => enterpriseAccounts.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tokenHashUq: uniqueIndex('enterprise_invite_tokens_token_hash_uq').on(t.tokenHash),
+    enterpriseIdx: index('enterprise_invite_tokens_enterprise_id_idx').on(t.enterpriseId),
+  })
+)
+
+export const enterpriseLoanAgreements = pgTable(
+  'enterprise_loan_agreements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'restrict' }),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchantAccounts.id, { onDelete: 'restrict' }),
+    principalTzs: bigint('principal_tzs', { mode: 'number' }).notNull(),
+    interestRatePct: integer('interest_rate_pct').notNull().default(0),
+    interestTzs: bigint('interest_tzs', { mode: 'number' }).notNull().default(0),
+    totalOwedTzs: bigint('total_owed_tzs', { mode: 'number' }).notNull().default(0),
+    repaidTzs: bigint('repaid_tzs', { mode: 'number' }).notNull().default(0),
+    status: enterpriseLoanStatus('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerIdx: index('enterprise_loan_agreements_partner_id_idx').on(t.partnerId),
+    merchantIdx: index('enterprise_loan_agreements_merchant_id_idx').on(t.merchantId),
+    statusIdx: index('enterprise_loan_agreements_status_idx').on(t.status),
+  })
+)
+
+export const enterpriseDisbursementBatches = pgTable(
+  'enterprise_disbursement_batches',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    enterpriseId: uuid('enterprise_id')
+      .notNull()
+      .references(() => enterpriseAccounts.id, { onDelete: 'restrict' }),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'restrict' }),
+    filename: text('filename'),
+    totalAmountTzs: bigint('total_amount_tzs', { mode: 'number' }).notNull(),
+    serviceFeeTzs: bigint('service_fee_tzs', { mode: 'number' }).notNull(),
+    contractorCount: integer('contractor_count').notNull(),
+    status: enterpriseDisbursementBatchStatus('status').notNull().default('pending_review'),
+    bankReference: text('bank_reference'),
+    bankReceivedAt: timestamp('bank_received_at', { withTimezone: true }),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    enterpriseIdx: index('enterprise_disbursement_batches_enterprise_id_idx').on(t.enterpriseId),
+    statusIdx: index('enterprise_disbursement_batches_status_idx').on(t.status),
+    createdIdx: index('enterprise_disbursement_batches_created_at_idx').on(t.createdAt),
+  })
+)
+
+export const enterpriseDisbursementRows = pgTable(
+  'enterprise_disbursement_rows',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => enterpriseDisbursementBatches.id, { onDelete: 'cascade' }),
+    contractorName: text('contractor_name').notNull(),
+    phone: varchar('phone', { length: 32 }).notNull(),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    payoutMethod: text('payout_method').notNull().default('mobile'),
+    bankAccount: text('bank_account'),
+    status: enterpriseDisbursementRowStatus('status').notNull().default('pending'),
+    payoutReference: text('payout_reference'),
+    payoutError: text('payout_error'),
+    burnRequestId: uuid('burn_request_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    batchIdx: index('enterprise_disbursement_rows_batch_id_idx').on(t.batchId),
+    statusIdx: index('enterprise_disbursement_rows_status_idx').on(t.status),
+  })
+)
+
+export const enterpriseMerchantApplications = pgTable(
+  'enterprise_merchant_applications',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    enterpriseId: uuid('enterprise_id')
+      .notNull()
+      .references(() => enterpriseAccounts.id, { onDelete: 'cascade' }),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchantAccounts.id, { onDelete: 'cascade' }),
+    direction: text('direction').notNull(), // 'invite' | 'application'
+    status: text('status').notNull().default('pending'), // pending | accepted | rejected | cancelled
+    proposedSplitPct: integer('proposed_split_pct'),
+    message: text('message'),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    enterpriseIdx: index('enterprise_merchant_applications_enterprise_id_idx').on(t.enterpriseId),
+    merchantIdx: index('enterprise_merchant_applications_merchant_id_idx').on(t.merchantId),
+    statusIdx: index('enterprise_merchant_applications_status_idx').on(t.status),
   })
 )

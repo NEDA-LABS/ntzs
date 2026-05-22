@@ -110,6 +110,21 @@ async function logAudit(
 const SNIPPE_FLAT_FEE_TZS = 1500
 const PLATFORM_FEE_PCT = 0.005
 const MIN_SETTLEMENT_TZS = 5000
+const MIN_LENDER_REPAYMENT_TZS = 1000
+
+const MERCHANT_HD_MNEMONIC_KEY = 'MERCHANT_HD_MNEMONIC'
+const MERCHANT_DERIVATION_BASE = "m/44'/8453'/2'/0"
+
+function deriveMerchantWallet(walletIndex: number, provider: ethers.JsonRpcProvider) {
+  const mnemonic = process.env[MERCHANT_HD_MNEMONIC_KEY] ?? process.env['FX_HD_MNEMONIC']
+  if (!mnemonic) throw new Error('MERCHANT_HD_MNEMONIC env var not set')
+  const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, MERCHANT_DERIVATION_BASE)
+  return hdNode.deriveChild(walletIndex).connect(provider)
+}
+
+const NTZS_TRANSFER_ABI = [
+  'function transfer(address to, uint256 amount) returns (bool)',
+] as const
 
 /**
  * Phase A — Queue collections.
@@ -125,8 +140,12 @@ async function queueCollectionSettlements(sql: ReturnType<typeof createDbClient>
     merchant_id: string
     amount_tzs: number
     settle_pct: number
+    lender_pct: number
+    lender_amount_tzs: number | null
+    lender_settlement_status: string
   }[]>`
-    select mc.id as collection_id, mc.merchant_id, mc.amount_tzs, mc.settle_pct
+    select mc.id as collection_id, mc.merchant_id, mc.amount_tzs, mc.settle_pct,
+           mc.lender_pct, mc.lender_amount_tzs, mc.lender_settlement_status
     from merchant_collections mc
     join merchant_accounts ma on ma.id = mc.merchant_id
     where mc.collection_status = 'minted'
@@ -150,7 +169,7 @@ async function queueCollectionSettlements(sql: ReturnType<typeof createDbClient>
 
     const netTzs = Math.floor((col.amount_tzs * col.settle_pct) / 100)
 
-    // Increment the merchant's accumulator and record the per-collection amount
+    // Increment the merchant's settlement accumulator and record per-collection amount
     await sql`
       update merchant_accounts
       set settlement_pending_tzs = settlement_pending_tzs + ${netTzs},
@@ -165,9 +184,25 @@ async function queueCollectionSettlements(sql: ReturnType<typeof createDbClient>
       where id = ${col.collection_id}
     `
 
+    // Accumulate lender share if applicable
+    if (col.lender_pct > 0 && col.lender_amount_tzs && col.lender_settlement_status === 'pending') {
+      await sql`
+        update merchant_accounts
+        set lender_pending_tzs = lender_pending_tzs + ${col.lender_amount_tzs},
+            updated_at = now()
+        where id = ${col.merchant_id}
+      `
+      await sql`
+        update merchant_collections
+        set lender_settlement_status = 'queued', updated_at = now()
+        where id = ${col.collection_id} and lender_settlement_status = 'pending'
+      `
+    }
+
     console.log('[worker] settlement queued', {
       collectionId: col.collection_id,
       netTzs,
+      lenderAmountTzs: col.lender_amount_tzs ?? 0,
     })
   }
 }
@@ -335,6 +370,254 @@ async function syncMerchantSettlementStatus(sql: ReturnType<typeof createDbClien
         where id = ${job.collection_id}
       `
       console.log('[worker] settlement status synced', { collectionId: job.collection_id, newStatus })
+    }
+  }
+}
+
+/**
+ * Phase D — Batch lender repayments.
+ *
+ * For each merchant whose accumulated lenderPendingTzs has crossed the minimum,
+ * atomically claim the full amount, execute an on-chain ERC-20 transfer from the
+ * merchant's HD wallet to the lender's treasury wallet, record in the transfers
+ * table, and increment enterpriseLoanAgreements.repaidTzs.
+ */
+async function fireBatchLenderRepayments(sql: ReturnType<typeof createDbClient>['sql']) {
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = process.env.BASE_RPC_URL
+  if (!contractAddress || !rpcUrl) return
+
+  const merchants = await sql<{
+    merchant_id: string
+    wallet_address: string
+    wallet_index: number
+    lender_partner_id: string
+    lender_pending_tzs: number
+    lender_treasury_address: string
+  }[]>`
+    select ma.id as merchant_id,
+           ma.wallet_address,
+           ma.wallet_index,
+           ma.lender_partner_id,
+           ma.lender_pending_tzs,
+           p.treasury_wallet_address as lender_treasury_address
+    from merchant_accounts ma
+    join partners p on p.id = ma.lender_partner_id
+    where ma.lender_pending_tzs >= ${MIN_LENDER_REPAYMENT_TZS}
+      and ma.lender_partner_id is not null
+      and ma.is_active = true
+    limit 5
+  `
+
+  for (const merchant of merchants) {
+    const claimed = await sql<{ id: string }[]>`
+      update merchant_accounts
+      set lender_pending_tzs = 0, updated_at = now()
+      where id = ${merchant.merchant_id}
+        and lender_pending_tzs >= ${MIN_LENDER_REPAYMENT_TZS}
+      returning id
+    `
+    if (!claimed.length) continue
+
+    const amountTzs = merchant.lender_pending_tzs
+    const amountWei = BigInt(String(amountTzs)) * 10n ** 18n
+
+    let txHash: string | null = null
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      const wallet = deriveMerchantWallet(merchant.wallet_index, provider)
+      const iface = new ethers.Interface(NTZS_TRANSFER_ABI)
+      const tx = await wallet.sendTransaction({
+        to: contractAddress,
+        data: iface.encodeFunctionData('transfer', [merchant.lender_treasury_address, amountWei]),
+      })
+      const receipt = await tx.wait()
+      if (!receipt) throw new Error('No receipt for lender repayment transfer')
+      txHash = receipt.hash
+    } catch (err) {
+      // Restore the pot so it can be retried
+      await sql`
+        update merchant_accounts
+        set lender_pending_tzs = lender_pending_tzs + ${amountTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[worker] lender repayment transfer failed', {
+        merchantId: merchant.merchant_id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      continue
+    }
+
+    // Record in transfers table
+    const syntheticNeonId = `merchant_${merchant.wallet_address.toLowerCase()}`
+    const userRows = await sql<{ id: string }[]>`
+      select id from users where neon_auth_user_id = ${syntheticNeonId} limit 1
+    `
+    const userId = userRows[0]?.id
+    if (userId) {
+      await sql`
+        insert into transfers (
+          partner_id, from_user_id, to_address,
+          token, amount_tzs, tx_hash, status, metadata,
+          created_at, updated_at
+        ) values (
+          ${merchant.lender_partner_id}, ${userId}, ${merchant.lender_treasury_address},
+          'ntzs', ${amountTzs}, ${txHash}, 'completed',
+          ${JSON.stringify({ reason: 'lender_repayment', merchantId: merchant.merchant_id, lenderPartnerId: merchant.lender_partner_id })}::jsonb,
+          now(), now()
+        )
+      `
+    }
+
+    // Mark matching queued lender collections as completed
+    await sql`
+      update merchant_collections
+      set lender_settlement_status = 'completed', updated_at = now()
+      where merchant_id = ${merchant.merchant_id}
+        and lender_settlement_status = 'queued'
+    `
+
+    // Increment repaidTzs on all active loan agreements for this merchant/lender pair
+    await sql`
+      update enterprise_loan_agreements
+      set repaid_tzs = repaid_tzs + ${amountTzs}, updated_at = now()
+      where merchant_id = ${merchant.merchant_id}
+        and partner_id = ${merchant.lender_partner_id}
+        and status = 'active'
+    `
+
+    console.log('[worker] lender repayment fired', {
+      merchantId: merchant.merchant_id,
+      lenderPartnerId: merchant.lender_partner_id,
+      amountTzs,
+      txHash,
+    })
+  }
+}
+
+/**
+ * Nightly: auto-revert lender split when loan is fully repaid.
+ * Checks enterprise_loan_agreements where repaid_tzs >= principal_tzs.
+ */
+async function revertCompletedLoanAgreements(sql: ReturnType<typeof createDbClient>['sql']) {
+  const completed = await sql<{
+    id: string
+    merchant_id: string
+    partner_id: string
+    principal_tzs: number
+    total_owed_tzs: number
+    repaid_tzs: number
+  }[]>`
+    select id, merchant_id, partner_id, principal_tzs, total_owed_tzs, repaid_tzs
+    from enterprise_loan_agreements
+    where status = 'active'
+      and repaid_tzs >= total_owed_tzs
+      and total_owed_tzs > 0
+    limit 20
+  `
+
+  for (const agreement of completed) {
+    await sql`
+      update enterprise_loan_agreements
+      set status = 'repaid', updated_at = now()
+      where id = ${agreement.id}
+    `
+    await sql`
+      update merchant_accounts
+      set lender_split_pct = 0,
+          lender_partner_id = null,
+          lender_controls_settlement = false,
+          withdrawal_limit_tzs = 0,
+          updated_at = now()
+      where id = ${agreement.merchant_id}
+        and lender_partner_id = ${agreement.partner_id}
+    `
+    await logAudit(sql, 'loan_auto_reverted', 'enterprise_loan_agreement', agreement.id, {
+      merchantId: agreement.merchant_id,
+      lenderPartnerId: agreement.partner_id,
+      principalTzs: agreement.principal_tzs,
+      totalOwedTzs: agreement.total_owed_tzs,
+      repaidTzs: agreement.repaid_tzs,
+    })
+    console.log('[worker] loan auto-reverted', {
+      agreementId: agreement.id,
+      merchantId: agreement.merchant_id,
+    })
+  }
+}
+
+/**
+ * Propagate burn_requests.payout_status → enterprise_disbursement_rows.status
+ * for rows that are in processing state.
+ */
+async function syncDisbursementStatus(sql: ReturnType<typeof createDbClient>['sql']) {
+  const jobs = await sql<{
+    row_id: string
+    payout_status: string | null
+    burn_status: string
+    payout_reference: string | null
+    payout_error: string | null
+  }[]>`
+    select dr.id as row_id, br.payout_status, br.status as burn_status,
+           br.payout_reference, br.payout_error
+    from enterprise_disbursement_rows dr
+    join burn_requests br on br.id = dr.burn_request_id
+    where dr.status = 'processing'
+      and dr.burn_request_id is not null
+    limit 20
+  `
+
+  for (const job of jobs) {
+    let newStatus: string | null = null
+    if (job.payout_status === 'completed') {
+      newStatus = 'completed'
+    } else if (job.payout_status === 'failed' || job.burn_status === 'failed') {
+      newStatus = 'failed'
+    }
+
+    if (newStatus) {
+      await sql`
+        update enterprise_disbursement_rows
+        set status = ${newStatus},
+            payout_reference = ${job.payout_reference ?? null},
+            payout_error = ${job.payout_error ?? null},
+            updated_at = now()
+        where id = ${job.row_id}
+      `
+
+      // When all rows in a batch reach terminal state, mark the batch completed/failed
+      if (newStatus === 'completed' || newStatus === 'failed') {
+        await sql`
+          update enterprise_disbursement_batches
+          set status = case
+            when not exists (
+              select 1 from enterprise_disbursement_rows
+              where batch_id = (select batch_id from enterprise_disbursement_rows where id = ${job.row_id})
+                and status not in ('completed', 'failed')
+            )
+            then case
+              when exists (
+                select 1 from enterprise_disbursement_rows
+                where batch_id = (select batch_id from enterprise_disbursement_rows where id = ${job.row_id})
+                  and status = 'failed'
+              ) then 'failed' else 'completed'
+            end
+            else status
+          end,
+          processed_at = case
+            when not exists (
+              select 1 from enterprise_disbursement_rows
+              where batch_id = (select batch_id from enterprise_disbursement_rows where id = ${job.row_id})
+                and status not in ('completed', 'failed')
+            ) then now() else processed_at
+          end,
+          updated_at = now()
+          where id = (select batch_id from enterprise_disbursement_rows where id = ${job.row_id})
+            and status = 'processing'
+        `
+      }
+
+      console.log('[worker] disbursement row synced', { rowId: job.row_id, newStatus })
     }
   }
 }
@@ -721,6 +1004,33 @@ async function main() {
       await sql.end({ timeout: 5 })
     } catch (err) {
       console.warn('[worker] settlement-sync error:', err instanceof Error ? err.message : err)
+    }
+
+    // Phase D: fire on-chain repayments to lender treasury wallets
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await fireBatchLenderRepayments(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] lender-repayments error:', err instanceof Error ? err.message : err)
+    }
+
+    // Phase E: auto-revert loan splits once fully repaid
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await revertCompletedLoanAgreements(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] loan-revert error:', err instanceof Error ? err.message : err)
+    }
+
+    // Phase F: sync disbursement row statuses from burn worker outcomes
+    try {
+      const { sql } = createDbClient(databaseUrl)
+      await syncDisbursementStatus(sql)
+      await sql.end({ timeout: 5 })
+    } catch (err) {
+      console.warn('[worker] disbursement-sync error:', err instanceof Error ? err.message : err)
     }
 
     await sleep(pollMs)
