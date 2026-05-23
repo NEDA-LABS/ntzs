@@ -12,7 +12,7 @@ export default function EnterpriseSignupPage() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
     if (!name.trim() || !email.trim() || !type) return
@@ -81,7 +81,7 @@ export default function EnterpriseSignupPage() {
                 <input
                   type="text"
                   autoFocus
-                  placeholder="Ramani Ltd"
+                  placeholder="Business Name Ltd"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none font-mono transition-colors"
