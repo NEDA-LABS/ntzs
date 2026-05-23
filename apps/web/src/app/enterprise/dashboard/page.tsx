@@ -62,8 +62,12 @@ export default function EnterpriseDashboardPage() {
       if (me.type === 'disbursement_client') {
         const batchesRes = await fetch('/enterprise/api/disbursements').then(r => r.json())
         const batches = batchesRes.batches ?? []
-        const totalDisbursedTzs = batches.filter((b: DisbursementData['recentBatches'][0]) => b.status === 'completed').reduce((s: number, b: DisbursementData['recentBatches'][0]) => s + b.totalAmountTzs, 0)
-        const pendingBatchCount = batches.filter((b: DisbursementData['recentBatches'][0]) => ['pending_review', 'awaiting_funds', 'approved', 'processing'].includes(b.status)).length
+        const totalDisbursedTzs = batches
+          .filter((b: DisbursementData['recentBatches'][0]) => b.status === 'completed')
+          .reduce((s: number, b: DisbursementData['recentBatches'][0]) => s + b.totalAmountTzs, 0)
+        const pendingBatchCount = batches.filter((b: DisbursementData['recentBatches'][0]) =>
+          ['pending_review', 'awaiting_funds', 'approved', 'processing'].includes(b.status)
+        ).length
         setDisbursement({ recentBatches: batches.slice(0, 5), totalDisbursedTzs, batchCount: batches.length, pendingBatchCount })
       }
 
@@ -76,9 +80,9 @@ export default function EnterpriseDashboardPage() {
     return (
       <div className="p-10">
         <div className="animate-pulse space-y-4">
-          <div className="h-4 w-32 bg-slate-800 rounded" />
+          <div className="h-4 w-32 bg-gray-200 rounded" />
           <div className="grid grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-slate-800 rounded" />)}
+            {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-gray-200 rounded" />)}
           </div>
         </div>
       </div>
@@ -88,13 +92,12 @@ export default function EnterpriseDashboardPage() {
   return (
     <div className="p-10 space-y-10">
       <div>
-        <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">Overview</p>
-        <h1 className="text-2xl font-light text-slate-100">Dashboard</h1>
+        <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-1">Overview</p>
+        <h1 className="text-2xl font-light text-gray-900">Dashboard</h1>
       </div>
 
       {accountType === 'capital_lender' && lender && (
         <>
-          {/* KPI cards */}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
             {[
               { label: 'Treasury Balance', value: `TZS ${fmt(lender.treasuryBalanceTzs)}`, sub: 'nTZS on-chain', accent: 'indigo' },
@@ -102,38 +105,37 @@ export default function EnterpriseDashboardPage() {
               { label: 'Total Repaid', value: `TZS ${fmt(lender.totalRepaidTzs)}`, sub: `${lender.totalPrincipalTzs > 0 ? Math.round(lender.totalRepaidTzs / lender.totalPrincipalTzs * 100) : 0}% recovered`, accent: 'green' },
               { label: 'Active Loans', value: String(lender.activeLoanCount), sub: 'merchants funded', accent: 'slate' },
             ].map(card => (
-              <div key={card.label} className="border border-slate-800 bg-slate-900 p-5">
-                <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-3">{card.label}</p>
-                <p className={`text-xl font-semibold ${card.accent === 'indigo' ? 'text-indigo-400' : card.accent === 'green' ? 'text-emerald-400' : 'text-slate-100'}`}>{card.value}</p>
-                <p className="text-[10px] text-slate-700 mt-1">{card.sub}</p>
+              <div key={card.label} className="border border-gray-200 bg-white rounded-lg shadow-sm p-5">
+                <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-3">{card.label}</p>
+                <p className={`text-xl font-semibold ${card.accent === 'indigo' ? 'text-indigo-600' : card.accent === 'green' ? 'text-emerald-600' : 'text-gray-900'}`}>{card.value}</p>
+                <p className="text-[10px] text-gray-400 mt-1">{card.sub}</p>
               </div>
             ))}
           </div>
 
-          {/* Merchant repayment progress */}
-          <div className="border border-slate-800 bg-slate-900">
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-              <p className="text-[10px] tracking-widest text-slate-500 uppercase">Merchant Portfolio</p>
-              <Link href="/enterprise/dashboard/merchants" className="text-[10px] tracking-widest text-indigo-500 uppercase hover:text-indigo-400 transition-colors">View all →</Link>
+          <div className="border border-gray-200 bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-[10px] tracking-widest text-gray-400 uppercase">Merchant Portfolio</p>
+              <Link href="/enterprise/dashboard/merchants" className="text-[10px] tracking-widest text-indigo-600 uppercase hover:text-indigo-700 transition-colors">View all →</Link>
             </div>
             {lender.merchants.length === 0 ? (
-              <p className="px-6 py-8 text-xs text-slate-700">No merchants linked yet. Contact NEDApay to link merchants to your account.</p>
+              <p className="px-6 py-8 text-xs text-gray-400">No merchants linked yet. Contact NEDApay to link merchants to your account.</p>
             ) : (
-              <div className="divide-y divide-slate-800">
+              <div className="divide-y divide-gray-100">
                 {lender.merchants.slice(0, 6).map(m => {
                   const pct = m.principalTzs && m.principalTzs > 0 ? Math.round((m.repaidTzs ?? 0) / m.principalTzs * 100) : 0
                   return (
-                    <div key={m.id} className="px-6 py-4 flex items-center gap-6">
+                    <div key={m.id} className="px-6 py-4 flex items-center gap-6 hover:bg-gray-50 transition-colors">
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-slate-200 truncate">{m.businessName ?? m.handle}</p>
-                        <p className="text-[10px] text-slate-600 mt-0.5">Split: <span className="text-indigo-400">{m.lenderSplitPct}%</span> to you</p>
+                        <p className="text-xs font-medium text-gray-800 truncate">{m.businessName ?? m.handle}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Split: <span className="text-indigo-600">{m.lenderSplitPct}%</span> to you</p>
                       </div>
                       <div className="w-40">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] text-slate-600">{pct}% repaid</span>
-                          {m.loanStatus === 'repaid' && <span className="text-[9px] text-emerald-500 tracking-wider uppercase">Repaid</span>}
+                          <span className="text-[10px] text-gray-400">{pct}% repaid</span>
+                          {m.loanStatus === 'repaid' && <span className="text-[9px] text-emerald-600 tracking-wider uppercase">Repaid</span>}
                         </div>
-                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
                           <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
@@ -155,30 +157,30 @@ export default function EnterpriseDashboardPage() {
               { label: 'Pending', value: String(disbursement.pendingBatchCount), sub: 'awaiting action', accent: disbursement.pendingBatchCount > 0 ? 'amber' : 'slate' },
               { label: 'Service Fee Rate', value: '0.75%', sub: 'per batch', accent: 'slate' },
             ].map(card => (
-              <div key={card.label} className="border border-slate-800 bg-slate-900 p-5">
-                <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-3">{card.label}</p>
-                <p className={`text-xl font-semibold ${card.accent === 'indigo' ? 'text-indigo-400' : card.accent === 'amber' ? 'text-amber-400' : 'text-slate-100'}`}>{card.value}</p>
-                <p className="text-[10px] text-slate-700 mt-1">{card.sub}</p>
+              <div key={card.label} className="border border-gray-200 bg-white rounded-lg shadow-sm p-5">
+                <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-3">{card.label}</p>
+                <p className={`text-xl font-semibold ${card.accent === 'indigo' ? 'text-indigo-600' : card.accent === 'amber' ? 'text-amber-600' : 'text-gray-900'}`}>{card.value}</p>
+                <p className="text-[10px] text-gray-400 mt-1">{card.sub}</p>
               </div>
             ))}
           </div>
 
-          <div className="border border-slate-800 bg-slate-900">
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-              <p className="text-[10px] tracking-widest text-slate-500 uppercase">Recent Batches</p>
-              <Link href="/enterprise/dashboard/disbursements/new" className="text-[10px] tracking-widest text-indigo-500 uppercase hover:text-indigo-400 transition-colors">+ New Batch</Link>
+          <div className="border border-gray-200 bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-[10px] tracking-widest text-gray-400 uppercase">Recent Batches</p>
+              <Link href="/enterprise/dashboard/disbursements/new" className="text-[10px] tracking-widest text-indigo-600 uppercase hover:text-indigo-700 transition-colors">+ New Batch</Link>
             </div>
             {disbursement.recentBatches.length === 0 ? (
-              <p className="px-6 py-8 text-xs text-slate-700">No batches yet. <Link href="/enterprise/dashboard/disbursements/new" className="text-indigo-400 hover:underline">Upload your first CSV →</Link></p>
+              <p className="px-6 py-8 text-xs text-gray-400">No batches yet. <Link href="/enterprise/dashboard/disbursements/new" className="text-indigo-600 hover:underline">Upload your first CSV →</Link></p>
             ) : (
-              <div className="divide-y divide-slate-800">
+              <div className="divide-y divide-gray-100">
                 {disbursement.recentBatches.map(b => (
-                  <div key={b.id} className="px-6 py-4 flex items-center gap-6">
+                  <div key={b.id} className="px-6 py-4 flex items-center gap-6 hover:bg-gray-50 transition-colors">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-200">{b.contractorCount} contractors</p>
-                      <p className="text-[10px] text-slate-600 mt-0.5">{new Date(b.createdAt).toLocaleDateString()}</p>
+                      <p className="text-xs font-medium text-gray-800">{b.contractorCount} contractors</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{new Date(b.createdAt).toLocaleDateString()}</p>
                     </div>
-                    <p className="text-sm font-semibold text-slate-100">TZS {fmt(b.totalAmountTzs)}</p>
+                    <p className="text-sm font-semibold text-gray-900">TZS {fmt(b.totalAmountTzs)}</p>
                     <StatusBadge status={b.status} />
                   </div>
                 ))}
@@ -193,16 +195,16 @@ export default function EnterpriseDashboardPage() {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    pending_review: { label: 'Pending Review', cls: 'text-amber-400 bg-amber-950 border-amber-900' },
-    awaiting_funds: { label: 'Awaiting Funds', cls: 'text-yellow-400 bg-yellow-950 border-yellow-900' },
-    approved: { label: 'Approved', cls: 'text-sky-400 bg-sky-950 border-sky-900' },
-    processing: { label: 'Processing', cls: 'text-blue-400 bg-blue-950 border-blue-900' },
-    completed: { label: 'Completed', cls: 'text-emerald-400 bg-emerald-950 border-emerald-900' },
-    failed: { label: 'Failed', cls: 'text-red-400 bg-red-950 border-red-900' },
+    pending_review: { label: 'Pending Review', cls: 'text-amber-700 bg-amber-50 border-amber-200' },
+    awaiting_funds: { label: 'Awaiting Funds', cls: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+    approved:       { label: 'Approved',        cls: 'text-sky-700 bg-sky-50 border-sky-200' },
+    processing:     { label: 'Processing',      cls: 'text-blue-700 bg-blue-50 border-blue-200' },
+    completed:      { label: 'Completed',       cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+    failed:         { label: 'Failed',          cls: 'text-red-700 bg-red-50 border-red-200' },
   }
-  const s = map[status] ?? { label: status, cls: 'text-slate-400 bg-slate-900 border-slate-800' }
+  const s = map[status] ?? { label: status, cls: 'text-gray-500 bg-gray-100 border-gray-200' }
   return (
-    <span className={`border px-2 py-0.5 text-[9px] font-semibold tracking-wider uppercase ${s.cls}`}>
+    <span className={`border px-2 py-0.5 text-[9px] font-semibold tracking-wider uppercase rounded ${s.cls}`}>
       {s.label}
     </span>
   )

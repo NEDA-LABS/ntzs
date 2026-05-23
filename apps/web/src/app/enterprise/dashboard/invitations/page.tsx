@@ -31,13 +31,13 @@ function fmt(d: string) {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    pending: 'text-amber-400 bg-amber-950 border-amber-900',
-    accepted: 'text-emerald-400 bg-emerald-950 border-emerald-900',
-    rejected: 'text-zinc-500 bg-zinc-900 border-zinc-800',
-    cancelled: 'text-zinc-600 bg-zinc-950 border-zinc-800',
+    pending:   'text-amber-700 bg-amber-50 border-amber-200',
+    accepted:  'text-emerald-700 bg-emerald-50 border-emerald-200',
+    rejected:  'text-gray-500 bg-gray-100 border-gray-200',
+    cancelled: 'text-gray-400 bg-gray-100 border-gray-200',
   }
   return (
-    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border ${styles[status] ?? styles.pending}`}>
+    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border rounded ${styles[status] ?? styles.pending}`}>
       {status}
     </span>
   )
@@ -48,7 +48,6 @@ export default function InvitationsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox')
 
-  // Send invite form
   const [merchantSearch, setMerchantSearch] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -59,7 +58,6 @@ export default function InvitationsPage() {
   const [sendError, setSendError] = useState('')
   const [sendSuccess, setSendSuccess] = useState('')
 
-  // Respond state
   const [responding, setResponding] = useState<string | null>(null)
 
   useEffect(() => {
@@ -82,7 +80,7 @@ export default function InvitationsPage() {
     return () => clearTimeout(t)
   }, [merchantSearch])
 
-  async function handleSendInvite(e: React.FormEvent) {
+  async function handleSendInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!selectedMerchant) return
     setSending(true); setSendError(''); setSendSuccess('')
@@ -123,41 +121,46 @@ export default function InvitationsPage() {
   const sentInvites = invitations.filter(i => i.direction === 'invite')
   const allResolved = invitations.filter(i => i.status !== 'pending')
 
-  if (loading) return <div className="p-10"><div className="animate-pulse h-8 w-48 bg-zinc-800 rounded" /></div>
+  if (loading) return (
+    <div className="p-10">
+      <div className="animate-pulse h-8 w-48 bg-gray-200 rounded" />
+    </div>
+  )
 
   return (
     <div className="p-10 max-w-4xl space-y-10">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Invitations</h1>
-        <p className="text-sm text-zinc-400 mt-1">Invite merchants or review applications</p>
+        <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-1">Capital Lender</p>
+        <h1 className="text-2xl font-light text-gray-900">Invitations</h1>
+        <p className="text-sm text-gray-400 mt-1">Invite merchants or review applications</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left: Send Invite */}
         <div className="space-y-5">
-          <h2 className="text-sm font-medium text-white">Send Invite</h2>
-          <form onSubmit={handleSendInvite} className="border border-white/10 bg-zinc-900 rounded-xl p-5 space-y-4">
+          <h2 className="text-sm font-medium text-gray-700">Send Invite</h2>
+          <form onSubmit={handleSendInvite} className="border border-gray-200 bg-white rounded-xl shadow-sm p-5 space-y-4">
             <div>
-              <label className="block text-xs text-zinc-400 mb-2">Search merchant</label>
+              <label className="block text-xs text-gray-500 mb-2">Search merchant</label>
               <input
                 type="text"
                 value={merchantSearch}
                 onChange={e => setMerchantSearch(e.target.value)}
                 placeholder="Name, handle, or email"
-                className="w-full bg-zinc-950 border border-white/10 text-white text-sm rounded-lg px-3 py-2 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-lg px-3 py-2 placeholder-gray-400 focus:outline-none focus:border-indigo-500"
               />
-              {searching && <p className="text-xs text-zinc-500 mt-1">Searching…</p>}
+              {searching && <p className="text-xs text-gray-400 mt-1">Searching…</p>}
               {searchResults.length > 0 && !selectedMerchant && (
-                <div className="mt-1 border border-white/10 rounded-lg overflow-hidden">
+                <div className="mt-1 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                   {searchResults.map((m, i) => (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => { setSelectedMerchant(m); setMerchantSearch(m.businessName ?? m.handle); setSearchResults([]) }}
-                      className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-white/5 transition-colors ${i > 0 ? 'border-t border-white/5' : ''}`}
+                      className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-100' : ''}`}
                     >
-                      <span className="text-zinc-200">{m.businessName ?? m.handle}</span>
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-gray-800">{m.businessName ?? m.handle}</span>
+                      <span className="text-xs text-gray-400">
                         {m.handle}
                         {m.lenderPartnerId ? ' · already linked' : ''}
                       </span>
@@ -169,23 +172,23 @@ export default function InvitationsPage() {
 
             {selectedMerchant && (
               <>
-                <div className="flex items-center justify-between border border-indigo-900/40 bg-indigo-950/20 rounded-lg px-4 py-2.5">
+                <div className="flex items-center justify-between border border-indigo-200 bg-indigo-50 rounded-lg px-4 py-2.5">
                   <div>
-                    <p className="text-sm text-white font-medium">{selectedMerchant.businessName ?? selectedMerchant.handle}</p>
-                    <p className="text-xs text-zinc-500">@{selectedMerchant.handle} · current settle {selectedMerchant.settlePct}%</p>
+                    <p className="text-sm text-gray-900 font-medium">{selectedMerchant.businessName ?? selectedMerchant.handle}</p>
+                    <p className="text-xs text-gray-500">@{selectedMerchant.handle} · current settle {selectedMerchant.settlePct}%</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => { setSelectedMerchant(null); setMerchantSearch('') }}
-                    className="text-xs text-zinc-500 hover:text-zinc-300"
+                    className="text-xs text-gray-400 hover:text-gray-700"
                   >
                     ✕
                   </button>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-2">
-                    Proposed repayment split % <span className="text-zinc-600">(max {99 - selectedMerchant.settlePct}%)</span>
+                  <label className="block text-xs text-gray-500 mb-2">
+                    Proposed repayment split % <span className="text-gray-300">(max {99 - selectedMerchant.settlePct}%)</span>
                   </label>
                   <input
                     type="number"
@@ -193,30 +196,30 @@ export default function InvitationsPage() {
                     max={99 - selectedMerchant.settlePct}
                     value={proposedSplit}
                     onChange={e => setProposedSplit(Number(e.target.value))}
-                    className="w-full bg-zinc-950 border border-white/10 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-2">Message <span className="text-zinc-600">(optional)</span></label>
+                  <label className="block text-xs text-gray-500 mb-2">Message <span className="text-gray-300">(optional)</span></label>
                   <textarea
                     rows={2}
                     value={inviteMessage}
                     onChange={e => setInviteMessage(e.target.value)}
                     placeholder="Brief note to the merchant…"
-                    className="w-full bg-zinc-950 border border-white/10 text-white text-sm rounded-lg px-3 py-2 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 resize-none"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-lg px-3 py-2 placeholder-gray-400 focus:outline-none focus:border-indigo-500 resize-none"
                   />
                 </div>
               </>
             )}
 
-            {sendError && <p className="text-xs text-red-400">{sendError}</p>}
-            {sendSuccess && <p className="text-xs text-emerald-400">{sendSuccess}</p>}
+            {sendError && <p className="text-xs text-red-600">{sendError}</p>}
+            {sendSuccess && <p className="text-xs text-emerald-600">{sendSuccess}</p>}
 
             <button
               type="submit"
               disabled={!selectedMerchant || sending}
-              className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-lg transition-colors"
+              className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm rounded-lg transition-colors"
             >
               {sending ? 'Sending…' : 'Send Invite'}
             </button>
@@ -231,7 +234,7 @@ export default function InvitationsPage() {
                 key={t}
                 onClick={() => setActiveTab(t as 'inbox' | 'sent')}
                 className={`text-xs tracking-wider uppercase pb-1 border-b-2 transition-colors ${
-                  activeTab === t ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  activeTab === t ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-700'
                 }`}
               >
                 {t === 'inbox' ? `Inbox${incomingApplications.length > 0 ? ` (${incomingApplications.length})` : ''}` : 'Sent'}
@@ -242,15 +245,15 @@ export default function InvitationsPage() {
           {activeTab === 'inbox' && (
             <div className="space-y-3">
               {incomingApplications.length === 0 ? (
-                <div className="border border-white/5 rounded-xl p-8 text-center">
-                  <p className="text-xs text-zinc-600">No pending applications</p>
+                <div className="border border-gray-100 rounded-xl p-8 text-center">
+                  <p className="text-xs text-gray-400">No pending applications</p>
                 </div>
               ) : incomingApplications.map(app => (
-                <div key={app.id} className="border border-white/10 rounded-xl p-4 space-y-3">
+                <div key={app.id} className="border border-gray-200 rounded-xl p-4 space-y-3 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-sm text-white font-medium">{app.merchantName ?? app.merchantHandle}</p>
-                      <p className="text-xs text-zinc-500">@{app.merchantHandle} · {fmt(app.createdAt)}</p>
+                      <p className="text-sm text-gray-900 font-medium">{app.merchantName ?? app.merchantHandle}</p>
+                      <p className="text-xs text-gray-400">@{app.merchantHandle} · {fmt(app.createdAt)}</p>
                     </div>
                     <StatusBadge status={app.status} />
                   </div>
@@ -258,14 +261,14 @@ export default function InvitationsPage() {
                     <button
                       onClick={() => handleRespond(app.id, 'accept')}
                       disabled={responding === app.id}
-                      className="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded transition-colors"
+                      className="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded transition-colors"
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => handleRespond(app.id, 'reject')}
                       disabled={responding === app.id}
-                      className="px-3 py-1.5 text-xs border border-white/10 text-zinc-400 hover:text-white rounded transition-colors disabled:opacity-40"
+                      className="px-3 py-1.5 text-xs border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-400 rounded transition-colors disabled:opacity-40"
                     >
                       Reject
                     </button>
@@ -273,15 +276,14 @@ export default function InvitationsPage() {
                 </div>
               ))}
 
-              {/* Resolved */}
               {allResolved.filter(i => i.direction === 'application').length > 0 && (
                 <div className="space-y-2 mt-4">
-                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Resolved</p>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wider">Resolved</p>
                   {allResolved.filter(i => i.direction === 'application').map(app => (
-                    <div key={app.id} className="flex items-center justify-between border border-white/5 rounded-lg px-4 py-2.5">
+                    <div key={app.id} className="flex items-center justify-between border border-gray-100 rounded-lg px-4 py-2.5">
                       <div>
-                        <p className="text-xs text-zinc-300">{app.merchantName ?? app.merchantHandle}</p>
-                        <p className="text-[10px] text-zinc-600">{fmt(app.createdAt)}</p>
+                        <p className="text-xs text-gray-700">{app.merchantName ?? app.merchantHandle}</p>
+                        <p className="text-[10px] text-gray-400">{fmt(app.createdAt)}</p>
                       </div>
                       <StatusBadge status={app.status} />
                     </div>
@@ -294,14 +296,14 @@ export default function InvitationsPage() {
           {activeTab === 'sent' && (
             <div className="space-y-2">
               {sentInvites.length === 0 ? (
-                <div className="border border-white/5 rounded-xl p-8 text-center">
-                  <p className="text-xs text-zinc-600">No invites sent yet</p>
+                <div className="border border-gray-100 rounded-xl p-8 text-center">
+                  <p className="text-xs text-gray-400">No invites sent yet</p>
                 </div>
               ) : sentInvites.map(inv => (
-                <div key={inv.id} className="flex items-center justify-between border border-white/10 rounded-lg px-4 py-3">
+                <div key={inv.id} className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
                   <div>
-                    <p className="text-sm text-zinc-200">{inv.merchantName ?? inv.merchantHandle}</p>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-sm text-gray-800">{inv.merchantName ?? inv.merchantHandle}</p>
+                    <p className="text-xs text-gray-400">
                       @{inv.merchantHandle}
                       {inv.proposedSplitPct != null ? ` · ${inv.proposedSplitPct}% split` : ''}
                       {' · '}{fmt(inv.createdAt)}

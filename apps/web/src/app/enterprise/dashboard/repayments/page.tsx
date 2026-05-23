@@ -41,39 +41,48 @@ export default function RepaymentsPage() {
     <div className="p-10 space-y-8">
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">Capital Lender</p>
-          <h1 className="text-2xl font-light text-slate-100">Repayments</h1>
+          <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-1">Capital Lender</p>
+          <h1 className="text-2xl font-light text-gray-900">Repayments</h1>
         </div>
         {repayments.length > 0 && (
-          <button onClick={exportCsv} className="border border-slate-700 px-4 py-2 text-[10px] tracking-widest text-slate-500 uppercase hover:border-indigo-500 hover:text-indigo-400 transition-colors">
+          <button
+            onClick={exportCsv}
+            className="border border-gray-300 px-4 py-2 text-[10px] tracking-widest text-gray-500 uppercase hover:border-indigo-400 hover:text-indigo-600 transition-colors"
+          >
             Export CSV
           </button>
         )}
       </div>
 
       {loading ? (
-        <div className="animate-pulse space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-slate-800 rounded" />)}</div>
+        <div className="animate-pulse space-y-2">
+          {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-200 rounded" />)}
+        </div>
       ) : repayments.length === 0 ? (
-        <div className="border border-slate-800 bg-slate-900 p-8 text-center">
-          <p className="text-sm text-slate-600">No repayments yet. Repayments will appear here as merchants collect payments.</p>
+        <div className="border border-gray-200 bg-white rounded-lg shadow-sm p-8 text-center">
+          <p className="text-sm text-gray-500">No repayments yet. Repayments will appear here as merchants collect payments.</p>
         </div>
       ) : (
-        <div className="border border-slate-800 bg-slate-900 overflow-hidden">
+        <div className="border border-gray-200 bg-white rounded-lg shadow-sm overflow-hidden">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-gray-200 bg-gray-50">
                 {['Date', 'Amount', 'Status', 'Tx Hash'].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-[10px] tracking-widest text-slate-600 uppercase font-medium">{h}</th>
+                  <th key={h} className="text-left px-5 py-3 text-[10px] tracking-widest text-gray-400 uppercase font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-gray-100">
               {repayments.map(r => (
-                <tr key={r.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="px-5 py-3 text-slate-400">{new Date(r.createdAt).toLocaleDateString()}</td>
-                  <td className="px-5 py-3 font-semibold text-indigo-400">TZS {fmt(r.amountTzs)}</td>
+                <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3 text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</td>
+                  <td className="px-5 py-3 font-semibold text-indigo-600">TZS {fmt(r.amountTzs)}</td>
                   <td className="px-5 py-3">
-                    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border ${r.status === 'completed' ? 'text-emerald-400 bg-emerald-950 border-emerald-900' : r.status === 'failed' ? 'text-red-400 bg-red-950 border-red-900' : 'text-slate-400 bg-slate-900 border-slate-800'}`}>
+                    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border rounded ${
+                      r.status === 'completed' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                      r.status === 'failed'    ? 'text-red-700 bg-red-50 border-red-200' :
+                      'text-gray-500 bg-gray-100 border-gray-200'
+                    }`}>
                       {r.status}
                     </span>
                   </td>
@@ -83,12 +92,12 @@ export default function RepaymentsPage() {
                         href={`https://basescan.org/tx/${r.txHash}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[10px] text-indigo-500 hover:text-indigo-400 font-mono"
+                        className="text-[10px] text-indigo-600 hover:text-indigo-700 font-mono"
                       >
                         {r.txHash.slice(0, 10)}…{r.txHash.slice(-6)}
                       </a>
                     ) : (
-                      <span className="text-slate-700">—</span>
+                      <span className="text-gray-300">—</span>
                     )}
                   </td>
                 </tr>
