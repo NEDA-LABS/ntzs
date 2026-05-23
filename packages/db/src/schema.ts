@@ -1297,3 +1297,29 @@ export const enterpriseMerchantApplications = pgTable(
     statusIdx: index('enterprise_merchant_applications_status_idx').on(t.status),
   })
 )
+
+export const enterpriseWithdrawRequests = pgTable(
+  'enterprise_withdraw_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    enterpriseId: uuid('enterprise_id')
+      .notNull()
+      .references(() => enterpriseAccounts.id, { onDelete: 'cascade' }),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'restrict' }),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    payoutMethod: text('payout_method').notNull().default('mobile'),
+    payoutPhone: varchar('payout_phone', { length: 32 }),
+    payoutBankAccount: text('payout_bank_account'),
+    status: text('status').notNull().default('pending'),
+    notes: text('notes'),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    enterpriseIdx: index('enterprise_withdraw_requests_enterprise_id_idx').on(t.enterpriseId),
+    statusIdx: index('enterprise_withdraw_requests_status_idx').on(t.status),
+    createdAtIdx: index('enterprise_withdraw_requests_created_at_idx').on(t.createdAt),
+  })
+)

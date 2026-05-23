@@ -465,6 +465,17 @@ export function MerchantSignIn() {
             )}
           </div>
 
+          {/* Enterprise entry */}
+          <div className="form-reveal mt-4">
+            <a
+              href="/enterprise/login"
+              className="flex items-center justify-between w-full border border-zinc-200 px-5 py-3 text-[10px] font-medium tracking-widest text-zinc-400 uppercase transition-colors hover:border-zinc-900 hover:text-zinc-900 group"
+            >
+              <span>Enterprise Sign In</span>
+              <span className="text-zinc-300 group-hover:text-zinc-900 transition-colors">→</span>
+            </a>
+          </div>
+
           {/* Value props */}
           <div className="props-reveal mt-10 space-y-3">
             <div className="h-px bg-zinc-200" />

@@ -16,6 +16,7 @@ interface EnterpriseAccount {
 
 const lenderNav = [
   { href: '/enterprise/dashboard', label: 'Overview', icon: '▪' },
+  { href: '/enterprise/dashboard/wallet', label: 'Wallet', icon: '▪' },
   { href: '/enterprise/dashboard/merchants', label: 'Merchants', icon: '▪' },
   { href: '/enterprise/dashboard/invitations', label: 'Invitations', icon: '▪' },
   { href: '/enterprise/dashboard/repayments', label: 'Repayments', icon: '▪' },
@@ -24,6 +25,7 @@ const lenderNav = [
 
 const disbursementNav = [
   { href: '/enterprise/dashboard', label: 'Overview', icon: '▪' },
+  { href: '/enterprise/dashboard/wallet', label: 'Wallet', icon: '▪' },
   { href: '/enterprise/dashboard/disbursements', label: 'Disbursements', icon: '▪' },
   { href: '/enterprise/dashboard/disbursements/new', label: 'New Batch', icon: '+' },
 ]
