@@ -41,12 +41,12 @@ function fmtDate(s: string) {
 }
 
 const BATCH_STATUS_STYLES: Record<BatchStatus, string> = {
-  pending_review: 'text-amber-400 bg-amber-950 border-amber-900',
-  awaiting_funds: 'text-sky-400 bg-sky-950 border-sky-900',
-  approved:       'text-indigo-400 bg-indigo-950 border-indigo-900',
-  processing:     'text-violet-400 bg-violet-950 border-violet-900',
-  completed:      'text-emerald-400 bg-emerald-950 border-emerald-900',
-  failed:         'text-red-400 bg-red-950 border-red-900',
+  pending_review: 'text-amber-700 bg-amber-50 border-amber-200',
+  awaiting_funds: 'text-sky-700 bg-sky-50 border-sky-200',
+  approved:       'text-indigo-700 bg-indigo-50 border-indigo-200',
+  processing:     'text-violet-700 bg-violet-50 border-violet-200',
+  completed:      'text-emerald-700 bg-emerald-50 border-emerald-200',
+  failed:         'text-red-700 bg-red-50 border-red-200',
 }
 
 const BATCH_STATUS_LABELS: Record<BatchStatus, string> = {
@@ -59,15 +59,15 @@ const BATCH_STATUS_LABELS: Record<BatchStatus, string> = {
 }
 
 const ROW_STATUS_STYLES: Record<RowStatus, string> = {
-  pending:    'text-slate-500 border-slate-700',
-  processing: 'text-violet-400 bg-violet-950 border-violet-900',
-  completed:  'text-emerald-400 bg-emerald-950 border-emerald-900',
-  failed:     'text-red-400 bg-red-950 border-red-900',
+  pending:    'text-slate-500 bg-slate-50 border-slate-200',
+  processing: 'text-violet-700 bg-violet-50 border-violet-200',
+  completed:  'text-emerald-700 bg-emerald-50 border-emerald-200',
+  failed:     'text-red-700 bg-red-50 border-red-200',
 }
 
 function BatchStatusBadge({ status }: { status: BatchStatus }) {
   return (
-    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border ${BATCH_STATUS_STYLES[status]}`}>
+    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border rounded-sm font-medium ${BATCH_STATUS_STYLES[status]}`}>
       {BATCH_STATUS_LABELS[status]}
     </span>
   )
@@ -75,7 +75,7 @@ function BatchStatusBadge({ status }: { status: BatchStatus }) {
 
 function RowStatusBadge({ status }: { status: RowStatus }) {
   return (
-    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border ${ROW_STATUS_STYLES[status]}`}>
+    <span className={`text-[9px] tracking-wider uppercase px-2 py-0.5 border rounded-sm font-medium ${ROW_STATUS_STYLES[status]}`}>
       {status}
     </span>
   )
@@ -128,11 +128,13 @@ export default function BatchDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-10">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-slate-800 rounded" />
-          <div className="h-32 bg-slate-800 rounded" />
-          <div className="h-64 bg-slate-800 rounded" />
+      <div className="min-h-full">
+        <div className="bg-white border-b border-slate-200 px-10 py-6">
+          <div className="h-4 w-32 bg-slate-200 rounded animate-pulse mb-2" />
+          <div className="h-7 w-64 bg-slate-200 rounded animate-pulse" />
+        </div>
+        <div className="p-10 space-y-4">
+          {[...Array(3)].map((_, i) => <div key={i} className="h-20 bg-slate-200 rounded animate-pulse" />)}
         </div>
       </div>
     )
@@ -140,133 +142,147 @@ export default function BatchDetailPage() {
 
   if (!batch) {
     return (
-      <div className="p-10">
-        <p className="text-sm text-slate-500">Batch not found.</p>
-        <Link href="/enterprise/dashboard/disbursements" className="text-xs text-indigo-400 hover:text-indigo-300 mt-2 inline-block">
-          ← Back to disbursements
-        </Link>
+      <div className="min-h-full">
+        <div className="bg-white border-b border-slate-200 px-10 py-6">
+          <p className="text-sm text-slate-500">Batch not found.</p>
+        </div>
+        <div className="p-10">
+          <Link href="/enterprise/dashboard/disbursements" className="text-xs text-indigo-600 hover:text-indigo-800">
+            ← Back to disbursements
+          </Link>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="p-10 space-y-8 max-w-5xl">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Link href="/enterprise/dashboard/disbursements" className="text-[10px] tracking-widest text-slate-600 uppercase hover:text-slate-400 transition-colors">
+    <div className="min-h-full">
+      {/* Page header */}
+      <div className="bg-white border-b border-slate-200 px-10 py-6">
+        <div className="flex items-end justify-between">
+          <div>
+            <Link
+              href="/enterprise/dashboard/disbursements"
+              className="text-[10px] tracking-widest text-slate-400 uppercase hover:text-slate-600 transition-colors"
+            >
               ← Disbursements
             </Link>
+            <h1 className="text-2xl font-light text-slate-900 tracking-tight mt-1.5">
+              {batch.filename ?? `Batch ${batch.id.slice(0, 8)}`}
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">{fmtDate(batch.createdAt)}</p>
           </div>
-          <h1 className="text-2xl font-light text-slate-100">
-            {batch.filename ?? `Batch ${batch.id.slice(0, 8)}`}
-          </h1>
-          <p className="text-xs text-slate-600 mt-1">{fmtDate(batch.createdAt)}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {batch.status === 'completed' && (
-            <button
-              onClick={downloadReport}
-              className="px-4 py-2 border border-slate-700 text-slate-400 hover:text-slate-200 text-xs tracking-wide transition-colors"
-            >
-              Download Report
-            </button>
-          )}
-          <BatchStatusBadge status={batch.status} />
+          <div className="flex items-center gap-3">
+            {batch.status === 'completed' && (
+              <button
+                onClick={downloadReport}
+                className="px-4 py-2 border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 text-xs tracking-wide transition-colors rounded-sm"
+              >
+                Download Report
+              </button>
+            )}
+            <BatchStatusBadge status={batch.status} />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: 'Contractors', value: batch.contractorCount.toString(), color: 'text-slate-100' },
-          { label: 'Disbursement Total', value: `TZS ${fmt(batch.totalAmountTzs)}`, color: 'text-slate-100' },
-          { label: 'Service Fee', value: `TZS ${fmt(batch.serviceFeeTzs)}`, color: 'text-slate-400' },
-          { label: 'Total Due', value: `TZS ${fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}`, color: 'text-indigo-400' },
-        ].map(c => (
-          <div key={c.label} className="border border-slate-800 bg-slate-900 p-4">
-            <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">{c.label}</p>
-            <p className={`text-sm font-semibold ${c.color}`}>{c.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {rows.length > 0 && batch.status !== 'pending_review' && (
-        <div className="grid grid-cols-3 gap-4">
+      <div className="p-10 space-y-6 max-w-5xl">
+        {/* Summary cards */}
+        <div className="grid grid-cols-4 gap-4">
           {[
-            { label: 'Completed', value: completedCount, color: 'text-emerald-400' },
-            { label: 'Failed', value: failedCount, color: failedCount > 0 ? 'text-red-400' : 'text-slate-600' },
-            { label: 'Pending / Processing', value: rows.length - completedCount - failedCount, color: 'text-slate-400' },
+            { label: 'Contractors', value: batch.contractorCount.toString(), accent: 'border-l-slate-400' },
+            { label: 'Disbursement Total', value: `TZS ${fmt(batch.totalAmountTzs)}`, accent: 'border-l-slate-400' },
+            { label: 'Service Fee', value: `TZS ${fmt(batch.serviceFeeTzs)}`, accent: 'border-l-slate-300', muted: true },
+            { label: 'Total Due', value: `TZS ${fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}`, accent: 'border-l-indigo-500' },
           ].map(c => (
-            <div key={c.label} className="border border-slate-800 bg-slate-900 p-4">
-              <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">{c.label}</p>
-              <p className={`text-lg font-semibold ${c.color}`}>{c.value}</p>
+            <div key={c.label} className={`bg-white border border-slate-200 border-l-4 ${c.accent} px-5 py-4 shadow-sm rounded-sm`}>
+              <p className="text-[10px] tracking-widest text-slate-400 uppercase mb-1">{c.label}</p>
+              <p className={`text-sm font-semibold tabular-nums ${c.muted ? 'text-slate-400' : 'text-slate-900'}`}>{c.value}</p>
             </div>
           ))}
         </div>
-      )}
 
-      {batch.status === 'pending_review' && (
-        <div className="border border-amber-900 bg-amber-950/20 p-5 space-y-3">
-          <p className="text-xs text-amber-400 font-medium">Action required: Confirm bank transfer</p>
-          <p className="text-xs text-slate-400">
-            Transfer <span className="text-indigo-400 font-semibold">TZS {fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}</span> to
-            the NEDApay collection account, using batch ID <span className="font-mono text-slate-300">{batch.id.slice(0, 8)}</span> as reference.
-            Then click below to notify NEDApay.
-          </p>
-          {confirmError && <p className="text-xs text-red-400">{confirmError}</p>}
-          <button
-            onClick={confirmTransfer}
-            disabled={confirming}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs tracking-wide transition-colors"
-          >
-            {confirming ? 'Confirming…' : 'Confirm transfer initiated'}
-          </button>
-        </div>
-      )}
-
-      {batch.status === 'awaiting_funds' && (
-        <div className="border border-sky-900 bg-sky-950/20 p-4">
-          <p className="text-xs text-sky-400">Awaiting bank transfer confirmation from NEDApay ops. Disbursements will begin once funds are verified.</p>
-        </div>
-      )}
-
-      <div className="border border-slate-800">
-        <div className="px-4 py-3 border-b border-slate-800 bg-slate-900 flex items-center justify-between">
-          <p className="text-[10px] tracking-widest text-slate-600 uppercase">Contractors ({rows.length})</p>
-        </div>
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-[10px] tracking-widest text-slate-600 uppercase bg-slate-950">
-              <th className="px-4 py-3 text-left">#</th>
-              <th className="px-4 py-3 text-left">Name</th>
-              <th className="px-4 py-3 text-left">Phone</th>
-              <th className="px-4 py-3 text-right">Amount (TZS)</th>
-              <th className="px-4 py-3 text-left">Method</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-left">Reference</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id} className={`border-b border-slate-800 last:border-0 ${i % 2 === 0 ? 'bg-slate-900' : 'bg-slate-950'}`}>
-                <td className="px-4 py-3 text-slate-600">{i + 1}</td>
-                <td className="px-4 py-3 text-slate-300">{r.contractorName}</td>
-                <td className="px-4 py-3 text-slate-500 font-mono">{r.phone}</td>
-                <td className="px-4 py-3 text-right text-slate-200 tabular-nums">{fmt(r.amountTzs)}</td>
-                <td className="px-4 py-3 text-slate-600 uppercase text-[10px]">{r.payoutMethod}</td>
-                <td className="px-4 py-3">
-                  <RowStatusBadge status={r.status} />
-                  {r.payoutError && (
-                    <p className="text-[10px] text-red-400 mt-0.5">{r.payoutError}</p>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-slate-600 font-mono text-[10px]">
-                  {r.payoutReference ?? '—'}
-                </td>
-              </tr>
+        {/* Row-level stats */}
+        {rows.length > 0 && batch.status !== 'pending_review' && (
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Completed', value: completedCount, accent: 'border-l-emerald-500', color: 'text-emerald-700' },
+              { label: 'Failed', value: failedCount, accent: failedCount > 0 ? 'border-l-red-500' : 'border-l-slate-200', color: failedCount > 0 ? 'text-red-700' : 'text-slate-400' },
+              { label: 'Pending / Processing', value: rows.length - completedCount - failedCount, accent: 'border-l-slate-300', color: 'text-slate-500' },
+            ].map(c => (
+              <div key={c.label} className={`bg-white border border-slate-200 border-l-4 ${c.accent} px-5 py-4 shadow-sm rounded-sm`}>
+                <p className="text-[10px] tracking-widest text-slate-400 uppercase mb-1">{c.label}</p>
+                <p className={`text-lg font-semibold ${c.color}`}>{c.value}</p>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
+
+        {/* Pending review action */}
+        {batch.status === 'pending_review' && (
+          <div className="bg-white border border-amber-200 border-l-4 border-l-amber-400 p-5 space-y-3 shadow-sm rounded-sm">
+            <p className="text-sm text-amber-800 font-medium">Action required: Confirm bank transfer</p>
+            <p className="text-xs text-slate-600">
+              Transfer{' '}
+              <span className="text-indigo-700 font-semibold">TZS {fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}</span>{' '}
+              to the NEDApay collection account, using batch ID{' '}
+              <span className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5">{batch.id.slice(0, 8)}</span>{' '}
+              as reference. Then click below to notify NEDApay.
+            </p>
+            {confirmError && <p className="text-xs text-red-600">{confirmError}</p>}
+            <button
+              onClick={confirmTransfer}
+              disabled={confirming}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs tracking-wide transition-colors rounded-sm"
+            >
+              {confirming ? 'Confirming…' : 'Confirm transfer initiated'}
+            </button>
+          </div>
+        )}
+
+        {batch.status === 'awaiting_funds' && (
+          <div className="bg-sky-50 border border-sky-200 border-l-4 border-l-sky-400 px-5 py-4 rounded-sm">
+            <p className="text-xs text-sky-700">Awaiting bank transfer confirmation from NEDApay ops. Disbursements will begin once funds are verified.</p>
+          </div>
+        )}
+
+        {/* Contractors table */}
+        <div className="bg-white border border-slate-200 shadow-sm rounded-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <p className="text-[10px] tracking-widest text-slate-400 uppercase font-medium">Contractors ({rows.length})</p>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-200">
+                {['#', 'Name', 'Phone', 'Amount (TZS)', 'Method', 'Status', 'Reference'].map(h => (
+                  <th key={h} className={`px-4 py-3 text-[10px] tracking-widest text-slate-400 uppercase font-medium ${h === 'Amount (TZS)' ? 'text-right' : 'text-left'}`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r, i) => (
+                <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 text-slate-400">{i + 1}</td>
+                  <td className="px-4 py-3 text-slate-800 font-medium">{r.contractorName}</td>
+                  <td className="px-4 py-3 text-slate-500 font-mono">{r.phone}</td>
+                  <td className="px-4 py-3 text-right text-slate-900 font-medium tabular-nums">{fmt(r.amountTzs)}</td>
+                  <td className="px-4 py-3 text-slate-500 uppercase text-[10px]">{r.payoutMethod}</td>
+                  <td className="px-4 py-3">
+                    <RowStatusBadge status={r.status} />
+                    {r.payoutError && (
+                      <p className="text-[10px] text-red-600 mt-0.5">{r.payoutError}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-400 font-mono text-[10px]">
+                    {r.payoutReference ?? '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

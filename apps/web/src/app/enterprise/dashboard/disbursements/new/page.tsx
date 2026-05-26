@@ -69,6 +69,7 @@ export default function NewBatchPage() {
   const [result, setResult] = useState<UploadResult | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [dragging, setDragging] = useState(false)
 
   function handleFile(file: File) {
     setFilename(file.name)
@@ -107,6 +108,7 @@ export default function NewBatchPage() {
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
+    setDragging(false)
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
   }
@@ -169,193 +171,242 @@ export default function NewBatchPage() {
 
   if (step === 'done' && result) {
     return (
-      <div className="p-10 max-w-lg space-y-6">
-        <div>
-          <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">Disbursement Client</p>
-          <h1 className="text-2xl font-light text-slate-100">Batch Created</h1>
+      <div className="min-h-full">
+        <div className="bg-white border-b border-slate-200 px-10 py-6">
+          <p className="text-[10px] tracking-widest text-slate-400 uppercase mb-1.5">Disbursement Client</p>
+          <h1 className="text-2xl font-light text-slate-900 tracking-tight">Batch Created</h1>
         </div>
 
-        <div className="border border-emerald-900 bg-emerald-950/30 p-6 space-y-4">
-          <p className="text-xs text-emerald-400 tracking-wide">Batch ready — awaiting your bank transfer</p>
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div><p className="text-[10px] text-slate-600 mb-0.5">Contractors</p><p className="text-slate-100">{result.contractorCount}</p></div>
-            <div><p className="text-[10px] text-slate-600 mb-0.5">Disbursement Total</p><p className="text-slate-100">TZS {fmt(result.totalAmountTzs)}</p></div>
-            <div><p className="text-[10px] text-slate-600 mb-0.5">Service Fee (0.75%)</p><p className="text-slate-400">TZS {fmt(result.serviceFeeTzs)}</p></div>
-            <div><p className="text-[10px] text-slate-600 mb-0.5">Total Bank Transfer</p><p className="text-indigo-400 font-semibold">TZS {fmt(result.totalDue)}</p></div>
+        <div className="p-10 max-w-lg space-y-5">
+          <div className="bg-white border border-emerald-200 border-l-4 border-l-emerald-500 p-6 shadow-sm space-y-4 rounded-sm">
+            <p className="text-xs text-emerald-700 font-medium tracking-wide">Batch ready — awaiting your bank transfer</p>
+            <div className="grid grid-cols-2 gap-4 text-xs pt-1">
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Contractors</p>
+                <p className="text-slate-900 font-medium">{result.contractorCount}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Disbursement Total</p>
+                <p className="text-slate-900 font-medium">TZS {fmt(result.totalAmountTzs)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Service Fee (0.75%)</p>
+                <p className="text-slate-500">TZS {fmt(result.serviceFeeTzs)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Total Bank Transfer</p>
+                <p className="text-indigo-700 font-semibold">TZS {fmt(result.totalDue)}</p>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="border border-slate-800 bg-slate-900 p-5 space-y-3 text-xs text-slate-400">
-          <p className="text-slate-200 text-sm font-medium">Next steps</p>
-          <ol className="space-y-2 list-decimal list-inside">
-            <li>Transfer <span className="text-indigo-400 font-semibold">TZS {fmt(result.totalDue)}</span> to NEDApay collection account</li>
-            <li>Use batch ID <span className="font-mono text-slate-300">{result.batchId.slice(0, 8)}</span> as bank transfer reference</li>
-            <li>Click "Confirm transfer initiated" below once sent</li>
-          </ol>
-        </div>
+          <div className="bg-white border border-slate-200 p-5 space-y-3 text-xs text-slate-600 shadow-sm rounded-sm">
+            <p className="text-slate-900 text-sm font-medium">Next steps</p>
+            <ol className="space-y-2 list-decimal list-inside">
+              <li>Transfer <span className="text-indigo-700 font-semibold">TZS {fmt(result.totalDue)}</span> to NEDApay collection account</li>
+              <li>Use batch ID <span className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5">{result.batchId.slice(0, 8)}</span> as bank transfer reference</li>
+              <li>Click &quot;Confirm transfer initiated&quot; below once sent</li>
+            </ol>
+          </div>
 
-        {confirmError && <p className="text-xs text-red-400">{confirmError}</p>}
+          {confirmError && (
+            <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-sm">
+              <p className="text-xs text-red-700">{confirmError}</p>
+            </div>
+          )}
 
-        <div className="flex gap-3">
-          <button
-            onClick={confirmTransfer}
-            disabled={confirming}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs tracking-wide transition-colors"
-          >
-            {confirming ? 'Confirming…' : 'Confirm transfer initiated'}
-          </button>
-          <button
-            onClick={() => router.push(`/enterprise/dashboard/disbursements/${result.batchId}`)}
-            className="px-5 py-2 border border-slate-700 text-slate-400 hover:text-slate-200 text-xs tracking-wide transition-colors"
-          >
-            View batch later
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={confirmTransfer}
+              disabled={confirming}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs tracking-wide transition-colors rounded-sm"
+            >
+              {confirming ? 'Confirming…' : 'Confirm transfer initiated'}
+            </button>
+            <button
+              onClick={() => router.push(`/enterprise/dashboard/disbursements/${result.batchId}`)}
+              className="px-5 py-2.5 border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 text-xs tracking-wide transition-colors rounded-sm"
+            >
+              View batch later
+            </button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="p-10 space-y-8 max-w-4xl">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">Disbursement Client</p>
-          <h1 className="text-2xl font-light text-slate-100">New Disbursement Batch</h1>
+    <div className="min-h-full">
+      {/* Page header */}
+      <div className="bg-white border-b border-slate-200 px-10 py-6">
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-[10px] tracking-widest text-slate-400 uppercase mb-1.5">Disbursement Client</p>
+            <h1 className="text-2xl font-light text-slate-900 tracking-tight">New Disbursement Batch</h1>
+          </div>
+          {step === 'preview' && (
+            <button
+              onClick={() => { setStep('upload'); setRows([]); setRowErrors([]); setBatchError(null); setFilename(null) }}
+              className="text-xs text-slate-500 hover:text-slate-800 transition-colors"
+            >
+              ← Upload different file
+            </button>
+          )}
         </div>
-        {step === 'preview' && (
-          <button
-            onClick={() => { setStep('upload'); setRows([]); setRowErrors([]); setBatchError(null); setFilename(null) }}
-            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            ← Upload different file
-          </button>
-        )}
       </div>
 
-      {step === 'upload' && (
-        <div className="space-y-6">
-          <div
-            onDrop={handleDrop}
-            onDragOver={e => e.preventDefault()}
-            onClick={() => fileRef.current?.click()}
-            className="border-2 border-dashed border-slate-700 hover:border-indigo-700 bg-slate-900 p-16 text-center cursor-pointer transition-colors"
-          >
-            <p className="text-sm text-slate-400 mb-2">Drop your CSV file here or click to browse</p>
-            <p className="text-[10px] text-slate-600">Required columns: contractorName, phone, amountTzs — Optional: payoutMethod (mobile/eft), bankAccount</p>
-            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleInputChange} />
-          </div>
+      <div className="p-10 space-y-6 max-w-4xl">
 
-          {batchError && (
-            <div className="border border-red-900 bg-red-950/30 p-4">
-              <p className="text-xs text-red-400">{batchError}</p>
+        {step === 'upload' && (
+          <div className="space-y-5">
+            {/* Drop zone */}
+            <div
+              onDrop={handleDrop}
+              onDragOver={e => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onClick={() => fileRef.current?.click()}
+              className={`bg-white border-2 border-dashed rounded-sm p-16 text-center cursor-pointer transition-all ${
+                dragging
+                  ? 'border-indigo-400 bg-indigo-50'
+                  : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+              }`}
+            >
+              <div className="mx-auto w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <p className="text-sm text-slate-700 mb-1">Drop your CSV file here or click to browse</p>
+              <p className="text-[11px] text-slate-400">Required: contractorName, phone, amountTzs — Optional: payoutMethod (mobile/eft), bankAccount</p>
+              <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleInputChange} />
             </div>
-          )}
 
-          <div className="border border-slate-800 bg-slate-900 p-5 text-xs text-slate-500 space-y-2">
-            <p className="text-slate-300 text-sm font-medium mb-3">BoT Sandbox Limits</p>
-            <p>Maximum <span className="text-slate-300">20 contractors</span> per batch</p>
-            <p>Maximum <span className="text-slate-300">TZS 1,000,000</span> per contractor per transaction</p>
-            <p>Service fee: <span className="text-slate-300">0.75%</span> of total disbursement</p>
-          </div>
+            {batchError && (
+              <div className="bg-red-50 border border-red-200 border-l-4 border-l-red-500 px-4 py-3 rounded-sm">
+                <p className="text-xs text-red-700">{batchError}</p>
+              </div>
+            )}
 
-          <div className="border border-slate-800 bg-slate-900 p-5">
-            <p className="text-slate-300 text-sm font-medium mb-3">CSV Format</p>
-            <pre className="text-[10px] text-slate-500 leading-5">
+            <div className="grid grid-cols-2 gap-4">
+              {/* BoT limits */}
+              <div className="bg-white border border-slate-200 border-l-4 border-l-amber-400 p-5 shadow-sm rounded-sm">
+                <p className="text-slate-900 text-sm font-medium mb-3">BoT Sandbox Limits</p>
+                <div className="space-y-2 text-xs text-slate-600">
+                  <p>Maximum <span className="text-slate-900 font-medium">20 contractors</span> per batch</p>
+                  <p>Maximum <span className="text-slate-900 font-medium">TZS 1,000,000</span> per contractor per transaction</p>
+                  <p>Service fee: <span className="text-slate-900 font-medium">0.75%</span> of total disbursement</p>
+                </div>
+              </div>
+
+              {/* CSV format */}
+              <div className="bg-white border border-slate-200 p-5 shadow-sm rounded-sm">
+                <p className="text-slate-900 text-sm font-medium mb-3">CSV Format</p>
+                <pre className="text-[10px] text-slate-500 leading-5 bg-slate-50 border border-slate-100 rounded p-3 overflow-x-auto">
 {`contractorName,phone,amountTzs,payoutMethod,bankAccount
 John Doe,+255712345678,500000,mobile,
 Jane Smith,+255754321098,750000,eft,ACC-1234-5678`}
-            </pre>
-          </div>
-        </div>
-      )}
-
-      {step === 'preview' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-4 gap-4">
-            {[
-              { label: 'File', value: filename ?? '—', color: 'text-slate-300' },
-              { label: 'Contractors', value: rows.length.toString(), color: rows.length > MAX_CONTRACTORS ? 'text-red-400' : 'text-slate-100' },
-              { label: 'Disbursement Total', value: `TZS ${fmt(totalAmountTzs)}`, color: 'text-slate-100' },
-              { label: 'Service Fee (0.75%)', value: `TZS ${fmt(serviceFeeTzs)}`, color: 'text-slate-400' },
-            ].map(c => (
-              <div key={c.label} className="border border-slate-800 bg-slate-900 p-4">
-                <p className="text-[10px] tracking-widest text-slate-600 uppercase mb-1">{c.label}</p>
-                <p className={`text-sm font-medium ${c.color} truncate`}>{c.value}</p>
+                </pre>
               </div>
-            ))}
-          </div>
-
-          <div className="border border-slate-800 bg-slate-900 p-4">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] tracking-widest text-slate-600 uppercase">Total Bank Transfer Required</p>
             </div>
-            <p className="text-xl font-semibold text-indigo-400">TZS {fmt(totalAmountTzs + serviceFeeTzs)}</p>
-            <p className="text-[10px] text-slate-600 mt-1">Disbursement TZS {fmt(totalAmountTzs)} + Service fee TZS {fmt(serviceFeeTzs)}</p>
           </div>
+        )}
 
-          {rowErrors.length > 0 && (
-            <div className="border border-red-900 bg-red-950/20 p-4 space-y-1">
-              <p className="text-xs text-red-400 font-medium mb-2">Validation errors — fix CSV and re-upload</p>
-              {rowErrors.map((e, i) => (
-                <p key={i} className="text-[11px] text-red-300">Row {e.row}: {e.error}</p>
+        {step === 'preview' && (
+          <div className="space-y-5">
+            {/* Summary cards */}
+            <div className="grid grid-cols-4 gap-4">
+              {[
+                { label: 'File', value: filename ?? '—', mono: true },
+                { label: 'Contractors', value: rows.length.toString(), warn: rows.length > MAX_CONTRACTORS },
+                { label: 'Disbursement Total', value: `TZS ${fmt(totalAmountTzs)}` },
+                { label: 'Service Fee (0.75%)', value: `TZS ${fmt(serviceFeeTzs)}`, muted: true },
+              ].map(c => (
+                <div key={c.label} className="bg-white border border-slate-200 p-4 shadow-sm rounded-sm">
+                  <p className="text-[10px] tracking-widest text-slate-400 uppercase mb-1">{c.label}</p>
+                  <p className={`text-sm font-medium truncate ${c.warn ? 'text-red-600' : c.muted ? 'text-slate-400' : 'text-slate-900'} ${c.mono ? 'font-mono text-xs' : ''}`}>
+                    {c.value}
+                  </p>
+                </div>
               ))}
             </div>
-          )}
 
-          <div className="border border-slate-800 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-[10px] tracking-widest text-slate-600 uppercase bg-slate-900">
-                  <th className="px-4 py-3 text-left">#</th>
-                  <th className="px-4 py-3 text-left">Contractor</th>
-                  <th className="px-4 py-3 text-left">Phone</th>
-                  <th className="px-4 py-3 text-right">Amount (TZS)</th>
-                  <th className="px-4 py-3 text-left">Method</th>
-                  <th className="px-4 py-3 text-left">Bank Account</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => {
-                  const hasError = errorRowNums.has(i + 1)
-                  return (
-                    <tr
-                      key={i}
-                      className={`border-b border-slate-800 last:border-0 ${hasError ? 'bg-red-950/20' : i % 2 === 0 ? 'bg-slate-950' : 'bg-slate-900'}`}
-                    >
-                      <td className={`px-4 py-2.5 ${hasError ? 'text-red-400' : 'text-slate-600'}`}>{i + 1}</td>
-                      <td className={`px-4 py-2.5 ${hasError ? 'text-red-300' : 'text-slate-300'}`}>{r.contractorName || <span className="text-red-500 italic">missing</span>}</td>
-                      <td className={`px-4 py-2.5 font-mono ${hasError ? 'text-red-300' : 'text-slate-400'}`}>{r.phone || <span className="text-red-500 italic">missing</span>}</td>
-                      <td className={`px-4 py-2.5 text-right tabular-nums ${r.amountTzs > MAX_PER_TXN ? 'text-red-400' : 'text-slate-200'}`}>
-                        {fmt(r.amountTzs || 0)}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500 uppercase text-[10px]">{r.payoutMethod}</td>
-                      <td className="px-4 py-2.5 text-slate-500 font-mono">{r.bankAccount || '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            {/* Total due */}
+            <div className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 px-5 py-4 shadow-sm rounded-sm">
+              <p className="text-[10px] tracking-widest text-slate-400 uppercase mb-1">Total Bank Transfer Required</p>
+              <p className="text-xl font-semibold text-indigo-700 tabular-nums">TZS {fmt(totalAmountTzs + serviceFeeTzs)}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Disbursement TZS {fmt(totalAmountTzs)} + Service fee TZS {fmt(serviceFeeTzs)}</p>
+            </div>
+
+            {/* Validation errors */}
+            {rowErrors.length > 0 && (
+              <div className="bg-red-50 border border-red-200 border-l-4 border-l-red-500 p-4 space-y-1 rounded-sm">
+                <p className="text-xs text-red-700 font-medium mb-2">Validation errors — fix CSV and re-upload</p>
+                {rowErrors.map((e, i) => (
+                  <p key={i} className="text-[11px] text-red-600">Row {e.row}: {e.error}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Preview table */}
+            <div className="bg-white border border-slate-200 shadow-sm rounded-sm overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    {['#', 'Contractor', 'Phone', 'Amount (TZS)', 'Method', 'Bank Account'].map(h => (
+                      <th key={h} className={`px-4 py-3 text-[10px] tracking-widest text-slate-400 uppercase font-medium ${h === 'Amount (TZS)' ? 'text-right' : 'text-left'}`}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((r, i) => {
+                    const hasError = errorRowNums.has(i + 1)
+                    return (
+                      <tr key={i} className={hasError ? 'bg-red-50' : 'hover:bg-slate-50 transition-colors'}>
+                        <td className={`px-4 py-2.5 ${hasError ? 'text-red-500' : 'text-slate-400'}`}>{i + 1}</td>
+                        <td className={`px-4 py-2.5 font-medium ${hasError ? 'text-red-700' : 'text-slate-800'}`}>
+                          {r.contractorName || <span className="text-red-500 italic font-normal">missing</span>}
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono ${hasError ? 'text-red-600' : 'text-slate-600'}`}>
+                          {r.phone || <span className="text-red-500 italic font-normal">missing</span>}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right tabular-nums font-medium ${r.amountTzs > MAX_PER_TXN ? 'text-red-600' : 'text-slate-900'}`}>
+                          {fmt(r.amountTzs || 0)}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-500 uppercase text-[10px]">{r.payoutMethod}</td>
+                        <td className="px-4 py-2.5 text-slate-500 font-mono">{r.bankAccount || '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {confirmError && (
+              <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-sm">
+                <p className="text-xs text-red-700">{confirmError}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={submitBatch}
+                disabled={confirming || rowErrors.length > 0}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs tracking-wide transition-colors rounded-sm"
+              >
+                {confirming ? 'Submitting…' : 'Submit batch'}
+              </button>
+              <button
+                onClick={() => { setStep('upload'); setRows([]); setRowErrors([]); setBatchError(null); setFilename(null) }}
+                className="px-5 py-2.5 border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 text-xs tracking-wide transition-colors rounded-sm"
+              >
+                Re-upload
+              </button>
+            </div>
           </div>
-
-          {confirmError && <p className="text-xs text-red-400">{confirmError}</p>}
-
-          <div className="flex gap-3">
-            <button
-              onClick={submitBatch}
-              disabled={confirming || rowErrors.length > 0}
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs tracking-wide transition-colors"
-            >
-              {confirming ? 'Submitting…' : 'Submit batch'}
-            </button>
-            <button
-              onClick={() => { setStep('upload'); setRows([]); setRowErrors([]); setBatchError(null); setFilename(null) }}
-              className="px-5 py-2 border border-slate-700 text-slate-400 hover:text-slate-200 text-xs tracking-wide transition-colors"
-            >
-              Re-upload
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

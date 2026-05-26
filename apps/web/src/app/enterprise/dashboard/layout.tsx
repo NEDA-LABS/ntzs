@@ -116,8 +116,8 @@ export default function EnterpriseDashboardLayout({ children }: { children: Reac
         </div>
       </aside>
 
-      {/* Main — white */}
-      <main className="flex-1 overflow-auto bg-white">
+      {/* Main content */}
+      <main className="flex-1 overflow-auto bg-slate-50">
         {children}
       </main>
     </div>
