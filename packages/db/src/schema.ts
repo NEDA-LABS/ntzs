@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
@@ -117,6 +118,8 @@ export const users = pgTable(
 
     isActive: boolean('is_active').notNull().default(true),
 
+    productAccess: text('product_access').array().notNull().default(sql`ARRAY['consumer']::text[]`),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -125,6 +128,7 @@ export const users = pgTable(
     payAliasUq: uniqueIndex('users_pay_alias_uq').on(t.payAlias),
     bankIdx: index('users_bank_id_idx').on(t.bankId),
     roleIdx: index('users_role_idx').on(t.role),
+    productAccessIdx: index('users_product_access_idx').on(t.productAccess),
   })
 )
 
@@ -1017,6 +1021,8 @@ export const merchantAccounts = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     onboardingStep: integer('onboarding_step').notNull().default(1),
 
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1025,6 +1031,7 @@ export const merchantAccounts = pgTable(
     handleUq: uniqueIndex('merchant_accounts_handle_uq').on(t.handle),
     walletIndexUq: uniqueIndex('merchant_accounts_wallet_index_uq').on(t.walletIndex),
     walletAddressUq: uniqueIndex('merchant_accounts_wallet_address_uq').on(t.walletAddress),
+    userIdx: index('merchant_accounts_user_id_idx').on(t.userId),
   })
 )
 
@@ -1152,12 +1159,16 @@ export const enterpriseAccounts = pgTable(
     partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'set null' }),
     passwordHash: text('password_hash'),
     isActive: boolean('is_active').notNull().default(false),
+
+    linkedAdminUserId: uuid('linked_admin_user_id').references(() => users.id, { onDelete: 'set null' }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     emailUq: uniqueIndex('enterprise_accounts_email_uq').on(t.email),
     partnerIdx: index('enterprise_accounts_partner_id_idx').on(t.partnerId),
+    linkedAdminUserIdx: index('enterprise_accounts_linked_admin_user_id_idx').on(t.linkedAdminUserId),
   })
 )
 

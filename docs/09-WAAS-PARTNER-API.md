@@ -44,7 +44,8 @@ sequenceDiagram
 | Exchange rate quote | `GET /api/v1/swap/rate` |
 | Execute swap | `POST /api/v1/swap` (SSE) |
 | Create user + wallet | `POST /api/v1/users` |
-| Get user profile | `GET /api/v1/users/:id` |
+| Get user profile + balances | `GET /api/v1/users/:id` |
+| Create org/treasury sub-wallet | `POST /api/v1/partners/sub-wallets` |
 | List sub-wallets | `GET /api/v1/partners/sub-wallets` |
 | LP pool balances | `GET /api/v1/mm/balances` |
 | LP withdraw | `POST /api/v1/mm/withdraw` |
@@ -273,19 +274,200 @@ while (true) {
 
 ---
 
-## Wallets
-
-### `GET /api/v1/partners/sub-wallets`
-
-Lists all sub-wallets provisioned under the partner's HD seed.
+## User Wallets
 
 ### `POST /api/v1/users`
 
-Creates a new WaaS user and provisions their wallet.
+Creates a new WaaS user and provisions a dedicated HD-derived wallet on Base. Idempotent — calling with the same `externalId` returns the existing user.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `externalId` | string | ✓ | Your app's internal user ID — used for idempotency and lookup |
+| `email` | string | ✓ | User's email address |
+| `name` | string | — | Display name |
+| `phone` | string | — | Phone number (E.164 format recommended) |
+
+#### Response `201 Created`
+
+```json
+{
+  "id": "uuid-assigned-by-ntzs",
+  "externalId": "your-app-user-id",
+  "email": "user@example.com",
+  "name": "Jane Doe",
+  "phone": "+255712345678",
+  "walletAddress": "0xABC123...",
+  "balance": 0
+}
+```
+
+If the `externalId` already exists, returns `200` with the existing record (no duplicate wallet created).
+
+#### How wallets are derived
+
+Each partner has an encrypted HD seed (auto-generated on first `POST /api/v1/users` call). Every new user claims the next available index from that seed atomically. The derivation is deterministic — the same `externalId` always resolves to the same wallet. New wallets are pre-funded with a small ETH amount for gas automatically.
+
+#### Errors
+
+| Status | `error` | Cause |
+|--------|---------|-------|
+| `400` | `externalId and email are required` | Missing required fields |
+| `500` | `Server configuration error: wallet encryption key not set` | `WAAS_ENCRYPTION_KEY` env var missing on server |
+
+---
 
 ### `GET /api/v1/users/:id`
 
-Returns user profile and wallet address.
+Returns user profile and live on-chain token balances. `:id` is the nTZS-assigned UUID returned from `POST /api/v1/users`.
+
+#### Response
+
+```json
+{
+  "id": "uuid-assigned-by-ntzs",
+  "externalId": "your-app-user-id",
+  "email": "user@example.com",
+  "phone": "+255712345678",
+  "walletAddress": "0xABC123...",
+  "balanceTzs": 1250.0,
+  "balanceUsdc": 10.5,
+  "balanceUsdt": 0.0
+}
+```
+
+Balances are read live from Base mainnet. `walletAddress` will be `null` if wallet provisioning is still pending.
+
+---
+
+## Partner Sub-Wallets (Org Treasury)
+
+Sub-wallets are partner-owned, labeled HD-derived wallets — separate from end-user wallets. Use them for org treasury accounts, escrow, reserves, or any wallet that belongs to the partner entity rather than an individual user.
+
+**Enterprise use case:** when an Enterprise org is approved in backstage, call `POST /api/v1/partners/sub-wallets` with the org name as the label. The returned address becomes the org's treasury wallet for disbursements and repayments.
+
+Sub-wallets derive from a separate HD path (`m/44'/8453'/1'/0/{index}`) so they never collide with user wallets.
+
+### `POST /api/v1/partners/sub-wallets`
+
+Creates a new labeled sub-wallet under the partner's HD seed.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `label` | string | ✓ | Human-readable name for this wallet, max 50 chars (e.g. `"NEDA Capital Ltd Treasury"`) |
+
+#### Response `201 Created`
+
+```json
+{
+  "id": "sub-wallet-uuid",
+  "label": "NEDA Capital Ltd Treasury",
+  "address": "0xDEF456...",
+  "walletIndex": 1,
+  "derivationPath": "m/44'/8453'/1'/0/1",
+  "createdAt": "2026-05-28T10:00:00.000Z"
+}
+```
+
+#### Errors
+
+| Status | `error` | Cause |
+|--------|---------|-------|
+| `400` | `label is required` | Missing or blank label |
+| `400` | `label must be 50 characters or fewer` | Label too long |
+| `400` | `HD wallet seed not configured. Create a user wallet first.` | No user wallets have been created yet for this partner |
+
+---
+
+### `GET /api/v1/partners/sub-wallets`
+
+Lists all sub-wallets provisioned under the partner.
+
+#### Response
+
+```json
+{
+  "subWallets": [
+    {
+      "id": "sub-wallet-uuid",
+      "label": "NEDA Capital Ltd Treasury",
+      "address": "0xDEF456...",
+      "walletIndex": 1,
+      "createdAt": "2026-05-28T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+## Multi-Wallet Patterns
+
+### Personal wallet (Consumer)
+
+The standard `POST /api/v1/users` flow. One wallet per user for personal transactions (send, receive, swap).
+
+### Merchant wallet (Biashara)
+
+When a NEDApay user activates Biashara, provision a second wallet scoped to their merchant identity by appending a prefix to the `externalId`:
+
+```ts
+// Personal wallet (already exists)
+POST /api/v1/users  { externalId: "user_abc123", email: "merchant@example.com" }
+
+// Merchant wallet (provisioned on Biashara activation)
+POST /api/v1/users  { externalId: "merchant_abc123", email: "merchant@example.com" }
+```
+
+The `merchant_` prefix ensures a distinct HD index and a separate on-chain address. Merchant collections, settlement splits, and lender revenue flows operate on this wallet without touching the user's personal balance.
+
+### Org treasury wallet (Enterprise)
+
+Use the sub-wallets endpoint — not a user wallet. The org is a partner entity, not an individual:
+
+```ts
+// On enterprise org approval in backstage
+POST /api/v1/partners/sub-wallets  { label: "NEDA Capital Ltd Treasury" }
+// → returns treasuryWalletAddress, stored on partners.treasuryWalletAddress
+```
+
+---
+
+## Identity Verification & KYC Model
+
+WaaS does not perform identity verification. It is pure wallet infrastructure — it trusts that the calling partner has already completed KYC before requesting wallet provisioning.
+
+**The correct flow:**
+
+```
+User signs up on NEDApay/partner app
+  → KYC provider API called (identity verified)
+  → On approval: POST /api/v1/users
+  → WaaS provisions wallet
+  → User receives wallet
+```
+
+**Regulatory requirement:** Wallet provisioning is only permitted for users who have completed KYC. This is a Bank of Tanzania mandate — `POST /api/v1/users` must never be called for an unverified user. By calling this endpoint, the partner attests that KYC has passed for that individual.
+
+NEDApay owns the user relationship. KYC providers are pluggable vendors — not distribution channels. Users sign up directly with NEDApay; the KYC provider is an API call in the onboarding flow that must complete successfully before wallet provisioning is triggered. If a provider is swapped out, users are unaffected.
+
+**KYC is routed by user type:**
+
+| User | Identity document | Notes |
+|------|-------------------|-------|
+| Tanzanian resident | NIDA number | Verified via a NIDA-accredited KYC product |
+| International user | Passport / national ID from country of origin | Verified via an international KYC provider |
+
+Using a bank's KYC product for NIDA access does not make nTZS dependent on that bank's user base. The bank exposes a verification API — it is a service vendor, not a gatekeeper. If that relationship ends, route Tanzanian users to a different NIDA-accredited provider. No user migration, no WaaS changes.
+
+**Avoiding single-provider lock-in:**
+
+KYC provider routing happens inside NEDApay's onboarding layer, not in WaaS. WaaS only sees the final `POST /api/v1/users` call after KYC passes — completely agnostic to which provider ran the check. Adding or swapping a KYC provider is a NEDApay change, not a WaaS change.
+
+**Implication for feature unlocking:** Biashara and Enterprise features require KYB (business verification) in addition to individual KYC. The same principle applies — KYB is handled by a business verification provider before the partner calls WaaS to provision the relevant wallet (user wallet for Biashara, sub-wallet for Enterprise treasury). WaaS does not gate on KYB status.
 
 ---
 
