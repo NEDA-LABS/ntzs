@@ -102,7 +102,9 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (err) {
-    console.error('[cron/poll-azampay] Unhandled error:', err instanceof Error ? err.message : err)
-    return NextResponse.json({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    const cause = err instanceof Error && (err as NodeJS.ErrnoException).cause
+    console.error('[cron/poll-azampay] Unhandled error:', msg, cause ? cause : '')
+    return NextResponse.json({ status: 'error', error: msg }, { status: 500 })
   }
 }
