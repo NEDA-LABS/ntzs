@@ -157,32 +157,45 @@ export async function PATCH(req: NextRequest) {
       const solverSigner = new Wallet(solverKey, chainProvider);
 
       for (const pos of chainPositions) {
-        const totalWei =
-          parseUnits(pos.contributed, pos.decimals) + parseUnits(pos.earned, pos.decimals);
-        if (totalWei === BigInt(0)) continue;
+        try {
+          // Truncate to token decimals before parseUnits — DB stores values with
+          // full numeric precision (up to 18 dp) but tokens like USDC only have 6,
+          // and ethers v6 throws "fractional component exceeds decimals" if the
+          // stored value has non-zero digits beyond the token's decimal count.
+          const truncate = (v: string, d: number) => {
+            const [int, frac = ''] = v.split('.');
+            return `${int}.${frac.slice(0, d).padEnd(d, '0')}`;
+          };
+          const totalWei =
+            parseUnits(truncate(pos.contributed, pos.decimals), pos.decimals) +
+            parseUnits(truncate(pos.earned, pos.decimals), pos.decimals);
+          if (totalWei === BigInt(0)) continue;
 
-        const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner);
-        const solverBal: bigint = await contract.balanceOf(cfg.solverAddress);
-        const toSend = totalWei < solverBal ? totalWei : solverBal;
-        if (toSend === BigInt(0)) continue;
+          const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner);
+          const solverBal: bigint = await contract.balanceOf(cfg.solverAddress);
+          const toSend = totalWei < solverBal ? totalWei : solverBal;
+          if (toSend === BigInt(0)) continue;
 
-        const tx = await contract.transfer(lp.walletAddress, toSend);
-        await tx.wait(1);
+          const tx = await contract.transfer(lp.walletAddress, toSend);
+          await tx.wait(1);
 
-        const returnedAmount = formatUnits(toSend, pos.decimals);
-        returned.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, amount: returnedAmount, chain: posChain });
+          const returnedAmount = formatUnits(toSend, pos.decimals);
+          returned.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, amount: returnedAmount, chain: posChain });
 
-        await db.insert(lpWalletTransactions).values({
-          lpId: lp.id,
-          chain: posChain,
-          type: 'deactivation_return',
-          source: 'system',
-          tokenAddress: pos.tokenAddress,
-          tokenSymbol: pos.tokenSymbol,
-          decimals: pos.decimals,
-          amount: returnedAmount,
-          txHash: tx.hash,
-        }).catch((err) => console.error('[deactivate] failed to record return tx:', err));
+          await db.insert(lpWalletTransactions).values({
+            lpId: lp.id,
+            chain: posChain,
+            type: 'deactivation_return',
+            source: 'system',
+            tokenAddress: pos.tokenAddress,
+            tokenSymbol: pos.tokenSymbol,
+            decimals: pos.decimals,
+            amount: returnedAmount,
+            txHash: tx.hash,
+          }).catch((err) => console.error('[deactivate] failed to record return tx:', err));
+        } catch (err) {
+          console.error(`[deactivate] failed to return ${pos.tokenSymbol} on ${posChain}:`, err instanceof Error ? err.message : err);
+        }
       }
     }
 
