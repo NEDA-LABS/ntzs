@@ -1056,6 +1056,43 @@ export const merchantNextWalletIndex = pgTable('merchant_next_wallet_index', {
   nextIndex: integer('next_index').notNull().default(0),
 })
 
+export const merchantAiUsage = pgTable(
+  'merchant_ai_usage',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id').notNull().references(() => merchantAccounts.id, { onDelete: 'cascade' }),
+    period: varchar('period', { length: 7 }).notNull(), // 'YYYY-MM'
+    requestCount: integer('request_count').notNull().default(0),
+    freeRequestCount: integer('free_request_count').notNull().default(0),
+    paidRequestCount: integer('paid_request_count').notNull().default(0),
+    totalTokens: integer('total_tokens').notNull().default(0),
+    totalFeeTzs: bigint('total_fee_tzs', { mode: 'number' }).notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    merchantPeriodUq: uniqueIndex('merchant_ai_usage_merchant_period_uq').on(t.merchantId, t.period),
+    merchantIdx: index('merchant_ai_usage_merchant_id_idx').on(t.merchantId),
+    periodIdx: index('merchant_ai_usage_period_idx').on(t.period),
+  })
+)
+
+export const merchantPlatformFees = pgTable(
+  'merchant_platform_fees',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id').notNull().references(() => merchantAccounts.id, { onDelete: 'cascade' }),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    reason: varchar('reason', { length: 50 }).notNull().default('ai_chat'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    merchantIdx: index('merchant_platform_fees_merchant_id_idx').on(t.merchantId),
+    createdAtIdx: index('merchant_platform_fees_created_at_idx').on(t.createdAt),
+  })
+)
+
 export const merchantPaymentLinks = pgTable(
   'merchant_payment_links',
   {
