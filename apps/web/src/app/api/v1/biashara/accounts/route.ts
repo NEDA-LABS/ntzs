@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts, users } from '@ntzs/db'
 import { requireServiceKey } from '@/lib/service-auth'
@@ -56,19 +56,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'User not found — provision via WaaS first' }, { status: 404 })
   }
 
-  // Idempotency: return existing merchant account for this user
+  // Idempotency: check by userId first, then fall back to email for legacy rows
+  // that were created before the user_id column existed (userId = NULL).
   const [existing] = await db
     .select({
       id: merchantAccounts.id,
       handle: merchantAccounts.handle,
       walletAddress: merchantAccounts.walletAddress,
       businessName: merchantAccounts.businessName,
+      userId: merchantAccounts.userId,
     })
     .from(merchantAccounts)
-    .where(eq(merchantAccounts.userId, userId))
+    .where(or(eq(merchantAccounts.userId, userId), eq(merchantAccounts.email, normalized)))
     .limit(1)
 
   if (existing) {
+    // Backfill userId on legacy rows so future lookups hit the fast path
+    if (!existing.userId) {
+      await db
+        .update(merchantAccounts)
+        .set({ userId, updatedAt: new Date() })
+        .where(eq(merchantAccounts.id, existing.id))
+    }
     return NextResponse.json({
       merchantId: existing.id,
       handle: existing.handle,
