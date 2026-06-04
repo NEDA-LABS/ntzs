@@ -35,3 +35,18 @@ export const AZAMPAY_ENV = sanitizeEnv(process.env.AZAMPAY_ENV, 'sandbox')
  * its own `treasury_wallet_address` configured.
  */
 export const PLATFORM_TREASURY_ADDRESS = sanitizeEnv(process.env.PLATFORM_TREASURY_ADDRESS)
+
+/**
+ * Platform fee taken from LP spread on every SimpleFX swap fill, in basis points.
+ * Defaults to 20 bps (0.20%). The fee is carved from the LP's earned spread —
+ * the user-facing rate is unchanged.
+ */
+export const PLATFORM_FX_FEE_BPS = parseInt(process.env.PLATFORM_FX_FEE_BPS ?? '20', 10)
+
+/**
+ * Minimum pending protocol fee (in token units) before the sweep cron triggers
+ * an on-chain transfer to treasury — avoids burning gas on dust amounts.
+ * NTZS is TZS-denominated so the threshold is higher.
+ */
+export const FX_SWEEP_MIN_NTZS    = parseFloat(process.env.FX_SWEEP_MIN_NTZS    ?? '10000')
+export const FX_SWEEP_MIN_STABLE  = parseFloat(process.env.FX_SWEEP_MIN_STABLE  ?? '5')

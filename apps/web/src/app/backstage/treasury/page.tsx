@@ -4,7 +4,7 @@ import { ethers } from 'ethers'
 import { requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
-import { burnRequests, partners, users } from '@ntzs/db'
+import { burnRequests, lpFills, partners, users } from '@ntzs/db'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 export const dynamic = 'force-dynamic'
@@ -44,6 +44,25 @@ export default async function TreasuryPage() {
 
   const treasuryAddress = PLATFORM_TREASURY_ADDRESS
   const treasuryConfigured = ethers.isAddress(treasuryAddress)
+
+  // ── SimpleFX protocol fee metrics ───────────────────────────────────────
+  const [fxFeeStats] = await db
+    .select({
+      totalFeeEarned: sql<number>`coalesce(sum(${lpFills.protocolFeeEarned}), 0)`.mapWith(Number),
+      fillCount: sql<number>`count(case when ${lpFills.protocolFeeEarned}::numeric > 0 then 1 end)`.mapWith(Number),
+    })
+    .from(lpFills)
+
+  const fxFeeByToken = await db
+    .select({
+      toToken: lpFills.toToken,
+      totalFee: sql<number>`coalesce(sum(${lpFills.protocolFeeEarned}), 0)`.mapWith(Number),
+      fillCount: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(lpFills)
+    .where(sql`${lpFills.protocolFeeEarned}::numeric > 0`)
+    .groupBy(lpFills.toToken)
+    .orderBy(desc(sql`sum(${lpFills.protocolFeeEarned})`))
 
   // ── Aggregate fee metrics ────────────────────────────────────────────────
   const [feeStats] = await db
@@ -156,6 +175,65 @@ export default async function TreasuryPage() {
           </div>
         </section>
       )}
+
+      {/* SimpleFX protocol fees */}
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <h2 className="text-lg font-semibold text-white">SimpleFX Swap Fees</h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          Protocol fee carved from LP spread on every swap fill. Accumulates in the solver wallet —
+          withdraw manually to treasury as needed.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <MetricCard
+            title="Total Fee Earned"
+            value={fxFeeStats?.totalFeeEarned
+              ? fxFeeStats.totalFeeEarned.toLocaleString(undefined, { maximumFractionDigits: 4 })
+              : '0'}
+            subtitle={`${fxFeeStats?.fillCount ?? 0} fee-bearing fills`}
+            color="violet"
+          />
+          <MetricCard
+            title="Fee Rate"
+            value={`${parseInt(process.env.PLATFORM_FX_FEE_BPS ?? '20', 10)} bps`}
+            subtitle="From PLATFORM_FX_FEE_BPS env var"
+            color="blue"
+          />
+          <MetricCard
+            title="Location"
+            value="Solver wallet"
+            subtitle="Implicit — withdraw to settle"
+            color="zinc"
+          />
+        </div>
+        {fxFeeByToken.length > 0 && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  <th className="pb-3 pr-4">Output Token</th>
+                  <th className="pb-3 pr-4">Fills</th>
+                  <th className="pb-3">Fee Earned</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {fxFeeByToken.map((row) => (
+                  <tr key={row.toToken} className="text-sm">
+                    <td className="py-3 pr-4">
+                      <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-zinc-300">
+                        {row.toToken.slice(0, 10)}...{row.toToken.slice(-6)}
+                      </code>
+                    </td>
+                    <td className="py-3 pr-4 text-zinc-400">{row.fillCount}</td>
+                    <td className="py-3 font-mono font-medium text-emerald-400">
+                      +{row.totalFee.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Primary metrics */}
       <section className="grid gap-4 md:grid-cols-4">

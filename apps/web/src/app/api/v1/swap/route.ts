@@ -6,6 +6,7 @@ import { partnerUsers, partners, lpFxPairs, lpAccounts, lpFills, lpPoolPositions
 import { eq, and, sql } from 'drizzle-orm'
 import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
 import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
+import { PLATFORM_FX_FEE_BPS } from '@/lib/env'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -200,7 +201,10 @@ export async function POST(request: NextRequest) {
             const midOutput = fromToken === 'NTZS'
               ? amount / midRate
               : amount * midRate
-            const spread = Math.max(0, midOutput - parseFloat(_result.amountOut))
+            const totalSpread = Math.max(0, midOutput - parseFloat(_result.amountOut))
+            // Protocol fee is carved from the LP's spread; user-facing rate is unchanged.
+            const protocolFee = Math.min(totalSpread, midOutput * PLATFORM_FX_FEE_BPS / 10000)
+            const lpSpread = totalSpread - protocolFee
 
             try {
               await db.insert(lpFills).values({
@@ -210,7 +214,8 @@ export async function POST(request: NextRequest) {
                 toToken: toTokenMeta.address,
                 amountIn: _result.amountIn,
                 amountOut: _result.amountOut,
-                spreadEarned: spread.toFixed(toDecimals),
+                spreadEarned: lpSpread.toFixed(toDecimals),
+                protocolFeeEarned: protocolFee.toFixed(toDecimals),
                 inTxHash: _result.inTxHash,
                 outTxHash: _result.outTxHash,
                 source: 'waas',
@@ -221,7 +226,7 @@ export async function POST(request: NextRequest) {
               await db
                 .update(lpPoolPositions)
                 .set({
-                  earned: sql`${lpPoolPositions.earned} + ${spread.toFixed(toDecimals)}::numeric`,
+                  earned: sql`${lpPoolPositions.earned} + ${lpSpread.toFixed(toDecimals)}::numeric`,
                   updatedAt: new Date(),
                 })
                 .where(and(

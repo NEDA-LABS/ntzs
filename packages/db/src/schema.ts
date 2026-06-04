@@ -909,6 +909,7 @@ export const lpFills = pgTable(
     amountIn: numeric('amount_in', { precision: 36, scale: 18 }).notNull(),
     amountOut: numeric('amount_out', { precision: 36, scale: 18 }).notNull(),
     spreadEarned: numeric('spread_earned', { precision: 36, scale: 18 }).notNull().default('0'),
+    protocolFeeEarned: numeric('protocol_fee_earned', { precision: 36, scale: 18 }).notNull().default('0'),
     inTxHash: text('in_tx_hash').notNull(),
     outTxHash: text('out_tx_hash').notNull(),
     source: text('source'),
@@ -919,6 +920,29 @@ export const lpFills = pgTable(
     lpIdx: index('lp_fills_lp_id_idx').on(t.lpId),
     createdIdx: index('lp_fills_created_at_idx').on(t.createdAt),
     userAddrIdx: index('lp_fills_user_address_idx').on(t.userAddress),
+  })
+)
+
+/**
+ * Audit log of automated protocol fee sweeps from the solver wallet to treasury.
+ * Each row = one on-chain transfer per token. The cron job uses SUM(amount) here
+ * vs SUM(protocol_fee_earned) in lp_fills to determine the pending balance.
+ */
+export const fxFeeSweeps = pgTable(
+  'fx_fee_sweeps',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    chain: chain('chain').notNull().default('base'),
+    tokenAddress: text('token_address').notNull(),
+    tokenSymbol: text('token_symbol').notNull(),
+    amount: numeric('amount', { precision: 36, scale: 18 }).notNull(),
+    txHash: text('tx_hash').notNull(),
+    treasuryAddress: text('treasury_address').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    chainTokenIdx: index('fx_fee_sweeps_chain_token_idx').on(t.chain, t.tokenAddress),
+    createdAtIdx: index('fx_fee_sweeps_created_at_idx').on(t.createdAt),
   })
 )
 
