@@ -781,7 +781,14 @@ interface Invoice {
 
 interface PaymentInstructions {
   usdc: { network: string; tokenAddress: string; recipientAddress: string | null }
-  bankTransfer: { bankName: string | null; accountNumber: string | null; reference: string }
+  bankTransfer: {
+    bankName: string | null
+    accountName: string | null
+    accountNumber: string | null
+    swiftCode: string | null
+    currency: string
+    reference: string
+  }
 }
 
 function BillingSection({ partner: _partner }: { partner: PartnerInfo }) {
@@ -887,22 +894,26 @@ function BillingSection({ partner: _partner }: { partner: PartnerInfo }) {
             <div className="pt-4">
               <p className="text-xs font-medium text-white/40 uppercase tracking-wide mb-2">Bank transfer</p>
               {payment.bankTransfer.bankName ? (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-white/40">Bank</span>
-                    <span className="font-medium text-white/80">{payment.bankTransfer.bankName}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-white/40">Account</span>
-                    <span className="font-mono font-medium text-white/80">{payment.bankTransfer.accountNumber}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-white/40">Reference</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-medium text-white/80">{payment.bankTransfer.reference}</span>
+                <div className="rounded-xl border border-white/10 bg-black/20 divide-y divide-white/[0.06] overflow-hidden">
+                  {[
+                    ['Bank', payment.bankTransfer.bankName, false],
+                    ['Account name', payment.bankTransfer.accountName, false],
+                    ['Account number', payment.bankTransfer.accountNumber, true],
+                    ['Swift / BIC', payment.bankTransfer.swiftCode, true],
+                    ['Currency', payment.bankTransfer.currency, false],
+                  ].map(([label, value]) => value ? (
+                    <div key={String(label)} className="flex items-center justify-between px-4 py-2.5 text-xs">
+                      <span className="text-white/40 shrink-0">{label}</span>
+                      <span className="font-mono font-medium text-white/80 ml-4 text-right">{String(value)}</span>
+                    </div>
+                  ) : null)}
+                  <div className="flex items-center justify-between px-4 py-2.5 text-xs">
+                    <span className="text-white/40 shrink-0">Reference</span>
+                    <div className="flex items-center gap-2 ml-4">
+                      <span className="font-mono font-medium text-amber-300">{payment.bankTransfer.reference}</span>
                       <button
                         onClick={() => copy(payment.bankTransfer.reference, 'ref')}
-                        className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/50 hover:bg-white/10 transition-colors"
+                        className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/50 hover:bg-white/10 transition-colors"
                       >
                         {copiedField === 'ref' ? 'Copied!' : 'Copy'}
                       </button>

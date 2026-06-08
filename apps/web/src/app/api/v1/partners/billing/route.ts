@@ -68,7 +68,10 @@ export async function GET(request: NextRequest) {
       },
       bankTransfer: {
         bankName: process.env.WAAS_BANK_NAME || null,
+        accountName: process.env.WAAS_BANK_ACCOUNT_NAME || null,
         accountNumber: process.env.WAAS_BANK_ACCOUNT || null,
+        swiftCode: process.env.WAAS_BANK_SWIFT || null,
+        currency: 'TZS',
         reference: `NTZS-WAAS-${partner.id.slice(0, 8).toUpperCase()}`,
       },
     },
