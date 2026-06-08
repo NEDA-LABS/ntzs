@@ -503,6 +503,13 @@ export const partners = pgTable(
     payoutBankName: text('payout_bank_name'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // WaaS billing fields
+    joiningFeeUsd: numeric('joining_fee_usd', { precision: 12, scale: 2 }).notNull().default('50000'),
+    joiningFeePaidAt: timestamp('joining_fee_paid_at', { withTimezone: true }),
+    pilotEndsAt: timestamp('pilot_ends_at', { withTimezone: true }),
+    walletAllocation: integer('wallet_allocation').notNull().default(20),
+    contractEndAt: timestamp('contract_end_at', { withTimezone: true }),
+    monthlyFeeUsd: numeric('monthly_fee_usd', { precision: 12, scale: 2 }).notNull().default('2000'),
   },
   (t) => ({
     apiKeyHashUq: uniqueIndex('partners_api_key_hash_uq').on(t.apiKeyHash),
@@ -1393,5 +1400,92 @@ export const enterpriseWithdrawRequests = pgTable(
     enterpriseIdx: index('enterprise_withdraw_requests_enterprise_id_idx').on(t.enterpriseId),
     statusIdx: index('enterprise_withdraw_requests_status_idx').on(t.status),
     createdAtIdx: index('enterprise_withdraw_requests_created_at_idx').on(t.createdAt),
+  })
+)
+
+export const partnerInvoiceType = pgEnum('partner_invoice_type', [
+  'joining_fee',
+  'saas_monthly',
+  'transaction_fees',
+])
+
+export const partnerInvoiceStatus = pgEnum('partner_invoice_status', [
+  'pending',
+  'paid',
+  'void',
+  'overdue',
+])
+
+export const partnerInvoices = pgTable(
+  'partner_invoices',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    type: partnerInvoiceType('type').notNull(),
+    amountUsd: numeric('amount_usd', { precision: 12, scale: 2 }).notNull(),
+    status: partnerInvoiceStatus('status').notNull().default('pending'),
+    periodStart: timestamp('period_start', { withTimezone: true }),
+    periodEnd: timestamp('period_end', { withTimezone: true }),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    paymentMethod: text('payment_method'), // 'bank_transfer' | 'usdc'
+    paymentRef: text('payment_ref'),
+    lateInterestUsd: numeric('late_interest_usd', { precision: 12, scale: 2 }).notNull().default('0'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerIdx: index('partner_invoices_partner_id_idx').on(t.partnerId),
+    statusIdx: index('partner_invoices_status_idx').on(t.status),
+    dueAtIdx: index('partner_invoices_due_at_idx').on(t.dueAt),
+  })
+)
+
+export const partnerKybStatus = pgEnum('partner_kyb_status', [
+  'not_started',
+  'submitted',
+  'under_review',
+  'approved',
+  'rejected',
+])
+
+export const partnerKyb = pgTable(
+  'partner_kyb',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .unique()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    status: partnerKybStatus('status').notNull().default('not_started'),
+    // Business details
+    businessLegalName: text('business_legal_name'),
+    registrationNumber: text('registration_number'),
+    registeredAddress: text('registered_address'),
+    authorizedRepName: text('authorized_rep_name'),
+    authorizedRepTitle: text('authorized_rep_title'),
+    authorizedRepEmail: text('authorized_rep_email'),
+    // Regulatory license
+    licenseType: text('license_type'),
+    licenseNumber: text('license_number'),
+    issuingAuthority: text('issuing_authority'),
+    jurisdiction: text('jurisdiction'),
+    // Document URLs (Vercel Blob)
+    certOfIncorporationUrl: text('cert_of_incorporation_url'),
+    regulatoryLicenseUrl: text('regulatory_license_url'),
+    amlPolicyUrl: text('aml_policy_url'),
+    // Review
+    reviewNotes: text('review_notes'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewedBy: text('reviewed_by'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index('partner_kyb_status_idx').on(t.status),
   })
 )

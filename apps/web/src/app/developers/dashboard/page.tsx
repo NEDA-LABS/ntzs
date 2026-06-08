@@ -138,7 +138,7 @@ interface DashboardData {
   }
 }
 
-type Section = 'overview' | 'wallets' | 'transfers' | 'deposits' | 'treasury' | 'settings'
+type Section = 'overview' | 'wallets' | 'transfers' | 'deposits' | 'treasury' | 'billing' | 'kyb' | 'settings'
 
 /* ── Custom Select ── */
 type SelectOption = { value: string; label: string; sub?: string }
@@ -746,6 +746,434 @@ function FundWalletModal({ partner, onClose, onSuccess }: { partner: PartnerInfo
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/* ── Billing Section ── */
+interface BillingData {
+  joiningFeeUsd: number
+  joiningFeePaid: boolean
+  joiningFeePaidAt: string | null
+  pilotEndsAt: string | null
+  pilotActive: boolean
+  walletAllocation: number
+  contractEndAt: string | null
+  monthlyFeeUsd: number
+  contractSignedAt: string | null
+}
+
+interface Invoice {
+  id: string
+  type: string
+  amountUsd: string
+  status: string
+  periodStart: string | null
+  periodEnd: string | null
+  dueAt: string | null
+  paidAt: string | null
+  paymentMethod: string | null
+  paymentRef: string | null
+  lateInterestUsd: string
+  notes: string | null
+  createdAt: string
+}
+
+interface PaymentInstructions {
+  usdc: { network: string; tokenAddress: string; recipientAddress: string | null }
+  bankTransfer: { bankName: string | null; accountNumber: string | null; reference: string }
+}
+
+function BillingSection({ partner: _partner }: { partner: PartnerInfo }) {
+  const [billing, setBilling] = useState<BillingData | null>(null)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [payment, setPayment] = useState<PaymentInstructions | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+
+  const copy = (value: string, field: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(null), 2000)
+    })
+  }
+
+  useEffect(() => {
+    fetch('/api/v1/partners/billing', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((d) => {
+        setBilling(d.billing)
+        setInvoices(d.invoices ?? [])
+        setPayment(d.paymentInstructions)
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="p-6 text-sm text-gray-500">Loading billing…</div>
+
+  const statusColor: Record<string, string> = {
+    pending: 'bg-yellow-100 text-yellow-800',
+    paid: 'bg-green-100 text-green-800',
+    overdue: 'bg-red-100 text-red-800',
+    void: 'bg-gray-100 text-gray-500',
+  }
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold text-gray-900">Billing &amp; Plan</h2>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Joining fee */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">One-time joining fee</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">${billing?.joiningFeeUsd?.toLocaleString() ?? '50,000'}</p>
+          <p className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${billing?.joiningFeePaid ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+            {billing?.joiningFeePaid ? `Paid ${billing.joiningFeePaidAt ? formatDateEAT(new Date(billing.joiningFeePaidAt)) : ''}` : 'Pending payment'}
+          </p>
+        </div>
+
+        {/* Pilot period */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Pilot period</p>
+          <p className={`mt-1 text-2xl font-bold ${billing?.pilotActive ? 'text-green-600' : 'text-gray-500'}`}>
+            {billing?.pilotActive ? 'Active' : billing?.pilotEndsAt ? 'Ended' : 'Not started'}
+          </p>
+          {billing?.pilotEndsAt && (
+            <p className="mt-1 text-xs text-gray-500">
+              {billing.pilotActive ? 'Ends' : 'Ended'} {formatDateEAT(new Date(billing.pilotEndsAt))}
+            </p>
+          )}
+          {!billing?.pilotEndsAt && (
+            <p className="mt-1 text-xs text-gray-400">3 months free after joining fee clears</p>
+          )}
+        </div>
+
+        {/* Monthly SaaS */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Monthly SaaS fee</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">${billing?.monthlyFeeUsd?.toLocaleString() ?? '2,000'}<span className="text-sm font-normal text-gray-400">/mo</span></p>
+          <p className="mt-1 text-xs text-gray-400">From Month 4 · +0.2% mint/redeem · +0.1% swap</p>
+        </div>
+      </div>
+
+      {/* Payment instructions */}
+      {payment && (
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-5 py-4">
+            <h3 className="text-sm font-semibold text-gray-700">Payment instructions</h3>
+          </div>
+          <div className="divide-y divide-gray-50 px-5 py-4 space-y-4">
+            {/* USDC */}
+            <div className="pb-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">USDC on {payment.usdc.network}</p>
+              {payment.usdc.recipientAddress ? (
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded bg-gray-50 border border-gray-200 px-3 py-1.5 text-xs font-mono text-gray-700">
+                    {payment.usdc.recipientAddress}
+                  </code>
+                  <button
+                    onClick={() => copy(payment.usdc.recipientAddress!, 'usdc')}
+                    className="shrink-0 rounded border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100"
+                  >
+                    {copiedField === 'usdc' ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Treasury address not configured — contact support</p>
+              )}
+            </div>
+
+            {/* Bank transfer */}
+            <div className="pt-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Bank transfer</p>
+              {payment.bankTransfer.bankName ? (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Bank</span>
+                    <span className="font-medium text-gray-800">{payment.bankTransfer.bankName}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Account</span>
+                    <span className="font-mono font-medium text-gray-800">{payment.bankTransfer.accountNumber}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Reference</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-medium text-gray-800">{payment.bankTransfer.reference}</span>
+                      <button
+                        onClick={() => copy(payment.bankTransfer.reference, 'ref')}
+                        className="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+                      >
+                        {copiedField === 'ref' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Bank details coming soon — contact your account manager</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoices */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-4">
+          <h3 className="text-sm font-semibold text-gray-700">Invoices</h3>
+        </div>
+        {invoices.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-gray-400">No invoices yet</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">Type</th>
+                  <th className="px-4 py-2.5 text-right">Amount</th>
+                  <th className="px-4 py-2.5 text-left">Status</th>
+                  <th className="px-4 py-2.5 text-left">Due</th>
+                  <th className="px-4 py-2.5 text-left">Paid</th>
+                  <th className="px-4 py-2.5 text-left">Ref</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-700 capitalize">{inv.type.replace(/_/g, ' ')}</td>
+                    <td className="px-4 py-3 text-right font-mono text-gray-800">${parseFloat(String(inv.amountUsd)).toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[inv.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {inv.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{inv.dueAt ? formatDateEAT(new Date(inv.dueAt)) : '—'}</td>
+                    <td className="px-4 py-3 text-gray-500">{inv.paidAt ? formatDateEAT(new Date(inv.paidAt)) : '—'}</td>
+                    <td className="px-4 py-3 font-mono text-gray-400">{inv.paymentRef ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── KYB Section ── */
+interface KybData {
+  id: string
+  status: string
+  businessLegalName: string | null
+  registrationNumber: string | null
+  registeredAddress: string | null
+  authorizedRepName: string | null
+  authorizedRepTitle: string | null
+  authorizedRepEmail: string | null
+  licenseType: string | null
+  licenseNumber: string | null
+  issuingAuthority: string | null
+  jurisdiction: string | null
+  certOfIncorporationUrl: string | null
+  regulatoryLicenseUrl: string | null
+  amlPolicyUrl: string | null
+  reviewNotes: string | null
+  submittedAt: string | null
+}
+
+const KYB_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  not_started: { label: 'Not started', color: 'bg-gray-100 text-gray-500' },
+  submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700' },
+  under_review: { label: 'Under review', color: 'bg-yellow-100 text-yellow-700' },
+  approved: { label: 'Approved', color: 'bg-green-100 text-green-700' },
+  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700' },
+}
+
+function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
+  const [kyb, setKyb] = useState<KybData | null>(null)
+  const [form, setForm] = useState<Partial<KybData>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [uploading, setUploading] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    fetch('/api/v1/partners/kyb', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((d) => {
+        setKyb(d.kyb)
+        if (d.kyb) setForm(d.kyb)
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const locked = kyb?.status === 'approved' || kyb?.status === 'under_review'
+
+  const handleChange = (key: keyof KybData, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleUpload = async (docType: string, file: File) => {
+    setUploading((u) => ({ ...u, [docType]: true }))
+    setError('')
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('docType', docType)
+    const res = await fetch('/api/v1/partners/kyb/upload', { method: 'POST', credentials: 'same-origin', body: fd })
+    const data = await res.json() as { url?: string; error?: string }
+    if (!res.ok) { setError(data.error ?? 'Upload failed'); setUploading((u) => ({ ...u, [docType]: false })); return }
+    const keyMap: Record<string, keyof KybData> = {
+      cert_of_incorporation: 'certOfIncorporationUrl',
+      regulatory_license: 'regulatoryLicenseUrl',
+      aml_policy: 'amlPolicyUrl',
+    }
+    const field = keyMap[docType]
+    if (field) setForm((prev) => ({ ...prev, [field]: data.url }))
+    setUploading((u) => ({ ...u, [docType]: false }))
+  }
+
+  const handleSave = async (submit = false) => {
+    setSaving(true); setError(''); setSuccess('')
+    const payload = { ...form, submit: submit ? 'true' : 'false' }
+    const res = await fetch('/api/v1/partners/kyb', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json() as { kyb?: KybData; error?: string }
+    setSaving(false)
+    if (!res.ok) { setError(data.error ?? 'Save failed'); return }
+    setKyb(data.kyb!)
+    setSuccess(submit ? 'KYB submitted for review' : 'Saved')
+    setTimeout(() => setSuccess(''), 3000)
+  }
+
+  if (loading) return <div className="p-6 text-sm text-gray-500">Loading KYB…</div>
+
+  const status = KYB_STATUS_LABELS[kyb?.status ?? 'not_started']
+
+  const field = (label: string, key: keyof KybData, placeholder = '') => (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <input
+        type="text"
+        value={(form[key] as string) ?? ''}
+        onChange={(e) => handleChange(key, e.target.value)}
+        placeholder={placeholder}
+        disabled={locked}
+        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400"
+      />
+    </div>
+  )
+
+  const uploadField = (label: string, docType: string, urlKey: keyof KybData) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      {(form[urlKey] as string) ? (
+        <div className="flex items-center gap-2">
+          <a href={form[urlKey] as string} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-xs text-blue-600 underline">
+            {(form[urlKey] as string).split('/').pop()}
+          </a>
+          {!locked && (
+            <label className="cursor-pointer rounded border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100">
+              {uploading[docType] ? 'Uploading…' : 'Replace'}
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(docType, e.target.files[0])} />
+            </label>
+          )}
+        </div>
+      ) : (
+        <label className={`flex items-center gap-2 rounded-lg border-2 border-dashed border-gray-200 px-4 py-3 text-sm text-gray-400 ${locked ? 'cursor-default' : 'cursor-pointer hover:border-gray-400 hover:text-gray-600'}`}>
+          {uploading[docType] ? 'Uploading…' : `Upload ${label} (PDF / image, max 10 MB)`}
+          {!locked && <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(docType, e.target.files[0])} />}
+        </label>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">Know Your Business (KYB)</h2>
+        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${status.color}`}>{status.label}</span>
+      </div>
+
+      {kyb?.reviewNotes && kyb.status === 'rejected' && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <strong>Review notes:</strong> {kyb.reviewNotes}
+        </div>
+      )}
+      {locked && kyb?.status === 'approved' && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          KYB approved. Contact support to update any details.
+        </div>
+      )}
+
+      {/* Business details */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Business details</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {field('Legal business name', 'businessLegalName', 'ACME Financial Ltd')}
+          {field('Registration number', 'registrationNumber', 'REG-12345678')}
+          {field('Authorized rep name', 'authorizedRepName', 'Jane Doe')}
+          {field('Title / role', 'authorizedRepTitle', 'CEO')}
+          {field('Authorized rep email', 'authorizedRepEmail', 'jane@acme.com')}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Registered address</label>
+          <textarea
+            value={(form.registeredAddress as string) ?? ''}
+            onChange={(e) => handleChange('registeredAddress', e.target.value)}
+            placeholder="Full registered business address"
+            disabled={locked}
+            rows={2}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400"
+          />
+        </div>
+      </div>
+
+      {/* Regulatory license */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Regulatory license</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {field('License type', 'licenseType', 'e.g. Payment Institution')}
+          {field('License number', 'licenseNumber')}
+          {field('Issuing authority', 'issuingAuthority', 'e.g. Bank of Tanzania')}
+          {field('Jurisdiction', 'jurisdiction', 'e.g. Tanzania')}
+        </div>
+      </div>
+
+      {/* Document uploads */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Supporting documents</h3>
+        {uploadField('Certificate of Incorporation', 'cert_of_incorporation', 'certOfIncorporationUrl')}
+        {uploadField('Regulatory License', 'regulatory_license', 'regulatoryLicenseUrl')}
+        {uploadField('AML / CFT Policy', 'aml_policy', 'amlPolicyUrl')}
+      </div>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {success && <p className="text-sm text-green-600">{success}</p>}
+
+      {!locked && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => handleSave(false)}
+            disabled={saving}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save draft'}
+          </button>
+          <button
+            onClick={() => handleSave(true)}
+            disabled={saving}
+            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            {saving ? 'Submitting…' : 'Submit for review'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -1661,6 +2089,8 @@ export default function PartnerDashboardPage() {
     { key: 'transfers', label: 'Transfers', icon: IconActivity },
     { key: 'deposits', label: 'Deposits', icon: IconCoins },
     { key: 'treasury', label: 'Treasury', icon: IconBank },
+    { key: 'billing', label: 'Billing', icon: IconCoins },
+    { key: 'kyb', label: 'KYB', icon: IconShield },
     { key: 'settings', label: 'Settings', icon: IconShield },
   ]
 
@@ -2210,6 +2640,16 @@ export default function PartnerDashboardPage() {
             {/* ── Treasury ── */}
             {section === 'treasury' && (
               <TreasurySection partner={partner} onRefresh={fetchDashboard} />
+            )}
+
+            {/* ── Billing ── */}
+            {section === 'billing' && (
+              <BillingSection partner={partner} />
+            )}
+
+            {/* ── KYB ── */}
+            {section === 'kyb' && (
+              <KybSection partner={partner} />
             )}
 
             {/* ── Settings ── */}

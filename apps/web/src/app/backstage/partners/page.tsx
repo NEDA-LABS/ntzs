@@ -2,11 +2,11 @@ import { desc, eq, count, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { ethers } from 'ethers'
 
-import { requireRole } from '@/lib/auth/rbac'
+import { requireRole, requireAnyRole } from '@/lib/auth/rbac'
 import { SubmitButton } from '../_components/SubmitButton'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
-import { partners, partnerUsers, depositRequests, burnRequests } from '@ntzs/db'
+import { partners, partnerUsers, depositRequests, burnRequests, partnerKyb } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateEAT } from '@/lib/format-date'
 
@@ -56,6 +56,34 @@ async function updateDailyLimitAction(formData: FormData) {
     .where(eq(partners.id, partnerId))
 
   await writeAuditLog('partner.limit_updated', 'partner', partnerId, { dailyLimitTzs })
+  revalidatePath('/backstage/partners')
+}
+
+async function reviewKybAction(formData: FormData) {
+  'use server'
+  const reviewer = await requireAnyRole(['super_admin', 'platform_compliance'])
+
+  const partnerId = String(formData.get('partnerId') ?? '')
+  const decision = String(formData.get('decision') ?? '') as 'approved' | 'rejected'
+  const notes = String(formData.get('notes') ?? '').trim()
+
+  if (!partnerId || !['approved', 'rejected'].includes(decision)) throw new Error('Invalid input')
+
+  const { db } = getDb()
+  const now = new Date()
+
+  await db
+    .update(partnerKyb)
+    .set({
+      status: decision,
+      reviewNotes: notes || null,
+      reviewedAt: now,
+      reviewedBy: reviewer.email,
+      updatedAt: now,
+    })
+    .where(eq(partnerKyb.partnerId, partnerId))
+
+  await writeAuditLog(`partner.kyb.${decision}`, 'partner', partnerId, { notes, reviewedBy: reviewer.email })
   revalidatePath('/backstage/partners')
 }
 
@@ -137,6 +165,35 @@ export default async function PartnersPage() {
     })
     .from(burnRequests)
     .groupBy(burnRequests.userId)
+
+  // KYB records that need attention
+  const kybRecords = await db
+    .select({
+      id: partnerKyb.id,
+      partnerId: partnerKyb.partnerId,
+      status: partnerKyb.status,
+      businessLegalName: partnerKyb.businessLegalName,
+      registrationNumber: partnerKyb.registrationNumber,
+      registeredAddress: partnerKyb.registeredAddress,
+      authorizedRepName: partnerKyb.authorizedRepName,
+      authorizedRepTitle: partnerKyb.authorizedRepTitle,
+      authorizedRepEmail: partnerKyb.authorizedRepEmail,
+      licenseType: partnerKyb.licenseType,
+      licenseNumber: partnerKyb.licenseNumber,
+      issuingAuthority: partnerKyb.issuingAuthority,
+      jurisdiction: partnerKyb.jurisdiction,
+      certOfIncorporationUrl: partnerKyb.certOfIncorporationUrl,
+      regulatoryLicenseUrl: partnerKyb.regulatoryLicenseUrl,
+      amlPolicyUrl: partnerKyb.amlPolicyUrl,
+      reviewNotes: partnerKyb.reviewNotes,
+      reviewedAt: partnerKyb.reviewedAt,
+      reviewedBy: partnerKyb.reviewedBy,
+      submittedAt: partnerKyb.submittedAt,
+    })
+    .from(partnerKyb)
+    .orderBy(desc(partnerKyb.submittedAt))
+
+  const partnerNameMap = new Map(allPartners.map(p => [p.id, p.name]))
 
   const statsMap = new Map(partnerStats.map(s => [s.partnerId, s.userCount]))
   const depositMap = new Map(depositVolumes.map(d => [d.partnerId, d]))
@@ -345,6 +402,157 @@ export default async function PartnersPage() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* KYB Review */}
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/50 overflow-hidden">
+          <div className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">KYB Reviews</h2>
+              <p className="text-sm text-zinc-500">Partner Know-Your-Business submissions</p>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-zinc-500">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-blue-400" /> Submitted
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-yellow-400" /> Under review
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" /> Approved
+              </span>
+            </div>
+          </div>
+
+          {kybRecords.length === 0 ? (
+            <p className="px-6 py-12 text-center text-sm text-zinc-500">No KYB submissions yet</p>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {kybRecords.map((kyb) => {
+                const partnerName = partnerNameMap.get(kyb.partnerId) ?? kyb.partnerId.slice(0, 8)
+                const isActionable = kyb.status === 'submitted' || kyb.status === 'under_review'
+                const statusColors: Record<string, string> = {
+                  not_started: 'bg-zinc-700 text-zinc-400',
+                  submitted: 'bg-blue-500/20 text-blue-300',
+                  under_review: 'bg-yellow-500/20 text-yellow-300',
+                  approved: 'bg-emerald-500/20 text-emerald-300',
+                  rejected: 'bg-rose-500/20 text-rose-300',
+                }
+                return (
+                  <div key={kyb.id} className="px-6 py-5 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white">{partnerName}</span>
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusColors[kyb.status] ?? statusColors.not_started}`}>
+                            {kyb.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        {kyb.submittedAt && (
+                          <p className="mt-0.5 text-xs text-zinc-500">Submitted {formatDateEAT(kyb.submittedAt)}</p>
+                        )}
+                        {kyb.reviewedBy && (
+                          <p className="mt-0.5 text-xs text-zinc-600">
+                            Reviewed by {kyb.reviewedBy}{kyb.reviewedAt ? ` on ${formatDateEAT(kyb.reviewedAt)}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Business details */}
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-xs sm:grid-cols-3 lg:grid-cols-4">
+                      {[
+                        ['Legal name', kyb.businessLegalName],
+                        ['Reg. number', kyb.registrationNumber],
+                        ['Rep name', kyb.authorizedRepName],
+                        ['Rep title', kyb.authorizedRepTitle],
+                        ['Rep email', kyb.authorizedRepEmail],
+                        ['License type', kyb.licenseType],
+                        ['License no.', kyb.licenseNumber],
+                        ['Authority', kyb.issuingAuthority],
+                        ['Jurisdiction', kyb.jurisdiction],
+                      ].map(([label, value]) => value ? (
+                        <div key={label}>
+                          <span className="text-zinc-500">{label}: </span>
+                          <span className="text-zinc-200">{value}</span>
+                        </div>
+                      ) : null)}
+                    </div>
+                    {kyb.registeredAddress && (
+                      <p className="text-xs text-zinc-400"><span className="text-zinc-500">Address: </span>{kyb.registeredAddress}</p>
+                    )}
+
+                    {/* Documents */}
+                    <div className="flex flex-wrap gap-2">
+                      {kyb.certOfIncorporationUrl && (
+                        <a href={kyb.certOfIncorporationUrl} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">
+                          📄 Certificate of Incorporation
+                        </a>
+                      )}
+                      {kyb.regulatoryLicenseUrl && (
+                        <a href={kyb.regulatoryLicenseUrl} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">
+                          📄 Regulatory License
+                        </a>
+                      )}
+                      {kyb.amlPolicyUrl && (
+                        <a href={kyb.amlPolicyUrl} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">
+                          📄 AML / CFT Policy
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Review notes (existing) */}
+                    {kyb.reviewNotes && (
+                      <p className="rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-300">
+                        <span className="font-medium text-zinc-400">Notes: </span>{kyb.reviewNotes}
+                      </p>
+                    )}
+
+                    {/* Approve / Reject forms */}
+                    {isActionable && (
+                      <div className="flex flex-wrap items-end gap-3 pt-1">
+                        <form action={reviewKybAction} className="flex items-center gap-2">
+                          <input type="hidden" name="partnerId" value={kyb.partnerId} />
+                          <input type="hidden" name="decision" value="approved" />
+                          <input
+                            type="text"
+                            name="notes"
+                            placeholder="Notes (optional)"
+                            className="w-52 rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-xs text-white focus:border-emerald-500/50 focus:outline-none"
+                          />
+                          <SubmitButton
+                            pendingText="Approving…"
+                            className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
+                          >
+                            Approve
+                          </SubmitButton>
+                        </form>
+                        <form action={reviewKybAction} className="flex items-center gap-2">
+                          <input type="hidden" name="partnerId" value={kyb.partnerId} />
+                          <input type="hidden" name="decision" value="rejected" />
+                          <input
+                            type="text"
+                            name="notes"
+                            placeholder="Rejection reason"
+                            className="w-52 rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-xs text-white focus:border-rose-500/50 focus:outline-none"
+                          />
+                          <SubmitButton
+                            pendingText="Rejecting…"
+                            className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20"
+                          >
+                            Reject
+                          </SubmitButton>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Info box */}
