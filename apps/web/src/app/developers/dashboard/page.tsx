@@ -809,101 +809,100 @@ function BillingSection({ partner: _partner }: { partner: PartnerInfo }) {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="p-6 text-sm text-gray-500">Loading billing…</div>
+  if (loading) return <div className="p-6 text-sm text-white/40">Loading billing…</div>
 
   const statusColor: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    paid: 'bg-green-100 text-green-800',
-    overdue: 'bg-red-100 text-red-800',
-    void: 'bg-gray-100 text-gray-500',
+    pending: 'bg-amber-500/10 text-amber-300',
+    paid: 'bg-emerald-500/10 text-emerald-300',
+    overdue: 'bg-red-500/10 text-red-300',
+    void: 'bg-white/5 text-white/40',
   }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold text-gray-900">Billing &amp; Plan</h2>
-
       {/* Plan cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* Joining fee */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">One-time joining fee</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">${billing?.joiningFeeUsd?.toLocaleString() ?? '50,000'}</p>
-          <p className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${billing?.joiningFeePaid ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+        <div className={`rounded-2xl border p-5 ${billing?.joiningFeePaid ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
+          <div className="text-xs font-medium text-white/40 uppercase tracking-wide">One-time joining fee</div>
+          <div className="mt-2 text-3xl font-bold text-white">${billing?.joiningFeeUsd?.toLocaleString() ?? '50,000'}</div>
+          <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${billing?.joiningFeePaid ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
             {billing?.joiningFeePaid ? `Paid ${billing.joiningFeePaidAt ? formatDateEAT(new Date(billing.joiningFeePaidAt)) : ''}` : 'Pending payment'}
-          </p>
+          </span>
         </div>
 
         {/* Pilot period */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Pilot period</p>
-          <p className={`mt-1 text-2xl font-bold ${billing?.pilotActive ? 'text-green-600' : 'text-gray-500'}`}>
+        <div className={`rounded-2xl border p-5 ${billing?.pilotActive ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-white/10 bg-white/5'}`}>
+          <div className="text-xs font-medium text-white/40 uppercase tracking-wide">Pilot period</div>
+          <div className={`mt-2 text-3xl font-bold ${billing?.pilotActive ? 'text-emerald-400' : 'text-white/50'}`}>
             {billing?.pilotActive ? 'Active' : billing?.pilotEndsAt ? 'Ended' : 'Not started'}
-          </p>
-          {billing?.pilotEndsAt && (
-            <p className="mt-1 text-xs text-gray-500">
+          </div>
+          {billing?.pilotEndsAt ? (
+            <div className="mt-1 text-xs text-white/40">
               {billing.pilotActive ? 'Ends' : 'Ended'} {formatDateEAT(new Date(billing.pilotEndsAt))}
-            </p>
-          )}
-          {!billing?.pilotEndsAt && (
-            <p className="mt-1 text-xs text-gray-400">3 months free after joining fee clears</p>
+            </div>
+          ) : (
+            <div className="mt-1 text-xs text-white/30">3 months free after joining fee clears</div>
           )}
         </div>
 
         {/* Monthly SaaS */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Monthly SaaS fee</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">${billing?.monthlyFeeUsd?.toLocaleString() ?? '2,000'}<span className="text-sm font-normal text-gray-400">/mo</span></p>
-          <p className="mt-1 text-xs text-gray-400">From Month 4 · +0.2% mint/redeem · +0.1% swap</p>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+          <div className="text-xs font-medium text-white/40 uppercase tracking-wide">Monthly SaaS fee</div>
+          <div className="mt-2 text-3xl font-bold text-white">
+            ${billing?.monthlyFeeUsd?.toLocaleString() ?? '2,000'}<span className="text-sm font-normal text-white/30">/mo</span>
+          </div>
+          <div className="mt-1 text-xs text-white/30">From Month 4 · +0.2% mint/redeem · +0.1% swap</div>
         </div>
       </div>
 
       {/* Payment instructions */}
       {payment && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-100 px-5 py-4">
-            <h3 className="text-sm font-semibold text-gray-700">Payment instructions</h3>
+        <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+          <div className="border-b border-white/[0.06] px-5 py-4">
+            <h3 className="text-sm font-semibold text-white">Payment instructions</h3>
           </div>
-          <div className="divide-y divide-gray-50 px-5 py-4 space-y-4">
+          <div className="divide-y divide-white/[0.06] px-5 py-4 space-y-4">
             {/* USDC */}
             <div className="pb-4">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">USDC on {payment.usdc.network}</p>
+              <p className="text-xs font-medium text-white/40 uppercase tracking-wide mb-2">USDC on {payment.usdc.network}</p>
               {payment.usdc.recipientAddress ? (
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded bg-gray-50 border border-gray-200 px-3 py-1.5 text-xs font-mono text-gray-700">
+                  <code className="flex-1 truncate rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-xs font-mono text-white/70">
                     {payment.usdc.recipientAddress}
                   </code>
                   <button
                     onClick={() => copy(payment.usdc.recipientAddress!, 'usdc')}
-                    className="shrink-0 rounded border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100"
+                    className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60 hover:bg-white/10 transition-colors"
                   >
                     {copiedField === 'usdc' ? 'Copied!' : 'Copy'}
                   </button>
                 </div>
               ) : (
-                <p className="text-xs text-gray-400">Treasury address not configured — contact support</p>
+                <p className="text-xs text-white/30">Treasury address not configured — contact support</p>
               )}
             </div>
 
             {/* Bank transfer */}
             <div className="pt-4">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Bank transfer</p>
+              <p className="text-xs font-medium text-white/40 uppercase tracking-wide mb-2">Bank transfer</p>
               {payment.bankTransfer.bankName ? (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Bank</span>
-                    <span className="font-medium text-gray-800">{payment.bankTransfer.bankName}</span>
+                    <span className="text-white/40">Bank</span>
+                    <span className="font-medium text-white/80">{payment.bankTransfer.bankName}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Account</span>
-                    <span className="font-mono font-medium text-gray-800">{payment.bankTransfer.accountNumber}</span>
+                    <span className="text-white/40">Account</span>
+                    <span className="font-mono font-medium text-white/80">{payment.bankTransfer.accountNumber}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Reference</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono font-medium text-gray-800">{payment.bankTransfer.reference}</span>
+                    <span className="text-white/40">Reference</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-white/80">{payment.bankTransfer.reference}</span>
                       <button
                         onClick={() => copy(payment.bankTransfer.reference, 'ref')}
-                        className="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+                        className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/50 hover:bg-white/10 transition-colors"
                       >
                         {copiedField === 'ref' ? 'Copied!' : 'Copy'}
                       </button>
@@ -911,7 +910,7 @@ function BillingSection({ partner: _partner }: { partner: PartnerInfo }) {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-gray-400">Bank details coming soon — contact your account manager</p>
+                <p className="text-xs text-white/30">Bank details coming soon — contact your account manager</p>
               )}
             </div>
           </div>
@@ -919,38 +918,38 @@ function BillingSection({ partner: _partner }: { partner: PartnerInfo }) {
       )}
 
       {/* Invoices */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-100 px-5 py-4">
-          <h3 className="text-sm font-semibold text-gray-700">Invoices</h3>
+      <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+        <div className="border-b border-white/[0.06] px-5 py-4">
+          <h3 className="text-sm font-semibold text-white">Invoices</h3>
         </div>
         {invoices.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-gray-400">No invoices yet</p>
+          <p className="px-5 py-10 text-center text-sm text-white/30">No invoices yet</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">
-              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+              <thead className="bg-white/[0.03] text-white/40 uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-2.5 text-left">Type</th>
-                  <th className="px-4 py-2.5 text-right">Amount</th>
-                  <th className="px-4 py-2.5 text-left">Status</th>
-                  <th className="px-4 py-2.5 text-left">Due</th>
-                  <th className="px-4 py-2.5 text-left">Paid</th>
-                  <th className="px-4 py-2.5 text-left">Ref</th>
+                  <th className="px-4 py-3 text-left font-medium">Type</th>
+                  <th className="px-4 py-3 text-right font-medium">Amount</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-left font-medium">Due</th>
+                  <th className="px-4 py-3 text-left font-medium">Paid</th>
+                  <th className="px-4 py-3 text-left font-medium">Ref</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-white/5">
                 {invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-700 capitalize">{inv.type.replace(/_/g, ' ')}</td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-800">${parseFloat(String(inv.amountUsd)).toLocaleString()}</td>
+                  <tr key={inv.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3 font-medium text-white/80 capitalize">{inv.type.replace(/_/g, ' ')}</td>
+                    <td className="px-4 py-3 text-right font-mono text-white/80">${parseFloat(String(inv.amountUsd)).toLocaleString()}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[inv.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[inv.status] ?? 'bg-white/5 text-white/40'}`}>
                         {inv.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{inv.dueAt ? formatDateEAT(new Date(inv.dueAt)) : '—'}</td>
-                    <td className="px-4 py-3 text-gray-500">{inv.paidAt ? formatDateEAT(new Date(inv.paidAt)) : '—'}</td>
-                    <td className="px-4 py-3 font-mono text-gray-400">{inv.paymentRef ?? '—'}</td>
+                    <td className="px-4 py-3 text-white/40">{inv.dueAt ? formatDateEAT(new Date(inv.dueAt)) : '—'}</td>
+                    <td className="px-4 py-3 text-white/40">{inv.paidAt ? formatDateEAT(new Date(inv.paidAt)) : '—'}</td>
+                    <td className="px-4 py-3 font-mono text-white/30">{inv.paymentRef ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -984,11 +983,11 @@ interface KybData {
 }
 
 const KYB_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  not_started: { label: 'Not started', color: 'bg-gray-100 text-gray-500' },
-  submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700' },
-  under_review: { label: 'Under review', color: 'bg-yellow-100 text-yellow-700' },
-  approved: { label: 'Approved', color: 'bg-green-100 text-green-700' },
-  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700' },
+  not_started: { label: 'Not started', color: 'bg-white/5 text-white/40' },
+  submitted: { label: 'Submitted', color: 'bg-blue-500/10 text-blue-300' },
+  under_review: { label: 'Under review', color: 'bg-amber-500/10 text-amber-300' },
+  approved: { label: 'Approved', color: 'bg-emerald-500/10 text-emerald-300' },
+  rejected: { label: 'Rejected', color: 'bg-red-500/10 text-red-300' },
 }
 
 function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
@@ -1051,41 +1050,42 @@ function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
     setTimeout(() => setSuccess(''), 3000)
   }
 
-  if (loading) return <div className="p-6 text-sm text-gray-500">Loading KYB…</div>
+  if (loading) return <div className="p-6 text-sm text-white/40">Loading KYB…</div>
 
   const status = KYB_STATUS_LABELS[kyb?.status ?? 'not_started']
 
   const field = (label: string, key: keyof KybData, placeholder = '') => (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-white/40 mb-1">{label}</label>
       <input
         type="text"
         value={(form[key] as string) ?? ''}
         onChange={(e) => handleChange(key, e.target.value)}
         placeholder={placeholder}
         disabled={locked}
-        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400"
+        className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/20 focus:border-white/30 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
       />
     </div>
   )
 
   const uploadField = (label: string, docType: string, urlKey: keyof KybData) => (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-white/40 mb-1.5">{label}</label>
       {(form[urlKey] as string) ? (
         <div className="flex items-center gap-2">
-          <a href={form[urlKey] as string} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-xs text-blue-600 underline">
+          <a href={form[urlKey] as string} target="_blank" rel="noopener noreferrer"
+            className="flex-1 truncate rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs font-mono text-white/60 hover:text-white/80 transition-colors">
             {(form[urlKey] as string).split('/').pop()}
           </a>
           {!locked && (
-            <label className="cursor-pointer rounded border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100">
+            <label className="cursor-pointer rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/50 hover:bg-white/10 transition-colors">
               {uploading[docType] ? 'Uploading…' : 'Replace'}
               <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(docType, e.target.files[0])} />
             </label>
           )}
         </div>
       ) : (
-        <label className={`flex items-center gap-2 rounded-lg border-2 border-dashed border-gray-200 px-4 py-3 text-sm text-gray-400 ${locked ? 'cursor-default' : 'cursor-pointer hover:border-gray-400 hover:text-gray-600'}`}>
+        <label className={`flex items-center justify-center rounded-xl border-2 border-dashed px-4 py-4 text-sm transition-colors ${locked ? 'cursor-default border-white/5 text-white/20' : 'cursor-pointer border-white/10 text-white/40 hover:border-white/20 hover:text-white/60'}`}>
           {uploading[docType] ? 'Uploading…' : `Upload ${label} (PDF / image, max 10 MB)`}
           {!locked && <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(docType, e.target.files[0])} />}
         </label>
@@ -1096,24 +1096,24 @@ function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Know Your Business (KYB)</h2>
+        <h2 className="text-lg font-semibold text-white">Know Your Business (KYB)</h2>
         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${status.color}`}>{status.label}</span>
       </div>
 
       {kyb?.reviewNotes && kyb.status === 'rejected' && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <strong>Review notes:</strong> {kyb.reviewNotes}
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+          <strong className="text-red-200">Review notes:</strong> {kyb.reviewNotes}
         </div>
       )}
       {locked && kyb?.status === 'approved' && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-300">
           KYB approved. Contact support to update any details.
         </div>
       )}
 
       {/* Business details */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-        <h3 className="text-sm font-semibold text-gray-700">Business details</h3>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-white/80">Business details</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {field('Legal business name', 'businessLegalName', 'ACME Financial Ltd')}
           {field('Registration number', 'registrationNumber', 'REG-12345678')}
@@ -1122,21 +1122,21 @@ function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
           {field('Authorized rep email', 'authorizedRepEmail', 'jane@acme.com')}
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Registered address</label>
+          <label className="block text-xs font-medium text-white/40 mb-1">Registered address</label>
           <textarea
             value={(form.registeredAddress as string) ?? ''}
             onChange={(e) => handleChange('registeredAddress', e.target.value)}
             placeholder="Full registered business address"
             disabled={locked}
             rows={2}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400"
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/20 focus:border-white/30 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed resize-none"
           />
         </div>
       </div>
 
       {/* Regulatory license */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-        <h3 className="text-sm font-semibold text-gray-700">Regulatory license</h3>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-white/80">Regulatory license</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {field('License type', 'licenseType', 'e.g. Payment Institution')}
           {field('License number', 'licenseNumber')}
@@ -1146,29 +1146,29 @@ function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
       </div>
 
       {/* Document uploads */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-        <h3 className="text-sm font-semibold text-gray-700">Supporting documents</h3>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-white/80">Supporting documents</h3>
         {uploadField('Certificate of Incorporation', 'cert_of_incorporation', 'certOfIncorporationUrl')}
         {uploadField('Regulatory License', 'regulatory_license', 'regulatoryLicenseUrl')}
         {uploadField('AML / CFT Policy', 'aml_policy', 'amlPolicyUrl')}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {success && <p className="text-sm text-green-600">{success}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      {success && <p className="text-sm text-emerald-400">{success}</p>}
 
       {!locked && (
         <div className="flex items-center gap-3">
           <button
             onClick={() => handleSave(false)}
             disabled={saving}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors disabled:opacity-40"
           >
             {saving ? 'Saving…' : 'Save draft'}
           </button>
           <button
             onClick={() => handleSave(true)}
             disabled={saving}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors disabled:opacity-40"
           >
             {saving ? 'Submitting…' : 'Submit for review'}
           </button>
