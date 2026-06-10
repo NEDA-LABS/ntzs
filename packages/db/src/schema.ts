@@ -818,6 +818,7 @@ export const lpOtpCodes = pgTable(
     codeHash: text('code_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     used: boolean('used').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1074,6 +1075,7 @@ export const merchantOtpCodes = pgTable(
     codeHash: text('code_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     used: boolean('used').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1248,6 +1250,7 @@ export const enterpriseOtpCodes = pgTable(
     codeHash: text('code_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     used: boolean('used').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

@@ -1,20 +1,20 @@
-import { createHash, randomInt } from 'crypto'
+import { randomInt } from 'crypto'
 import { db } from './db'
 import { enterpriseOtpCodes } from '@ntzs/db'
-import { and, eq, gt, lte } from 'drizzle-orm'
+import { and, eq, lte } from 'drizzle-orm'
+import { enforceOtpIssuanceLimit, hashOtp, verifyOtpCode } from '@/lib/auth/otp-core'
 
 export function generateOtp(): string {
   return String(randomInt(100000, 999999))
-}
-
-function hashOtp(code: string): string {
-  return createHash('sha256').update(code).digest('hex')
 }
 
 export async function storeOtp(email: string, code: string): Promise<void> {
   const now = new Date()
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000)
   const normalized = email.toLowerCase()
+
+  // Throttle issuance before minting a new code (anti brute-force / anti-bomb).
+  await enforceOtpIssuanceLimit('enterprise_otp_codes', normalized)
 
   await db
     .delete(enterpriseOtpCodes)
@@ -28,27 +28,7 @@ export async function storeOtp(email: string, code: string): Promise<void> {
 }
 
 export async function verifyOtp(email: string, code: string): Promise<boolean> {
-  const rows = await db
-    .select()
-    .from(enterpriseOtpCodes)
-    .where(
-      and(
-        eq(enterpriseOtpCodes.email, email.toLowerCase()),
-        eq(enterpriseOtpCodes.codeHash, hashOtp(code)),
-        eq(enterpriseOtpCodes.used, false),
-        gt(enterpriseOtpCodes.expiresAt, new Date())
-      )
-    )
-    .limit(1)
-
-  if (!rows.length) return false
-
-  await db
-    .update(enterpriseOtpCodes)
-    .set({ used: true })
-    .where(eq(enterpriseOtpCodes.id, rows[0].id))
-
-  return true
+  return (await verifyOtpCode('enterprise_otp_codes', email, code)) !== null
 }
 
 export async function sendOtpEmail(email: string, code: string): Promise<void> {
