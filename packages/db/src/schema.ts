@@ -1289,6 +1289,9 @@ export const enterpriseLoanAgreements = pgTable(
     interestTzs: bigint('interest_tzs', { mode: 'number' }).notNull().default(0),
     totalOwedTzs: bigint('total_owed_tzs', { mode: 'number' }).notNull().default(0),
     repaidTzs: bigint('repaid_tzs', { mode: 'number' }).notNull().default(0),
+    // Cumulative principal drawn down via merchant financing withdrawals.
+    // Revolving facility: available to draw = principal_tzs - (disbursed_tzs - repaid_tzs).
+    disbursedTzs: bigint('disbursed_tzs', { mode: 'number' }).notNull().default(0),
     status: enterpriseLoanStatus('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
