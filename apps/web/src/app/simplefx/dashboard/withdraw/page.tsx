@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUpRight, CheckCircle2, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 
@@ -25,21 +25,30 @@ export default function WithdrawPage() {
   const [txHash, setTxHash] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Stable across retries of the same withdrawal so a network retry can't
+  // double-spend; regenerated after a confirmed success.
+  const idemKeyRef = useRef<string | null>(null);
+
   const reset = () => {
     setState('idle');
     setToAddress('');
     setAmount('');
     setTxHash('');
     setErrorMsg('');
+    idemKeyRef.current = null;
   };
 
   const handleSubmit = async () => {
     setErrorMsg('');
     setState('loading');
+    if (!idemKeyRef.current) idemKeyRef.current = crypto.randomUUID();
     try {
       const res = await fetch('/simplefx/api/lp/withdraw', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idemKeyRef.current,
+        },
         body: JSON.stringify({
           token: selected.id,
           toAddress,
@@ -54,6 +63,7 @@ export default function WithdrawPage() {
       } else {
         setTxHash(data.txHash);
         setState('success');
+        idemKeyRef.current = null;
       }
     } catch {
       setErrorMsg('Network error. Please try again.');

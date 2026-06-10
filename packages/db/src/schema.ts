@@ -1495,3 +1495,23 @@ export const partnerKyb = pgTable(
     statusIdx: index('partner_kyb_status_idx').on(t.status),
   })
 )
+
+// Server-side idempotency for side-effectful endpoints (e.g. withdrawals).
+// A claim is inserted before the side effect; a retry with the same
+// (scope, idem_key) replays the stored response instead of re-executing.
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scope: text('scope').notNull(),
+    idemKey: text('idem_key').notNull(),
+    status: text('status').notNull().default('processing'), // processing | completed
+    responseStatus: integer('response_status'),
+    responseBody: jsonb('response_body'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    scopeKeyUq: uniqueIndex('idempotency_keys_scope_key_uq').on(t.scope, t.idemKey),
+    createdIdx: index('idempotency_keys_created_at_idx').on(t.createdAt),
+  })
+)
