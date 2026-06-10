@@ -82,24 +82,11 @@ export async function executeMint(depositId: string): Promise<MintResult> {
     .values({ day: today, capTzs: DAILY_ISSUANCE_CAP_TZS, reservedTzs: 0, issuedTzs: 0 })
     .onConflictDoNothing()
 
-  const [[dailyRow], [wallet]] = await Promise.all([
-    db
-      .select({ reservedTzs: dailyIssuance.reservedTzs, issuedTzs: dailyIssuance.issuedTzs, capTzs: dailyIssuance.capTzs })
-      .from(dailyIssuance)
-      .where(eq(dailyIssuance.day, today))
-      .limit(1),
-    db
-      .select({ address: wallets.address })
-      .from(wallets)
-      .where(eq(wallets.id, job.walletId))
-      .limit(1),
-  ])
-
-  if (dailyRow && dailyRow.reservedTzs + dailyRow.issuedTzs + job.amountTzs > dailyRow.capTzs) {
-    await db.update(depositRequests).set({ status: 'mint_pending', updatedAt: new Date() }).where(eq(depositRequests.id, job.id))
-    await db.update(mintTransactions).set({ status: 'cap_exceeded', error: 'Daily issuance cap reached', updatedAt: new Date() }).where(eq(mintTransactions.depositRequestId, job.id))
-    return { status: 'cap_exceeded', depositId: job.id }
-  }
+  const [wallet] = await db
+    .select({ address: wallets.address })
+    .from(wallets)
+    .where(eq(wallets.id, job.walletId))
+    .limit(1)
 
   if (!wallet?.address) {
     await db.update(depositRequests).set({ status: 'mint_failed', updatedAt: new Date() }).where(eq(depositRequests.id, job.id))
@@ -107,11 +94,23 @@ export async function executeMint(depositId: string): Promise<MintResult> {
     return { status: 'failed', depositId: job.id, error: 'Wallet address not found' }
   }
 
-  // Reserve amount
-  await db
+  // Atomically reserve against the daily cap. The conditional WHERE makes the
+  // check-and-reserve a single statement, so concurrent mints can't each pass a
+  // stale cap check and collectively over-issue (no TOCTOU race).
+  const reserved = await db
     .update(dailyIssuance)
     .set({ reservedTzs: sql`${dailyIssuance.reservedTzs} + ${job.amountTzs}`, updatedAt: new Date() })
-    .where(eq(dailyIssuance.day, today))
+    .where(and(
+      eq(dailyIssuance.day, today),
+      sql`${dailyIssuance.reservedTzs} + ${dailyIssuance.issuedTzs} + ${job.amountTzs} <= ${dailyIssuance.capTzs}`,
+    ))
+    .returning({ day: dailyIssuance.day })
+
+  if (!reserved.length) {
+    await db.update(depositRequests).set({ status: 'mint_pending', updatedAt: new Date() }).where(eq(depositRequests.id, job.id))
+    await db.update(mintTransactions).set({ status: 'cap_exceeded', error: 'Daily issuance cap reached', updatedAt: new Date() }).where(eq(mintTransactions.depositRequestId, job.id))
+    return { status: 'cap_exceeded', depositId: job.id }
+  }
 
   try {
 
