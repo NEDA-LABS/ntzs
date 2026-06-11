@@ -1295,6 +1295,10 @@ export const enterpriseLoanAgreements = pgTable(
     // Cumulative principal drawn down via merchant financing withdrawals.
     // Revolving facility: available to draw = principal_tzs - (disbursed_tzs - repaid_tzs).
     disbursedTzs: bigint('disbursed_tzs', { mode: 'number' }).notNull().default(0),
+    // Loan term for aging/overdue analytics. termDays is the agreed duration;
+    // dueAt is the repayment deadline (set when a term is configured).
+    termDays: integer('term_days'),
+    dueAt: timestamp('due_at', { withTimezone: true }),
     status: enterpriseLoanStatus('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -36,6 +36,10 @@ export async function GET() {
       interestTzs: enterpriseLoanAgreements.interestTzs,
       totalOwedTzs: enterpriseLoanAgreements.totalOwedTzs,
       repaidTzs: enterpriseLoanAgreements.repaidTzs,
+      disbursedTzs: enterpriseLoanAgreements.disbursedTzs,
+      termDays: enterpriseLoanAgreements.termDays,
+      dueAt: enterpriseLoanAgreements.dueAt,
+      loanStartedAt: enterpriseLoanAgreements.createdAt,
       loanStatus: enterpriseLoanAgreements.status,
     })
     .from(merchantAccounts)
