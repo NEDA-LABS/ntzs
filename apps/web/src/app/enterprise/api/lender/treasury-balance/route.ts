@@ -31,7 +31,10 @@ export async function GET() {
 
   try {
     const rpcUrl = process.env.BASE_RPC_URL
-    const tokenAddress = process.env.NTZS_TOKEN_ADDRESS
+    // Must match the token env var the rest of the app uses (wallet route,
+    // executeMint, swaps all use NTZS_CONTRACT_ADDRESS_BASE). NTZS_TOKEN_ADDRESS
+    // is unset, which silently made this fall back to 0 on the Overview card.
+    const tokenAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
     if (!rpcUrl || !tokenAddress) {
       return NextResponse.json({ balanceTzs: 0, address: partner.treasuryWalletAddress })
     }
