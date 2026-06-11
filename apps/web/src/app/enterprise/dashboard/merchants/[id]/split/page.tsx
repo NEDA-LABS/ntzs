@@ -20,6 +20,8 @@ interface Merchant {
   interestTzs: number | null
   totalOwedTzs: number | null
   repaidTzs: number | null
+  termDays: number | null
+  dueAt: string | null
   loanStatus: string | null
 }
 
@@ -41,6 +43,12 @@ export default function MerchantControlsPage() {
   const [interestError, setInterestError] = useState('')
   const [interestSaved, setInterestSaved] = useState(false)
 
+  const [termDays, setTermDays] = useState(0)
+  const [initialTermDays, setInitialTermDays] = useState(0)
+  const [savingTerm, setSavingTerm] = useState(false)
+  const [termError, setTermError] = useState('')
+  const [termSaved, setTermSaved] = useState(false)
+
   useEffect(() => {
     fetch('/enterprise/api/lender/merchants')
       .then(r => r.json())
@@ -52,6 +60,8 @@ export default function MerchantControlsPage() {
           setWithdrawalCap(m.withdrawalLimitTzs)
           setSettlementLocked(m.lenderControlsSettlement)
           setInterestRate(m.interestRatePct ?? 0)
+          setTermDays(m.termDays ?? 0)
+          setInitialTermDays(m.termDays ?? 0)
         }
       })
       .finally(() => setLoading(false))
@@ -87,6 +97,23 @@ export default function MerchantControlsPage() {
     } catch (err) {
       setInterestError(err instanceof Error ? err.message : 'Failed to save')
     } finally { setSavingInterest(false) }
+  }
+
+  async function handleSaveTerm() {
+    setTermError(''); setSavingTerm(true); setTermSaved(false)
+    try {
+      const res = await fetch(`/enterprise/api/lender/merchants/${id}/loan`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ termDays }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to save')
+      setInitialTermDays(termDays)
+      setTermSaved(true)
+      setTimeout(() => setTermSaved(false), 3000)
+    } catch (err) {
+      setTermError(err instanceof Error ? err.message : 'Failed to save')
+    } finally { setSavingTerm(false) }
   }
 
   if (loading) return <div className="p-10 text-xs text-gray-400 animate-pulse">Loading...</div>
@@ -226,6 +253,45 @@ export default function MerchantControlsPage() {
             className="w-full border border-gray-300 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 text-xs py-2.5 uppercase tracking-widest transition-colors rounded"
           >
             {savingInterest ? 'Saving…' : 'Save Interest Rate'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Loan term ── */}
+      {merchant.principalTzs && (
+        <div className="border border-gray-200 bg-white rounded-lg shadow-sm p-6 space-y-4">
+          <div>
+            <p className="text-[10px] tracking-widest text-gray-400 uppercase">Loan Term</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Repayment window in days. Sets the due date used for aging &amp; overdue tracking.</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="block text-xs text-gray-500 mb-2">Term (days)</label>
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                value={termDays}
+                onChange={e => setTermDays(Number(e.target.value))}
+                placeholder="e.g. 90"
+                className="w-full bg-white border border-gray-300 text-gray-800 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] text-gray-400 mb-1">Current due date</p>
+              <p className="text-sm text-gray-700">
+                {merchant.dueAt ? new Date(merchant.dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+              </p>
+            </div>
+          </div>
+          {termError && <p className="text-xs text-red-600">{termError}</p>}
+          {termSaved && <p className="text-xs text-emerald-600">Loan term saved.</p>}
+          <button
+            onClick={handleSaveTerm}
+            disabled={savingTerm || termDays < 1 || termDays === initialTermDays}
+            className="w-full border border-gray-300 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 text-xs py-2.5 uppercase tracking-widest transition-colors rounded"
+          >
+            {savingTerm ? 'Saving…' : 'Save Loan Term'}
           </button>
         </div>
       )}
