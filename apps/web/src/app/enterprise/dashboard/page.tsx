@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
+import { RepaymentTrendChart, AgingBar } from './_components/charts'
+
 function fmt(n: number) {
   return new Intl.NumberFormat('en-TZ', { maximumFractionDigits: 0 }).format(n)
 }
@@ -23,6 +25,13 @@ interface LenderData {
   activeLoanCount: number
 }
 
+interface AnalyticsData {
+  yield: { blendedYieldPct: number; interestContractedTzs: number; interestRealizedTzs: number }
+  capital: { totalPrincipalTzs: number; totalDisbursedTzs: number; capitalOutstandingTzs: number; totalRepaidTzs: number; utilizationPct: number; recoveryPct: number }
+  risk: { aging: { current: number; dueSoon: number; overdue: number; severelyOverdue: number }; atRiskTzs: number; overdueLoanCount: number; activeLoanCount: number }
+  repaymentTrend: Array<{ month: string; totalTzs: number; count: number }>
+}
+
 interface DisbursementData {
   recentBatches: Array<{
     id: string
@@ -39,6 +48,7 @@ interface DisbursementData {
 export default function EnterpriseDashboardPage() {
   const [accountType, setAccountType] = useState<'capital_lender' | 'disbursement_client' | null>(null)
   const [lender, setLender] = useState<LenderData | null>(null)
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [disbursement, setDisbursement] = useState<DisbursementData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -48,15 +58,17 @@ export default function EnterpriseDashboardPage() {
       setAccountType(me.type)
 
       if (me.type === 'capital_lender') {
-        const [merchantsRes, balanceRes] = await Promise.all([
+        const [merchantsRes, balanceRes, analyticsRes] = await Promise.all([
           fetch('/enterprise/api/lender/merchants').then(r => r.json()),
           fetch('/enterprise/api/lender/treasury-balance').then(r => r.json()),
+          fetch('/enterprise/api/lender/analytics').then(r => r.ok ? r.json() : null).catch(() => null),
         ])
         const merchants = merchantsRes.merchants ?? []
         const totalPrincipalTzs = merchants.reduce((s: number, m: LenderData['merchants'][0]) => s + (m.principalTzs ?? 0), 0)
         const totalRepaidTzs = merchants.reduce((s: number, m: LenderData['merchants'][0]) => s + (m.repaidTzs ?? 0), 0)
         const activeLoanCount = merchants.filter((m: LenderData['merchants'][0]) => m.loanStatus === 'active').length
         setLender({ merchants, treasuryBalanceTzs: balanceRes.balanceTzs ?? 0, totalPrincipalTzs, totalRepaidTzs, activeLoanCount })
+        if (analyticsRes) setAnalytics(analyticsRes)
       }
 
       if (me.type === 'disbursement_client') {
@@ -112,6 +124,37 @@ export default function EnterpriseDashboardPage() {
               </div>
             ))}
           </div>
+
+          {analytics && (
+            <>
+              {/* Lending analytics */}
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                {[
+                  { label: 'Blended Yield', value: `${analytics.yield.blendedYieldPct.toFixed(1)}%`, sub: `TZS ${fmt(analytics.yield.interestRealizedTzs)} earned of ${fmt(analytics.yield.interestContractedTzs)}`, accent: 'indigo' },
+                  { label: 'Facility Utilization', value: `${analytics.capital.utilizationPct.toFixed(0)}%`, sub: `TZS ${fmt(analytics.capital.totalDisbursedTzs)} drawn of ${fmt(analytics.capital.totalPrincipalTzs)}`, accent: 'slate' },
+                  { label: 'Capital Outstanding', value: `TZS ${fmt(analytics.capital.capitalOutstandingTzs)}`, sub: 'cash still deployed', accent: 'slate' },
+                  { label: 'At-Risk Capital', value: `TZS ${fmt(analytics.risk.atRiskTzs)}`, sub: `${analytics.risk.overdueLoanCount} loan${analytics.risk.overdueLoanCount === 1 ? '' : 's'} overdue`, accent: analytics.risk.atRiskTzs > 0 ? 'red' : 'green' },
+                ].map(card => (
+                  <div key={card.label} className="border border-gray-200 bg-white rounded-lg shadow-sm p-5">
+                    <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-3">{card.label}</p>
+                    <p className={`text-xl font-semibold ${card.accent === 'indigo' ? 'text-indigo-600' : card.accent === 'red' ? 'text-red-600' : card.accent === 'green' ? 'text-emerald-600' : 'text-gray-900'}`}>{card.value}</p>
+                    <p className="text-[10px] text-gray-400 mt-1">{card.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-4">
+                <div className="border border-gray-200 bg-white rounded-lg shadow-sm p-6">
+                  <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-4">Capital at Risk · Aging</p>
+                  <AgingBar aging={analytics.risk.aging} />
+                </div>
+                <div className="border border-gray-200 bg-white rounded-lg shadow-sm p-6">
+                  <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-4">Repayment Inflow · 12 mo</p>
+                  <RepaymentTrendChart data={analytics.repaymentTrend} />
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="border border-gray-200 bg-white rounded-lg shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">

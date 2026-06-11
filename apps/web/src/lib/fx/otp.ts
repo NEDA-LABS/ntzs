@@ -1,20 +1,22 @@
-import { createHash, randomInt } from 'crypto';
+import { randomInt } from 'crypto';
 import { db } from './db';
 import { lpOtpCodes } from '@ntzs/db';
-import { and, eq, gt, lte } from 'drizzle-orm';
+import { and, eq, lte } from 'drizzle-orm';
+import { enforceOtpIssuanceLimit, hashOtp, verifyOtpCode } from '@/lib/auth/otp-core';
 
 export function generateOtp(): string {
   return String(randomInt(100000, 999999));
 }
 
-export function hashOtp(code: string): string {
-  return createHash('sha256').update(code).digest('hex');
-}
+export { hashOtp };
 
 export async function storeOtp(email: string, code: string): Promise<void> {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 min
   const normalized = email.toLowerCase().trim();
+
+  // Throttle issuance before minting a new code (anti brute-force / anti-bomb).
+  await enforceOtpIssuanceLimit('lp_otp_codes', normalized);
 
   await db
     .delete(lpOtpCodes)
@@ -33,21 +35,9 @@ export async function storeOtp(email: string, code: string): Promise<void> {
 }
 
 export async function verifyOtp(email: string, code: string): Promise<string | null> {
-  const rows = await db
-    .select()
-    .from(lpOtpCodes)
-    .where(
-      and(
-        eq(lpOtpCodes.email, email.toLowerCase().trim()),
-        eq(lpOtpCodes.codeHash, hashOtp(code.trim())),
-        eq(lpOtpCodes.used, false),
-        gt(lpOtpCodes.expiresAt, new Date())
-      )
-    )
-    .limit(1);
-
-  if (!rows.length) return null;
-  return rows[0].id;
+  // Defer consumption: this flow marks the code used via consumeOtp() only
+  // after the full sign-in succeeds.
+  return verifyOtpCode('lp_otp_codes', email, code, { markUsedOnSuccess: false });
 }
 
 export async function consumeOtp(id: string): Promise<void> {

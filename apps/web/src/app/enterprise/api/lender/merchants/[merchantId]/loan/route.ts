@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ me
   }
 
   const [loan] = await db
-    .select({ id: enterpriseLoanAgreements.id, repaidTzs: enterpriseLoanAgreements.repaidTzs, principalTzs: enterpriseLoanAgreements.principalTzs })
+    .select({ id: enterpriseLoanAgreements.id, repaidTzs: enterpriseLoanAgreements.repaidTzs, principalTzs: enterpriseLoanAgreements.principalTzs, createdAt: enterpriseLoanAgreements.createdAt })
     .from(enterpriseLoanAgreements)
     .where(
       and(
@@ -43,24 +43,51 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ me
     .limit(1)
 
   if (!loan) return NextResponse.json({ error: 'No active loan agreement found' }, { status: 404 })
-  if (loan.repaidTzs > 0) {
-    return NextResponse.json({ error: 'Cannot change interest rate after repayments have started' }, { status: 409 })
-  }
 
   const body = await req.json()
-  const interestRatePct = Number(body.interestRatePct ?? 0)
+  const updates: Partial<typeof enterpriseLoanAgreements.$inferInsert> = { updatedAt: new Date() }
+  const result: Record<string, number | string | null> = {}
 
-  if (!Number.isInteger(interestRatePct) || interestRatePct < 0 || interestRatePct > 200) {
-    return NextResponse.json({ error: 'interestRatePct must be 0–200' }, { status: 400 })
+  // Interest rate — only adjustable before repayments have started.
+  if (body.interestRatePct !== undefined) {
+    const interestRatePct = Number(body.interestRatePct)
+    if (!Number.isInteger(interestRatePct) || interestRatePct < 0 || interestRatePct > 200) {
+      return NextResponse.json({ error: 'interestRatePct must be 0–200' }, { status: 400 })
+    }
+    if (loan.repaidTzs > 0) {
+      return NextResponse.json({ error: 'Cannot change interest rate after repayments have started' }, { status: 409 })
+    }
+    const interestTzs = Math.floor(loan.principalTzs * interestRatePct / 100)
+    const totalOwedTzs = loan.principalTzs + interestTzs
+    updates.interestRatePct = interestRatePct
+    updates.interestTzs = interestTzs
+    updates.totalOwedTzs = totalOwedTzs
+    result.interestRatePct = interestRatePct
+    result.interestTzs = interestTzs
+    result.totalOwedTzs = totalOwedTzs
   }
 
-  const interestTzs = Math.floor(loan.principalTzs * interestRatePct / 100)
-  const totalOwedTzs = loan.principalTzs + interestTzs
+  // Loan term — sets the repayment deadline (due_at = loan start + term).
+  if (body.termDays !== undefined) {
+    const termDays = Number(body.termDays)
+    if (!Number.isInteger(termDays) || termDays < 1 || termDays > 3650) {
+      return NextResponse.json({ error: 'termDays must be 1–3650' }, { status: 400 })
+    }
+    const dueAt = new Date(loan.createdAt.getTime() + termDays * 24 * 60 * 60 * 1000)
+    updates.termDays = termDays
+    updates.dueAt = dueAt
+    result.termDays = termDays
+    result.dueAt = dueAt.toISOString()
+  }
+
+  if (Object.keys(result).length === 0) {
+    return NextResponse.json({ error: 'Provide interestRatePct and/or termDays' }, { status: 400 })
+  }
 
   await db
     .update(enterpriseLoanAgreements)
-    .set({ interestRatePct, interestTzs, totalOwedTzs, updatedAt: new Date() })
+    .set(updates)
     .where(eq(enterpriseLoanAgreements.id, loan.id))
 
-  return NextResponse.json({ ok: true, interestRatePct, interestTzs, totalOwedTzs })
+  return NextResponse.json({ ok: true, ...result })
 }

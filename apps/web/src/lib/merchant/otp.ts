@@ -1,20 +1,22 @@
-import { createHash, randomInt } from 'crypto';
+import { randomInt } from 'crypto';
 import { db } from './db';
 import { merchantOtpCodes } from '@ntzs/db';
-import { and, eq, gt, lte } from 'drizzle-orm';
+import { and, eq, lte } from 'drizzle-orm';
+import { enforceOtpIssuanceLimit, hashOtp, verifyOtpCode } from '@/lib/auth/otp-core';
 
 export function generateOtp(): string {
   return String(randomInt(100000, 999999));
 }
 
-export function hashOtp(code: string): string {
-  return createHash('sha256').update(code).digest('hex');
-}
+export { hashOtp };
 
 export async function storeOtp(email: string, code: string): Promise<void> {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
   const normalized = email.toLowerCase();
+
+  // Throttle issuance before minting a new code (anti brute-force / anti-bomb).
+  await enforceOtpIssuanceLimit('merchant_otp_codes', normalized);
 
   await db
     .delete(merchantOtpCodes)
@@ -28,27 +30,7 @@ export async function storeOtp(email: string, code: string): Promise<void> {
 }
 
 export async function verifyOtp(email: string, code: string): Promise<boolean> {
-  const rows = await db
-    .select()
-    .from(merchantOtpCodes)
-    .where(
-      and(
-        eq(merchantOtpCodes.email, email.toLowerCase()),
-        eq(merchantOtpCodes.codeHash, hashOtp(code)),
-        eq(merchantOtpCodes.used, false),
-        gt(merchantOtpCodes.expiresAt, new Date())
-      )
-    )
-    .limit(1);
-
-  if (!rows.length) return false;
-
-  await db
-    .update(merchantOtpCodes)
-    .set({ used: true })
-    .where(eq(merchantOtpCodes.id, rows[0].id));
-
-  return true;
+  return (await verifyOtpCode('merchant_otp_codes', email, code)) !== null;
 }
 
 export async function sendOtpEmail(email: string, code: string): Promise<void> {

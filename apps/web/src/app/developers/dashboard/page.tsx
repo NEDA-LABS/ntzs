@@ -1211,6 +1211,9 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
   const [withdrawing, setWithdrawing] = useState(false)
   const [withdrawError, setWithdrawError] = useState('')
   const [withdrawSuccess, setWithdrawSuccess] = useState('')
+  // Stable across retries of the same withdrawal so a network retry can't
+  // double-withdraw; regenerated after a confirmed success.
+  const withdrawIdemKeyRef = useRef<string | null>(null)
 
   const handleSaveFee = async () => {
     const val = parseFloat(feeInput)
@@ -1280,10 +1283,14 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
     setWithdrawing(true)
     setWithdrawError('')
     setWithdrawSuccess('')
+    if (!withdrawIdemKeyRef.current) withdrawIdemKeyRef.current = crypto.randomUUID()
     try {
       const res = await fetch('/api/v1/partners/treasury/withdraw', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': withdrawIdemKeyRef.current,
+        },
         credentials: 'include',
         body: JSON.stringify({ amountTzs: amount }),
       })
@@ -1291,6 +1298,7 @@ function TreasurySection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
       if (!res.ok) { setWithdrawError(json.error || 'Withdrawal failed'); return }
       setWithdrawSuccess(json.message || `Withdrawal of ${amount.toLocaleString()} TZS initiated. Ref: ${json.reference}`)
       setAmountInput('')
+      withdrawIdemKeyRef.current = null
       onRefresh()
     } catch {
       setWithdrawError('Failed to connect to server')

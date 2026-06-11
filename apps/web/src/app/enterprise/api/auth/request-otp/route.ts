@@ -3,6 +3,7 @@ import { db } from '@/lib/enterprise/db'
 import { enterpriseAccounts } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { generateOtp, storeOtp, sendOtpEmail } from '@/lib/enterprise/otp'
+import { OtpRateLimitError } from '@/lib/auth/otp-core'
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
+    if (err instanceof OtpRateLimitError) {
+      return NextResponse.json({ error: err.message }, { status: 429 })
+    }
     console.error('[enterprise/request-otp]', err)
     return NextResponse.json({ error: 'Failed to send OTP' }, { status: 500 })
   }

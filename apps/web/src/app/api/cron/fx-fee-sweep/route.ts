@@ -54,10 +54,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'SOLVER_PRIVATE_KEY not configured' }, { status: 503 })
   }
 
-  const { db } = getDb()
+  const { db, sql: rawSql } = getDb()
   const provider = new JsonRpcProvider(BASE_RPC_URL)
   const solverWallet = new Wallet(solverPrivateKey, provider)
 
+  // Serialize sweeps so overlapping cron invocations can't both read the same
+  // `pending` and double-transfer — which would move LP capital (not just earned
+  // fees) into the treasury. Session advisory lock on a reserved connection so
+  // the lock/unlock run on the same pooled connection; skip if already held.
+  const reserved = await rawSql.reserve()
+  const [{ locked }] = await reserved<{ locked: boolean }[]>`
+    select pg_try_advisory_lock(hashtext('fx_fee_sweep')) as locked
+  `
+  if (!locked) {
+    reserved.release()
+    return NextResponse.json({ ok: true, skipped: 'another sweep already running' })
+  }
+
+  try {
   const results: Array<{ token: string; pending: number; swept: boolean; txHash?: string; reason?: string }> = []
 
   for (const token of SWEEP_TOKENS) {
@@ -121,4 +135,8 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, results })
+  } finally {
+    await reserved`select pg_advisory_unlock(hashtext('fx_fee_sweep'))`.catch(() => {})
+    reserved.release()
+  }
 }

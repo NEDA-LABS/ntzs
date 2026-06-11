@@ -12,6 +12,7 @@ import {
 import { sendPayout, sendBankPayout } from '@/lib/psp'
 import { partners, auditLogs } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
+import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 
 const MIN_WITHDRAW_TZS = 5000
 
@@ -125,6 +126,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Treasury withdrawal temporarily unavailable' }, { status: 503 })
   }
 
+  // Dedup the burn+payout so a client retry (same Idempotency-Key) can't
+  // trigger a second withdrawal. A completed call replays its stored response.
+  return withIdempotency(`treasury_withdraw:${partnerId}`, getIdempotencyKey(request), async () => {
   const amountWei = BigInt(Math.trunc(amountTzs)) * (BigInt(10) ** BigInt(18))
 
   const provider = new ethers.JsonRpcProvider(rpcUrl)
@@ -287,5 +291,6 @@ export async function POST(request: NextRequest) {
     total: result.total,
     burnTxHash,
     message: successMessage,
+  })
   })
 }

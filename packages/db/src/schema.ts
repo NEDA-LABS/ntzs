@@ -818,6 +818,7 @@ export const lpOtpCodes = pgTable(
     codeHash: text('code_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     used: boolean('used').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1074,6 +1075,7 @@ export const merchantOtpCodes = pgTable(
     codeHash: text('code_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     used: boolean('used').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1248,6 +1250,7 @@ export const enterpriseOtpCodes = pgTable(
     codeHash: text('code_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     used: boolean('used').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1289,6 +1292,13 @@ export const enterpriseLoanAgreements = pgTable(
     interestTzs: bigint('interest_tzs', { mode: 'number' }).notNull().default(0),
     totalOwedTzs: bigint('total_owed_tzs', { mode: 'number' }).notNull().default(0),
     repaidTzs: bigint('repaid_tzs', { mode: 'number' }).notNull().default(0),
+    // Cumulative principal drawn down via merchant financing withdrawals.
+    // Revolving facility: available to draw = principal_tzs - (disbursed_tzs - repaid_tzs).
+    disbursedTzs: bigint('disbursed_tzs', { mode: 'number' }).notNull().default(0),
+    // Loan term for aging/overdue analytics. termDays is the agreed duration;
+    // dueAt is the repayment deadline (set when a term is configured).
+    termDays: integer('term_days'),
+    dueAt: timestamp('due_at', { withTimezone: true }),
     status: enterpriseLoanStatus('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1487,5 +1497,25 @@ export const partnerKyb = pgTable(
   },
   (t) => ({
     statusIdx: index('partner_kyb_status_idx').on(t.status),
+  })
+)
+
+// Server-side idempotency for side-effectful endpoints (e.g. withdrawals).
+// A claim is inserted before the side effect; a retry with the same
+// (scope, idem_key) replays the stored response instead of re-executing.
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scope: text('scope').notNull(),
+    idemKey: text('idem_key').notNull(),
+    status: text('status').notNull().default('processing'), // processing | completed
+    responseStatus: integer('response_status'),
+    responseBody: jsonb('response_body'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    scopeKeyUq: uniqueIndex('idempotency_keys_scope_key_uq').on(t.scope, t.idemKey),
+    createdIdx: index('idempotency_keys_created_at_idx').on(t.createdAt),
   })
 )
