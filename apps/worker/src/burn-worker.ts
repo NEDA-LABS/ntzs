@@ -51,6 +51,8 @@ interface BurnJob {
   contract_address: string
   recipient_phone: string | null
   user_id: string
+  // Explicit burn source (e.g. a lender treasury). Overrides wallet_id when set.
+  burn_from_address: string | null
 }
 
 /**
@@ -70,7 +72,7 @@ async function claimNextBurnJob(
       for update skip locked
       limit 1
     )
-    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id
+    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address
   `
 
   return rows[0] ?? null
@@ -154,6 +156,10 @@ export async function processBurnJob(
       throw new Error('Missing wallet address for burn request')
     }
 
+    // Burn from an explicit address when set (e.g. a lender's treasury for
+    // merchant financing disbursements); otherwise from the wallet_id address.
+    const burnFromAddress = job.burn_from_address ?? walletAddress
+
     // Execute burn on-chain
     // Always use the current env contract address — DB records may have stale addresses from testnet
     const activeContractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE || job.contract_address
@@ -169,7 +175,7 @@ export async function processBurnJob(
     }
 
     const amountWei = BigInt(String(job.amount_tzs)) * 10n ** 18n
-    const tx = await token.burn(walletAddress, amountWei)
+    const tx = await token.burn(burnFromAddress, amountWei)
 
     // Update with tx hash
     await sql`
@@ -240,6 +246,7 @@ export async function processBurnJob(
     await logAudit(sql, 'burn_completed', 'burn_request', job.id, {
       amountTzs: job.amount_tzs,
       walletAddress,
+      burnedFrom: burnFromAddress,
       txHash: tx.hash,
       chain: job.chain,
       contractAddress: job.contract_address,
