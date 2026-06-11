@@ -6,6 +6,7 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { generateInviteToken } from '@/lib/enterprise/auth'
 import { sendInviteEmail } from '@/lib/enterprise/otp'
 import { deriveSubWalletAddress } from '@/lib/waas/hd-wallets'
+import { provisionEnterprisePartner } from '@/lib/enterprise/provision'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try { await requireAnyRole(['super_admin', 'platform_compliance']) } catch {
@@ -24,10 +25,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!account) return NextResponse.json({ error: 'Account not found' }, { status: 404 })
   if (account.isActive) return NextResponse.json({ error: 'Account already active' }, { status: 409 })
 
-  // Link to WaaS partner if provided, then provision an org treasury sub-wallet
+  // Resolve the partner that backs this enterprise account:
+  //   1. already linked         → idempotent, keep it
+  //   2. admin passed partnerId  → attach to that partner + derive an org sub-wallet (override)
+  //   3. neither                → auto-provision a dedicated partner + treasury (default)
   let treasuryWalletAddress: string | null = null
 
-  if (body.partnerId) {
+  if (account.partnerId) {
+    // Already linked — nothing to provision.
+  } else if (body.partnerId) {
     const [partner] = await db
       .select({
         id: partners.id,
@@ -45,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .set({ partnerId: body.partnerId, updatedAt: new Date() })
       .where(eq(enterpriseAccounts.id, id))
 
-    // Auto-provision org treasury sub-wallet if the partner has an HD seed
+    // Provision org treasury sub-wallet if the partner has an HD seed
     if (partner.encryptedHdSeed) {
       const [indexResult] = await db
         .update(partners)
@@ -63,6 +69,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         walletIndex,
       })
     }
+  } else {
+    // Default: auto-provision a dedicated partner + treasury wallet for this org.
+    const provisioned = await provisionEnterprisePartner({ name: account.name })
+    treasuryWalletAddress = provisioned.treasuryWalletAddress
+    await db
+      .update(enterpriseAccounts)
+      .set({ partnerId: provisioned.partnerId, updatedAt: new Date() })
+      .where(eq(enterpriseAccounts.id, id))
   }
 
   // Activate the account
