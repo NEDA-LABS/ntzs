@@ -110,9 +110,26 @@ export default function EnterpriseDashboardPage() {
 
       {accountType === 'capital_lender' && lender && (
         <>
+          {analytics && (() => {
+            const stillDrawable = Math.max(0, analytics.capital.totalPrincipalTzs - analytics.capital.capitalOutstandingTzs)
+            if (stillDrawable <= 0 || lender.treasuryBalanceTzs >= stillDrawable) return null
+            return (
+              <div className="border border-amber-200 bg-amber-50 rounded-lg px-5 py-4 flex items-start gap-3">
+                <span className="text-amber-500 mt-0.5">⚠</span>
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-amber-800">Treasury below approved facilities</p>
+                  <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                    Your treasury holds <strong>TZS {fmt(lender.treasuryBalanceTzs)}</strong>, but your merchants can still draw up to <strong>TZS {fmt(stillDrawable)}</strong>. Disbursements are funded directly from your treasury — top it up or some draws may be declined.
+                  </p>
+                  <Link href="/enterprise/dashboard/wallet" className="text-[11px] font-medium text-amber-800 underline mt-1.5 inline-block">Fund treasury →</Link>
+                </div>
+              </div>
+            )
+          })()}
+
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
             {[
-              { label: 'Treasury Balance', value: `TZS ${fmt(lender.treasuryBalanceTzs)}`, sub: 'nTZS on-chain', accent: 'indigo' },
+              { label: 'Treasury Balance', value: `TZS ${fmt(lender.treasuryBalanceTzs)}`, sub: 'available to lend', accent: 'indigo' },
               { label: 'Total Capital Deployed', value: `TZS ${fmt(lender.totalPrincipalTzs)}`, sub: 'across all merchants', accent: 'slate' },
               { label: 'Total Repaid', value: `TZS ${fmt(lender.totalRepaidTzs)}`, sub: `${lender.totalPrincipalTzs > 0 ? Math.round(lender.totalRepaidTzs / lender.totalPrincipalTzs * 100) : 0}% recovered`, accent: 'green' },
               { label: 'Active Loans', value: String(lender.activeLoanCount), sub: 'merchants funded', accent: 'slate' },

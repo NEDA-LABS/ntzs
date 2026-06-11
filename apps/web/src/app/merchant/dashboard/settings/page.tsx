@@ -457,6 +457,9 @@ export default function SettingsPage() {
                     <p className="text-[10px] text-white/30">
                       Cap per request: <span className="text-indigo-400">TZS {financing.withdrawalLimitTzs.toLocaleString()}</span>
                     </p>
+                    <p className="text-[10px] text-white/25 mt-1 leading-relaxed">
+                      Withdrawals are funded from your lender&apos;s treasury. If a draw is declined for insufficient funds, ask your lender to top up.
+                    </p>
                   </div>
                   <form onSubmit={handleWithdraw} className="space-y-3">
                     <div>
