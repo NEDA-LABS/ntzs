@@ -72,7 +72,7 @@ export default function InvitationsPage() {
     const t = setTimeout(async () => {
       setSearching(true)
       try {
-        const res = await fetch(`/backstage/api/merchants?q=${encodeURIComponent(merchantSearch)}`)
+        const res = await fetch(`/enterprise/api/lender/merchants/search?q=${encodeURIComponent(merchantSearch)}`)
         const data = await res.json()
         setSearchResults(data.merchants ?? [])
       } finally { setSearching(false) }
