@@ -4,15 +4,24 @@ import { db } from '@/lib/enterprise/db'
 import { enterpriseAccounts, merchantAccounts, partners } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { getSessionFromCookies } from '@/lib/enterprise/auth'
-import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
-import { JsonRpcProvider, Contract } from 'ethers'
+import { JsonRpcProvider, Contract, parseEther } from 'ethers'
+import { deriveTreasuryWallet, fundWalletWithGas } from '@/lib/waas/hd-wallets'
+
+const ERC20_ABI = [
+  'function transfer(address to, uint256 amount) returns (bool)',
+  'function balanceOf(address owner) view returns (uint256)',
+]
 
 /**
  * POST /enterprise/api/lender/merchants/[merchantId]/disburse
  *
- * Lender-initiated disbursement: the lender sends capital to a linked merchant.
- * Reserves against the merchant's active loan facility, burns nTZS from the
- * lender's treasury, and pays mobile money to the merchant. Body: { amountTzs, phone? }.
+ * Lender-initiated disbursement: the lender SENDS nTZS from their treasury
+ * directly into the merchant's on-chain wallet (no burn, no fiat payout — the
+ * capital stays as nTZS so it can keep circulating in-network). Reserves against
+ * the merchant's active loan facility. Body: { amountTzs }.
+ *
+ * The merchant off-ramps to fiat themselves via the merchant financing-withdraw
+ * flow when they need cash.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ merchantId: string }> }) {
   const { merchantId } = await params
@@ -34,7 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mer
     .select({
       id: merchantAccounts.id,
       lenderPartnerId: merchantAccounts.lenderPartnerId,
-      settlementPhone: merchantAccounts.settlementPhone,
+      walletAddress: merchantAccounts.walletAddress,
     })
     .from(merchantAccounts)
     .where(eq(merchantAccounts.id, merchantId))
@@ -43,33 +52,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mer
   if (!merchant || merchant.lenderPartnerId !== account.partnerId) {
     return NextResponse.json({ error: 'Merchant is not under your financing programme' }, { status: 404 })
   }
+  if (!merchant.walletAddress) {
+    return NextResponse.json({ error: 'Merchant has no wallet to receive funds' }, { status: 400 })
+  }
 
   const body = await req.json().catch(() => ({}))
   const amountTzs = Math.trunc(Number(body.amountTzs))
-  const phoneInput = typeof body.phone === 'string' && body.phone.trim()
-    ? body.phone.trim()
-    : (merchant.settlementPhone ?? '')
-
   if (!amountTzs || amountTzs <= 0) {
     return NextResponse.json({ error: 'amountTzs must be positive' }, { status: 400 })
   }
-  if (!phoneInput || !isValidTanzanianPhone(phoneInput)) {
-    return NextResponse.json({ error: 'A valid recipient phone is required (merchant has no settlement phone on file)' }, { status: 400 })
-  }
-  const recipientPhone = normalizePhone(phoneInput)
 
   const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
-  if (!contractAddress) {
-    return NextResponse.json({ error: 'Contract address not configured' }, { status: 500 })
+  const rpcUrl = process.env.BASE_RPC_URL
+  if (!contractAddress || !rpcUrl) {
+    return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
   }
 
   const [partner] = await db
-    .select({ treasuryWalletAddress: partners.treasuryWalletAddress })
+    .select({ treasuryWalletAddress: partners.treasuryWalletAddress, encryptedHdSeed: partners.encryptedHdSeed })
     .from(partners)
     .where(eq(partners.id, account.partnerId))
     .limit(1)
-  const lenderTreasury = partner?.treasuryWalletAddress
-  if (!lenderTreasury) {
+  if (!partner?.treasuryWalletAddress || !partner.encryptedHdSeed) {
     return NextResponse.json({ error: 'Your treasury wallet is not provisioned' }, { status: 503 })
   }
 
@@ -115,68 +119,65 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mer
   }
 
   try {
-    // Confirm the treasury actually holds enough nTZS (worker is the backstop).
-    const rpcUrl = process.env.BASE_RPC_URL
-    if (rpcUrl) {
-      try {
-        const provider = new JsonRpcProvider(rpcUrl)
-        const token = new Contract(contractAddress, ['function balanceOf(address) view returns (uint256)'], provider)
-        const balance: bigint = await token.balanceOf(lenderTreasury)
-        const needed = BigInt(amountTzs) * (BigInt(10) ** BigInt(18))
-        if (balance < needed) {
-          await releaseReservation()
-          const haveTzs = Number(balance / (BigInt(10) ** BigInt(18)))
-          return NextResponse.json({
-            error: `Your treasury holds only TZS ${haveTzs.toLocaleString()}. Top up to disburse this amount.`,
-            availableTzs: haveTzs,
-          }, { status: 400 })
-        }
-      } catch (err) {
-        console.error('[lender/disburse] treasury balance check failed (continuing):', err instanceof Error ? err.message : err)
-      }
+    const provider = new JsonRpcProvider(rpcUrl)
+    const treasurySigner = deriveTreasuryWallet(partner.encryptedHdSeed).connect(provider)
+    const token = new Contract(contractAddress, ERC20_ABI, treasurySigner)
+
+    const amountWei = BigInt(amountTzs) * (BigInt(10) ** BigInt(18))
+
+    // Treasury must actually hold the nTZS.
+    const balance: bigint = await token.balanceOf(treasurySigner.address)
+    if (balance < amountWei) {
+      await releaseReservation()
+      const haveTzs = Number(balance / (BigInt(10) ** BigInt(18)))
+      return NextResponse.json({
+        error: `Your treasury holds only TZS ${haveTzs.toLocaleString()}. Top up to send this amount.`,
+        availableTzs: haveTzs,
+      }, { status: 400 })
     }
 
-    // Platform user/wallet only satisfy the burn_request FK; the actual burn
-    // source is burn_from_address (the lender treasury).
+    // Ensure the treasury wallet has gas for the transfer.
+    try {
+      const gasBalance = await provider.getBalance(treasurySigner.address)
+      if (gasBalance < parseEther('0.00003')) {
+        await fundWalletWithGas({ toAddress: treasurySigner.address, rpcUrl, amountEth: '0.00005' })
+      }
+    } catch (err) {
+      console.warn('[lender/disburse] gas top-up check failed (continuing):', err instanceof Error ? err.message : err)
+    }
+
+    // Transfer nTZS treasury → merchant wallet.
+    const tx = await (token as unknown as { transfer: (to: string, amount: bigint) => Promise<{ hash: string; wait: (n?: number) => Promise<unknown> }> })
+      .transfer(merchant.walletAddress, amountWei)
+    await tx.wait(1)
+    const txHash = tx.hash
+
+    // Record the disbursement (platform user satisfies the transfers FK; metadata
+    // marks it as a lender→merchant capital injection, not a user transfer).
     const platformEmail = process.env.PLATFORM_ADMIN_EMAIL || 'ops@nedapay.co.tz'
     const userRows = await rawSql<{ id: string }[]>`select id from users where email = ${platformEmail} limit 1`
     const platformUserId = userRows[0]?.id
-    if (!platformUserId) { await releaseReservation(); return NextResponse.json({ error: 'Platform user not configured' }, { status: 500 }) }
-
-    const walletRows = await rawSql<{ id: string }[]>`select id from wallets where user_id = ${platformUserId} and chain = 'base' limit 1`
-    const platformWalletId = walletRows[0]?.id
-    if (!platformWalletId) { await releaseReservation(); return NextResponse.json({ error: 'Platform wallet not configured' }, { status: 500 }) }
-
-    const burnRows = await rawSql<{ id: string }[]>`
-      insert into burn_requests (
-        user_id, wallet_id, chain, contract_address,
-        amount_tzs, reason, status,
-        requested_by_user_id, recipient_phone, burn_from_address,
-        created_at, updated_at
-      ) values (
-        ${platformUserId}, ${platformWalletId}, 'base', ${contractAddress},
-        ${amountTzs}, 'lender_disbursement', 'approved',
-        ${platformUserId}, ${recipientPhone}, ${lenderTreasury},
-        now(), now()
-      )
-      returning id
-    `
-    const burnId = burnRows[0]?.id
-    if (!burnId) { await releaseReservation(); return NextResponse.json({ error: 'Failed to create disbursement' }, { status: 500 }) }
-
+    if (platformUserId) {
+      await rawSql`
+        insert into transfers (partner_id, from_user_id, to_address, token, amount_tzs, tx_hash, status, metadata, created_at, updated_at)
+        values (
+          ${account.partnerId}, ${platformUserId}, ${merchant.walletAddress}, 'ntzs', ${amountTzs}, ${txHash}, 'completed',
+          ${JSON.stringify({ reason: 'lender_disbursement', merchantId, lenderPartnerId: account.partnerId, loanId: loan.id })}::jsonb,
+          now(), now()
+        )
+      `
+    }
     await rawSql`
       insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
-      values (
-        'lender_disbursement', 'burn_request', ${burnId},
-        ${JSON.stringify({ merchantId, lenderPartnerId: account.partnerId, loanId: loan.id, amountTzs, recipientPhone, initiatedBy: 'lender' })}::jsonb,
-        now()
-      )
+      values ('lender_disbursement', 'enterprise_loan_agreement', ${loan.id},
+        ${JSON.stringify({ merchantId, lenderPartnerId: account.partnerId, amountTzs, txHash, toWallet: merchant.walletAddress, initiatedBy: 'lender' })}::jsonb,
+        now())
     `
 
-    return NextResponse.json({ ok: true, burnRequestId: burnId, amountTzs, phone: recipientPhone }, { status: 201 })
+    return NextResponse.json({ ok: true, txHash, amountTzs, toWallet: merchant.walletAddress }, { status: 201 })
   } catch (err) {
     await releaseReservation()
-    console.error('[lender/disburse] failed', err instanceof Error ? err.message : err)
-    return NextResponse.json({ error: 'Failed to create disbursement' }, { status: 500 })
+    console.error('[lender/disburse] transfer failed', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: 'Disbursement transfer failed. Please try again.' }, { status: 500 })
   }
 }
