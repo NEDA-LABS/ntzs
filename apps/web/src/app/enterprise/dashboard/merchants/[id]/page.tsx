@@ -72,7 +72,6 @@ export default function MerchantDetailPage() {
 
   // Send-capital form
   const [amount, setAmount] = useState('')
-  const [phone, setPhone] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [sendSuccess, setSendSuccess] = useState('')
@@ -94,12 +93,12 @@ export default function MerchantDetailPage() {
       const res = await fetch(`/enterprise/api/lender/merchants/${params.id}/disburse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amountTzs: Number(amount), phone: phone || undefined }),
+        body: JSON.stringify({ amountTzs: Number(amount) }),
       })
       const json = await res.json()
       if (!res.ok) { setSendError(json.error || 'Disbursement failed'); return }
-      setSendSuccess(`Sent TZS ${Number(amount).toLocaleString()} — the merchant will receive mobile money shortly.`)
-      setAmount(''); setPhone('')
+      setSendSuccess(`Sent ${Number(amount).toLocaleString()} nTZS to the merchant's wallet.`)
+      setAmount('')
       await load()
     } catch { setSendError('Network error') }
     finally { setSending(false) }
@@ -181,11 +180,11 @@ export default function MerchantDetailPage() {
           <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg shadow-sm p-6">
             <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-1">Send Capital</p>
             <p className="text-[11px] text-gray-500 mb-4">
-              Disburse from your treasury to this merchant — up to <span className="text-indigo-600 font-medium">TZS {fmt(metrics?.availableToDrawTzs ?? 0)}</span> remaining facility. Arrives as mobile money.
+              Send nTZS from your treasury to this merchant&apos;s wallet — up to <span className="text-indigo-600 font-medium">TZS {fmt(metrics?.availableToDrawTzs ?? 0)}</span> remaining facility. They hold nTZS and cash out to mobile money themselves when needed.
             </p>
             <form onSubmit={handleDisburse} className="flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-[140px]">
-                <label className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Amount (TZS)</label>
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Amount (nTZS)</label>
                 <input
                   type="number"
                   min={1}
@@ -196,22 +195,12 @@ export default function MerchantDetailPage() {
                   className="w-full bg-white border border-gray-300 text-gray-900 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500"
                 />
               </div>
-              <div className="flex-1 min-w-[170px]">
-                <label className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Recipient phone</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  placeholder="blank → merchant's saved phone"
-                  className="w-full bg-white border border-gray-300 text-gray-900 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500"
-                />
-              </div>
               <button
                 type="submit"
                 disabled={sending || !amount}
                 className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs px-5 py-2.5 uppercase tracking-widest transition-colors rounded"
               >
-                {sending ? 'Sending…' : 'Send'}
+                {sending ? 'Sending…' : 'Send nTZS'}
               </button>
             </form>
             {sendError && <p className="text-xs text-red-600 mt-3 border border-red-200 bg-red-50 px-3 py-2 rounded">{sendError}</p>}
