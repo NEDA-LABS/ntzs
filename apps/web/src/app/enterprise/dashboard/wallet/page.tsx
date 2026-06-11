@@ -196,9 +196,10 @@ export default function WalletPage() {
 
                 <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
                   {[
-                    { label: 'Bank', value: 'CRDB Bank Tanzania' },
-                    { label: 'Account Name', value: 'NEDApay Limited' },
-                    { label: 'Account Number', value: '0150735894900' },
+                    { label: 'Bank', value: 'Selcom Microfinance Bank Tanzania Limited' },
+                    { label: 'Account Name', value: 'Neda Labs Limited' },
+                    { label: 'Account Number', value: '55271 07446 681 or 7003 1820' },
+                    { label: 'Swift Code', value: 'ACTZTZTZ' },
                     { label: 'Reference', value: data.accountName },
                   ].map(row => (
                     <div key={row.label} className="flex items-center justify-between px-4 py-3">
