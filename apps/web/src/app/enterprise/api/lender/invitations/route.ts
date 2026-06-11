@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { db } from '@/lib/enterprise/db'
 import {
   enterpriseAccounts,
@@ -7,10 +7,11 @@ import {
 } from '@ntzs/db'
 import { eq, or, and } from 'drizzle-orm'
 import { getSessionFromCookies } from '@/lib/enterprise/auth'
+import { sendMerchantFinancingInviteEmail } from '@/lib/merchant/notifications'
 
 async function getLenderAccount(enterpriseId: string) {
   const [account] = await db
-    .select({ id: enterpriseAccounts.id, partnerId: enterpriseAccounts.partnerId, type: enterpriseAccounts.type })
+    .select({ id: enterpriseAccounts.id, name: enterpriseAccounts.name, partnerId: enterpriseAccounts.partnerId, type: enterpriseAccounts.type })
     .from(enterpriseAccounts)
     .where(eq(enterpriseAccounts.id, enterpriseId))
     .limit(1)
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   const [merchant] = await db
-    .select({ id: merchantAccounts.id, lenderPartnerId: merchantAccounts.lenderPartnerId })
+    .select({ id: merchantAccounts.id, email: merchantAccounts.email, lenderPartnerId: merchantAccounts.lenderPartnerId })
     .from(merchantAccounts)
     .where(eq(merchantAccounts.id, merchantId))
     .limit(1)
@@ -101,6 +102,18 @@ export async function POST(req: NextRequest) {
       message: message ?? null,
     })
     .returning()
+
+  // Notify the merchant by email (after the response; never fails the invite).
+  if (merchant.email) {
+    after(() =>
+      sendMerchantFinancingInviteEmail({
+        to: merchant.email,
+        lenderName: account.name,
+        proposedSplitPct,
+        message: message ?? null,
+      }).catch((err) => console.error('[lender/invitations] invite email failed:', err instanceof Error ? err.message : err)),
+    )
+  }
 
   return NextResponse.json({ invitation: row }, { status: 201 })
 }
