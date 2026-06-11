@@ -167,42 +167,73 @@ async function queueCollectionSettlements(sql: ReturnType<typeof createDbClient>
     `
     if (!claimed.length) continue
 
-    const netTzs = Math.floor((col.amount_tzs * col.settle_pct) / 100)
+    let merchantShareTzs = Math.floor((col.amount_tzs * col.settle_pct) / 100)
+    let lenderShareTzs = 0
+    const wantsLenderSplit =
+      col.lender_pct > 0 && !!col.lender_amount_tzs && col.lender_settlement_status === 'pending'
 
-    // Increment the merchant's settlement accumulator and record per-collection amount
+    if (wantsLenderSplit) {
+      // Cap the lender's take at the loan's remaining balance so they can never
+      // collect past principal + interest. Any excess returns to the merchant.
+      //   remaining = total_owed − repaid − already-queued (lender_pending)
+      const [loan] = await sql<{ total_owed_tzs: number; repaid_tzs: number }[]>`
+        select la.total_owed_tzs, la.repaid_tzs
+        from enterprise_loan_agreements la
+        join merchant_accounts ma on ma.id = ${col.merchant_id}
+        where la.merchant_id = ${col.merchant_id}
+          and la.partner_id = ma.lender_partner_id
+          and la.status = 'active'
+        limit 1
+      `
+      if (loan) {
+        const [pend] = await sql<{ lender_pending_tzs: number }[]>`
+          select lender_pending_tzs from merchant_accounts where id = ${col.merchant_id} limit 1
+        `
+        const remaining = Math.max(0, loan.total_owed_tzs - loan.repaid_tzs - (pend?.lender_pending_tzs ?? 0))
+        lenderShareTzs = Math.min(col.lender_amount_tzs!, remaining)
+      }
+      // Excess (uncapped − capped; the whole share if there's no active loan)
+      // is the merchant's money — they don't owe it, so give it back to them.
+      merchantShareTzs += col.lender_amount_tzs! - lenderShareTzs
+    }
+
+    // Merchant settlement share
     await sql`
       update merchant_accounts
-      set settlement_pending_tzs = settlement_pending_tzs + ${netTzs},
+      set settlement_pending_tzs = settlement_pending_tzs + ${merchantShareTzs},
           updated_at = now()
       where id = ${col.merchant_id}
     `
-
     await sql`
       update merchant_collections
-      set settlement_amount_tzs = ${netTzs},
+      set settlement_amount_tzs = ${merchantShareTzs},
           updated_at = now()
       where id = ${col.collection_id}
     `
 
-    // Accumulate lender share if applicable
-    if (col.lender_pct > 0 && col.lender_amount_tzs && col.lender_settlement_status === 'pending') {
-      await sql`
-        update merchant_accounts
-        set lender_pending_tzs = lender_pending_tzs + ${col.lender_amount_tzs},
-            updated_at = now()
-        where id = ${col.merchant_id}
-      `
+    // Lender share (capped). Resolve the collection's lender settlement either way.
+    if (wantsLenderSplit) {
+      if (lenderShareTzs > 0) {
+        await sql`
+          update merchant_accounts
+          set lender_pending_tzs = lender_pending_tzs + ${lenderShareTzs},
+              updated_at = now()
+          where id = ${col.merchant_id}
+        `
+      }
       await sql`
         update merchant_collections
-        set lender_settlement_status = 'queued', updated_at = now()
+        set lender_settlement_status = ${lenderShareTzs > 0 ? 'queued' : 'skipped'},
+            lender_amount_tzs = ${lenderShareTzs},
+            updated_at = now()
         where id = ${col.collection_id} and lender_settlement_status = 'pending'
       `
     }
 
     console.log('[worker] settlement queued', {
       collectionId: col.collection_id,
-      netTzs,
-      lenderAmountTzs: col.lender_amount_tzs ?? 0,
+      merchantShareTzs,
+      lenderShareTzs,
     })
   }
 }

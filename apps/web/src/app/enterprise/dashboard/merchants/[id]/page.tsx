@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 
@@ -70,13 +70,40 @@ export default function MerchantDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
-  useEffect(() => {
+  // Send-capital form
+  const [amount, setAmount] = useState('')
+  const [phone, setPhone] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
+  const [sendSuccess, setSendSuccess] = useState('')
+
+  const load = useCallback(() => {
     if (!params?.id) return
-    fetch(`/enterprise/api/lender/merchants/${params.id}`)
+    return fetch(`/enterprise/api/lender/merchants/${params.id}`)
       .then(r => { if (!r.ok) { setNotFound(true); return null } return r.json() })
       .then(d => { if (d) setData(d) })
       .finally(() => setLoading(false))
   }, [params?.id])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleDisburse(e: React.FormEvent) {
+    e.preventDefault()
+    setSending(true); setSendError(''); setSendSuccess('')
+    try {
+      const res = await fetch(`/enterprise/api/lender/merchants/${params.id}/disburse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amountTzs: Number(amount), phone: phone || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setSendError(json.error || 'Disbursement failed'); return }
+      setSendSuccess(`Sent TZS ${Number(amount).toLocaleString()} — the merchant will receive mobile money shortly.`)
+      setAmount(''); setPhone('')
+      await load()
+    } catch { setSendError('Network error') }
+    finally { setSending(false) }
+  }
 
   if (loading) {
     return (
@@ -148,6 +175,47 @@ export default function MerchantDetailPage() {
                 <p className="text-[10px] text-gray-400 mt-1">{card.sub}</p>
               </div>
             ))}
+          </div>
+
+          {/* Send capital */}
+          <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg shadow-sm p-6">
+            <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-1">Send Capital</p>
+            <p className="text-[11px] text-gray-500 mb-4">
+              Disburse from your treasury to this merchant — up to <span className="text-indigo-600 font-medium">TZS {fmt(metrics?.availableToDrawTzs ?? 0)}</span> remaining facility. Arrives as mobile money.
+            </p>
+            <form onSubmit={handleDisburse} className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[140px]">
+                <label className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Amount (TZS)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  required
+                  placeholder="e.g. 200000"
+                  className="w-full bg-white border border-gray-300 text-gray-900 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex-1 min-w-[170px]">
+                <label className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Recipient phone</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="blank → merchant's saved phone"
+                  className="w-full bg-white border border-gray-300 text-gray-900 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={sending || !amount}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs px-5 py-2.5 uppercase tracking-widest transition-colors rounded"
+              >
+                {sending ? 'Sending…' : 'Send'}
+              </button>
+            </form>
+            {sendError && <p className="text-xs text-red-600 mt-3 border border-red-200 bg-red-50 px-3 py-2 rounded">{sendError}</p>}
+            {sendSuccess && <p className="text-xs text-emerald-700 mt-3 border border-emerald-200 bg-emerald-50 px-3 py-2 rounded">{sendSuccess}</p>}
           </div>
 
           {/* Progress bars */}
