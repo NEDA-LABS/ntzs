@@ -187,18 +187,21 @@ export default function BackstageEnterpriseDetailPage() {
           <h2 className="text-sm font-medium text-amber-400">Approve & Send Invite</h2>
           <div>
             <label className="block text-xs text-zinc-400 mb-2">
-              Link to Partner <span className="text-zinc-600">(required for capital lenders)</span>
+              Link to Partner <span className="text-zinc-600">(optional)</span>
             </label>
             <select
               value={partnerId}
               onChange={e => setPartnerId(e.target.value)}
               className="w-full bg-zinc-900 border border-white/10 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
             >
-              <option value="">— Select partner —</option>
+              <option value="">— Auto-provision a dedicated partner + treasury —</option>
               {partners.map(p => (
                 <option key={p.id} value={p.id}>{p.name ?? p.id}</option>
               ))}
             </select>
+            <p className="text-[10px] text-zinc-500 mt-1.5">
+              Leave blank to automatically create a dedicated treasury wallet for this org. Only pick a partner to attach to an existing one.
+            </p>
           </div>
           {approveError && <p className="text-xs text-red-400">{approveError}</p>}
           {approveSuccess && <p className="text-xs text-emerald-400">{approveSuccess}</p>}
