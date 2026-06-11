@@ -280,6 +280,9 @@ export const burnRequests = pgTable(
     // On-chain tx hash for the mint-to-treasury of the platform fee (nullable: legacy / zero-fee rows)
     feeTxHash: text('fee_tx_hash'),
     feeRecipientAddress: text('fee_recipient_address'),
+    // Explicit on-chain address to burn from (overrides wallet_id lookup).
+    // Set for merchant financing disbursements → the lender's treasury wallet.
+    burnFromAddress: text('burn_from_address'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

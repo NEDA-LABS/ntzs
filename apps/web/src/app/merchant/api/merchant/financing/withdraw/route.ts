@@ -5,6 +5,7 @@ import { merchantAccounts } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { getSessionFromCookies } from '@/lib/merchant/auth'
 import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
+import { JsonRpcProvider, Contract } from 'ethers'
 
 export async function POST(req: NextRequest) {
   const session = await getSessionFromCookies()
@@ -142,16 +143,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Platform wallet not configured' }, { status: 500 })
     }
 
+    // Disburse from the LENDER's treasury: their deposited nTZS is burned to fund
+    // the merchant's fiat draw, so their capital is actually deployed (repayments
+    // later flow back to the same treasury via the settlement worker).
+    const treasuryRows = await rawSql<{ treasury_wallet_address: string | null }[]>`
+      select treasury_wallet_address from partners where id = ${merchant.lenderPartnerId} limit 1
+    `
+    const lenderTreasury = treasuryRows[0]?.treasury_wallet_address
+    if (!lenderTreasury) {
+      await releaseReservation()
+      return NextResponse.json({ error: 'Lender treasury not provisioned' }, { status: 503 })
+    }
+
+    // Best-effort upfront check that the lender funded enough nTZS. The burn
+    // worker is the backstop (it reverts on insufficient balance), so an RPC
+    // error here doesn't block — it just falls through to the worker.
+    const rpcUrl = process.env.BASE_RPC_URL
+    if (rpcUrl) {
+      try {
+        const provider = new JsonRpcProvider(rpcUrl)
+        const token = new Contract(contractAddress, ['function balanceOf(address) view returns (uint256)'], provider)
+        const balance: bigint = await token.balanceOf(lenderTreasury)
+        const needed = BigInt(amountTzs) * (BigInt(10) ** BigInt(18))
+        if (balance < needed) {
+          await releaseReservation()
+          const haveTzs = Number(balance / (BigInt(10) ** BigInt(18)))
+          return NextResponse.json({
+            error: `Lender treasury has insufficient funds (TZS ${haveTzs.toLocaleString()} available). Ask your lender to top up their treasury.`,
+            availableTzs: haveTzs,
+          }, { status: 400 })
+        }
+      } catch (err) {
+        console.error('[merchant/withdraw] treasury balance check failed (continuing):', err instanceof Error ? err.message : err)
+      }
+    }
+
     const burnRows = await rawSql<{ id: string }[]>`
       insert into burn_requests (
         user_id, wallet_id, chain, contract_address,
         amount_tzs, reason, status,
-        requested_by_user_id, recipient_phone,
+        requested_by_user_id, recipient_phone, burn_from_address,
         created_at, updated_at
       ) values (
         ${platformUserId}, ${platformWalletId}, 'base', ${contractAddress},
         ${amountTzs}, 'merchant_withdrawal', 'approved',
-        ${platformUserId}, ${normalizedPhone},
+        ${platformUserId}, ${normalizedPhone}, ${lenderTreasury},
         now(), now()
       )
       returning id
