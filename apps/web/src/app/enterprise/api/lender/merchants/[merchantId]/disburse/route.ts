@@ -152,20 +152,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mer
     await tx.wait(1)
     const txHash = tx.hash
 
-    // Record the disbursement (platform user satisfies the transfers FK; metadata
-    // marks it as a lender→merchant capital injection, not a user transfer).
+    // Record the disbursement. transfers.from_user_id is NOT NULL but is only a
+    // record-keeping FK here (the real source is the partner treasury, captured
+    // by partner_id + metadata). Resolve any available user — platform ops user
+    // or the merchant's own synthetic user — so the row is always written.
     const platformEmail = process.env.PLATFORM_ADMIN_EMAIL || 'ops@nedapay.co.tz'
-    const userRows = await rawSql<{ id: string }[]>`select id from users where email = ${platformEmail} limit 1`
-    const platformUserId = userRows[0]?.id
-    if (platformUserId) {
+    const fromUserRows = await rawSql<{ id: string }[]>`
+      select id from users
+      where email = ${platformEmail}
+         or neon_auth_user_id = ${'merchant_' + merchant.walletAddress.toLowerCase()}
+      limit 1
+    `
+    const fromUserId = fromUserRows[0]?.id
+    if (fromUserId) {
       await rawSql`
         insert into transfers (partner_id, from_user_id, to_address, token, amount_tzs, tx_hash, status, metadata, created_at, updated_at)
         values (
-          ${account.partnerId}, ${platformUserId}, ${merchant.walletAddress}, 'ntzs', ${amountTzs}, ${txHash}, 'completed',
+          ${account.partnerId}, ${fromUserId}, ${merchant.walletAddress}, 'ntzs', ${amountTzs}, ${txHash}, 'completed',
           ${JSON.stringify({ reason: 'lender_disbursement', merchantId, lenderPartnerId: account.partnerId, loanId: loan.id })}::jsonb,
           now(), now()
         )
       `
+    } else {
+      console.warn('[lender/disburse] no user available for transfers FK; recorded in audit_logs only', { txHash, merchantId })
     }
     await rawSql`
       insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
