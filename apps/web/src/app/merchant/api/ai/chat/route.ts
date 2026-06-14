@@ -161,39 +161,47 @@ export async function POST(req: NextRequest) {
   let pendingAction: ProposedAction | undefined;
   let currentMessages = [...messages];
 
-  for (let i = 0; i < 5; i++) {
-    const response = await client.messages.create({
-      model: 'claude-opus-4-7',
-      max_tokens: 1024,
-      system: buildSystem(agentName ?? 'Ubongo AI'),
-      tools: TOOLS,
-      messages: currentMessages,
-    });
-
-    if (response.stop_reason === 'end_turn') {
-      const textBlock = response.content.find(b => b.type === 'text');
-      return NextResponse.json({
-        reply: textBlock?.type === 'text' ? textBlock.text : '',
-        action: pendingAction ?? null,
+  try {
+    for (let i = 0; i < 5; i++) {
+      const response = await client.messages.create({
+        model: 'claude-opus-4-6',
+        max_tokens: 1024,
+        system: buildSystem(agentName ?? 'Ubongo AI'),
+        tools: TOOLS,
+        messages: currentMessages,
       });
-    }
 
-    if (response.stop_reason === 'tool_use') {
-      currentMessages = [...currentMessages, { role: 'assistant', content: response.content }];
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-        const { result, action } = await runTool(session.merchantId, handle, baseUrl, block.name, block.input as Record<string, unknown>);
-        if (action) pendingAction = action;
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+      if (response.stop_reason === 'end_turn') {
+        const textBlock = response.content.find(b => b.type === 'text');
+        return NextResponse.json({
+          reply: textBlock?.type === 'text' ? textBlock.text : '',
+          action: pendingAction ?? null,
+        });
       }
 
-      currentMessages = [...currentMessages, { role: 'user', content: toolResults }];
-      continue;
-    }
+      if (response.stop_reason === 'tool_use') {
+        currentMessages = [...currentMessages, { role: 'assistant', content: response.content }];
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
-    break;
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue;
+          const { result, action } = await runTool(session.merchantId, handle, baseUrl, block.name, block.input as Record<string, unknown>);
+          if (action) pendingAction = action;
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+        }
+
+        currentMessages = [...currentMessages, { role: 'user', content: toolResults }];
+        continue;
+      }
+
+      break;
+    }
+  } catch (err) {
+    console.error('[merchant/ai/chat] inference failed:', err instanceof Error ? err.message : err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'AI inference failed' },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ reply: 'Kuna tatizo kidogo — jaribu tena.', action: null });

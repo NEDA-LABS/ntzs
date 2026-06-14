@@ -171,69 +171,82 @@ export async function POST(req: NextRequest) {
   if (!account) return NextResponse.json({ error: 'Merchant not found' }, { status: 404 })
 
   // ── Billing ──────────────────────────────────────────────────────────────────
+  //
+  // Best-effort: if the merchant_ai_usage table isn't migrated yet (or any
+  // billing write fails) we log and serve the request for free rather than
+  // returning an empty 500. `billingReady` gates the later token-usage write.
 
   const period = currentPeriod()
+  let usedThisMonth = 0
+  let isPaid = false
+  let billingReady = true
 
-  // Get or initialise the monthly usage row
-  const [usage] = await db
-    .insert(merchantAiUsage)
-    .values({ merchantId, period })
-    .onConflictDoNothing()
-    .returning()
-    .catch(() => [])
+  try {
+    // Get or initialise the monthly usage row
+    const [usage] = await db
+      .insert(merchantAiUsage)
+      .values({ merchantId, period })
+      .onConflictDoNothing()
+      .returning()
 
-  const [currentUsage] = usage
-    ? [usage]
-    : await db
-        .select({ requestCount: merchantAiUsage.requestCount, paidRequestCount: merchantAiUsage.paidRequestCount })
-        .from(merchantAiUsage)
-        .where(and(eq(merchantAiUsage.merchantId, merchantId), eq(merchantAiUsage.period, period)))
-        .limit(1)
+    const [currentUsage] = usage
+      ? [usage]
+      : await db
+          .select({ requestCount: merchantAiUsage.requestCount, paidRequestCount: merchantAiUsage.paidRequestCount })
+          .from(merchantAiUsage)
+          .where(and(eq(merchantAiUsage.merchantId, merchantId), eq(merchantAiUsage.period, period)))
+          .limit(1)
 
-  const usedThisMonth = currentUsage?.requestCount ?? 0
-  const isPaid = usedThisMonth >= FREE_MONTHLY_REQUESTS
+    usedThisMonth = currentUsage?.requestCount ?? 0
+    isPaid = usedThisMonth >= FREE_MONTHLY_REQUESTS
 
-  if (isPaid) {
-    // Atomically deduct from settlement balance — fails silently if balance insufficient
-    const [deducted] = await db
-      .update(merchantAccounts)
-      .set({
-        settlementPendingTzs: sql`${merchantAccounts.settlementPendingTzs} - ${AI_FEE_TZS}`,
-        updatedAt: new Date(),
+    if (isPaid) {
+      // Atomically deduct from settlement balance — fails if balance insufficient
+      const [deducted] = await db
+        .update(merchantAccounts)
+        .set({
+          settlementPendingTzs: sql`${merchantAccounts.settlementPendingTzs} - ${AI_FEE_TZS}`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(merchantAccounts.id, merchantId), gte(merchantAccounts.settlementPendingTzs, AI_FEE_TZS)))
+        .returning({ newBalance: merchantAccounts.settlementPendingTzs })
+
+      if (!deducted) {
+        return NextResponse.json(
+          {
+            error: 'insufficient_balance',
+            message: `Mkoba wako una TZS chache sana. Unahitaji angalau ${AI_FEE_TZS.toLocaleString()} TZS kuendelea kutumia Ubongo AI.`,
+          },
+          { status: 402 },
+        )
+      }
+
+      // Record fee in platform treasury ledger
+      await db.insert(merchantPlatformFees).values({
+        merchantId,
+        amountTzs: AI_FEE_TZS,
+        reason: 'ai_chat',
+        metadata: { period, requestNumber: usedThisMonth + 1 },
       })
-      .where(and(eq(merchantAccounts.id, merchantId), gte(merchantAccounts.settlementPendingTzs, AI_FEE_TZS)))
-      .returning({ newBalance: merchantAccounts.settlementPendingTzs })
-
-    if (!deducted) {
-      return NextResponse.json(
-        {
-          error: 'insufficient_balance',
-          message: `Mkoba wako una TZS chache sana. Unahitaji angalau ${AI_FEE_TZS.toLocaleString()} TZS kuendelea kutumia Ubongo AI.`,
-        },
-        { status: 402 },
-      )
     }
 
-    // Record fee in platform treasury ledger
-    await db.insert(merchantPlatformFees).values({
-      merchantId,
-      amountTzs: AI_FEE_TZS,
-      reason: 'ai_chat',
-      metadata: { period, requestNumber: usedThisMonth + 1 },
-    })
+    // Increment monthly usage counters
+    await db
+      .update(merchantAiUsage)
+      .set({
+        requestCount: sql`${merchantAiUsage.requestCount} + 1`,
+        freeRequestCount: isPaid ? merchantAiUsage.freeRequestCount : sql`${merchantAiUsage.freeRequestCount} + 1`,
+        paidRequestCount: isPaid ? sql`${merchantAiUsage.paidRequestCount} + 1` : merchantAiUsage.paidRequestCount,
+        totalFeeTzs: isPaid ? sql`${merchantAiUsage.totalFeeTzs} + ${AI_FEE_TZS}` : merchantAiUsage.totalFeeTzs,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(merchantAiUsage.merchantId, merchantId), eq(merchantAiUsage.period, period)))
+  } catch (err) {
+    console.error('[biashara/ai/chat] billing unavailable — serving without billing:', err instanceof Error ? err.message : err)
+    billingReady = false
+    usedThisMonth = 0
+    isPaid = false
   }
-
-  // Increment monthly usage counters
-  await db
-    .update(merchantAiUsage)
-    .set({
-      requestCount: sql`${merchantAiUsage.requestCount} + 1`,
-      freeRequestCount: isPaid ? merchantAiUsage.freeRequestCount : sql`${merchantAiUsage.freeRequestCount} + 1`,
-      paidRequestCount: isPaid ? sql`${merchantAiUsage.paidRequestCount} + 1` : merchantAiUsage.paidRequestCount,
-      totalFeeTzs: isPaid ? sql`${merchantAiUsage.totalFeeTzs} + ${AI_FEE_TZS}` : merchantAiUsage.totalFeeTzs,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(merchantAiUsage.merchantId, merchantId), eq(merchantAiUsage.period, period)))
 
   // Alert when the merchant has ALERT_AT_REMAINING free requests left
   const freeRemaining = Math.max(0, FREE_MONTHLY_REQUESTS - (usedThisMonth + 1))
@@ -249,50 +262,63 @@ export async function POST(req: NextRequest) {
   let pendingAction: ProposedAction | undefined
   let currentMessages = [...body.messages]
 
-  for (let i = 0; i < 5; i++) {
-    const response = await client.messages.create({
-      model: 'claude-opus-4-7',
-      max_tokens: 1024,
-      system: buildSystem(body.agentName ?? 'Ubongo AI'),
-      tools: TOOLS,
-      messages: currentMessages,
-    })
-
-    // Update token usage in the ledger row
-    await db
-      .update(merchantAiUsage)
-      .set({
-        totalTokens: sql`${merchantAiUsage.totalTokens} + ${response.usage.input_tokens + response.usage.output_tokens}`,
-        updatedAt: new Date(),
+  try {
+    for (let i = 0; i < 5; i++) {
+      const response = await client.messages.create({
+        model: 'claude-opus-4-6',
+        max_tokens: 1024,
+        system: buildSystem(body.agentName ?? 'Ubongo AI'),
+        tools: TOOLS,
+        messages: currentMessages,
       })
-      .where(and(eq(merchantAiUsage.merchantId, merchantId), eq(merchantAiUsage.period, period)))
 
-    if (response.stop_reason === 'end_turn') {
-      const textBlock = response.content.find(b => b.type === 'text')
-      return NextResponse.json({
-        reply: textBlock?.type === 'text' ? textBlock.text : '',
-        action: pendingAction ?? null,
-        alert,
-        usage: { freeRemaining, isPaid },
-      })
-    }
-
-    if (response.stop_reason === 'tool_use') {
-      currentMessages = [...currentMessages, { role: 'assistant', content: response.content }]
-      const toolResults: Anthropic.ToolResultBlockParam[] = []
-
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue
-        const { result, action } = await runTool(merchantId, account.handle, block.name, block.input as Record<string, unknown>)
-        if (action) pendingAction = action
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+      // Update token usage in the ledger row (best-effort; skip if billing is down)
+      if (billingReady) {
+        await db
+          .update(merchantAiUsage)
+          .set({
+            totalTokens: sql`${merchantAiUsage.totalTokens} + ${response.usage.input_tokens + response.usage.output_tokens}`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(merchantAiUsage.merchantId, merchantId), eq(merchantAiUsage.period, period)))
+          .catch(() => {})
       }
 
-      currentMessages = [...currentMessages, { role: 'user', content: toolResults }]
-      continue
-    }
+      if (response.stop_reason === 'end_turn') {
+        const textBlock = response.content.find(b => b.type === 'text')
+        return NextResponse.json({
+          reply: textBlock?.type === 'text' ? textBlock.text : '',
+          action: pendingAction ?? null,
+          alert,
+          usage: { freeRemaining, isPaid },
+        })
+      }
 
-    break
+      if (response.stop_reason === 'tool_use') {
+        currentMessages = [...currentMessages, { role: 'assistant', content: response.content }]
+        const toolResults: Anthropic.ToolResultBlockParam[] = []
+
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue
+          const { result, action } = await runTool(merchantId, account.handle, block.name, block.input as Record<string, unknown>)
+          if (action) pendingAction = action
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+        }
+
+        currentMessages = [...currentMessages, { role: 'user', content: toolResults }]
+        continue
+      }
+
+      break
+    }
+  } catch (err) {
+    // Any inference error (model, rate limit, network) returns readable JSON
+    // instead of an empty 500.
+    console.error('[biashara/ai/chat] inference failed:', err instanceof Error ? err.message : err)
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'AI inference failed' },
+      { status: 500 },
+    )
   }
 
   return NextResponse.json({ reply: 'Kuna tatizo kidogo — jaribu tena.', action: null, alert, usage: { freeRemaining, isPaid } })
