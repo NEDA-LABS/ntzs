@@ -80,6 +80,7 @@ export default function MerchantOverviewPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [links, setLinks] = useState<PayLink[]>([]);
+  const [wallet, setWallet] = useState<{ walletAddress: string | null; balanceTzs: number } | null>(null);
   const [copied, setCopied] = useState(false);
 
   const base = typeof window !== 'undefined' ? window.location.origin : '';
@@ -89,6 +90,7 @@ export default function MerchantOverviewPage() {
     fetch('/merchant/api/merchant/stats').then(r => r.json()).then(setStats).catch(() => {});
     fetch('/merchant/api/merchant/collections?limit=5').then(r => r.json()).then(d => setCollections(d.items ?? [])).catch(() => {});
     fetch('/merchant/api/merchant/links').then(r => r.json()).then(d => setLinks(d.links ?? [])).catch(() => {});
+    fetch('/merchant/api/merchant/wallet').then(r => r.json()).then(setWallet).catch(() => {});
   }, []);
 
   function copyLink() {
@@ -195,6 +197,17 @@ export default function MerchantOverviewPage() {
               </p>
             )}
           </div>
+
+          {/* nTZS wallet balance — capital received (financing) / settled funds */}
+          {wallet?.walletAddress && (
+            <div className="mb-5 border border-emerald-500/20 bg-emerald-500/[0.04] rounded-lg px-4 py-3">
+              <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">nTZS Wallet Balance</p>
+              <p className="text-2xl font-bold text-white tabular-nums leading-none">
+                {formatTzs(Math.round(wallet.balanceTzs))} <span className="text-sm text-white/40 font-medium">nTZS</span>
+              </p>
+              <p className="text-[10px] text-white/30 mt-1.5">Spendable nTZS in your wallet — cash out in Settings → Financing.</p>
+            </div>
+          )}
 
           {/* Sub-stats strip */}
           <div className="flex items-center border-t border-white/10 pt-4 mb-5">
