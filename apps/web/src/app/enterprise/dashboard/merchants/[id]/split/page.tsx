@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 function fmt(n: number) {
@@ -49,8 +49,15 @@ export default function MerchantControlsPage() {
   const [termError, setTermError] = useState('')
   const [termSaved, setTermSaved] = useState(false)
 
-  useEffect(() => {
-    fetch('/enterprise/api/lender/merchants')
+  // Create-facility form (shown when the merchant has no loan yet)
+  const [facilityPrincipal, setFacilityPrincipal] = useState('')
+  const [facilityInterest, setFacilityInterest] = useState('0')
+  const [facilityTerm, setFacilityTerm] = useState('')
+  const [creatingFacility, setCreatingFacility] = useState(false)
+  const [facilityError, setFacilityError] = useState('')
+
+  const loadMerchant = useCallback(() => {
+    return fetch('/enterprise/api/lender/merchants')
       .then(r => r.json())
       .then(d => {
         const m = (d.merchants ?? []).find((x: Merchant) => x.id === id)
@@ -66,6 +73,27 @@ export default function MerchantControlsPage() {
       })
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => { loadMerchant() }, [loadMerchant])
+
+  async function handleCreateFacility() {
+    setFacilityError(''); setCreatingFacility(true)
+    try {
+      const res = await fetch(`/enterprise/api/lender/merchants/${id}/loan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          principalTzs: Number(facilityPrincipal),
+          interestRatePct: Number(facilityInterest || 0),
+          termDays: facilityTerm ? Number(facilityTerm) : undefined,
+        }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to create facility')
+      await loadMerchant()
+    } catch (err) {
+      setFacilityError(err instanceof Error ? err.message : 'Failed to create facility')
+    } finally { setCreatingFacility(false) }
+  }
 
   async function handleSaveControls() {
     setControlsError(''); setSavingControls(true); setControlsSaved(false)
@@ -140,6 +168,43 @@ export default function MerchantControlsPage() {
         <p className="text-[10px] tracking-widest text-gray-400 uppercase mb-1">Merchant Controls</p>
         <h1 className="text-2xl font-light text-gray-900">{merchant.businessName ?? merchant.handle}</h1>
       </div>
+
+      {/* Set up facility — when the merchant has no loan yet */}
+      {!merchant.principalTzs && (
+        <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg shadow-sm p-6 space-y-4">
+          <div>
+            <p className="text-[10px] tracking-widest text-gray-400 uppercase">Set Up Financing Facility</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">This merchant has no facility yet. Set a principal to start financing them — <span className="text-indigo-600">Send Capital</span> unlocks once it&apos;s created.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1.5">Principal (TZS)</label>
+              <input type="number" min={1} value={facilityPrincipal} onChange={e => setFacilityPrincipal(e.target.value)} placeholder="e.g. 2000000"
+                className="w-full bg-white border border-gray-300 text-gray-800 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1.5">Interest (%)</label>
+              <input type="number" min={0} max={200} value={facilityInterest} onChange={e => setFacilityInterest(e.target.value)}
+                className="w-full bg-white border border-gray-300 text-gray-800 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1.5">Term (days, optional)</label>
+              <input type="number" min={1} max={3650} value={facilityTerm} onChange={e => setFacilityTerm(e.target.value)} placeholder="e.g. 90"
+                className="w-full bg-white border border-gray-300 text-gray-800 text-sm px-3 py-2 rounded focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+          {facilityPrincipal && Number(facilityPrincipal) > 0 && (
+            <p className="text-[10px] text-gray-400">
+              Total owed: TZS {fmt(Number(facilityPrincipal) + Math.floor(Number(facilityPrincipal) * Number(facilityInterest || 0) / 100))} — principal + {Number(facilityInterest || 0)}% interest
+            </p>
+          )}
+          {facilityError && <p className="text-xs text-red-600">{facilityError}</p>}
+          <button onClick={handleCreateFacility} disabled={creatingFacility || !facilityPrincipal || Number(facilityPrincipal) <= 0}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs py-2.5 uppercase tracking-widest transition-colors rounded">
+            {creatingFacility ? 'Creating…' : 'Create Facility'}
+          </button>
+        </div>
+      )}
 
       {/* Loan summary */}
       {merchant.principalTzs && (
