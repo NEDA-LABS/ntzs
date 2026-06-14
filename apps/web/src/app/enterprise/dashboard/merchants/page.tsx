@@ -94,10 +94,10 @@ export default function MerchantsPage() {
                     </td>
                     <td className="px-5 py-4">
                       <Link
-                        href={`/enterprise/dashboard/merchants/${m.id}/split`}
+                        href={`/enterprise/dashboard/merchants/${m.id}`}
                         className="text-[10px] tracking-widest text-indigo-600 uppercase hover:text-indigo-700 transition-colors"
                       >
-                        Edit →
+                        Manage →
                       </Link>
                     </td>
                   </tr>
