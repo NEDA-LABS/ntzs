@@ -99,14 +99,26 @@ export async function withdrawMerchantFinancing(opts: {
   }
 
   try {
+    // burn_requests.user_id/wallet_id are NOT NULL but here are record-keeping
+    // FKs only — the real burn source is burn_from_address (the lender
+    // treasury, set below). Resolve any valid user + base-wallet pair: prefer
+    // the platform ops user, else fall back to the merchant's own synthetic
+    // user (always present once they've collected a payment). The platform ops
+    // user does not exist in all environments, so the fallback is what keeps
+    // withdrawals working. Mirrors the lender disburse route.
     const platformEmail = process.env.PLATFORM_ADMIN_EMAIL || 'ops@nedapay.co.tz'
-    const userRows = await rawSql<{ id: string }[]>`select id from users where email = ${platformEmail} limit 1`
-    const platformUserId = userRows[0]?.id
-    if (!platformUserId) { await releaseReservation(); return { status: 500, body: { error: 'Platform user not configured' } } }
-
-    const walletRows = await rawSql<{ id: string }[]>`select id from wallets where user_id = ${platformUserId} and chain = 'base' limit 1`
-    const platformWalletId = walletRows[0]?.id
-    if (!platformWalletId) { await releaseReservation(); return { status: 500, body: { error: 'Platform wallet not configured' } } }
+    const merchantSyntheticId = 'merchant_' + merchant.walletAddress.toLowerCase()
+    const fkRows = await rawSql<{ user_id: string; wallet_id: string }[]>`
+      select u.id as user_id, w.id as wallet_id
+      from users u
+      join wallets w on w.user_id = u.id and w.chain = 'base'
+      where u.email = ${platformEmail} or u.neon_auth_user_id = ${merchantSyntheticId}
+      order by case when u.email = ${platformEmail} then 0 else 1 end
+      limit 1
+    `
+    const platformUserId = fkRows[0]?.user_id
+    const platformWalletId = fkRows[0]?.wallet_id
+    if (!platformUserId || !platformWalletId) { await releaseReservation(); return { status: 500, body: { error: 'No wallet available to record withdrawal' } } }
 
     // Disburse from the lender's treasury (their capital funds the off-ramp).
     const treasuryRows = await rawSql<{ treasury_wallet_address: string | null }[]>`
