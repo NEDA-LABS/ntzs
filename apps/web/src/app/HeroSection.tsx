@@ -7,7 +7,7 @@ export default function HeroSection() {
   return (
     <ScrollExpandMedia
       mediaType="video"
-      mediaSrc="/HERO VIDEO.mp4"
+      mediaSrc="/nTZS landing.mp4"
       bgClassName="bg-gradient-to-br from-black via-zinc-900 to-black"
       title="The Smart Wallet Infrastructure"
       scrollToExpand="Scroll to explore"
