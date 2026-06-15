@@ -2,11 +2,16 @@
  * Lender settlement cycle — the on-chain lender split + repayment pipeline.
  *
  * Ported from apps/worker/src/index.ts (Phases A, D, E) so it can run as a
- * Vercel Cron (/api/cron/settle) — the standalone worker is not deployed, so
- * collections were piling up `settlement_status = pending` and lenders were
- * never repaid. The merchant-payout phase (B) is intentionally excluded here
- * because it depends on the burn worker; running it without that would strand
- * merchant funds. See /api/cron/settle for scheduling.
+ * Vercel Cron (/api/cron/settle) — the standalone worker's settlement phases
+ * are not deployed, so collections were piling up `settlement_status = pending`
+ * and lenders were never repaid.
+ *
+ * Lender pipeline (Phases A/D/E) runs fully here, including the on-chain
+ * merchant-wallet→treasury repayment. The merchant payout (Phases B/C) only
+ * QUEUES an approved burn_request and syncs its status; the actual on-chain
+ * burn + Snippe fiat payout is left to the standalone burn worker (still live —
+ * it processes WaaS/user off-ramps), so no irreversible on-chain off-ramp runs
+ * in this serverless context. See /api/cron/settle for scheduling.
  */
 import { ethers } from 'ethers'
 
@@ -16,6 +21,11 @@ import { fundWalletWithGas } from '@/lib/waas/hd-wallets'
 type SqlClient = ReturnType<typeof getDb>['sql']
 
 const MIN_LENDER_REPAYMENT_TZS = 1000
+
+// Merchant-settlement payout (Phase B/C) — mirrors apps/worker constants.
+const MIN_SETTLEMENT_TZS = 5000
+const SNIPPE_FLAT_FEE_TZS = 1500
+const PLATFORM_FEE_PCT = 0.005
 
 const MERCHANT_HD_MNEMONIC_KEY = 'MERCHANT_HD_MNEMONIC'
 const MERCHANT_DERIVATION_BASE = "m/44'/8453'/2'/0"
@@ -263,6 +273,170 @@ async function revertCompletedLoanAgreements(sql: SqlClient): Promise<number> {
     })
   }
   return completed.length
+}
+
+/**
+ * Phase B — Fire merchant payouts. For each merchant whose accumulated
+ * settlement_pending_tzs crossed the PSP minimum, atomically claim the full pot
+ * and insert ONE approved burn_request. The standalone burn worker (still live —
+ * it processes WaaS/user off-ramp burns) picks it up, burns nTZS from the
+ * merchant wallet on-chain and pays out fiat via Snippe. We deliberately do NOT
+ * burn here: keep the irreversible on-chain off-ramp in the proven worker, and
+ * keep this serverless cron to safe, idempotent DB writes only.
+ */
+async function fireBatchMerchantSettlements(sql: SqlClient): Promise<number> {
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  if (!contractAddress) return 0
+
+  const merchants = await sql<{
+    merchant_id: string
+    wallet_address: string
+    settlement_phone: string
+    settlement_pending_tzs: number
+  }[]>`
+    select id as merchant_id, wallet_address, settlement_phone, settlement_pending_tzs
+    from merchant_accounts
+    where settlement_pending_tzs >= ${MIN_SETTLEMENT_TZS}
+      and settlement_phone is not null
+      and is_active = true
+    limit 5
+  `
+
+  let fired = 0
+  for (const merchant of merchants) {
+    // Atomically claim the full pot — prevents a double-fire if the worker's own
+    // Phase B ever wakes up alongside this cron.
+    const claimed = await sql<{ id: string }[]>`
+      update merchant_accounts
+      set settlement_pending_tzs = 0, updated_at = now()
+      where id = ${merchant.merchant_id} and settlement_pending_tzs >= ${MIN_SETTLEMENT_TZS}
+      returning id
+    `
+    if (!claimed.length) continue
+
+    const batchTzs = merchant.settlement_pending_tzs
+    // Gross up so the recipient nets batchTzs after Snippe flat fee + platform fee.
+    const burnAmount = Math.ceil((batchTzs + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PCT))
+    const platformFeeTzs = burnAmount - batchTzs - SNIPPE_FLAT_FEE_TZS
+
+    // Resolve the merchant's synthetic platform user + base wallet (created on
+    // first collection). Restore the pot and skip if missing so it retries.
+    const syntheticNeonId = `merchant_${merchant.wallet_address.toLowerCase()}`
+    const [userRow] = await sql<{ id: string }[]>`
+      select id from users where neon_auth_user_id = ${syntheticNeonId} limit 1
+    `
+    const userId = userRow?.id
+    if (!userId) {
+      await sql`
+        update merchant_accounts
+        set settlement_pending_tzs = settlement_pending_tzs + ${batchTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[settle] merchant payout: user not found', { merchantId: merchant.merchant_id })
+      continue
+    }
+
+    const [walletRow] = await sql<{ id: string }[]>`
+      select id from wallets where user_id = ${userId} and chain = 'base' limit 1
+    `
+    const walletId = walletRow?.id
+    if (!walletId) {
+      await sql`
+        update merchant_accounts
+        set settlement_pending_tzs = settlement_pending_tzs + ${batchTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[settle] merchant payout: wallet not found', { merchantId: merchant.merchant_id })
+      continue
+    }
+
+    const [burnRow] = await sql<{ id: string }[]>`
+      insert into burn_requests (
+        user_id, wallet_id, chain, contract_address,
+        amount_tzs, platform_fee_tzs, reason, status,
+        requested_by_user_id, recipient_phone, created_at, updated_at
+      ) values (
+        ${userId}, ${walletId}, 'base', ${contractAddress},
+        ${burnAmount}, ${platformFeeTzs}, 'merchant_auto_settlement', 'approved',
+        ${userId}, ${merchant.settlement_phone}, now(), now()
+      )
+      returning id
+    `
+    const burnId = burnRow?.id
+    if (!burnId) {
+      await sql`
+        update merchant_accounts
+        set settlement_pending_tzs = settlement_pending_tzs + ${batchTzs}, updated_at = now()
+        where id = ${merchant.merchant_id}
+      `
+      console.warn('[settle] merchant payout: burn insert failed', { merchantId: merchant.merchant_id })
+      continue
+    }
+
+    await sql`
+      update merchant_collections
+      set settlement_status = 'processing', settlement_burn_request_id = ${burnId}, updated_at = now()
+      where merchant_id = ${merchant.merchant_id} and settlement_status = 'queued'
+    `
+
+    console.log('[settle] merchant payout fired', { merchantId: merchant.merchant_id, batchTzs, burnAmount, burnId })
+    fired += 1
+  }
+  return fired
+}
+
+/**
+ * Phase C — Propagate burn_requests.payout_status back to the merchant's
+ * collections once the burn worker (and Snippe webhook) resolve the payout.
+ */
+async function syncMerchantSettlementStatus(sql: SqlClient): Promise<number> {
+  const jobs = await sql<{ collection_id: string; payout_status: string | null; burn_status: string }[]>`
+    select mc.id as collection_id, br.payout_status, br.status as burn_status
+    from merchant_collections mc
+    join burn_requests br on br.id = mc.settlement_burn_request_id
+    where mc.settlement_status = 'processing' and mc.settlement_burn_request_id is not null
+    limit 25
+  `
+
+  let synced = 0
+  for (const job of jobs) {
+    let newStatus: string | null = null
+    if (job.payout_status === 'completed') newStatus = 'completed'
+    else if (job.payout_status === 'failed' || job.burn_status === 'failed') newStatus = 'failed'
+
+    if (newStatus) {
+      await sql`
+        update merchant_collections
+        set settlement_status = ${newStatus}, updated_at = now()
+        where id = ${job.collection_id}
+      `
+      synced += 1
+    }
+  }
+  return synced
+}
+
+export interface MerchantSettlementResult {
+  payoutsFired: number
+  statusesSynced: number
+  errors: string[]
+}
+
+/**
+ * Run one merchant-payout cycle: fire batch payouts (Phase B) → sync resolved
+ * statuses (Phase C). The actual on-chain burn + Snippe payout is done by the
+ * standalone burn worker, which consumes the approved burn_requests we insert.
+ */
+export async function runMerchantSettlement(sql: SqlClient): Promise<MerchantSettlementResult> {
+  const result: MerchantSettlementResult = { payoutsFired: 0, statusesSynced: 0, errors: [] }
+
+  try { result.payoutsFired = await fireBatchMerchantSettlements(sql) }
+  catch (err) { result.errors.push(`merchantPayout: ${err instanceof Error ? err.message : String(err)}`) }
+
+  try { result.statusesSynced = await syncMerchantSettlementStatus(sql) }
+  catch (err) { result.errors.push(`merchantSync: ${err instanceof Error ? err.message : String(err)}`) }
+
+  return result
 }
 
 export interface SettlementResult {
