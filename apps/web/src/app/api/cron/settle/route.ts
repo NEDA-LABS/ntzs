@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { runLenderSettlement, runMerchantSettlement } from '@/lib/settlement'
+import { runLenderSettlement } from '@/lib/settlement'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
 
@@ -39,16 +39,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Lender first (Phase A also accumulates the merchant's settlement pot),
-    // then the merchant payout (Phase B/C) consumes that pot.
-    const lender = await runLenderSettlement(rawSql)
-    const merchant = await runMerchantSettlement(rawSql)
-    return NextResponse.json({
-      ok: true,
-      ...lender,
-      ...merchant,
-      errors: [...lender.errors, ...merchant.errors],
-    })
+    const result = await runLenderSettlement(rawSql)
+    return NextResponse.json({ ok: true, ...result })
   } finally {
     await reserved`select pg_advisory_unlock(hashtext('lender_settlement'))`.catch(() => {})
     reserved.release()
