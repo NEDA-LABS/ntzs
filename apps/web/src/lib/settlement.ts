@@ -314,7 +314,9 @@ async function fireBatchMerchantSettlements(sql: SqlClient): Promise<number> {
     `
     if (!claimed.length) continue
 
-    const batchTzs = merchant.settlement_pending_tzs
+    // postgres.js returns numeric/int8 columns as strings — coerce before any
+    // arithmetic, or `+` becomes string concatenation ("7000" + 1500 → "70001500").
+    const batchTzs = Number(merchant.settlement_pending_tzs)
     // Gross up so the recipient nets batchTzs after Snippe flat fee + platform fee.
     const burnAmount = Math.ceil((batchTzs + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PCT))
     const platformFeeTzs = burnAmount - batchTzs - SNIPPE_FLAT_FEE_TZS
