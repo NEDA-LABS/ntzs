@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 
+import { EnterpriseAuthStyles, EnterpriseStoryAside, EnterpriseMobileBrand } from '../_components/story-panel'
+
 export default function EnterpriseSignupPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -32,121 +34,90 @@ export default function EnterpriseSignupPage() {
     }
   }
 
+  const inputCls = 'w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-colors'
+
   return (
     <>
-      <style>{`
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .page-reveal  { animation: fadeIn 0.4s ease-out both; }
-        .form-reveal  { animation: fadeUp 0.6s ease-out 0.2s both; }
-      `}</style>
+      <EnterpriseAuthStyles />
 
-      <div className="page-reveal relative flex min-h-screen items-center justify-center font-mono px-6 py-16 bg-slate-950">
-        <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'linear-gradient(rgba(99,102,241,1) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,1) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
+      <div className="min-h-screen grid lg:grid-cols-[1.05fr_1fr] bg-[#FBF8F3] text-stone-900">
+        <EnterpriseStoryAside />
 
-        <div className="relative z-10 w-full max-w-sm">
+        {/* Form panel */}
+        <main className="flex items-center justify-center px-6 py-12">
+          <div className="e-rise-2 w-full max-w-sm">
+            <EnterpriseMobileBrand />
 
-          <div className="mb-10">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="text-[10px] font-semibold tracking-[0.25em] text-slate-100 uppercase">n<span className="text-indigo-400">TZS</span></span>
-              <div className="w-px h-3 bg-slate-700" />
-              <span className="text-[10px] tracking-[0.2em] text-slate-500 uppercase">Enterprise</span>
-            </div>
-            <p className="text-2xl font-light text-slate-100">Request access.</p>
-            <p className="mt-2 text-sm text-slate-500">
-              Tell us about your organisation. We&apos;ll review and send you an invite link within one business day.
-            </p>
-          </div>
-
-          {submitted ? (
-            <div className="form-reveal border border-slate-800 bg-slate-900 p-8">
-              <div className="border-l-2 border-indigo-500 pl-4 mb-6">
-                <p className="text-sm font-semibold text-slate-100 mb-1">Request received.</p>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  We&apos;ve notified the NEDApay team. Once approved, you&apos;ll receive an invite link at <span className="text-slate-300">{email}</span>.
-                </p>
-              </div>
-              <Link
-                href="/enterprise/login"
-                className="block w-full text-center border border-slate-700 py-3 text-xs font-medium tracking-widest text-slate-500 uppercase transition-colors hover:border-indigo-500 hover:text-indigo-400"
-              >
-                Back to sign in
-              </Link>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="form-reveal border border-slate-800 bg-slate-900 p-8 space-y-5">
-
-              <div>
-                <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-500 uppercase">Organisation Name</label>
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Business Name Ltd"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none font-mono transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-500 uppercase">Business Email</label>
-                <input
-                  type="email"
-                  placeholder="you@organisation.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none font-mono transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-500 uppercase">Phone <span className="text-slate-700 normal-case">(optional)</span></label>
-                <input
-                  type="tel"
-                  placeholder="+255 7XX XXX XXX"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none font-mono transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-500 uppercase">Account Type</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { value: 'capital_lender', label: 'Capital Lender', sub: 'Deploy & recover capital via merchant repayments' },
-                    { value: 'disbursement_client', label: 'Disbursement Client', sub: 'Bulk payments to contractors via CSV upload' },
-                  ].map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setType(opt.value as typeof type)}
-                      className={`text-left border p-3 transition-colors ${type === opt.value ? 'border-indigo-500 bg-indigo-950' : 'border-slate-700 bg-slate-950 hover:border-slate-600'}`}
-                    >
-                      <p className={`text-[10px] font-semibold tracking-wider uppercase mb-1 ${type === opt.value ? 'text-indigo-400' : 'text-slate-400'}`}>{opt.label}</p>
-                      <p className="text-[10px] text-slate-600 leading-relaxed">{opt.sub}</p>
-                    </button>
-                  ))}
+            {submitted ? (
+              <div className="rounded-2xl border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-28px_rgba(40,30,20,0.25)]">
+                <div className="mb-6 border-l-2 border-indigo-500 pl-4">
+                  <p className="mb-1 text-sm font-semibold text-stone-900">Request received.</p>
+                  <p className="text-xs leading-relaxed text-stone-500">
+                    We&apos;ve notified the NEDApay team. Once approved, you&apos;ll get an invite link at <span className="text-stone-700">{email}</span> — usually within one business day.
+                  </p>
                 </div>
+                <Link href="/enterprise/login"
+                  className="block w-full rounded-xl border border-stone-300 py-3 text-center text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900">
+                  Back to sign in
+                </Link>
               </div>
+            ) : (
+              <div className="rounded-2xl border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-28px_rgba(40,30,20,0.25)]">
+                <div className="mb-5">
+                  <h2 className="text-lg font-semibold text-stone-900">Request access</h2>
+                  <p className="mt-1 text-xs text-stone-500">Tell us about your organisation — we&apos;ll review and send an invite link within one business day.</p>
+                </div>
 
-              {error && <p className="border border-red-900 bg-red-950 px-3 py-2 text-xs text-red-400">{error}</p>}
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div>
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">Organisation name</label>
+                    <input type="text" autoFocus placeholder="Business Name Ltd" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+                  </div>
 
-              <button
-                type="submit"
-                disabled={loading || !name.trim() || !email.trim() || !type}
-                className="w-full bg-indigo-600 py-3 text-xs font-semibold tracking-widest text-white uppercase transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {loading ? 'Submitting...' : 'Request Access'}
-              </button>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">Business email</label>
+                    <input type="email" placeholder="you@organisation.com" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+                  </div>
 
-              <p className="text-center text-[10px] text-slate-600">
-                Already have an account?{' '}
-                <Link href="/enterprise/login" className="text-indigo-400 hover:text-indigo-300 transition-colors">Sign in</Link>
-              </p>
-            </form>
-          )}
-        </div>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
+                      Phone <span className="normal-case text-stone-400">(optional)</span>
+                    </label>
+                    <input type="tel" placeholder="+255 7XX XXX XXX" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">Account type</label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {[
+                        { value: 'capital_lender', label: 'Capital Lender', sub: 'Deploy capital and recover it through merchant repayments.' },
+                        { value: 'disbursement_client', label: 'Disbursement Partner', sub: 'Pay contractors in bulk — by mobile money or bank.' },
+                      ].map(opt => (
+                        <button key={opt.value} type="button" onClick={() => setType(opt.value as typeof type)}
+                          className={`rounded-xl border p-3.5 text-left transition-colors ${type === opt.value ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/15' : 'border-stone-300 bg-white hover:border-stone-400'}`}>
+                          <p className={`text-sm font-semibold ${type === opt.value ? 'text-indigo-700' : 'text-stone-800'}`}>{opt.label}</p>
+                          <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{opt.sub}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+
+                  <button type="submit" disabled={loading || !name.trim() || !email.trim() || !type}
+                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    {loading ? 'Submitting…' : 'Request access'}
+                  </button>
+
+                  <p className="text-center text-xs text-stone-500">
+                    Already have an account?{' '}
+                    <Link href="/enterprise/login" className="font-medium text-indigo-600 hover:text-indigo-700">Sign in</Link>
+                  </p>
+                </form>
+              </div>
+            )}
+          </div>
+        </main>
       </div>
     </>
   )
