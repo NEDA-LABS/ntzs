@@ -36,6 +36,14 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-TZ', { maximumFractionDigits: 0 }).format(n)
 }
 
+// NEDApay collection account — keep in sync with the new-batch page.
+const COLLECTION_ACCOUNT = {
+  bank: 'Selcom Microfinance Bank',
+  accountName: 'Neda Labs Limited',
+  accountNumber: '55271 07446 681',
+  swift: 'ACTZTZTZ',
+}
+
 function fmtDate(s: string) {
   return new Date(s).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -220,15 +228,26 @@ export default function BatchDetailPage() {
 
         {/* Pending review action */}
         {batch.status === 'pending_review' && (
-          <div className="bg-white border border-amber-200 border-l-4 border-l-amber-400 p-5 space-y-3 shadow-sm rounded-sm">
-            <p className="text-sm text-amber-800 font-medium">Action required: Confirm bank transfer</p>
+          <div className="bg-white border border-amber-200 border-l-4 border-l-amber-400 p-5 space-y-4 shadow-sm rounded-sm">
+            <p className="text-sm text-amber-800 font-medium">Action required: fund this batch</p>
             <p className="text-xs text-slate-600">
-              Transfer{' '}
-              <span className="text-indigo-700 font-semibold">TZS {fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}</span>{' '}
-              to the NEDApay collection account, using batch ID{' '}
-              <span className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5">{batch.id.slice(0, 8)}</span>{' '}
-              as reference. Then click below to notify NEDApay.
+              Transfer <span className="text-indigo-700 font-semibold">TZS {fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}</span> to the NEDApay collection account below, then click to notify NEDApay.
             </p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs border-t border-slate-100 pt-4">
+              {[
+                { label: 'Bank', value: COLLECTION_ACCOUNT.bank },
+                { label: 'Account Name', value: COLLECTION_ACCOUNT.accountName },
+                { label: 'Account Number', value: COLLECTION_ACCOUNT.accountNumber, mono: true },
+                { label: 'SWIFT', value: COLLECTION_ACCOUNT.swift, mono: true },
+                { label: 'Amount', value: `TZS ${fmt(batch.totalAmountTzs + batch.serviceFeeTzs)}`, accent: true },
+                { label: 'Reference (required)', value: batch.id.slice(0, 8).toUpperCase(), mono: true, accent: true },
+              ].map(f => (
+                <div key={f.label}>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">{f.label}</p>
+                  <p className={`${f.mono ? 'font-mono' : ''} ${f.accent ? 'text-indigo-700 font-semibold' : 'text-slate-900'}`}>{f.value}</p>
+                </div>
+              ))}
+            </div>
             {confirmError && <p className="text-xs text-red-600">{confirmError}</p>}
             <button
               onClick={confirmTransfer}
