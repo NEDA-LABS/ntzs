@@ -67,10 +67,13 @@ export default async function TreasuryPage() {
   // ── Aggregate fee metrics ────────────────────────────────────────────────
   const [feeStats] = await db
     .select({
-      totalCollectedTzs: sql<number>`coalesce(sum(${burnRequests.platformFeeTzs}), 0)`.mapWith(Number),
+      // Only fees on burns that actually executed count as "collected". Without
+      // the status='burned' filter, fees on rejected/failed/approved-but-unburned
+      // requests inflate the total (a corrupted rejected row once showed ~70M TZS).
+      totalCollectedTzs: sql<number>`coalesce(sum(case when ${burnRequests.status} = 'burned' then ${burnRequests.platformFeeTzs} else 0 end), 0)`.mapWith(Number),
       realizedTzs: sql<number>`coalesce(sum(case when ${burnRequests.feeTxHash} is not null then ${burnRequests.platformFeeTzs} else 0 end), 0)`.mapWith(Number),
       pendingTzs: sql<number>`coalesce(sum(case when ${burnRequests.feeTxHash} is null and ${burnRequests.status} = 'burned' and ${burnRequests.platformFeeTzs} > 0 then ${burnRequests.platformFeeTzs} else 0 end), 0)`.mapWith(Number),
-      burnCount: sql<number>`count(case when ${burnRequests.platformFeeTzs} > 0 then 1 end)`.mapWith(Number),
+      burnCount: sql<number>`count(case when ${burnRequests.status} = 'burned' and ${burnRequests.platformFeeTzs} > 0 then 1 end)`.mapWith(Number),
     })
     .from(burnRequests)
 
