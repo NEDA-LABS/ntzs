@@ -27,6 +27,7 @@ const disbursementNav = [
   { href: '/enterprise/dashboard', label: 'Overview', icon: '▪' },
   { href: '/enterprise/dashboard/wallet', label: 'Wallet', icon: '▪' },
   { href: '/enterprise/dashboard/disbursements', label: 'Disbursements', icon: '▪' },
+  { href: '/enterprise/dashboard/disbursements/recipients', label: 'Recipients', icon: '▪' },
   { href: '/enterprise/dashboard/disbursements/new', label: 'New Batch', icon: '+' },
 ]
 
