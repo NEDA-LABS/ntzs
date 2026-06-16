@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -14,24 +14,6 @@ export function EnterpriseSignIn() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
-
-  // Mouse-reactive sheen on the premium card (lightweight rAF, no GSAP).
-  const cardRef = useRef<HTMLDivElement>(null)
-  const rafRef = useRef<number>(0)
-  useEffect(() => {
-    function onMove(e: MouseEvent) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = requestAnimationFrame(() => {
-        const el = cardRef.current
-        if (!el) return
-        const r = el.getBoundingClientRect()
-        el.style.setProperty('--mx', `${e.clientX - r.left}px`)
-        el.style.setProperty('--my', `${e.clientY - r.top}px`)
-      })
-    }
-    window.addEventListener('mousemove', onMove)
-    return () => { window.removeEventListener('mousemove', onMove); cancelAnimationFrame(rafRef.current) }
-  }, [])
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -93,159 +75,117 @@ export function EnterpriseSignIn() {
     }
   }
 
+  const inputCls = 'w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-colors'
+  const errorBox = error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+
   return (
     <>
       <style>{`
-        @keyframes eFadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes eFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .e-page    { animation: eFadeIn 0.5s ease-out both; }
-        .e-brand   { animation: eFadeUp 0.7s cubic-bezier(0.16,1,0.3,1) 0.1s both; }
-        .e-card    { animation: eFadeUp 0.7s cubic-bezier(0.16,1,0.3,1) 0.28s both; }
-        .e-props   { animation: eFadeUp 0.6s ease-out 0.5s both; }
-
-        /* Film grain + masked grid environment */
-        .e-grain {
-          position:absolute; inset:0; pointer-events:none; z-index:1; opacity:0.045; mix-blend-mode:overlay;
-          background:url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%25" height="100%25" filter="url(%23n)"/></svg>');
-        }
-        .e-grid {
-          position:absolute; inset:0; pointer-events:none;
-          background-size:56px 56px;
-          background-image:linear-gradient(to right, rgba(99,102,241,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(99,102,241,0.07) 1px, transparent 1px);
-          -webkit-mask-image:radial-gradient(ellipse 75% 75% at 50% 40%, black 0%, transparent 72%);
-          mask-image:radial-gradient(ellipse 75% 75% at 50% 40%, black 0%, transparent 72%);
-        }
-
-        /* Silver matte heading */
-        .e-silver {
-          background:linear-gradient(180deg,#FFFFFF 0%, #93A4C9 100%);
-          -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
-          transform:translateZ(0);
-          filter:drop-shadow(0 10px 22px rgba(99,102,241,0.18));
-        }
-
-        /* Premium physical depth card */
-        .e-card-surface {
-          background:linear-gradient(150deg, #18306F 0%, #0B1120 62%, #080C16 100%);
-          box-shadow:
-            0 44px 110px -24px rgba(0,0,0,0.92),
-            0 22px 44px -22px rgba(0,0,0,0.8),
-            inset 0 1px 2px rgba(255,255,255,0.16),
-            inset 0 -2px 4px rgba(0,0,0,0.8);
-          border:1px solid rgba(255,255,255,0.07);
-        }
-        .e-sheen {
-          position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:2;
-          background:radial-gradient(600px circle at var(--mx,50%) var(--my,30%), rgba(255,255,255,0.07) 0%, transparent 42%);
-          mix-blend-mode:screen;
-        }
-
-        /* Tactile inputs */
-        .e-input {
-          width:100%; background:rgba(5,8,16,0.6); color:#E8EDF7;
-          border:1px solid rgba(255,255,255,0.08);
-          box-shadow:inset 0 2px 5px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.03);
-          border-radius:10px; transition:border-color .2s, box-shadow .2s;
-        }
-        .e-input::placeholder { color:#5A6580; }
-        .e-input:focus { outline:none; border-color:rgba(129,140,248,0.7); box-shadow:inset 0 2px 5px rgba(0,0,0,0.55), 0 0 0 3px rgba(99,102,241,0.18); }
-
-        /* Tactile buttons */
-        .e-btn-primary {
-          background:linear-gradient(180deg,#6366F1 0%, #4338CA 100%); color:#fff;
-          box-shadow:0 0 0 1px rgba(0,0,0,0.2), 0 12px 24px -8px rgba(67,56,202,0.7), inset 0 1px 1px rgba(255,255,255,0.3), inset 0 -3px 6px rgba(0,0,0,0.35);
-          border-radius:12px; transition:all .25s cubic-bezier(0.25,1,0.5,1);
-        }
-        .e-btn-primary:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 0 0 1px rgba(0,0,0,0.2), 0 18px 30px -8px rgba(67,56,202,0.85), inset 0 1px 1px rgba(255,255,255,0.35), inset 0 -3px 6px rgba(0,0,0,0.35); }
-        .e-btn-primary:active:not(:disabled) { transform:translateY(1px); background:#3F35B8; box-shadow:inset 0 3px 8px rgba(0,0,0,0.6); }
-        .e-btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
-
-        .e-btn-ghost {
-          background:linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%); color:#AEB8D0;
-          border:1px solid rgba(255,255,255,0.1);
-          box-shadow:inset 0 1px 1px rgba(255,255,255,0.06), inset 0 -2px 4px rgba(0,0,0,0.4);
-          border-radius:12px; transition:all .25s cubic-bezier(0.25,1,0.5,1);
-        }
-        .e-btn-ghost:hover:not(:disabled) { color:#E8EDF7; border-color:rgba(255,255,255,0.2); transform:translateY(-1px); }
-        .e-btn-ghost:disabled { opacity:0.3; cursor:not-allowed; }
+        @keyframes eRise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes eIn { from { opacity: 0; } to { opacity: 1; } }
+        .e-rise-1 { animation: eRise 0.7s cubic-bezier(0.16,1,0.3,1) 0.05s both; }
+        .e-rise-2 { animation: eRise 0.7s cubic-bezier(0.16,1,0.3,1) 0.18s both; }
+        .e-rise-3 { animation: eRise 0.7s cubic-bezier(0.16,1,0.3,1) 0.30s both; }
+        .e-fade   { animation: eIn 0.6s ease-out 0.1s both; }
       `}</style>
 
-      <div className="e-page relative flex min-h-screen items-center justify-center font-mono px-6 py-16 overflow-hidden" style={{ background: 'radial-gradient(ellipse 90% 90% at 50% 0%, #0d1733 0%, #05070d 60%, #03040a 100%)' }}>
-        <div className="e-grid" aria-hidden="true" />
-        <div className="e-grain" aria-hidden="true" />
+      <div className="min-h-screen grid lg:grid-cols-[1.05fr_1fr] bg-[#FBF8F3] text-stone-900">
 
-        <div className="relative z-10 w-full max-w-sm">
+        {/* ── Story panel ─────────────────────────────────────────── */}
+        <aside
+          className="relative hidden lg:flex flex-col justify-between overflow-hidden px-14 py-12"
+          style={{ background: 'linear-gradient(135deg, #FBF1E6 0%, #FBF8F3 46%, #EEEAFF 100%)' }}
+        >
+          <div aria-hidden className="pointer-events-none absolute -top-28 -right-24 h-96 w-96 rounded-full bg-indigo-300/30 blur-3xl" />
+          <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-16 h-80 w-80 rounded-full bg-amber-300/25 blur-3xl" />
 
-          <div className="e-brand mb-10">
-            <div className="flex items-center gap-3 mb-7">
-              <span className="text-[10px] font-semibold tracking-[0.25em] text-slate-100 uppercase">
-                n<span className="text-indigo-400">TZS</span>
-              </span>
-              <div className="w-px h-3 bg-slate-700" />
-              <span className="text-[10px] tracking-[0.2em] text-slate-500 uppercase">Enterprise</span>
-            </div>
+          <div className="e-fade relative flex items-center gap-2.5 text-[11px] tracking-[0.25em] uppercase text-stone-500">
+            <span>n<span className="font-semibold text-indigo-600">TZS</span></span>
+            <span className="h-3 w-px bg-stone-300" />
+            <span>Enterprise</span>
+          </div>
 
-            <div className="space-y-1">
-              <p className="text-[2.1rem] leading-[1.1] font-semibold tracking-tight e-silver">Capital &amp; Payment</p>
-              <p className="text-[2.1rem] leading-[1.1] font-semibold tracking-tight text-indigo-400">Infrastructure.</p>
-              <p className="mt-3 text-sm text-slate-400 leading-relaxed max-w-xs">
-                Programmable TZS liquidity for Tanzania&apos;s FMCG supply chain.
-              </p>
+          <div className="relative max-w-md">
+            <h1 className="e-rise-1 text-[2.6rem] xl:text-5xl font-semibold tracking-tight leading-[1.08] text-stone-900">
+              Fund the sale.<br />
+              <span className="text-indigo-600">Pay the people.</span>
+            </h1>
+            <p className="e-rise-2 mt-5 text-[15px] leading-relaxed text-stone-600">
+              Programmable TZS that moves with your business — capital that repays itself as you sell,
+              and contractor payouts that clear in a single run.
+            </p>
+
+            <div className="e-rise-3 mt-10 space-y-5">
+              <ValueProp
+                title="For capital lenders"
+                body="Deploy capital that repays itself from every sale — with proof you can audit."
+              />
+              <ValueProp
+                title="For disbursement partners"
+                body="Pay all your contractors in one batch — by mobile money or bank."
+              />
             </div>
           </div>
 
-          {/* Premium form card */}
-          <div ref={cardRef} className="e-card e-card-surface relative rounded-2xl p-8">
-            <div className="e-sheen" aria-hidden="true" />
-            <div className="relative z-[3]">
+          <p className="e-fade relative text-xs text-stone-400">
+            Settled in TZS · Audit-ready by default
+          </p>
+        </aside>
+
+        {/* ── Form panel ──────────────────────────────────────────── */}
+        <main className="flex items-center justify-center px-6 py-12">
+          <div className="e-rise-2 w-full max-w-sm">
+
+            {/* Mobile brand (story panel is hidden < lg) */}
+            <div className="lg:hidden mb-8">
+              <div className="flex items-center gap-2.5 text-[11px] tracking-[0.25em] uppercase text-stone-500 mb-4">
+                <span>n<span className="font-semibold text-indigo-600">TZS</span></span>
+                <span className="h-3 w-px bg-stone-300" />
+                <span>Enterprise</span>
+              </div>
+              <h1 className="text-3xl font-semibold tracking-tight leading-tight text-stone-900">
+                Fund the sale. <span className="text-indigo-600">Pay the people.</span>
+              </h1>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-28px_rgba(40,30,20,0.25)]">
 
               {/* Email step */}
               {step === 'email' && (
                 <form onSubmit={handleEmailSubmit} className="space-y-5">
                   <div>
-                    <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
-                      Organisation Email
+                    <h2 className="text-lg font-semibold text-stone-900">Sign in to your portal</h2>
+                    <p className="mt-1 text-xs text-stone-500">Lenders and disbursement partners, same place.</p>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
+                      Organisation email
                     </label>
-                    <input
-                      type="email"
-                      autoFocus
-                      placeholder="you@organisation.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="e-input px-4 py-3 text-sm font-mono"
-                    />
+                    <input type="email" autoFocus placeholder="you@organisation.com" value={email}
+                      onChange={(e) => setEmail(e.target.value)} className={inputCls} />
                   </div>
 
-                  {error && <p className="rounded-lg border border-red-900/60 bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+                  {errorBox}
 
-                  <button
-                    type="submit"
-                    disabled={loading || !email.trim()}
-                    className="e-btn-primary w-full py-3 text-xs font-semibold tracking-widest uppercase"
-                  >
-                    {loading ? 'Sending Code...' : 'Send Email Code'}
+                  <button type="submit" disabled={loading || !email.trim()}
+                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    {loading ? 'Sending code…' : 'Send email code'}
                   </button>
 
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-[10px] text-slate-500 tracking-widest uppercase">or</span>
-                    <div className="flex-1 h-px bg-white/10" />
+                    <div className="h-px flex-1 bg-stone-200" />
+                    <span className="text-[10px] uppercase tracking-widest text-stone-400">or</span>
+                    <div className="h-px flex-1 bg-stone-200" />
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={!email.trim()}
-                    onClick={() => { setError(''); setStep('password') }}
-                    className="e-btn-ghost w-full py-3 text-xs font-medium tracking-widest uppercase"
-                  >
-                    Sign In With Password
+                  <button type="button" disabled={!email.trim()} onClick={() => { setError(''); setStep('password') }}
+                    className="w-full rounded-xl border border-stone-300 py-3 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-40">
+                    Sign in with password
                   </button>
 
-                  <p className="text-center text-[10px] text-slate-500">
+                  <p className="text-center text-xs text-stone-500">
                     New organisation?{' '}
-                    <Link href="/enterprise/signup" className="text-indigo-400 hover:text-indigo-300 transition-colors">
-                      Request access
-                    </Link>
+                    <Link href="/enterprise/signup" className="font-medium text-indigo-600 hover:text-indigo-700">Request access</Link>
                   </p>
                 </form>
               )}
@@ -253,36 +193,27 @@ export function EnterpriseSignIn() {
               {/* OTP step */}
               {step === 'otp' && (
                 <form onSubmit={handleOtpSubmit} className="space-y-5">
-                  <div className="mb-2">
-                    <p className="text-xs text-slate-400 tracking-wide">Code sent to</p>
-                    <p className="text-sm font-semibold text-slate-100 mt-0.5">{email}</p>
-                    <button type="button" onClick={() => { setStep('email'); setCode(''); setError('') }} className="mt-2 text-[10px] tracking-widest text-slate-500 uppercase hover:text-slate-300 transition-colors">
+                  <div>
+                    <p className="text-xs text-stone-500">Code sent to</p>
+                    <p className="mt-0.5 text-sm font-semibold text-stone-900">{email}</p>
+                    <button type="button" onClick={() => { setStep('email'); setCode(''); setError('') }}
+                      className="mt-2 text-[11px] uppercase tracking-wide text-stone-400 hover:text-stone-600">
                       Change email
                     </button>
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-400 uppercase">6-Digit Code</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      autoFocus
-                      maxLength={6}
-                      placeholder="000000"
-                      value={code}
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">6-digit code</label>
+                    <input type="text" inputMode="numeric" autoFocus maxLength={6} placeholder="000000" value={code}
                       onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                      className="e-input px-4 py-3 text-center text-2xl font-bold tracking-widest text-indigo-300 font-mono"
-                    />
+                      className={`${inputCls} text-center font-mono text-2xl font-bold tracking-[0.4em] text-indigo-600`} />
                   </div>
 
-                  {error && <p className="rounded-lg border border-red-900/60 bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+                  {errorBox}
 
-                  <button
-                    type="submit"
-                    disabled={loading || code.length < 6}
-                    className="e-btn-primary w-full py-3 text-xs font-semibold tracking-widest uppercase"
-                  >
-                    {loading ? 'Verifying...' : 'Sign In'}
+                  <button type="submit" disabled={loading || code.length < 6}
+                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    {loading ? 'Verifying…' : 'Sign in'}
                   </button>
                 </form>
               )}
@@ -291,40 +222,30 @@ export function EnterpriseSignIn() {
               {step === 'password' && (
                 <form onSubmit={handlePasswordSubmit} className="space-y-5">
                   <div>
-                    <p className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase mb-1.5">Signing in as</p>
-                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-950/60 px-4 py-2.5">
-                      <span className="text-sm text-slate-200 truncate">{email}</span>
-                      <button type="button" onClick={() => { setStep('email'); setPassword(''); setError('') }} className="text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-widest transition-colors shrink-0 ml-3">
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Signing in as</p>
+                    <div className="flex items-center justify-between rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5">
+                      <span className="truncate text-sm text-stone-700">{email}</span>
+                      <button type="button" onClick={() => { setStep('email'); setPassword(''); setError('') }}
+                        className="ml-3 shrink-0 text-[11px] uppercase tracking-wide text-stone-400 hover:text-stone-600">
                         Change
                       </button>
                     </div>
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[10px] font-semibold tracking-widest text-slate-400 uppercase">Password</label>
-                    <input
-                      type="password"
-                      autoFocus
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="e-input px-4 py-3 text-sm font-mono"
-                    />
+                    <label className="mb-2 block text-[11px] font-semibold tracking-wide text-stone-500 uppercase">Password</label>
+                    <input type="password" autoFocus placeholder="••••••••" value={password}
+                      onChange={(e) => setPassword(e.target.value)} className={inputCls} />
                   </div>
 
-                  {error && <p className="rounded-lg border border-red-900/60 bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+                  {errorBox}
 
-                  <button
-                    type="submit"
-                    disabled={loading || !password}
-                    className="e-btn-primary w-full py-3 text-xs font-semibold tracking-widest uppercase"
-                  >
-                    {loading ? 'Signing In...' : 'Sign In'}
+                  <button type="submit" disabled={loading || !password}
+                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    {loading ? 'Signing in…' : 'Sign in'}
                   </button>
 
-                  <button
-                    type="button"
-                    disabled={loading}
+                  <button type="button" disabled={loading}
                     onClick={async () => {
                       setError(''); setLoading(true)
                       try {
@@ -332,39 +253,35 @@ export function EnterpriseSignIn() {
                         setPassword(''); setStep('otp')
                       } catch { setError('Failed to send code') } finally { setLoading(false) }
                     }}
-                    className="w-full text-[10px] tracking-widest text-slate-500 uppercase hover:text-slate-300 transition-colors py-1 disabled:opacity-40"
-                  >
+                    className="w-full py-1 text-[11px] uppercase tracking-wide text-stone-400 transition-colors hover:text-stone-600 disabled:opacity-40">
                     Use email code instead
                   </button>
                 </form>
               )}
-
             </div>
+
+            <p className="mt-5 text-center text-xs text-stone-400">
+              One sign-in for <span className="text-stone-600">capital lenders</span> &amp; <span className="text-stone-600">disbursement partners</span>
+            </p>
           </div>
-
-          {/* Serves both account types */}
-          <p className="e-props mt-5 text-center text-[10px] tracking-wide text-slate-500">
-            One sign-in for{' '}
-            <span className="text-slate-300">capital lenders</span> &amp;{' '}
-            <span className="text-slate-300">disbursement partners</span>
-          </p>
-
-          <div className="e-props mt-6 space-y-3">
-            <div className="h-px bg-white/10" />
-            {[
-              'Revenue-based repayment — embedded in every transaction',
-              'Real-time on-chain audit trail on Base mainnet',
-              'Bulk contractor disbursement — built in-app',
-            ].map((text, i) => (
-              <div key={i} className="flex items-start gap-3 py-1">
-                <span className="text-[10px] text-slate-600 font-mono mt-0.5 w-4 shrink-0">{String(i + 1).padStart(2, '0')}</span>
-                <p className="text-xs text-slate-500 leading-relaxed">{text}</p>
-              </div>
-            ))}
-          </div>
-
-        </div>
+        </main>
       </div>
     </>
+  )
+}
+
+function ValueProp({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="flex gap-3.5">
+      <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100">
+        <svg className="h-3.5 w-3.5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-stone-900">{title}</p>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-stone-600">{body}</p>
+      </div>
+    </div>
   )
 }
