@@ -64,7 +64,7 @@ export default function MasterLandingPage() {
           autoPlay loop muted playsInline preload="auto"
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"
         >
-          <source src="/Video_For_Wallet_Service.mp4" type="video/mp4" />
+          <source src="/ntzs-landing-v2.mp4" type="video/mp4" />
         </video>
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/80 via-black/65 to-black/95" />
 
