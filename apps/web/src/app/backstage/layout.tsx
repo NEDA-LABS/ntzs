@@ -177,8 +177,8 @@ export default async function BackstageLayout({
       <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/10 bg-zinc-950">
         {/* Logo/Brand */}
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-6">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
-            <img src="/ntzs-logo.png" alt="nTZS" className="h-6 w-6 object-contain" />
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full">
+            <img src="/ntzs-logo.png" alt="nTZS" className="h-full w-full object-cover" />
           </div>
           <div>
             <p className="font-semibold text-white">nTZS</p>
