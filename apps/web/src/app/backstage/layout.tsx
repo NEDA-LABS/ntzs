@@ -174,9 +174,9 @@ export default async function BackstageLayout({
   return (
     <div className="min-h-screen bg-black">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-50 w-64 border-r border-white/10 bg-zinc-950">
+      <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/10 bg-zinc-950">
         {/* Logo/Brand */}
-        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-6">
+        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-6">
           <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
             <img src="/ntzs-logo.png" alt="nTZS" className="h-6 w-6 object-contain" />
           </div>
@@ -186,8 +186,8 @@ export default async function BackstageLayout({
           </div>
         </div>
 
-        {/* Navigation */}
-        <div className="p-4">
+        {/* Navigation (scrollable so all items are reachable) */}
+        <div className="flex-1 overflow-y-auto p-4">
           <p className="mb-3 px-4 text-xs font-semibold uppercase tracking-wider text-zinc-600">
             Management
           </p>
@@ -195,7 +195,7 @@ export default async function BackstageLayout({
         </div>
 
         {/* Bottom Section */}
-        <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 p-4">
+        <div className="shrink-0 border-t border-white/10 p-4">
           <div className="flex items-center gap-3 rounded-xl bg-white/5 px-4 py-3">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500" />
             <div className="flex-1 min-w-0">
