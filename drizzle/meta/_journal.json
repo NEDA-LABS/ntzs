@@ -127,6 +127,223 @@
       "when": 1778481374522,
       "tag": "0017_dapper_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778567774522,
+      "tag": "0018_add_fund_managers_savings_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778654174522,
+      "tag": "0019_add_fund_manager_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1778740574522,
+      "tag": "0020_reconciliation_flexible",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778826974522,
+      "tag": "0021_add_lp_fx_pairs_and_pool_positions",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1778913374522,
+      "tag": "0022_add_lp_api_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778999774522,
+      "tag": "0023_add_transfer_to_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779086174522,
+      "tag": "0024_add_burn_fee_tx_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779172574522,
+      "tag": "0025_add_transfer_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1779258974522,
+      "tag": "0026_add_lp_wallet_transactions",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1779345374522,
+      "tag": "0027_add_usdt_base_pair",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1779431774522,
+      "tag": "0028_add_chain_to_lp_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1779518174522,
+      "tag": "0029_add_merchant_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1779604574522,
+      "tag": "0030_add_promo_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1779690974522,
+      "tag": "0031_add_source_to_lp_fills",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1779777374522,
+      "tag": "0032_add_partner_id_to_lp_fills",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1779863774522,
+      "tag": "0033_enterprise_lender_split",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1779950174522,
+      "tag": "0034_enterprise_disbursements",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1780036574522,
+      "tag": "0035_ramani_financing",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1780122974522,
+      "tag": "0036_enterprise_wallet",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780209374522,
+      "tag": "0037_biashara_enterprise_nedapay_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1780295774522,
+      "tag": "0038_add_azampay_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1780382174522,
+      "tag": "0039_merchant_ai_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1780468574522,
+      "tag": "0040_simplefx_protocol_fee",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780554974522,
+      "tag": "0041_fx_fee_sweeps",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1780641374522,
+      "tag": "0042_partner_billing_kyb",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1780727774522,
+      "tag": "0043_merchant_loan_disbursed",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1780814174522,
+      "tag": "0044_otp_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1780900574522,
+      "tag": "0045_idempotency_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1780986974522,
+      "tag": "0046_loan_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1781073374522,
+      "tag": "0047_burn_from_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1781159774522,
+      "tag": "0048_ramp_api",
+      "breakpoints": true
     }
   ]
 }
