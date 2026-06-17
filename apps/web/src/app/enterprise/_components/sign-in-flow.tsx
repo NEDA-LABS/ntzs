@@ -92,7 +92,7 @@ export function EnterpriseSignIn() {
           <div className="e-rise-2 w-full max-w-sm">
             <EnterpriseMobileBrand />
 
-            <div className="rounded-2xl border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-28px_rgba(40,30,20,0.25)]">
+            <div>
 
               {/* Email step */}
               {step === 'email' && (

@@ -49,7 +49,7 @@ export default function EnterpriseSignupPage() {
             <EnterpriseMobileBrand />
 
             {submitted ? (
-              <div className="rounded-2xl border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-28px_rgba(40,30,20,0.25)]">
+              <div>
                 <div className="mb-6 border-l-2 border-indigo-500 pl-4">
                   <p className="mb-1 text-sm font-semibold text-stone-900">Request received.</p>
                   <p className="text-xs leading-relaxed text-stone-500">
@@ -62,7 +62,7 @@ export default function EnterpriseSignupPage() {
                 </Link>
               </div>
             ) : (
-              <div className="rounded-2xl border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-28px_rgba(40,30,20,0.25)]">
+              <div>
                 <div className="mb-5">
                   <h2 className="text-lg font-semibold text-stone-900">Request access</h2>
                   <p className="mt-1 text-xs text-stone-500">Tell us about your organisation — we&apos;ll review and send an invite link within one business day.</p>
