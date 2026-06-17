@@ -9,8 +9,30 @@ import {
   MINTER_PRIVATE_KEY,
 } from '@/lib/env'
 import { verifyWebhookSignature, type SnippePayoutWebhookPayload } from '@/lib/psp/snippe'
-import { burnRequests, auditLogs, wallets } from '@ntzs/db'
+import { burnRequests, auditLogs, wallets, rampSettlements } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
+import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
+
+/** If a burn is part of a Ramp off-ramp, advance its settlement + notify the partner. */
+async function advanceRampSettlement(
+  db: ReturnType<typeof getDb>['db'],
+  rampSettlementId: string,
+  outcome: 'completed' | 'reverted',
+  reason?: string,
+): Promise<void> {
+  const [s] = await db
+    .update(rampSettlements)
+    .set({ status: outcome, ...(reason ? { error: reason } : {}), updatedAt: new Date() })
+    .where(eq(rampSettlements.id, rampSettlementId))
+    .returning({ partnerId: rampSettlements.partnerId })
+  if (s) {
+    await queuePartnerWebhook(
+      s.partnerId,
+      outcome === 'completed' ? 'ramp.settlement.completed' : 'ramp.settlement.failed',
+      { settlementId: rampSettlementId, ...(reason ? { reason } : {}) },
+    ).catch((e) => console.error('[snippe/payout webhook] ramp webhook queue failed:', e))
+  }
+}
 
 const NTZS_MINT_ABI = ['function mint(address to, uint256 amount)'] as const
 
@@ -200,6 +222,8 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    if (burn.rampSettlementId) await advanceRampSettlement(db, burn.rampSettlementId, 'completed')
+
     console.log(`[snippe/payout webhook] Burn ${burnRequestId} payout completed`)
     return NextResponse.json({ status: 'success', burnId: burnRequestId, payoutStatus: 'completed' })
   }
@@ -282,6 +306,10 @@ export async function POST(request: NextRequest) {
         remintError: revert.error,
       },
     })
+
+    if (burn.rampSettlementId) {
+      await advanceRampSettlement(db, burn.rampSettlementId, 'reverted', data.failure_reason || 'Payout failed')
+    }
 
     console.log(`[snippe/payout webhook] Burn ${burnRequestId} payout reverted`, {
       reason: data.failure_reason,
