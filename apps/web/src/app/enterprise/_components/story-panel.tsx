@@ -37,6 +37,18 @@ export function EnterpriseAuthStyles() {
       .e-rise-2 { animation: eRise 0.7s cubic-bezier(0.16,1,0.3,1) 0.18s both; }
       .e-rise-3 { animation: eRise 0.7s cubic-bezier(0.16,1,0.3,1) 0.30s both; }
       .e-fade   { animation: eIn 0.6s ease-out 0.1s both; }
+      /* Keep browser autofill on-brand: white field, dark text (Chrome/Safari
+         otherwise paint a grey field with light text that's hard to read). */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      input:-webkit-autofill:active {
+        -webkit-text-fill-color: #1c1917 !important;
+        caret-color: #1c1917;
+        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+        box-shadow: 0 0 0 1000px #ffffff inset !important;
+        transition: background-color 9999s ease-in-out 0s;
+      }
     `}</style>
   )
 }
