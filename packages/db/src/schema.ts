@@ -284,6 +284,10 @@ export const burnRequests = pgTable(
     // Set for merchant financing disbursements → the lender's treasury wallet.
     burnFromAddress: text('burn_from_address'),
 
+    // Links this burn to a Ramp API settlement (off-ramp leg), so PSP webhooks
+    // can resume the ramp flow. Plain uuid (app-level link to ramp_settlements).
+    rampSettlementId: uuid('ramp_settlement_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -334,9 +338,14 @@ export const depositRequests = pgTable(
     pspChannel: text('psp_channel'), // e.g., 'MPESA-TZ', 'TIGOPESA-TZ'
     buyerPhone: varchar('buyer_phone', { length: 32 }), // Phone used for M-Pesa payment
 
-    // 'self' = user's own deposit, 'pay_link' = collection via Pay Me link
+    // 'self' = user's own deposit, 'pay_link' = collection via Pay Me link,
+    // 'ramp' = collected for a Ramp API on-ramp settlement.
     source: text('source').notNull().default('self'),
     payerName: text('payer_name'),
+
+    // Links this deposit to a Ramp API settlement (on-ramp leg) so the PSP
+    // payment webhook can resume the ramp flow after mint.
+    rampSettlementId: uuid('ramp_settlement_id'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1520,5 +1529,93 @@ export const idempotencyKeys = pgTable(
   (t) => ({
     scopeKeyUq: uniqueIndex('idempotency_keys_scope_key_uq').on(t.scope, t.idemKey),
     createdIdx: index('idempotency_keys_created_at_idx').on(t.createdAt),
+  })
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ramp API — wallet-less USDC ⇄ mobile-money settlement for partners
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const rampDirection = pgEnum('ramp_direction', ['offramp', 'onramp'])
+
+export const rampSettlementStatus = pgEnum('ramp_settlement_status', [
+  'quoted',       // settlement created from a quote, not yet started
+  'processing',   // generic in-flight
+  'swapping',     // executing the USDC↔nTZS leg
+  'paying_out',   // off-ramp: burn + PSP payout in flight
+  'minting',      // on-ramp: awaiting PSP payin + mint
+  'completed',
+  'failed',
+  'reverted',     // off-ramp payout failed and funds were re-minted/returned
+])
+
+/**
+ * A locked FX quote a partner consumes when initiating a settlement. Rate is
+ * fixed at quote time (admin midRate + LP spread) and held until expiresAt.
+ */
+export const rampQuotes = pgTable(
+  'ramp_quotes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id').notNull().references(() => partners.id, { onDelete: 'cascade' }),
+    direction: rampDirection('direction').notNull(),
+    // USD/TZS rate locked for this quote (TZS per 1 USDC).
+    rateUsdTzs: numeric('rate_usd_tzs', { precision: 18, scale: 6 }).notNull(),
+    usdcAmount: numeric('usdc_amount', { precision: 36, scale: 6 }).notNull(),
+    tzsAmount: bigint('tzs_amount', { mode: 'number' }).notNull(),
+    feeTzs: bigint('fee_tzs', { mode: 'number' }).notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerIdx: index('ramp_quotes_partner_id_idx').on(t.partnerId),
+    expiresIdx: index('ramp_quotes_expires_at_idx').on(t.expiresAt),
+  })
+)
+
+/**
+ * One ramp settlement (off-ramp: USDC→mobile-money TZS, or on-ramp: TZS→USDC).
+ * Drives the lifecycle, links to the burn/deposit legs, and powers webhooks +
+ * reconciliation.
+ */
+export const rampSettlements = pgTable(
+  'ramp_settlements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id').notNull().references(() => partners.id, { onDelete: 'cascade' }),
+    direction: rampDirection('direction').notNull(),
+    status: rampSettlementStatus('status').notNull().default('quoted'),
+
+    quoteId: uuid('quote_id').references(() => rampQuotes.id),
+    rateUsdTzs: numeric('rate_usd_tzs', { precision: 18, scale: 6 }).notNull(),
+    usdcAmount: numeric('usdc_amount', { precision: 36, scale: 6 }).notNull(),
+    tzsAmount: bigint('tzs_amount', { mode: 'number' }).notNull(),
+    feeTzs: bigint('fee_tzs', { mode: 'number' }).notNull().default(0),
+
+    // Off-ramp: recipient mobile-money phone. On-ramp: payer phone (push) +
+    // optional address to forward delivered USDC to.
+    recipientPhone: varchar('recipient_phone', { length: 32 }),
+    destinationAddress: text('destination_address'),
+
+    // Idempotency key from the initiating request (scope is per-partner).
+    idempotencyKey: text('idempotency_key'),
+
+    // On-chain / PSP references, filled as legs complete.
+    swapInTxHash: text('swap_in_tx_hash'),
+    swapOutTxHash: text('swap_out_tx_hash'),
+    burnRequestId: uuid('burn_request_id'),
+    depositRequestId: uuid('deposit_request_id'),
+    pspReference: text('psp_reference'),
+    forwardTxHash: text('forward_tx_hash'),
+    error: text('error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerIdx: index('ramp_settlements_partner_id_idx').on(t.partnerId),
+    statusIdx: index('ramp_settlements_status_idx').on(t.status),
+    createdIdx: index('ramp_settlements_created_at_idx').on(t.createdAt),
   })
 )
