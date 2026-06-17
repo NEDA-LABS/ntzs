@@ -137,6 +137,7 @@ export async function PATCH(req: NextRequest) {
       .where(eq(lpPoolPositions.lpId, lp.id));
 
     const returned: Array<{ tokenAddress: string; symbol: string; amount: string; chain: string }> = [];
+    const failed: Array<{ tokenAddress: string; symbol: string; chain: string; reason: string }> = [];
 
     // Group by chain so we only create one provider per chain
     const byChain = new Map<ChainId, typeof positions>();
@@ -148,10 +149,11 @@ export async function PATCH(req: NextRequest) {
 
     for (const [posChain, chainPositions] of byChain) {
       let cfg: ReturnType<typeof getChainConfig>;
-      try { cfg = getChainConfig(posChain); } catch { continue; }
+      try { cfg = getChainConfig(posChain); }
+      catch { for (const pos of chainPositions) failed.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, chain: posChain, reason: 'chain config missing' }); continue; }
 
       const solverKey = cfg.solverPrivateKey;
-      if (!solverKey) continue;
+      if (!solverKey) { for (const pos of chainPositions) failed.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, chain: posChain, reason: 'solver key not configured' }); continue; }
 
       const chainProvider = new JsonRpcProvider(cfg.rpcUrl);
       const solverSigner = new Wallet(solverKey, chainProvider);
@@ -169,17 +171,29 @@ export async function PATCH(req: NextRequest) {
           const totalWei =
             parseUnits(truncate(pos.contributed, pos.decimals), pos.decimals) +
             parseUnits(truncate(pos.earned, pos.decimals), pos.decimals);
-          if (totalWei === BigInt(0)) continue;
+
+          // Nothing owed for this position — safe to clear the record.
+          if (totalWei === BigInt(0)) {
+            await db.delete(lpPoolPositions).where(eq(lpPoolPositions.id, pos.id));
+            continue;
+          }
 
           const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner);
           const solverBal: bigint = await contract.balanceOf(cfg.solverAddress);
-          const toSend = totalWei < solverBal ? totalWei : solverBal;
-          if (toSend === BigInt(0)) continue;
 
-          const tx = await contract.transfer(lp.walletAddress, toSend);
+          // Never delete a position we can't return IN FULL. Previously this sent
+          // min(owed, solverBal) and then wiped every position unconditionally, so
+          // a failed/partial return left the LP's funds stranded in the solver with
+          // no record. Keep the position and report it so it can be retried.
+          if (solverBal < totalWei) {
+            failed.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, chain: posChain, reason: 'insufficient solver balance to return in full' });
+            continue;
+          }
+
+          const tx = await contract.transfer(lp.walletAddress, totalWei);
           await tx.wait(1);
 
-          const returnedAmount = formatUnits(toSend, pos.decimals);
+          const returnedAmount = formatUnits(totalWei, pos.decimals);
           returned.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, amount: returnedAmount, chain: posChain });
 
           await db.insert(lpWalletTransactions).values({
@@ -193,21 +207,30 @@ export async function PATCH(req: NextRequest) {
             amount: returnedAmount,
             txHash: tx.hash,
           }).catch((err) => console.error('[deactivate] failed to record return tx:', err));
+
+          // Delete ONLY after the on-chain return is confirmed.
+          await db.delete(lpPoolPositions).where(eq(lpPoolPositions.id, pos.id));
         } catch (err) {
-          console.error(`[deactivate] failed to return ${pos.tokenSymbol} on ${posChain}:`, err instanceof Error ? err.message : err);
+          failed.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, chain: posChain, reason: err instanceof Error ? err.message : 'return failed' });
         }
       }
     }
 
-    // Clear all pool positions
-    await db.delete(lpPoolPositions).where(eq(lpPoolPositions.lpId, lp.id));
+    // Only flip to inactive when EVERYTHING was returned. If anything failed,
+    // keep the LP active (and its remaining positions intact) so it can be
+    // retried — never strand funds with the account marked inactive.
+    if (failed.length === 0) {
+      const [updated] = await db
+        .update(lpAccounts)
+        .set({ isActive: false, onboardingStep: 3, updatedAt: new Date() })
+        .where(eq(lpAccounts.id, session.lpId))
+        .returning();
+      return NextResponse.json({ lp: updated, returned, failed });
+    }
 
-    const [updated] = await db
-      .update(lpAccounts)
-      .set({ isActive: false, onboardingStep: 3, updatedAt: new Date() })
-      .where(eq(lpAccounts.id, session.lpId))
-      .returning();
-
-    return NextResponse.json({ lp: updated, returned });
+    return NextResponse.json(
+      { lp, returned, failed, partial: true, error: 'Some positions could not be returned and were kept. Please retry.' },
+      { status: 207 },
+    );
   }
 }

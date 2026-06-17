@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
   // Dedup the on-chain transfer so a client retry can't double-withdraw.
   return withIdempotency(`lp_withdraw:${session.lpId}`, getIdempotencyKey(req), async () => {
     const [lp] = await db
-      .select({ walletIndex: lpAccounts.walletIndex, walletAddress: lpAccounts.walletAddress })
+      .select({ walletIndex: lpAccounts.walletIndex, walletAddress: lpAccounts.walletAddress, isActive: lpAccounts.isActive })
       .from(lpAccounts)
       .where(eq(lpAccounts.id, session.lpId))
       .limit(1);
@@ -95,7 +95,28 @@ export async function POST(req: NextRequest) {
     const balance: bigint = await contract.balanceOf(lp.walletAddress);
 
     if (balance < amountWei) {
+      // While active, the LP's tokens live in the solver pool, not their wallet —
+      // so a wallet-balance check looks empty. Give a useful next step instead of
+      // a bare "Insufficient balance".
+      if (lp.isActive) {
+        return NextResponse.json({
+          error: 'Your liquidity is in the pool while your account is active. Deactivate first to move funds back to your wallet, then withdraw.',
+        }, { status: 400 });
+      }
       return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
+    }
+
+    // The LP wallet needs native gas to send the transfer. Top it up from the
+    // relayer if low, otherwise the transfer 500s with an opaque error.
+    try {
+      const gasBalance: bigint = await provider.getBalance(lp.walletAddress);
+      if (gasBalance < chainCfg.minGas && chainCfg.relayerKey) {
+        const relayer = new Wallet(chainCfg.relayerKey, provider);
+        const gasTx = await relayer.sendTransaction({ to: lp.walletAddress, value: chainCfg.minGas });
+        await gasTx.wait(1);
+      }
+    } catch (gasErr) {
+      console.warn('[withdraw] gas top-up failed (continuing):', gasErr instanceof Error ? gasErr.message : gasErr);
     }
 
     try {

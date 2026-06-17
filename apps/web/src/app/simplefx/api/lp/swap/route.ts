@@ -23,6 +23,13 @@ export async function POST(req: NextRequest) {
   const session = await getSessionFromCookies()
   if (!session) return new Response('Unauthorized', { status: 401 })
 
+  // This is a TEST tool: when the LP is active it signs with the solver
+  // (shared pool) key, so leaving it openly callable lets any authenticated LP
+  // move pooled funds. Disabled unless explicitly enabled for a test session.
+  if (process.env.FX_TEST_SWAP_ENABLED !== 'true') {
+    return new Response('Swap test endpoint is disabled', { status: 403 })
+  }
+
   const rpcUrl = BASE_RPC_URL
   const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
   const solverAddress = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
