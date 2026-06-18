@@ -499,6 +499,9 @@ export const partners = pgTable(
     apiKeyPrefix: varchar('api_key_prefix', { length: 20 }),
     webhookUrl: text('webhook_url'),
     webhookSecret: text('webhook_secret'),
+    // Enabled capability scopes (composable platform model). NULL = legacy
+    // partner → resolved to the full set for backward compatibility.
+    capabilities: text('capabilities').array(),
     encryptedHdSeed: text('encrypted_hd_seed'),
     nextWalletIndex: integer('next_wallet_index').notNull().default(0),
     nextSubWalletIndex: integer('next_sub_wallet_index').notNull().default(1),
