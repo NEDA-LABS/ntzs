@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, partnerSubWallets, users, wallets, transfers, depositRequests } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
-import { resolveCapabilities } from '@/lib/platform/capabilities'
+import { resolveCapabilities, ALL_CAPABILITIES, CAPABILITIES } from '@/lib/platform/capabilities'
 
 const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const USDC_DECIMALS = 6
@@ -505,6 +505,12 @@ export async function GET(request: NextRequest) {
       createdAt: partner.createdAt,
       updatedAt: partner.updatedAt,
     },
+    capabilityCatalog: ALL_CAPABILITIES.map((c) => ({
+      id: c,
+      label: CAPABILITIES[c].label,
+      description: CAPABILITIES[c].description,
+      kybRequired: CAPABILITIES[c].kybRequired,
+    })),
     users: dashboardUsers,
     subWallets,
     transfers: transferRows,
