@@ -28,6 +28,7 @@ interface PartnerInfo {
   treasuryWalletAddress: string | null
   feePercent: number
   treasuryBalanceTzs: number
+  capabilities: string[]
   payoutPhone: string | null
   payoutType: string
   payoutBankAccount: string | null
@@ -138,7 +139,7 @@ interface DashboardData {
   }
 }
 
-type Section = 'overview' | 'wallets' | 'transfers' | 'deposits' | 'treasury' | 'billing' | 'kyb' | 'settings'
+type Section = 'overview' | 'wallets' | 'transfers' | 'deposits' | 'treasury' | 'ramp' | 'billing' | 'kyb' | 'settings'
 
 /* ── Custom Select ── */
 type SelectOption = { value: string; label: string; sub?: string }
@@ -2017,6 +2018,153 @@ function WalletDetailPanel({
   )
 }
 
+/* ── Ramp Section (settlement float + quote console + settlements — the test/ops UI) ── */
+interface RampBalance { settlementAddress: string; usdcBalance: string; token: { symbol: string } }
+interface RampQuoteResult { quoteId: string; direction: string; usdcAmount: number; tzsAmount: number; feeTzs: number; rateUsdTzs: number; expiresAt: string }
+interface RampSettlementRow { settlementId: string; direction: string; status: string; usdcAmount: number; tzsAmount: number; createdAt: string; swapOutTxHash: string | null; pspReference: string | null }
+
+function RampSection() {
+  const [balance, setBalance] = useState<RampBalance | null>(null)
+  const [balErr, setBalErr] = useState('')
+  const [settlements, setSettlements] = useState<RampSettlementRow[]>([])
+  const [copied, setCopied] = useState(false)
+
+  const [direction, setDirection] = useState<'offramp' | 'onramp'>('offramp')
+  const [amount, setAmount] = useState('')
+  const [quote, setQuote] = useState<RampQuoteResult | null>(null)
+  const [quoting, setQuoting] = useState(false)
+  const [quoteErr, setQuoteErr] = useState('')
+
+  const loadSettlements = useCallback(() => {
+    fetch('/api/v1/ramp/settlements', { credentials: 'include' })
+      .then(async (r) => { if (r.ok) { const j = await r.json(); setSettlements(j.settlements ?? []) } })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/v1/ramp/balance', { credentials: 'include' })
+      .then(async (r) => { const j = await r.json(); if (!r.ok) setBalErr(j.error || 'Failed to load'); else setBalance(j) })
+      .catch(() => setBalErr('Failed to load'))
+    loadSettlements()
+  }, [loadSettlements])
+
+  const getQuote = async () => {
+    setQuoting(true); setQuoteErr(''); setQuote(null)
+    try {
+      const body = direction === 'offramp' ? { direction, usdcAmount: Number(amount) } : { direction, tzsAmount: Number(amount) }
+      const r = await fetch('/api/v1/ramp/quote', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const j = await r.json()
+      if (!r.ok) setQuoteErr(j.error || 'Quote failed'); else setQuote(j)
+    } catch { setQuoteErr('Network error') } finally { setQuoting(false) }
+  }
+
+  const fmt = (n: number) => new Intl.NumberFormat('en-US').format(n)
+  const statusColor = (s: string) =>
+    s === 'completed' ? 'text-emerald-300 bg-emerald-500/10' :
+    s === 'failed' || s === 'reverted' ? 'text-red-300 bg-red-500/10' :
+    'text-amber-300 bg-amber-500/10'
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold">Ramp</h2>
+        <p className="mt-1 text-sm text-white/40">Wallet-less USDC ⇄ mobile-money settlement.</p>
+      </div>
+
+      {balErr ? (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 text-sm text-amber-200">{balErr}</div>
+      ) : (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="text-[11px] uppercase tracking-widest text-white/40 mb-3">USDC settlement float</p>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-2xl font-bold tabular-nums">{balance ? `${balance.usdcBalance} USDC` : '—'}</p>
+              <p className="mt-1 text-xs text-white/40">Fund this address with USDC (Base) to settle off-ramps.</p>
+            </div>
+            {balance && (
+              <button
+                onClick={() => { navigator.clipboard.writeText(balance.settlementAddress); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-white/70 hover:bg-white/10"
+              >
+                {copied ? 'Copied ✓' : `${balance.settlementAddress.slice(0, 10)}…${balance.settlementAddress.slice(-8)}`}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Quote console */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+        <p className="text-[11px] uppercase tracking-widest text-white/40">Quote console</p>
+        <div className="flex flex-wrap gap-3">
+          <div className="flex rounded-xl border border-white/10 bg-white/5 p-1 text-xs">
+            {(['offramp', 'onramp'] as const).map((d) => (
+              <button key={d} onClick={() => { setDirection(d); setQuote(null) }}
+                className={`rounded-lg px-3 py-1.5 ${direction === d ? 'bg-white text-black' : 'text-white/60'}`}>
+                {d === 'offramp' ? 'Off-ramp (USDC→TZS)' : 'On-ramp (TZS→USDC)'}
+              </button>
+            ))}
+          </div>
+          <input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+            placeholder={direction === 'offramp' ? 'USDC amount' : 'TZS amount'}
+            className="w-44 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none" />
+          <button onClick={getQuote} disabled={quoting || !amount}
+            className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-40">
+            {quoting ? 'Quoting…' : 'Get quote'}
+          </button>
+        </div>
+        {quoteErr && <p className="text-xs text-red-300">{quoteErr}</p>}
+        {quote && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { l: 'You send', v: quote.direction === 'offramp' ? `${quote.usdcAmount} USDC` : `${fmt(quote.tzsAmount)} TZS` },
+              { l: 'They get', v: quote.direction === 'offramp' ? `${fmt(quote.tzsAmount)} TZS` : `${quote.usdcAmount} USDC` },
+              { l: 'Rate', v: `${fmt(quote.rateUsdTzs)} TZS/USDC` },
+              { l: 'Fee', v: `${fmt(quote.feeTzs)} TZS` },
+            ].map((c) => (
+              <div key={c.l} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <p className="text-[10px] uppercase tracking-wider text-white/40">{c.l}</p>
+                <p className="mt-0.5 text-sm font-semibold tabular-nums">{c.v}</p>
+              </div>
+            ))}
+            <p className="col-span-2 text-[11px] text-white/30 sm:col-span-4">Quote {quote.quoteId.slice(0, 8)} · expires {new Date(quote.expiresAt).toLocaleTimeString()} · initiate via the API with this quoteId.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Settlements */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+          <p className="text-[11px] uppercase tracking-widest text-white/40">Recent settlements</p>
+          <button onClick={loadSettlements} className="text-xs text-white/40 hover:text-white/70">Refresh</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-white/40">
+                {['Date', 'Direction', 'USDC', 'TZS', 'Status', 'Ref'].map((h) => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {settlements.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-white/30">No settlements yet.</td></tr>}
+              {settlements.map((s) => (
+                <tr key={s.settlementId} className="hover:bg-white/5">
+                  <td className="px-4 py-2.5 text-white/50">{new Date(s.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-2.5 uppercase text-white/60">{s.direction}</td>
+                  <td className="px-4 py-2.5 tabular-nums">{s.usdcAmount}</td>
+                  <td className="px-4 py-2.5 tabular-nums">{fmt(s.tzsAmount)}</td>
+                  <td className="px-4 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] ${statusColor(s.status)}`}>{s.status}</span></td>
+                  <td className="px-4 py-2.5 font-mono text-white/30">{s.pspReference ?? (s.swapOutTxHash ? s.swapOutTxHash.slice(0, 10) : '—')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    Main Dashboard Page
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -2102,16 +2250,22 @@ export default function PartnerDashboardPage() {
     )
   }
 
-  const navItems: { key: Section; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  // Nav is capability-driven: account-level items (no `cap`) always show; the
+  // rest appear only if the partner has that capability enabled. A legacy
+  // partner (full resolved set) sees everything (backward compatible).
+  const caps = partner.capabilities ?? []
+  const allNav: { key: Section; label: string; icon: ComponentType<{ className?: string }>; cap?: string }[] = [
     { key: 'overview', label: 'Overview', icon: IconDashboard },
-    { key: 'wallets', label: 'Wallets', icon: IconWallet },
-    { key: 'transfers', label: 'Transfers', icon: IconActivity },
-    { key: 'deposits', label: 'Deposits', icon: IconCoins },
-    { key: 'treasury', label: 'Treasury', icon: IconBank },
+    { key: 'wallets', label: 'Wallets', icon: IconWallet, cap: 'wallets' },
+    { key: 'transfers', label: 'Transfers', icon: IconActivity, cap: 'transfers' },
+    { key: 'deposits', label: 'Collections', icon: IconCoins, cap: 'collections' },
+    { key: 'treasury', label: 'Treasury', icon: IconBank, cap: 'treasury' },
+    { key: 'ramp', label: 'Ramp', icon: IconCoins, cap: 'ramp' },
     { key: 'billing', label: 'Billing', icon: IconCoins },
     { key: 'kyb', label: 'KYB', icon: IconShield },
     { key: 'settings', label: 'Settings', icon: IconShield },
   ]
+  const navItems = allNav.filter((i) => !i.cap || caps.includes(i.cap))
 
   const handleLogout = async () => {
     try {
@@ -2659,6 +2813,11 @@ export default function PartnerDashboardPage() {
             {/* ── Treasury ── */}
             {section === 'treasury' && (
               <TreasurySection partner={partner} onRefresh={fetchDashboard} />
+            )}
+
+            {/* ── Ramp ── */}
+            {section === 'ramp' && (
+              <RampSection />
             )}
 
             {/* ── Billing ── */}
