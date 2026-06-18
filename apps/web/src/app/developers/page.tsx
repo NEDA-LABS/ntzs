@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Children, isValidElement } from 'react'
 
 const STYLES = `
   @keyframes shimmer {
@@ -67,19 +67,32 @@ function DocSection({
   children: React.ReactNode
   isActive?: boolean
 }) {
+  // Stripe-style two-pane: prose (notes, tables, text) on the left, the code
+  // examples pinned to a sticky rail on the right. We auto-route children by
+  // type so each section keeps its simple <CodeBlock/> + <Note/> markup.
+  const kids = Children.toArray(children)
+  const codeKids = kids.filter((k) => isValidElement(k) && k.type === CodeBlock)
+  const proseKids = kids.filter((k) => !(isValidElement(k) && k.type === CodeBlock))
+  const hasCode = codeKids.length > 0
+
   return (
-    <section id={id} className="scroll-mt-24 rounded-2xl border border-transparent p-1 transition-colors duration-500" style={isActive ? { borderColor: 'rgba(52,211,153,0.08)', background: 'rgba(52,211,153,0.02)' } : {}}>
-      <div className="p-5 md:p-6">
-        <div className={`mb-4 inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-500 ${
-          isActive
-            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90'
-            : 'border-white/10 bg-white/5 text-white/50'
-        }`}>
-          {step}
+    <section id={id} className="scroll-mt-24 border-t border-white/5 pt-12">
+      <div className={`grid gap-x-10 gap-y-6 ${hasCode ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]' : ''}`}>
+        {/* Prose column */}
+        <div>
+          <div className={`mb-4 inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-500 ${
+            isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90' : 'border-white/10 bg-white/5 text-white/50'
+          }`}>
+            {step}
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight md:text-[1.7rem]">{title}</h2>
+          <p className="mt-3 text-[15px] leading-7 text-white/55">{description}</p>
+          {proseKids.length > 0 && <div className="mt-6 space-y-4">{proseKids}</div>}
         </div>
-        <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">{description}</p>
-        <div className="mt-6 space-y-4">{children}</div>
+        {/* Sticky code rail */}
+        {hasCode && (
+          <div className="lg:sticky lg:top-24 self-start space-y-3">{codeKids}</div>
+        )}
       </div>
     </section>
   )
