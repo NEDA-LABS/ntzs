@@ -89,28 +89,38 @@ const NAV = [
   {
     group: 'Getting Started',
     items: [
+      { id: 'capabilities', label: 'Capabilities' },
       { id: 'auth', label: 'Authentication' },
       { id: 'users', label: 'Create Users' },
       { id: 'balance', label: 'Get User & Balance' },
     ],
   },
   {
-    group: 'Payments',
+    group: 'Capabilities',
     items: [
-      { id: 'deposits', label: 'Deposits (On-Ramp)' },
+      { id: 'deposits', label: 'Collections · Deposits' },
       { id: 'transfers', label: 'Transfers' },
-      { id: 'withdrawals', label: 'Withdrawals (Off-Ramp)' },
+      { id: 'withdrawals', label: 'Disbursements · Withdrawals' },
+      { id: 'swap', label: 'Swap · USDC / USDT' },
+      { id: 'ramp', label: 'Ramp · Settlement' },
     ],
   },
   {
-    group: 'Advanced',
+    group: 'Reference',
     items: [
       { id: 'rate', label: 'Swap Rate (Public)' },
-      { id: 'swap', label: 'Swap (nTZS / USDC / USDT)' },
       { id: 'webhooks', label: 'Webhooks' },
       { id: 'errors', label: 'Error Reference' },
     ],
   },
+]
+
+// Use cases = compositions of capabilities (the story on the Capabilities card).
+const USE_CASES = [
+  { name: 'Insurance · T+0 collections', caps: ['Collections', 'Treasury'] },
+  { name: 'Payroll & contractor payouts', caps: ['Disbursements', 'Treasury'] },
+  { name: 'Stablecoin settlement', caps: ['Ramp'] },
+  { name: 'Neobank / fintech', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap'] },
 ]
 
 export default function DevelopersPage() {
@@ -245,6 +255,35 @@ export default function DevelopersPage() {
               ))}
             </div>
           </div>
+
+          {/* Capabilities — the story */}
+          <section id="capabilities" className="scroll-mt-24">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-900/10 via-transparent to-blue-900/10 p-6 md:p-8">
+              <div className="inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-300/90">The platform</div>
+              <h2 className="mt-3 text-xl font-semibold tracking-tight md:text-2xl">Composable capabilities, not products</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
+                The nTZS API is a set of money primitives. Enable the capabilities your use case needs and compose
+                them — collect from mobile money &amp; banks, disburse to phones, hold treasury, swap USDC ⇄ nTZS, or
+                settle wallet-less. One key, one set of webhooks.
+              </p>
+              <p className="mt-5 text-[10px] font-medium uppercase tracking-widest text-white/35">Compose your use case</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {USE_CASES.map((u) => (
+                  <div key={u.name} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-sm font-semibold text-white/90">{u.name}</p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      {u.caps.map((c, i) => (
+                        <span key={c} className="flex items-center gap-1.5">
+                          {i > 0 && <span className="text-white/25">+</span>}
+                          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/65">{c}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
           {/* Auth */}
           <DocSection
@@ -750,6 +789,69 @@ while (true) {
               live on-chain balances for nTZS, USDC, and USDT with no caching.
             </Note>
           </DocSection>
+
+          {/* Ramp */}
+          <DocSection
+            id="ramp"
+            isActive={activeSection === 'ramp'}
+            step="Capability · Ramp"
+            title="Ramp — wallet-less settlement"
+            description="Convert USDC ⇄ mobile money (TZS) over the API with no per-end-user wallets. You keep a USDC float with us; off-ramps debit it, on-ramps deliver USDC to you. nTZS is an internal rail you never touch."
+          >
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Access:</span> Ramp requires the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ramp</code> capability + approved KYB.
+              Enable it from your <Link href="/developers/dashboard" className="text-blue-400 hover:underline">dashboard</Link>.
+            </Note>
+            <CodeBlock
+              title="GET /api/v1/ramp/balance — your USDC settlement float"
+              code={`curl https://www.ntzs.co.tz/api/v1/ramp/balance \\
+  -H "Authorization: Bearer ntzs_live_xxxxxxxxxxxx"
+
+// { settlementAddress: "0x…", chain: "base",
+//   token: { symbol: "USDC", decimals: 6 }, usdcBalance: "2500.0" }`}
+            />
+            <CodeBlock
+              title="POST /api/v1/ramp/quote — lock a rate (60s)"
+              code={`// Off-ramp: pass usdcAmount.  On-ramp: pass tzsAmount.
+fetch('https://www.ntzs.co.tz/api/v1/ramp/quote', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ntzs_live_…', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ direction: 'offramp', usdcAmount: 10 }),
+})
+// { quoteId, usdcAmount: 10, tzsAmount: 25800, feeTzs: 1640,
+//   rateUsdTzs: 2740, expiresAt }`}
+            />
+            <CodeBlock
+              title="POST /api/v1/ramp/offramp — USDC → mobile money"
+              code={`fetch('https://www.ntzs.co.tz/api/v1/ramp/offramp', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ntzs_live_…', 'Content-Type': 'application/json',
+             'Idempotency-Key': crypto.randomUUID() },
+  body: JSON.stringify({ quoteId, phoneNumber: '0744000000' }),
+})
+// 201/202 { settlementId, status: "completed" | "paying_out" }`}
+            />
+            <CodeBlock
+              title="POST /api/v1/ramp/onramp — mobile money → USDC"
+              code={`// Prompts the payer's phone; delivers USDC to destinationAddress once paid.
+fetch('https://www.ntzs.co.tz/api/v1/ramp/onramp', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ntzs_live_…', 'Content-Type': 'application/json',
+             'Idempotency-Key': crypto.randomUUID() },
+  body: JSON.stringify({ quoteId, phoneNumber: '0744000000', destinationAddress: '0x…' }),
+})
+// 202 { settlementId, status: "minting" }`}
+            />
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">Track:</span>{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/ramp/[id]</code> for one settlement,{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/ramp/settlements</code> to list. You
+              also receive <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ramp.settlement.completed</code> /{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ramp.settlement.failed</code> webhooks.
+            </Note>
+          </DocSection>
+
           {/* Webhooks */}
           <DocSection
             id="webhooks"

@@ -2455,7 +2455,7 @@ export default function PartnerDashboardPage() {
         {/* Bottom */}
         <div className="border-t border-white/10 p-3 space-y-1">
           <a
-            href="/developers/docs"
+            href="/developers"
             target="_blank"
             rel="noopener noreferrer"
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/50 hover:bg-white/5 hover:text-white/70 transition-colors"
