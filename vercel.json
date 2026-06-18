@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/settle",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/ramp-settle",
+      "schedule": "* * * * *"
     }
   ]
 }
