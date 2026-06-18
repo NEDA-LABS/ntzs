@@ -119,8 +119,11 @@ interface ActivityItem {
   pspChannel?: string | null
 }
 
+interface CapabilityCatalogItem { id: string; label: string; description: string; kybRequired: boolean }
+
 interface DashboardData {
   partner: PartnerInfo
+  capabilityCatalog: CapabilityCatalogItem[]
   users: DashboardUser[]
   subWallets: DashboardSubWallet[]
   transfers: DashboardTransfer[]
@@ -139,7 +142,7 @@ interface DashboardData {
   }
 }
 
-type Section = 'overview' | 'wallets' | 'transfers' | 'deposits' | 'treasury' | 'ramp' | 'billing' | 'kyb' | 'settings'
+type Section = 'overview' | 'wallets' | 'transfers' | 'deposits' | 'treasury' | 'ramp' | 'catalog' | 'billing' | 'kyb' | 'settings'
 
 /* ── Custom Select ── */
 type SelectOption = { value: string; label: string; sub?: string }
@@ -2165,6 +2168,65 @@ function RampSection() {
   )
 }
 
+/* ── Capability catalog ("what do you want to build?") ── */
+function CatalogSection({ catalog, enabled }: { catalog: CapabilityCatalogItem[]; enabled: string[] }) {
+  const [requested, setRequested] = useState<Record<string, 'pending' | 'done' | 'error'>>({})
+  const [msg, setMsg] = useState('')
+
+  const request = async (capId: string) => {
+    setRequested((p) => ({ ...p, [capId]: 'pending' })); setMsg('')
+    try {
+      const r = await fetch('/api/v1/partners/capabilities/request', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capability: capId }),
+      })
+      const j = await r.json()
+      if (!r.ok) { setRequested((p) => ({ ...p, [capId]: 'error' })); setMsg(j.error || 'Request failed'); return }
+      setRequested((p) => ({ ...p, [capId]: 'done' })); setMsg(j.message || 'Request received.')
+    } catch { setRequested((p) => ({ ...p, [capId]: 'error' })); setMsg('Network error') }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold">Capabilities</h2>
+        <p className="mt-1 text-sm text-white/40">Compose the capabilities your use case needs — enable only what you use.</p>
+      </div>
+      {msg && <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">{msg}</div>}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {catalog.map((c) => {
+          const on = enabled.includes(c.id)
+          const state = requested[c.id]
+          return (
+            <div key={c.id} className={`rounded-2xl border p-5 ${on ? 'border-emerald-500/20 bg-emerald-500/[0.04]' : 'border-white/10 bg-white/[0.02]'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold">{c.label}</p>
+                    {c.kybRequired && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">KYB</span>}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-white/50">{c.description}</p>
+                </div>
+                {on ? (
+                  <span className="shrink-0 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-medium text-emerald-300">Enabled</span>
+                ) : (
+                  <button
+                    onClick={() => request(c.id)}
+                    disabled={state === 'pending' || state === 'done'}
+                    className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 disabled:opacity-50"
+                  >
+                    {state === 'done' ? 'Requested ✓' : state === 'pending' ? '…' : 'Request access'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    Main Dashboard Page
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -2261,6 +2323,7 @@ export default function PartnerDashboardPage() {
     { key: 'deposits', label: 'Collections', icon: IconCoins, cap: 'collections' },
     { key: 'treasury', label: 'Treasury', icon: IconBank, cap: 'treasury' },
     { key: 'ramp', label: 'Ramp', icon: IconCoins, cap: 'ramp' },
+    { key: 'catalog', label: 'Capabilities', icon: IconShield },
     { key: 'billing', label: 'Billing', icon: IconCoins },
     { key: 'kyb', label: 'KYB', icon: IconShield },
     { key: 'settings', label: 'Settings', icon: IconShield },
@@ -2818,6 +2881,11 @@ export default function PartnerDashboardPage() {
             {/* ── Ramp ── */}
             {section === 'ramp' && (
               <RampSection />
+            )}
+
+            {/* ── Capability catalog ── */}
+            {section === 'catalog' && (
+              <CatalogSection catalog={data.capabilityCatalog} enabled={partner.capabilities} />
             )}
 
             {/* ── Billing ── */}
