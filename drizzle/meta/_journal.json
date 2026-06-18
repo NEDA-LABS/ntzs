@@ -344,6 +344,13 @@
       "when": 1781159774522,
       "tag": "0048_ramp_api",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1781771086054,
+      "tag": "0049_violet_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }

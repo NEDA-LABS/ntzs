@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, partnerSubWallets, users, wallets, transfers, depositRequests } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
+import { resolveCapabilities } from '@/lib/platform/capabilities'
 
 const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const USDC_DECIMALS = 6
@@ -99,6 +100,7 @@ export async function GET(request: NextRequest) {
       payoutType: partners.payoutType,
       payoutBankAccount: partners.payoutBankAccount,
       payoutBankName: partners.payoutBankName,
+      capabilities: partners.capabilities,
       createdAt: partners.createdAt,
       updatedAt: partners.updatedAt,
     })
@@ -499,6 +501,7 @@ export async function GET(request: NextRequest) {
       payoutType: partner.payoutType ?? 'mobile',
       payoutBankAccount: partner.payoutBankAccount ?? null,
       payoutBankName: partner.payoutBankName ?? null,
+      capabilities: resolveCapabilities(partner.capabilities),
       createdAt: partner.createdAt,
       updatedAt: partner.updatedAt,
     },
