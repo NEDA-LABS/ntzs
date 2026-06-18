@@ -2062,102 +2062,172 @@ function RampSection() {
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-US').format(n)
-  const statusColor = (s: string) =>
-    s === 'completed' ? 'text-emerald-300 bg-emerald-500/10' :
-    s === 'failed' || s === 'reverted' ? 'text-red-300 bg-red-500/10' :
-    'text-amber-300 bg-amber-500/10'
+  const statusDot = (s: string) =>
+    s === 'completed' ? 'bg-emerald-400' :
+    s === 'failed' || s === 'reverted' ? 'bg-red-400' :
+    'bg-amber-400'
+  const statusText = (s: string) =>
+    s === 'completed' ? 'text-emerald-300' :
+    s === 'failed' || s === 'reverted' ? 'text-red-300' :
+    'text-amber-300'
+
+  const sends = quote ? (quote.direction === 'offramp' ? `${quote.usdcAmount}` : fmt(quote.tzsAmount)) : ''
+  const sendsUnit = quote?.direction === 'offramp' ? 'USDC' : 'TZS'
+  const gets = quote ? (quote.direction === 'offramp' ? fmt(quote.tzsAmount) : `${quote.usdcAmount}`) : ''
+  const getsUnit = quote?.direction === 'offramp' ? 'TZS' : 'USDC'
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Ramp</h2>
-        <p className="mt-1 text-sm text-white/40">Wallet-less USDC ⇄ mobile-money settlement.</p>
+      <style>{`
+        @keyframes rampRise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: translateY(0) } }
+        @keyframes rampGlow { 0%,100% { opacity: .5 } 50% { opacity: .9 } }
+        .r-rise { animation: rampRise .6s cubic-bezier(.16,1,.3,1) both }
+        .r-d1 { animation-delay: .04s } .r-d2 { animation-delay: .12s } .r-d3 { animation-delay: .2s }
+        .r-card { transition: border-color .3s, transform .3s }
+        .r-card:hover { border-color: rgba(255,255,255,.18) }
+      `}</style>
+
+      {/* Header */}
+      <div className="r-rise flex items-end justify-between gap-4">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest text-white/45">
+            <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400/70" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-indigo-400" /></span>
+            Wallet-less settlement
+          </div>
+          <h2 className="text-2xl font-bold tracking-tight">Ramp</h2>
+          <p className="mt-1 text-sm text-white/40">Convert <span className="text-white/70">USDC</span> ⇄ <span className="text-white/70">mobile money</span> over the API — you fund USDC, we handle the rest.</p>
+        </div>
       </div>
 
+      {/* Settlement float — hero card */}
       {balErr ? (
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 text-sm text-amber-200">{balErr}</div>
+        <div className="r-rise r-d1 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 text-sm text-amber-200">{balErr}</div>
       ) : (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-[11px] uppercase tracking-widest text-white/40 mb-3">USDC settlement float</p>
-          <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="r-rise r-d1 r-card relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-blue-900/30 via-[#0a0a16] to-violet-900/25 p-6">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_30%,rgba(99,102,241,0.16),transparent_55%)]" style={{ animation: 'rampGlow 6s ease-in-out infinite' }} />
+          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
+          <div className="relative flex flex-wrap items-end justify-between gap-5">
             <div>
-              <p className="text-2xl font-bold tabular-nums">{balance ? `${balance.usdcBalance} USDC` : '—'}</p>
-              <p className="mt-1 text-xs text-white/40">Fund this address with USDC (Base) to settle off-ramps.</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">USDC settlement float</p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-4xl font-bold tabular-nums tracking-tight">{balance ? fmt(Number(balance.usdcBalance)) : '—'}</span>
+                <span className="text-lg font-medium text-white/35">USDC</span>
+              </div>
+              <p className="mt-2 max-w-xs text-xs leading-relaxed text-white/40">Pre-fund this address with USDC on Base. Off-ramps debit it; on-ramps deliver USDC back.</p>
             </div>
             {balance && (
-              <button
-                onClick={() => { navigator.clipboard.writeText(balance.settlementAddress); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-white/70 hover:bg-white/10"
-              >
-                {copied ? 'Copied ✓' : `${balance.settlementAddress.slice(0, 10)}…${balance.settlementAddress.slice(-8)}`}
-              </button>
+              <div className="flex flex-col items-end gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/50">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-400" /> Base network
+                </span>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(balance.settlementAddress); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+                  className="group inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white/65 transition-colors hover:border-white/25 hover:text-white/90"
+                >
+                  <span>{copied ? 'Copied to clipboard' : `${balance.settlementAddress.slice(0, 12)}…${balance.settlementAddress.slice(-6)}`}</span>
+                  <svg className="h-3.5 w-3.5 text-white/40 group-hover:text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></svg>
+                </button>
+              </div>
             )}
           </div>
         </div>
       )}
 
       {/* Quote console */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
-        <p className="text-[11px] uppercase tracking-widest text-white/40">Quote console</p>
-        <div className="flex flex-wrap gap-3">
-          <div className="flex rounded-xl border border-white/10 bg-white/5 p-1 text-xs">
+      <div className="r-rise r-d2 r-card rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">Quote console</p>
+          <div className="flex rounded-xl border border-white/10 bg-black/30 p-1 text-xs">
             {(['offramp', 'onramp'] as const).map((d) => (
               <button key={d} onClick={() => { setDirection(d); setQuote(null) }}
-                className={`rounded-lg px-3 py-1.5 ${direction === d ? 'bg-white text-black' : 'text-white/60'}`}>
-                {d === 'offramp' ? 'Off-ramp (USDC→TZS)' : 'On-ramp (TZS→USDC)'}
+                className={`rounded-lg px-3 py-1.5 transition-colors ${direction === d ? 'bg-white text-black' : 'text-white/55 hover:text-white/80'}`}>
+                {d === 'offramp' ? 'Off-ramp' : 'On-ramp'}
               </button>
             ))}
           </div>
-          <input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
-            placeholder={direction === 'offramp' ? 'USDC amount' : 'TZS amount'}
-            className="w-44 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none" />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-stretch gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+              placeholder="0.00"
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 pr-16 text-lg font-semibold tabular-nums text-white placeholder:text-white/25 focus:border-indigo-400/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/10" />
+            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium uppercase tracking-wider text-white/35">{direction === 'offramp' ? 'USDC' : 'TZS'}</span>
+          </div>
           <button onClick={getQuote} disabled={quoting || !amount}
-            className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-40">
+            className="rounded-xl bg-white px-5 text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40">
             {quoting ? 'Quoting…' : 'Get quote'}
           </button>
         </div>
-        {quoteErr && <p className="text-xs text-red-300">{quoteErr}</p>}
+
+        {quoteErr && <p className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-300">{quoteErr}</p>}
+
         {quote && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              { l: 'You send', v: quote.direction === 'offramp' ? `${quote.usdcAmount} USDC` : `${fmt(quote.tzsAmount)} TZS` },
-              { l: 'They get', v: quote.direction === 'offramp' ? `${fmt(quote.tzsAmount)} TZS` : `${quote.usdcAmount} USDC` },
-              { l: 'Rate', v: `${fmt(quote.rateUsdTzs)} TZS/USDC` },
-              { l: 'Fee', v: `${fmt(quote.feeTzs)} TZS` },
-            ].map((c) => (
-              <div key={c.l} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                <p className="text-[10px] uppercase tracking-wider text-white/40">{c.l}</p>
-                <p className="mt-0.5 text-sm font-semibold tabular-nums">{c.v}</p>
+          <div className="r-rise mt-4 rounded-xl border border-white/10 bg-black/30 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-wider text-white/35">You send</p>
+                <p className="mt-0.5 truncate text-xl font-bold tabular-nums">{sends} <span className="text-sm font-medium text-white/40">{sendsUnit}</span></p>
               </div>
-            ))}
-            <p className="col-span-2 text-[11px] text-white/30 sm:col-span-4">Quote {quote.quoteId.slice(0, 8)} · expires {new Date(quote.expiresAt).toLocaleTimeString()} · initiate via the API with this quoteId.</p>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+              </div>
+              <div className="min-w-0 text-right">
+                <p className="text-[10px] uppercase tracking-wider text-white/35">They get</p>
+                <p className="mt-0.5 truncate text-xl font-bold tabular-nums text-emerald-300">{gets} <span className="text-sm font-medium text-emerald-300/50">{getsUnit}</span></p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 pt-3 text-[11px] text-white/40">
+              <span>Rate <span className="tabular-nums text-white/70">{fmt(quote.rateUsdTzs)}</span> TZS/USDC</span>
+              <span className="text-white/20">·</span>
+              <span>Fee <span className="tabular-nums text-white/70">{fmt(quote.feeTzs)}</span> TZS</span>
+              <span className="text-white/20">·</span>
+              <span>Quote <span className="font-mono text-white/55">{quote.quoteId.slice(0, 8)}</span></span>
+              <span className="text-white/20">·</span>
+              <span>Expires {new Date(quote.expiresAt).toLocaleTimeString()}</span>
+              <span className="ml-auto text-white/25">Initiate via the API with this quoteId →</span>
+            </div>
           </div>
         )}
       </div>
 
       {/* Settlements */}
-      <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-          <p className="text-[11px] uppercase tracking-widest text-white/40">Recent settlements</p>
-          <button onClick={loadSettlements} className="text-xs text-white/40 hover:text-white/70">Refresh</button>
+      <div className="r-rise r-d3 r-card rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">Recent settlements</p>
+          <button onClick={loadSettlements} className="inline-flex items-center gap-1.5 text-xs text-white/40 transition-colors hover:text-white/75">
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" /></svg>
+            Refresh
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-white/40">
-                {['Date', 'Direction', 'USDC', 'TZS', 'Status', 'Ref'].map((h) => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}
+              <tr className="text-left text-[10px] uppercase tracking-wider text-white/30">
+                {['Date', 'Direction', 'USDC', 'TZS', 'Status', 'Reference'].map((h) => <th key={h} className="px-4 py-2.5 font-medium">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {settlements.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-white/30">No settlements yet.</td></tr>}
+              {settlements.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-12 text-center">
+                  <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/30">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                  </div>
+                  <p className="text-white/30">No settlements yet — your first quote &amp; settle will appear here.</p>
+                </td></tr>
+              )}
               {settlements.map((s) => (
-                <tr key={s.settlementId} className="hover:bg-white/5">
-                  <td className="px-4 py-2.5 text-white/50">{new Date(s.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-2.5 uppercase text-white/60">{s.direction}</td>
-                  <td className="px-4 py-2.5 tabular-nums">{s.usdcAmount}</td>
-                  <td className="px-4 py-2.5 tabular-nums">{fmt(s.tzsAmount)}</td>
-                  <td className="px-4 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] ${statusColor(s.status)}`}>{s.status}</span></td>
-                  <td className="px-4 py-2.5 font-mono text-white/30">{s.pspReference ?? (s.swapOutTxHash ? s.swapOutTxHash.slice(0, 10) : '—')}</td>
+                <tr key={s.settlementId} className="transition-colors hover:bg-white/[0.03]">
+                  <td className="px-4 py-3 text-white/45">{new Date(s.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3"><span className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/55">{s.direction}</span></td>
+                  <td className="px-4 py-3 tabular-nums text-white/80">{s.usdcAmount}</td>
+                  <td className="px-4 py-3 tabular-nums text-white/80">{fmt(s.tzsAmount)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center gap-1.5 text-[11px] ${statusText(s.status)}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${statusDot(s.status)}`} />{s.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-white/30">{s.pspReference ?? (s.swapOutTxHash ? `${s.swapOutTxHash.slice(0, 10)}…` : '—')}</td>
                 </tr>
               ))}
             </tbody>
