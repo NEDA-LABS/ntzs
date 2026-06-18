@@ -1,14 +1,10 @@
-import { H1, Lead, H2, P, Code, Endpoint } from '../_components/ui'
+import { H2, P, Code, Endpoint } from '../_components/ui'
+import { CapabilityHeader } from '../_components/catalog'
 
 export default function RampDocs() {
   return (
     <>
-      <H1>Ramp</H1>
-      <Lead>
-        Wallet-less settlement: convert USDC ⇄ mobile money (TZS) over the API — no per-end-user
-        wallets. You keep a USDC float with us; off-ramps debit it, on-ramps deliver USDC to you.
-        Requires the <code className="text-white/80">ramp</code> capability + approved KYB.
-      </Lead>
+      <CapabilityHeader id="ramp" />
 
       <H2>How settlement works</H2>
       <P>
