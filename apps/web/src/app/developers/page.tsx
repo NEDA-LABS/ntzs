@@ -115,13 +115,78 @@ const NAV = [
   },
 ]
 
-// Use cases = compositions of capabilities (the story on the Capabilities card).
+// Use cases = compositions of capabilities (the story).
 const USE_CASES = [
-  { name: 'Insurance · T+0 collections', caps: ['Collections', 'Treasury'] },
-  { name: 'Payroll & contractor payouts', caps: ['Disbursements', 'Treasury'] },
-  { name: 'Stablecoin settlement', caps: ['Ramp'] },
-  { name: 'Neobank / fintech', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap'] },
+  { name: 'Insurance', caps: ['Collections', 'Treasury'] },
+  { name: 'Payroll', caps: ['Disbursements', 'Treasury'] },
+  { name: 'Settlement', caps: ['Ramp'] },
+  { name: 'Neobank', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap'] },
 ]
+
+// Capability cards — scannable, each jumps to its reference section.
+const CAP_CARDS = [
+  { id: 'deposits', name: 'Collections', blurb: 'Pull funds from every mobile network and bank, T+0.' },
+  { id: 'withdrawals', name: 'Disbursements', blurb: 'Pay out to phones and banks — single or bulk.' },
+  { id: 'users', name: 'Wallets', blurb: 'Issue HD wallets to your users in one call.' },
+  { id: 'transfers', name: 'Transfers', blurb: 'Move value between users instantly, on-chain.' },
+  { id: 'swap', name: 'Swap', blurb: 'Convert USDC ⇄ nTZS at a live rate.' },
+  { id: 'ramp', name: 'Ramp', blurb: 'Wallet-less USDC ⇄ mobile-money settlement.' },
+]
+
+// The hero "see how easy it is" code, three ways.
+const HERO_TABS = [
+  { key: 'collect', label: 'Collect', code: `// Collect TZS from any mobile network
+await fetch('https://www.ntzs.co.tz/api/v1/deposits', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ' + KEY },
+  body: JSON.stringify({
+    userId,
+    amountTzs: 10_000,
+    phoneNumber: '0744000000',
+  }),
+})` },
+  { key: 'send', label: 'Send', code: `// Move TZS between users — instant, on-chain
+await fetch('https://www.ntzs.co.tz/api/v1/transfers', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ' + KEY },
+  body: JSON.stringify({
+    fromUserId, toUserId,
+    amountTzs: 5_000,
+  }),
+})` },
+  { key: 'settle', label: 'Settle', code: `// USDC → mobile money, no end-user wallets
+await fetch('https://www.ntzs.co.tz/api/v1/ramp/offramp', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ' + KEY },
+  body: JSON.stringify({
+    quoteId,
+    phoneNumber: '0744000000',
+  }),
+})` },
+]
+
+function HeroCode() {
+  const [tab, setTab] = useState(HERO_TABS[0].key)
+  const active = HERO_TABS.find((t) => t.key === tab) ?? HERO_TABS[0]
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/60 shadow-[0_0_50px_rgba(52,211,153,0.06)]">
+      <div className="flex items-center gap-1 border-b border-white/10 px-3 py-2.5">
+        <span className="mr-2 flex gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+          <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+          <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        </span>
+        {HERO_TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${tab === t.key ? 'bg-emerald-500/10 text-emerald-300' : 'text-white/40 hover:text-white/70'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <pre key={active.key} className="overflow-x-auto p-5 font-mono text-[12.5px] leading-6 text-emerald-300/90" style={{ animation: 'fadeSlide .25s ease-out' }}>{active.code}</pre>
+    </div>
+  )
+}
 
 export default function DevelopersPage() {
   const [activeSection, setActiveSection] = useState('')
@@ -226,62 +291,59 @@ export default function DevelopersPage() {
 
         {/* Main content */}
         <div className="min-w-0 space-y-16">
-          {/* Hero */}
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Developer Documentation</h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
-              Embed digital Tanzanian Shilling wallets directly into your product. Create users, accept M-Pesa
-              deposits, send peer-to-peer transfers, and cash out to mobile money — all over a REST API.
-            </p>
-            <div className="mt-6 flex gap-3">
-              <Link href="/developers/signup" className="inline-flex h-10 items-center rounded-full bg-white px-5 text-sm font-semibold text-black hover:bg-white/90">
-                Get API Key
-              </Link>
-              <Link href="/developers/dashboard" className="inline-flex h-10 items-center rounded-full border border-white/15 bg-white/5 px-5 text-sm text-white/80 hover:bg-white/10">
-                Open Dashboard
-              </Link>
+          {/* Hero — code-forward */}
+          <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/[0.07] px-3 py-1 text-[11px] font-medium uppercase tracking-widest text-emerald-300/90">
+                <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" /></span>
+                Live on Base mainnet
+              </div>
+              <h1 className="mt-5 text-4xl font-bold leading-[1.05] tracking-tight md:text-5xl">
+                <span className="hero-title">Move money</span><br />in a few lines.
+              </h1>
+              <p className="mt-5 max-w-md text-base leading-7 text-white/55">
+                Composable money APIs for Tanzania — collect, disburse, swap, and settle. One key, real-time, on-chain.
+              </p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link href="/developers/signup" className="inline-flex h-11 items-center rounded-full bg-white px-6 text-sm font-semibold text-black transition hover:bg-white/90">Get your API key</Link>
+                <a href="#auth" className="inline-flex h-11 items-center rounded-full border border-white/15 bg-white/5 px-6 text-sm text-white/80 transition hover:bg-white/10">Quickstart →</a>
+              </div>
+              <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-white/35">
+                <span><span className="text-white/55">REST</span> + webhooks</span>
+                <span className="text-white/15">·</span>
+                <span><span className="text-white/55">Idempotent</span> by default</span>
+                <span className="text-white/15">·</span>
+                <span className="font-mono text-white/45">www.ntzs.co.tz/api/v1</span>
+              </div>
             </div>
-
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              {[
-                { label: 'Base URL', value: 'https://www.ntzs.co.tz' },
-                { label: 'Network', value: 'Base mainnet' },
-                { label: 'Token', value: 'nTZS (ERC-20, 18 decimals)' },
-              ].map(({ label, value }) => (
-                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-xs font-medium text-white/40 mb-1">{label}</div>
-                  <div className="text-sm font-mono text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
+            <HeroCode />
           </div>
 
-          {/* Capabilities — the story */}
+          {/* Capabilities — scannable cards */}
           <section id="capabilities" className="scroll-mt-24">
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-900/10 via-transparent to-blue-900/10 p-6 md:p-8">
-              <div className="inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-300/90">The platform</div>
-              <h2 className="mt-3 text-xl font-semibold tracking-tight md:text-2xl">Composable capabilities, not products</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-                The nTZS API is a set of money primitives. Enable the capabilities your use case needs and compose
-                them — collect from mobile money &amp; banks, disburse to phones, hold treasury, swap USDC ⇄ nTZS, or
-                settle wallet-less. One key, one set of webhooks.
-              </p>
-              <p className="mt-5 text-[10px] font-medium uppercase tracking-widest text-white/35">Compose your use case</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/35">The platform</p>
+                <h2 className="mt-1.5 text-xl font-semibold tracking-tight md:text-2xl">Composable money primitives</h2>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
                 {USE_CASES.map((u) => (
-                  <div key={u.name} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-sm font-semibold text-white/90">{u.name}</p>
-                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      {u.caps.map((c, i) => (
-                        <span key={c} className="flex items-center gap-1.5">
-                          {i > 0 && <span className="text-white/25">+</span>}
-                          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/65">{c}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <span key={u.name} className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] text-white/45">
+                    <span className="text-white/65">{u.name}</span> · {u.caps.join(' + ')}
+                  </span>
                 ))}
               </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {CAP_CARDS.map((c) => (
+                <a key={c.id} href={`#${c.id}`} className="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition-colors hover:border-emerald-500/25">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold">{c.name}</p>
+                    <svg className="h-4 w-4 text-white/25 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                  </div>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-white/45">{c.blurb}</p>
+                </a>
+              ))}
             </div>
           </section>
 
