@@ -229,11 +229,20 @@ export async function POST(request: NextRequest) {
                 source: 'app',
               })
 
+              // Double-entry pool accounting. The solver RECEIVED amountIn of the
+              // in-token and PAID OUT amountOut of the out-token. Debit the outflow
+              // from the out-token and credit the inflow to the in-token so the
+              // recorded position tracks the solver's real holdings. The LP's profit
+              // (spread) is captured implicitly (amountIn worth > amountOut), so no
+              // separate `earned` credit — that single-entry write was the bug that
+              // inflated positions above solver balance. (App swaps take no protocol
+              // fee, so the full spread accrues to the LP inside `contributed`.)
               const outTokenAddr = toTokenMeta.address.toLowerCase()
               await db
                 .update(lpPoolPositions)
                 .set({
-                  earned: sql`${lpPoolPositions.earned} + ${spread.toFixed(toDecimals)}::numeric`,
+                  // GREATEST(0, …) guards against rounding dust pushing it negative.
+                  contributed: sql`GREATEST(0, ${lpPoolPositions.contributed} - ${_result.amountOut}::numeric)`,
                   updatedAt: new Date(),
                 })
                 .where(and(
@@ -242,18 +251,29 @@ export async function POST(request: NextRequest) {
                   eq(lpPoolPositions.tokenAddress, outTokenAddr),
                 ))
 
+              // Credit the in-token inflow. UPSERT: the LP may not hold a row for this
+              // token yet (e.g. fully returned on a prior deactivate/off-ramp), in
+              // which case a plain UPDATE would match nothing and silently lose the
+              // received funds from the ledger.
               const inTokenAddr = fromTokenMeta.address.toLowerCase()
               await db
-                .update(lpPoolPositions)
-                .set({
-                  contributed: sql`${lpPoolPositions.contributed} + ${_result.amountIn}::numeric`,
-                  updatedAt: new Date(),
+                .insert(lpPoolPositions)
+                .values({
+                  lpId: filledLpId,
+                  chain: fromChain,
+                  tokenAddress: inTokenAddr,
+                  tokenSymbol: fromToken,
+                  decimals: fromTokenMeta.decimals,
+                  contributed: _result.amountIn,
+                  earned: '0',
                 })
-                .where(and(
-                  eq(lpPoolPositions.lpId, filledLpId),
-                  eq(lpPoolPositions.chain, fromChain),
-                  eq(lpPoolPositions.tokenAddress, inTokenAddr),
-                ))
+                .onConflictDoUpdate({
+                  target: [lpPoolPositions.lpId, lpPoolPositions.chain, lpPoolPositions.tokenAddress],
+                  set: {
+                    contributed: sql`${lpPoolPositions.contributed} + ${_result.amountIn}::numeric`,
+                    updatedAt: new Date(),
+                  },
+                })
             } catch (err) {
               console.error('[swap] Failed to record fill:', err)
             }

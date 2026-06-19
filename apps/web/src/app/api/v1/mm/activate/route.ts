@@ -85,9 +85,12 @@ export async function PATCH(request: NextRequest) {
 
       await db
         .insert(lpPoolPositions)
-        .values({ lpId: lp.id, tokenAddress, tokenSymbol: symbol, decimals, contributed: humanAmount, earned: '0' })
+        // chain is part of the unique index — it must be set and must be in the
+        // conflict target, else ON CONFLICT matches no constraint and the insert
+        // throws on every activation. (This route is base-only.)
+        .values({ lpId: lp.id, chain: 'base', tokenAddress, tokenSymbol: symbol, decimals, contributed: humanAmount, earned: '0' })
         .onConflictDoUpdate({
-          target: [lpPoolPositions.lpId, lpPoolPositions.tokenAddress],
+          target: [lpPoolPositions.lpId, lpPoolPositions.chain, lpPoolPositions.tokenAddress],
           set: {
             contributed: sql`${lpPoolPositions.contributed} + ${humanAmount}::numeric`,
             updatedAt: new Date(),
@@ -113,30 +116,64 @@ export async function PATCH(request: NextRequest) {
     const solverSigner = new Wallet(solverKey, provider)
     const positions = await db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, lp.id))
     const returned: Array<{ tokenAddress: string; symbol: string; amount: string }> = []
+    const failed: Array<{ tokenAddress: string; symbol: string; reason: string }> = []
 
-    for (const pos of positions) {
-      const totalWei = parseUnits(pos.contributed, pos.decimals) + parseUnits(pos.earned, pos.decimals)
-      if (totalWei === BigInt(0)) continue
-
-      const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner)
-      const solverBalance: bigint = await contract.balanceOf(SOLVER_ADDRESS)
-      const toSend = totalWei < solverBalance ? totalWei : solverBalance
-      if (toSend === BigInt(0)) continue
-
-      const tx = await contract.transfer(lp.walletAddress, toSend)
-      await tx.wait(1)
-
-      returned.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, amount: formatUnits(toSend, pos.decimals) })
+    // Truncate to the token's decimals before parseUnits — stored values keep full
+    // numeric precision (up to 18 dp) but USDC etc. have fewer, and ethers throws on
+    // excess fractional digits.
+    const truncate = (v: string, d: number) => {
+      const [int, frac = ''] = v.split('.')
+      return `${int}.${frac.slice(0, d).padEnd(d, '0')}`
     }
 
-    await db.delete(lpPoolPositions).where(eq(lpPoolPositions.lpId, lp.id))
+    for (const pos of positions) {
+      try {
+        // Return `contributed` only — profit is already baked in by the double-entry
+        // fill accounting; `earned` is deprecated as a payout component.
+        const totalWei = parseUnits(truncate(pos.contributed, pos.decimals), pos.decimals)
+        if (totalWei === BigInt(0)) {
+          await db.delete(lpPoolPositions).where(eq(lpPoolPositions.id, pos.id))
+          continue
+        }
 
-    const [updated] = await db
-      .update(lpAccounts)
-      .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(lpAccounts.id, mm.lpId))
-      .returning()
+        const contract = new Contract(pos.tokenAddress, ERC20_ABI, solverSigner)
+        const solverBalance: bigint = await contract.balanceOf(SOLVER_ADDRESS)
 
-    return NextResponse.json({ isActive: false, walletAddress: updated.walletAddress, returned, updatedAt: updated.updatedAt })
+        // Never delete a position we can't return IN FULL. Previously this sent
+        // min(owed, solverBal) then wiped every position unconditionally, so a
+        // partial/failed return stranded the LP's funds in the solver with no
+        // record. Keep the position and report it so it can be retried.
+        if (solverBalance < totalWei) {
+          failed.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, reason: 'insufficient solver balance to return in full' })
+          continue
+        }
+
+        const tx = await contract.transfer(lp.walletAddress, totalWei)
+        await tx.wait(1)
+
+        returned.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, amount: formatUnits(totalWei, pos.decimals) })
+        // Delete ONLY after the on-chain return confirms.
+        await db.delete(lpPoolPositions).where(eq(lpPoolPositions.id, pos.id))
+      } catch (err) {
+        failed.push({ tokenAddress: pos.tokenAddress, symbol: pos.tokenSymbol, reason: err instanceof Error ? err.message : 'return failed' })
+      }
+    }
+
+    // Only flip inactive when EVERYTHING was returned; otherwise keep the LP active
+    // with its remaining positions intact so it can retry — never strand funds.
+    if (failed.length === 0) {
+      const [updated] = await db
+        .update(lpAccounts)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(lpAccounts.id, mm.lpId))
+        .returning()
+
+      return NextResponse.json({ isActive: false, walletAddress: updated.walletAddress, returned, updatedAt: updated.updatedAt })
+    }
+
+    return NextResponse.json(
+      { isActive: true, walletAddress: lp.walletAddress, returned, failed, partial: true, error: 'Some positions could not be returned and were kept. Please retry.' },
+      { status: 207 },
+    )
   }
 }

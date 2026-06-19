@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateMM } from '@/lib/fx/auth'
 import { getDb } from '@/lib/db'
-import { lpAccounts, lpPoolPositions } from '@ntzs/db'
-import { eq } from 'drizzle-orm'
+import { lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db'
+import { eq, sql } from 'drizzle-orm'
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
 const ERC20_ABI = [
@@ -41,18 +41,28 @@ export async function GET(request: NextRequest) {
     const provider = new JsonRpcProvider(rpcUrl)
 
     if (lp.isActive) {
-      const positions = await db
-        .select()
-        .from(lpPoolPositions)
-        .where(eq(lpPoolPositions.lpId, mm.lpId))
+      const [positions, fillTotals] = await Promise.all([
+        db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, mm.lpId)),
+        db
+          .select({ toToken: lpFills.toToken, totalEarned: sql<string>`SUM(${lpFills.spreadEarned})` })
+          .from(lpFills)
+          .where(eq(lpFills.lpId, mm.lpId))
+          .groupBy(lpFills.toToken),
+      ])
+
+      // Lifetime earnings come from lpFills (spread). `total` == `contributed`:
+      // profit is already baked into `contributed` by the double-entry fill model,
+      // so `earned` is informational only and must NOT be added to the total.
+      const earnedByAddr: Record<string, string> = {}
+      for (const f of fillTotals) earnedByAddr[f.toToken.toLowerCase()] = f.totalEarned ?? '0'
 
       const byToken: Record<string, { contributed: string; earned: string; total: string }> = {}
       for (const pos of positions) {
         const sym = pos.tokenSymbol.toLowerCase()
         byToken[sym] = {
           contributed: pos.contributed,
-          earned: pos.earned,
-          total: (parseFloat(pos.contributed) + parseFloat(pos.earned)).toString(),
+          earned: earnedByAddr[pos.tokenAddress.toLowerCase()] ?? pos.earned,
+          total: pos.contributed,
         }
       }
 

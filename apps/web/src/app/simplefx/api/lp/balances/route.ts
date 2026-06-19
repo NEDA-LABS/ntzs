@@ -73,17 +73,21 @@ export async function GET() {
         const contributed = parseFloat(pos.contributed);
         const earned = parseFloat(earnedByAddr[pos.tokenAddress.toLowerCase()] ?? pos.earned);
         const prev = byToken[sym]
+        // `total` == `contributed`: under double-entry fill accounting the LP's
+        // realized profit is already inside `contributed`, so adding `earned` would
+        // double-count. `earned` (from lpFills) is kept as an informational figure —
+        // how much of the balance is lifetime spread — not added to the total.
         if (prev) {
           byToken[sym] = {
             contributed: (parseFloat(prev.contributed) + contributed).toString(),
             earned: (parseFloat(prev.earned) + earned).toString(),
-            total: (parseFloat(prev.total) + contributed + earned).toString(),
+            total: (parseFloat(prev.total) + contributed).toString(),
           }
         } else {
           byToken[sym] = {
             contributed: pos.contributed,
             earned: earned.toString(),
-            total: (contributed + earned).toString(),
+            total: contributed.toString(),
           };
         }
       }

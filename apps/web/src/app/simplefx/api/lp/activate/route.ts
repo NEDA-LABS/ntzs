@@ -168,9 +168,12 @@ export async function PATCH(req: NextRequest) {
             const [int, frac = ''] = v.split('.');
             return `${int}.${frac.slice(0, d).padEnd(d, '0')}`;
           };
-          const totalWei =
-            parseUnits(truncate(pos.contributed, pos.decimals), pos.decimals) +
-            parseUnits(truncate(pos.earned, pos.decimals), pos.decimals);
+          // Return `contributed` only. Under the double-entry fill model the LP's
+          // realized profit is already baked into `contributed` (amountIn credited,
+          // amountOut+fee debited), so adding `earned` on top would double-pay and
+          // overdraw the solver. `earned` is deprecated as a payout component and
+          // retained only for legacy/reporting; lifetime earnings come from lpFills.
+          const totalWei = parseUnits(truncate(pos.contributed, pos.decimals), pos.decimals);
 
           // Nothing owed for this position — safe to clear the record.
           if (totalWei === BigInt(0)) {
