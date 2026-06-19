@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUpRight, CheckCircle2, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
+import { useLp } from '../layout';
 
 type Chain = 'base' | 'bnb';
 
@@ -18,6 +19,7 @@ type TokenEntry = typeof TOKENS[number];
 type WithdrawState = 'idle' | 'loading' | 'success' | 'error';
 
 export default function WithdrawPage() {
+  const { lp } = useLp();
   const [selected, setSelected] = useState<TokenEntry>(TOKENS[0]);
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
@@ -98,6 +100,19 @@ export default function WithdrawPage() {
             </motion.div>
           ) : (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {lp?.isActive && (
+                <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-950/20 p-4">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-400" />
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-200">Your liquidity is active in the pool</p>
+                    <p className="mt-0.5 text-amber-200/70">
+                      While active, your funds sit in the shared solver — your wallet balance is empty, so withdrawals will fail.{' '}
+                      <a href="/simplefx/dashboard/rebalance" className="font-medium text-amber-300 underline underline-offset-2 hover:text-amber-200">Deactivate your position</a>{' '}
+                      first to move funds back to your wallet, then withdraw.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 mb-6 p-1 bg-zinc-950 border border-white/5 rounded-xl w-fit">
                 {TOKENS.map((t, i) => (
                   <button
