@@ -5,6 +5,7 @@ import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 import { getDb } from '@/lib/db'
 import { lpPoolPositions, lpFills, fxFeeSweeps } from '@ntzs/db'
 import { BASE_RPC_URL } from '@/lib/env'
+import { sendPoolAlertEmail } from '@/lib/fx/alert-email'
 
 const CRON_SECRET = process.env.CRON_SECRET || ''
 const SOLVER_ADDRESS = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as string
@@ -102,5 +103,53 @@ export async function GET(request: NextRequest) {
   )
 
   const healthy = results.every((r) => r.status === 'ok')
+
+  // Alert ops when the ledger and the on-chain solver balance disagree beyond
+  // tolerance. Wrapped so a mailer failure never breaks the health response.
+  if (!healthy) {
+    const offenders = results
+      .filter((r) => r.status !== 'ok')
+      .map((r) => `${r.token} (${r.status} ${r.delta})`)
+      .join(', ')
+    const rows = results
+      .map((r) => {
+        const bad = r.status !== 'ok'
+        return `<tr style="${bad ? 'background:#fef2f2' : ''}">
+          <td style="padding:6px 10px;border:1px solid #e5e7eb">${r.token}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">${r.recorded}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">${r.unsweptFee}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">${r.expected}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">${r.onChain}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;font-weight:600">${r.delta}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;${bad ? 'color:#dc2626;font-weight:700' : 'color:#16a34a'}">${r.status}</td>
+        </tr>`
+      })
+      .join('')
+    const html = `
+      <div style="font-family:system-ui,Arial,sans-serif;color:#111">
+        <h2 style="margin:0 0 4px">⚠️ SimpleFX LP pool drift detected</h2>
+        <p style="margin:0 0 12px;color:#555">The recorded ledger no longer matches the on-chain solver balance.
+        <b>short</b> = solver can't back all LP claims (a leak); <b>surplus</b> = value held but not attributed to any position.</p>
+        <table style="border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#f9fafb">
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:left">Token</th>
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">Recorded</th>
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">Unswept fee</th>
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">Expected</th>
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">On-chain</th>
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right">Delta</th>
+            <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:left">Status</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p style="margin:12px 0 0;color:#555;font-size:12px">Solver <code>${SOLVER_ADDRESS}</code> · ${new Date().toISOString()}</p>
+      </div>`
+    try {
+      await sendPoolAlertEmail(`⚠️ SimpleFX LP pool drift: ${offenders}`, html)
+    } catch (err) {
+      console.error('[fx-pool-reconcile] failed to send alert email:', err instanceof Error ? err.message : err)
+    }
+  }
+
   return NextResponse.json({ ok: true, healthy, solver: SOLVER_ADDRESS, checkedAt: new Date().toISOString(), results })
 }
