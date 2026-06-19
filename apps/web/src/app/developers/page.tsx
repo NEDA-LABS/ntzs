@@ -300,11 +300,7 @@ export default function DevelopersPage() {
           {/* Hero — code-forward */}
           <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:items-center">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/[0.07] px-3 py-1 text-[11px] font-medium uppercase tracking-widest text-emerald-300/90">
-                <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" /></span>
-                Live on Base mainnet
-              </div>
-              <h1 className="mt-5 text-4xl font-bold leading-[1.05] tracking-tight md:text-5xl">
+              <h1 className="text-4xl font-bold leading-[1.05] tracking-tight md:text-5xl">
                 <span className="hero-title">Move money</span><br />in a few lines.
               </h1>
               <p className="mt-5 max-w-md text-base leading-7 text-white/55">
