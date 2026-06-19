@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, CheckCircle2, ArrowUpRight, Info, Smartphone, Loader2 } from 'lucide-react';
 import { useLp } from '../layout';
@@ -79,6 +79,9 @@ export default function DepositPage() {
   const [mintAmount, setMintAmount] = useState('');
   const [mintPhone, setMintPhone] = useState('');
   const [mintState, setMintState] = useState<MintState>('idle');
+  // Stable per-submission idempotency key so a double-click / retry doesn't trigger
+  // a second M-Pesa prompt. Reset after a successful send (next deposit = new key).
+  const mintIdemKeyRef = useRef<string | null>(null);
   const [mintError, setMintError] = useState('');
 
   const token = TOKENS.find((t) => t.id === activeToken)!;
@@ -167,7 +170,7 @@ export default function DepositPage() {
                     <Smartphone size={20} className="text-emerald-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-emerald-300 mb-1">Check your phone</p>
                     <p className="text-xs text-zinc-500">An M-Pesa prompt has been sent. Once you confirm, nTZS will be minted to your inventory wallet automatically.</p>
-                    <button onClick={() => { setMintState('idle'); setMintAmount(''); setMintPhone(''); }} className="mt-3 text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => { mintIdemKeyRef.current = null; setMintState('idle'); setMintAmount(''); setMintPhone(''); }} className="mt-3 text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
                       Make another deposit
                     </button>
                   </motion.div>
@@ -205,9 +208,10 @@ export default function DepositPage() {
                         setMintError('');
                         setMintState('loading');
                         try {
+                          if (!mintIdemKeyRef.current) mintIdemKeyRef.current = crypto.randomUUID();
                           const res = await fetch('/simplefx/api/lp/mint', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
                             body: JSON.stringify({ amountTzs: Number(mintAmount), phoneNumber: mintPhone }),
                           });
                           const data = await res.json();
@@ -215,6 +219,7 @@ export default function DepositPage() {
                             setMintError(data.error || 'Deposit failed. Please try again.');
                             setMintState('error');
                           } else {
+                            mintIdemKeyRef.current = null;
                             setMintState('sent');
                           }
                         } catch {

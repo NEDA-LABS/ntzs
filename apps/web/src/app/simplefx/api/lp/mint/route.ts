@@ -7,8 +7,14 @@ import { db } from '@/lib/fx/db'
 import { lpAccounts, users, wallets, depositRequests } from '@ntzs/db'
 import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp'
 import { getDb } from '@/lib/db'
+import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 
 const PRODUCTION_URL = 'https://www.ntzs.co.tz'
+
+const MIN_DEPOSIT_TZS = 500
+// Upper bound on a single M-Pesa-initiated LP deposit (fat-finger / abuse guard).
+// Override per-environment with FX_LP_MAX_DEPOSIT_TZS; default 10,000,000 TZS.
+const MAX_DEPOSIT_TZS = Number(process.env.FX_LP_MAX_DEPOSIT_TZS ?? 10_000_000)
 
 function getWebhookBase(): string {
   return process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || PRODUCTION_URL
@@ -31,18 +37,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'amountTzs and phoneNumber are required' }, { status: 400 })
   }
 
-  if (amountTzs < 500) {
-    return NextResponse.json({ error: 'Minimum deposit is 500 TZS' }, { status: 400 })
+  if (!Number.isFinite(amountTzs) || amountTzs < MIN_DEPOSIT_TZS) {
+    return NextResponse.json({ error: `Minimum deposit is ${MIN_DEPOSIT_TZS.toLocaleString()} TZS` }, { status: 400 })
+  }
+
+  if (amountTzs > MAX_DEPOSIT_TZS) {
+    return NextResponse.json({ error: `Maximum deposit is ${MAX_DEPOSIT_TZS.toLocaleString()} TZS` }, { status: 400 })
   }
 
   if (!isValidTanzanianPhone(phoneNumber)) {
     return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
   }
 
+  // Idempotent: a double-submit carrying the same Idempotency-Key replays the first
+  // response instead of creating a second deposit and a second M-Pesa prompt.
+  return withIdempotency(`lp_mint:${session.lpId}`, getIdempotencyKey(req), () =>
+    runMint({ lpId: session.lpId, amountTzs, phoneNumber }),
+  )
+}
+
+async function runMint({
+  lpId,
+  amountTzs,
+  phoneNumber,
+}: {
+  lpId: string
+  amountTzs: number
+  phoneNumber: string
+}): Promise<NextResponse> {
   const [lp] = await db
     .select({ walletAddress: lpAccounts.walletAddress, email: lpAccounts.email })
     .from(lpAccounts)
-    .where(eq(lpAccounts.id, session.lpId))
+    .where(eq(lpAccounts.id, lpId))
     .limit(1)
 
   if (!lp) return NextResponse.json({ error: 'LP account not found' }, { status: 404 })
