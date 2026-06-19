@@ -5,6 +5,7 @@ import { lpAccounts, lpFxPairs, lpPoolPositions } from '@ntzs/db'
 import { eq, sql } from 'drizzle-orm'
 import { deriveWallet } from '@/lib/fx/lp-wallet'
 import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits, parseEther } from 'ethers'
+import { withLpOpLock, LP_LOCK_BUSY } from '@/lib/fx/lp-lock'
 
 const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
@@ -44,6 +45,30 @@ export async function PATCH(request: NextRequest) {
   if (!lp) return NextResponse.json({ error: 'Account not found' }, { status: 404 })
 
   const provider = new JsonRpcProvider(rpcUrl)
+
+  // Serialize activate/deactivate for this LP so a double-click can't run two
+  // concurrently — for deactivate, two requests could otherwise both read the same
+  // positions and both pay them out from the shared solver. Second call gets 409.
+  const result = await withLpOpLock(lp.id, () => handleMmActivation({ isActive, lp, provider }))
+  if (result === LP_LOCK_BUSY) {
+    return NextResponse.json(
+      { error: 'An activate/deactivate is already in progress for this account. Please wait a moment and try again.' },
+      { status: 409 },
+    )
+  }
+  return result
+}
+
+async function handleMmActivation({
+  isActive,
+  lp,
+  provider,
+}: {
+  isActive: boolean
+  lp: typeof lpAccounts.$inferSelect
+  provider: JsonRpcProvider
+}): Promise<NextResponse> {
+  const { db } = getDb()
 
   if (isActive) {
     const pairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true))
@@ -105,7 +130,7 @@ export async function PATCH(request: NextRequest) {
     const [updated] = await db
       .update(lpAccounts)
       .set({ isActive: true, updatedAt: new Date() })
-      .where(eq(lpAccounts.id, mm.lpId))
+      .where(eq(lpAccounts.id, lp.id))
       .returning()
 
     return NextResponse.json({ isActive: true, walletAddress: updated.walletAddress, swept, updatedAt: updated.updatedAt })
@@ -165,7 +190,7 @@ export async function PATCH(request: NextRequest) {
       const [updated] = await db
         .update(lpAccounts)
         .set({ isActive: false, updatedAt: new Date() })
-        .where(eq(lpAccounts.id, mm.lpId))
+        .where(eq(lpAccounts.id, lp.id))
         .returning()
 
       return NextResponse.json({ isActive: false, walletAddress: updated.walletAddress, returned, updatedAt: updated.updatedAt })

@@ -6,6 +6,7 @@ import { eq, sql, and } from 'drizzle-orm';
 import { deriveWallet } from '@/lib/fx/lp-wallet';
 import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits } from 'ethers';
 import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig';
+import { withLpOpLock, LP_LOCK_BUSY } from '@/lib/fx/lp-lock';
 
 const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
@@ -37,6 +38,34 @@ export async function PATCH(req: NextRequest) {
 
   const provider = new JsonRpcProvider(chainCfg.rpcUrl);
 
+  // Serialize activate/deactivate for this LP so a double-click can't run two
+  // concurrently — for deactivate, two requests could otherwise both read the same
+  // positions and both pay them out from the shared solver. Second call gets 409.
+  const result = await withLpOpLock(lp.id, () =>
+    handleActivation({ isActive, chain, chainCfg, lp, provider }),
+  );
+  if (result === LP_LOCK_BUSY) {
+    return NextResponse.json(
+      { error: 'An activate/deactivate is already in progress for this account. Please wait a moment and try again.' },
+      { status: 409 },
+    );
+  }
+  return result;
+}
+
+async function handleActivation({
+  isActive,
+  chain,
+  chainCfg,
+  lp,
+  provider,
+}: {
+  isActive: boolean;
+  chain: ChainId;
+  chainCfg: ReturnType<typeof getChainConfig>;
+  lp: typeof lpAccounts.$inferSelect;
+  provider: JsonRpcProvider;
+}): Promise<NextResponse> {
   if (isActive) {
     // ── ACTIVATE: sweep LP wallet tokens into the solver pool ───────────────
     // Only look at pairs for the requested chain
@@ -124,7 +153,7 @@ export async function PATCH(req: NextRequest) {
     const [updated] = await db
       .update(lpAccounts)
       .set({ isActive: true, onboardingStep: 4, updatedAt: new Date() })
-      .where(eq(lpAccounts.id, session.lpId))
+      .where(eq(lpAccounts.id, lp.id))
       .returning();
 
     return NextResponse.json({ lp: updated, swept, chain });
@@ -226,7 +255,7 @@ export async function PATCH(req: NextRequest) {
       const [updated] = await db
         .update(lpAccounts)
         .set({ isActive: false, onboardingStep: 3, updatedAt: new Date() })
-        .where(eq(lpAccounts.id, session.lpId))
+        .where(eq(lpAccounts.id, lp.id))
         .returning();
       return NextResponse.json({ lp: updated, returned, failed });
     }
