@@ -102,28 +102,28 @@ const NAV = [
   {
     group: 'Getting Started',
     items: [
-      { id: 'capabilities', label: 'Capabilities' },
+      { id: 'capabilities', label: 'Overview' },
       { id: 'auth', label: 'Authentication' },
-      { id: 'users', label: 'Create Users' },
-      { id: 'balance', label: 'Get User & Balance' },
+      { id: 'users', label: 'Create users' },
+      { id: 'balance', label: 'Get balance' },
     ],
   },
   {
     group: 'Capabilities',
     items: [
-      { id: 'deposits', label: 'Collections · Deposits' },
+      { id: 'deposits', label: 'Collections' },
       { id: 'transfers', label: 'Transfers' },
-      { id: 'withdrawals', label: 'Disbursements · Withdrawals' },
-      { id: 'swap', label: 'Swap · USDC / USDT' },
-      { id: 'ramp', label: 'Ramp · Settlement' },
+      { id: 'withdrawals', label: 'Disbursements' },
+      { id: 'swap', label: 'Swap' },
+      { id: 'ramp', label: 'Ramp' },
     ],
   },
   {
     group: 'Reference',
     items: [
-      { id: 'rate', label: 'Swap Rate (Public)' },
+      { id: 'rate', label: 'Swap rate' },
       { id: 'webhooks', label: 'Webhooks' },
-      { id: 'errors', label: 'Error Reference' },
+      { id: 'errors', label: 'Errors' },
     ],
   },
 ]
@@ -227,21 +227,19 @@ export default function DevelopersPage() {
     NAV.flatMap((g) => g.items).find((i) => i.id === activeSection)?.label ?? 'On this page'
 
   const navItemClass = (id: string) =>
-    `relative block rounded-lg py-1.5 pl-4 pr-3 text-sm transition-all duration-200 ${
+    `relative block py-[5px] pl-4 pr-3 text-[13px] leading-5 transition-colors duration-150 ${
       activeSection === id
-        ? 'bg-white/[0.07] text-white font-medium'
-        : 'text-white/50 hover:bg-white/5 hover:text-white'
+        ? 'font-medium text-emerald-300'
+        : 'text-white/45 hover:text-white/85'
     }`
 
   const navItemInner = (id: string) =>
     activeSection === id ? (
-      <span
-        className="nav-active-bar absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-emerald-400/70"
-      />
+      <span className="nav-active-bar absolute left-0 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-full bg-emerald-400" />
     ) : null
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-12">
+    <div className="mx-auto max-w-[1320px] px-4 py-10 md:px-8 md:py-12">
       <style dangerouslySetInnerHTML={{ __html: STYLES }} />
 
       {/* Mobile TOC bar */}
@@ -277,29 +275,24 @@ export default function DevelopersPage() {
         )}
       </div>
 
-      <div className="grid gap-12 lg:grid-cols-[240px_1fr]">
-        {/* Desktop sidebar */}
+      <div className="grid gap-x-12 lg:grid-cols-[196px_minmax(0,1fr)]">
+        {/* Desktop sidebar — quiet rail */}
         <aside className="hidden lg:block">
-          <div className="sticky top-24 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/30">
-              Contents
-            </div>
-            <nav className="space-y-4">
-              {NAV.map((group) => (
-                <div key={group.group}>
-                  <div className="mb-1 px-3 text-[10px] font-medium uppercase tracking-wider text-white/30">
-                    {group.group}
-                  </div>
-                  {group.items.map((item) => (
-                    <a key={item.id} href={`#${item.id}`} className={navItemClass(item.id)}>
-                      {navItemInner(item.id)}
-                      {item.label}
-                    </a>
-                  ))}
+          <nav className="sticky top-24 space-y-6 border-r border-white/[0.06] pr-5">
+            {NAV.map((group) => (
+              <div key={group.group}>
+                <div className="mb-1.5 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
+                  {group.group}
                 </div>
-              ))}
-            </nav>
-          </div>
+                {group.items.map((item) => (
+                  <a key={item.id} href={`#${item.id}`} className={navItemClass(item.id)}>
+                    {navItemInner(item.id)}
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+            ))}
+          </nav>
         </aside>
 
         {/* Main content */}
