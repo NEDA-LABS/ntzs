@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
+import { swapRateLimit } from '@/lib/rate-limit'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { getDb } from '@/lib/db'
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
   } catch {
     return new Response('Unauthorized', { status: 401 })
   }
+
+  const limited = await swapRateLimit(`swap:user:${dbUser.id}`)
+  if (limited) return limited
 
   const { db } = getDb()
 

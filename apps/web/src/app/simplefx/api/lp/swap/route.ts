@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getSessionFromCookies } from '@/lib/fx/auth'
+import { swapRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/fx/db'
 import { lpAccounts, lpFxPairs } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
@@ -29,6 +30,9 @@ export async function POST(req: NextRequest) {
   if (process.env.FX_TEST_SWAP_ENABLED !== 'true') {
     return new Response('Swap test endpoint is disabled', { status: 403 })
   }
+
+  const limited = await swapRateLimit(`swap:lp:${session.lpId}`)
+  if (limited) return limited
 
   const rpcUrl = BASE_RPC_URL
   const solverPrivateKey = process.env.SOLVER_PRIVATE_KEY as `0x${string}` | undefined
