@@ -1535,6 +1535,20 @@ export const idempotencyKeys = pgTable(
   })
 )
 
+// Fixed-window rate-limit counters. Durable across serverless instances (unlike
+// per-process memory). `bucket` = `${key}:${windowStartEpoch}`; one row per window.
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    bucket: text('bucket').primaryKey(),
+    count: integer('count').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    expiresIdx: index('rate_limits_expires_at_idx').on(t.expiresAt),
+  })
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Ramp API — wallet-less USDC ⇄ mobile-money settlement for partners
 // ─────────────────────────────────────────────────────────────────────────────

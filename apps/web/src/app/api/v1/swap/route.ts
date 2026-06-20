@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
+import { swapRateLimit } from '@/lib/rate-limit'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { partnerUsers, partners, lpFxPairs, lpAccounts, lpFills, lpPoolPositions } from '@ntzs/db'
 import { eq, and, sql } from 'drizzle-orm'
@@ -26,6 +27,9 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  const limited = await swapRateLimit(`swap:partner:${partner.id}`)
+  if (limited) return limited
 
   let body: {
     userId: string
