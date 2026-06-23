@@ -17,6 +17,9 @@ export interface LpAccount {
   bidBps: number;
   askBps: number;
   isActive: boolean;
+  accountType: 'standard' | 'bank';
+  status: 'onboarding' | 'active' | 'suspended';
+  kybStatus: 'not_started' | 'submitted' | 'approved' | 'rejected';
   onboardingStep: number;
   kycStatus: 'pending' | 'approved' | 'rejected';
   hasApiKey: boolean;

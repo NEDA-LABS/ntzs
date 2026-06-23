@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap,
-  Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle,
+  Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle, Building2,
 } from 'lucide-react';
 import { useLp } from './layout';
 
@@ -281,7 +281,8 @@ export default function OverviewPage() {
     );
   }
 
-  const isOnboarding = lp.onboardingStep < 4;
+  const isBankOnboarding = lp.accountType === 'bank' && lp.status === 'onboarding';
+  const isStandardOnboarding = lp.accountType === 'standard' && lp.onboardingStep < 4;
   const spreadPct = ((lp.bidBps + lp.askBps) / 2 / 100).toFixed(2);
 
   const fmt = (v: string | undefined) => {
@@ -306,7 +307,42 @@ export default function OverviewPage() {
         <StatusBadge isActive={lp.isActive} />
       </motion.div>
 
-      {isOnboarding && <OnboardingWizard currentStep={lp.onboardingStep} />}
+      {isBankOnboarding && (
+        <Link
+          href="/simplefx/onboarding"
+          className="mb-10 flex items-center justify-between gap-4 rounded-xl border border-blue-500/30 bg-blue-600/[0.06] p-5 transition-colors hover:border-blue-400/50"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600/15 text-blue-400">
+              <Building2 size={18} />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-white">Finish your bank onboarding</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {lp.kybStatus === 'submitted'
+                  ? 'KYB submitted — under review. Continue the remaining steps.'
+                  : lp.kybStatus === 'approved'
+                  ? 'KYB approved. Complete reserve and FX setup to go live.'
+                  : 'Submit KYB, set up your reserve account, and configure FX.'}
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-blue-400">
+            Resume <ChevronRight size={13} />
+          </span>
+        </Link>
+      )}
+      {isStandardOnboarding && (
+        <div className="mb-10">
+          <OnboardingWizard currentStep={lp.onboardingStep} />
+          <Link
+            href="/simplefx/onboarding"
+            className="mt-5 inline-flex items-center gap-1.5 text-xs text-zinc-600 transition-colors hover:text-blue-400"
+          >
+            Onboarding as a bank or institution? Start here <ChevronRight size={12} />
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
