@@ -386,7 +386,13 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   useEffect(() => {
     fetch("/simplefx/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data?.lp) window.location.replace("/simplefx/dashboard"); })
+      .then((data) => {
+        if (data?.lp) {
+          const dest = data.lp.accountType === "bank" && data.lp.status === "onboarding"
+            ? "/simplefx/onboarding" : "/simplefx/dashboard";
+          window.location.replace(dest);
+        }
+      })
       .catch(() => {});
   }, []);
   const cycleWords = ["Wake up. Trade. Earn.", "Set your spread. Collect fees."];
@@ -477,7 +483,14 @@ export const SignInPage = ({ className }: SignInPageProps) => {
           setTimeout(() => setInitialCanvasVisible(false), 50);
           setTimeout(() => {
             setStep("success");
-            setTimeout(() => router.push("/simplefx/dashboard"), 1200);
+            setTimeout(async () => {
+              let dest = "/simplefx/dashboard";
+              try {
+                const me = await fetch("/simplefx/api/auth/me").then((r) => (r.ok ? r.json() : null));
+                if (me?.lp?.accountType === "bank" && me.lp.status === "onboarding") dest = "/simplefx/onboarding";
+              } catch { /* fall back to dashboard */ }
+              router.push(dest);
+            }, 1200);
           }, 2000);
         } catch {
           setAuthError("Verification failed. Please try again.");
