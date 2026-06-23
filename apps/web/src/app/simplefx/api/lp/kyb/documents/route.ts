@@ -1,0 +1,80 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { put } from '@vercel/blob';
+import { eq, and } from 'drizzle-orm';
+
+import { getSessionFromCookies } from '@/lib/fx/auth';
+import { db } from '@/lib/fx/db';
+import { lpAccounts, lpKybDocuments } from '@ntzs/db';
+import { KYB_DOC_KEYS } from '@/lib/fx/onboarding';
+
+const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** GET /api/lp/kyb/documents — the LP's uploaded KYB docs + overall KYB status. */
+export async function GET() {
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const [docs, [lp]] = await Promise.all([
+    db
+      .select({
+        docType: lpKybDocuments.docType,
+        fileUrl: lpKybDocuments.fileUrl,
+        fileName: lpKybDocuments.fileName,
+        status: lpKybDocuments.status,
+        updatedAt: lpKybDocuments.updatedAt,
+      })
+      .from(lpKybDocuments)
+      .where(eq(lpKybDocuments.lpId, session.lpId)),
+    db.select({ kybStatus: lpAccounts.kybStatus }).from(lpAccounts).where(eq(lpAccounts.id, session.lpId)).limit(1),
+  ]);
+
+  return NextResponse.json({ kybStatus: lp?.kybStatus ?? 'not_started', documents: docs });
+}
+
+/**
+ * POST /api/lp/kyb/documents — upload one KYB document (multipart: file, docType).
+ * Stores in blob and upserts the row; flips the account's kybStatus to 'submitted'
+ * on the first upload. Mirrors the partner KYB upload pattern.
+ */
+export async function POST(req: NextRequest) {
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const formData = await req.formData();
+  const file = formData.get('file') as File | null;
+  const docType = formData.get('docType') as string | null;
+
+  if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+  if (!docType || !KYB_DOC_KEYS.includes(docType)) {
+    return NextResponse.json({ error: 'docType must be one of: ' + KYB_DOC_KEYS.join(', ') }, { status: 400 });
+  }
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return NextResponse.json({ error: 'File must be PDF, JPEG, PNG, or WebP' }, { status: 400 });
+  }
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json({ error: 'File exceeds 10 MB limit' }, { status: 400 });
+  }
+
+  const ext = file.name.split('.').pop() ?? 'bin';
+  const pathname = `kyb/lp/${session.lpId}/${docType}.${ext}`;
+
+  const blob = await put(pathname, file, { access: 'public', addRandomSuffix: false, allowOverwrite: true });
+
+  await db
+    .insert(lpKybDocuments)
+    .values({ lpId: session.lpId, docType, fileUrl: blob.url, fileName: file.name, status: 'submitted' })
+    .onConflictDoUpdate({
+      target: [lpKybDocuments.lpId, lpKybDocuments.docType],
+      set: { fileUrl: blob.url, fileName: file.name, status: 'submitted', updatedAt: new Date() },
+    });
+
+  // First document submitted → mark the account's KYB as in review (only advance
+  // from not_started; never override an ops approval/rejection).
+  await db
+    .update(lpAccounts)
+    .set({ kybStatus: 'submitted', updatedAt: new Date() })
+    .where(and(eq(lpAccounts.id, session.lpId), eq(lpAccounts.kybStatus, 'not_started')));
+
+  return NextResponse.json({ ok: true, docType, fileUrl: blob.url });
+}

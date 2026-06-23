@@ -796,6 +796,7 @@ export const lpKycStatus = pgEnum('lp_kyc_status', ['pending', 'approved', 'reje
 export const lpAccountType = pgEnum('lp_account_type', ['standard', 'bank'])
 export const lpAccountStatus = pgEnum('lp_account_status', ['onboarding', 'active', 'suspended'])
 export const lpKybStatus = pgEnum('lp_kyb_status', ['not_started', 'submitted', 'approved', 'rejected'])
+export const lpKybDocStatus = pgEnum('lp_kyb_doc_status', ['submitted', 'approved', 'rejected'])
 
 export const lpAccounts = pgTable(
   'lp_accounts',
@@ -834,6 +835,29 @@ export const lpAccounts = pgTable(
     walletAddressUq: uniqueIndex('lp_accounts_wallet_address_uq').on(t.walletAddress),
     kycIdx: index('lp_accounts_kyc_status_idx').on(t.kycStatus),
     apiKeyHashUq: uniqueIndex('lp_accounts_api_key_hash_uq').on(t.apiKeyHash),
+  })
+)
+
+// KYB documents uploaded during bank onboarding (one row per doc type per LP).
+export const lpKybDocuments = pgTable(
+  'lp_kyb_documents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    docType: text('doc_type').notNull(),
+    fileUrl: text('file_url').notNull(),
+    fileName: text('file_name'),
+    status: lpKybDocStatus('status').notNull().default('submitted'),
+    reviewedBy: text('reviewed_by'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lpDocUq: uniqueIndex('lp_kyb_documents_lp_doc_uq').on(t.lpId, t.docType),
+    lpIdx: index('lp_kyb_documents_lp_id_idx').on(t.lpId),
   })
 )
 

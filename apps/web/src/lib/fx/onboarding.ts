@@ -35,6 +35,22 @@ export function isAccountType(v: unknown): v is AccountType {
   return v === 'standard' || v === 'bank'
 }
 
+/** Required KYB documents for the bank onboarding path (shared by API + UI). */
+export interface KybDocType {
+  key: string
+  label: string
+  hint: string
+}
+
+export const KYB_DOC_TYPES: KybDocType[] = [
+  { key: 'regulatory_license', label: 'Banking licence', hint: 'Your Bank of Tanzania operating licence.' },
+  { key: 'ownership_ubo', label: 'Ownership / UBO', hint: 'Beneficial-ownership register.' },
+  { key: 'aml_policy', label: 'AML / CFT policy', hint: 'Your current AML/CFT policy.' },
+  { key: 'authorized_signatories', label: 'Authorised signatories', hint: 'Named signatories and their IDs.' },
+]
+
+export const KYB_DOC_KEYS: string[] = KYB_DOC_TYPES.map((d) => d.key)
+
 export function stepsFor(type: AccountType): OnboardingStepDef[] {
   return ONBOARDING_STEPS[type]
 }
