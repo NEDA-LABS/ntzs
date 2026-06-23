@@ -792,6 +792,10 @@ export const yieldAccruals = pgTable(
 // ─── SimpleFX LP Tables ──────────────────────────────────────────────────────
 
 export const lpKycStatus = pgEnum('lp_kyc_status', ['pending', 'approved', 'rejected'])
+// Onboarding model: account type, lifecycle status, and org-level KYB status.
+export const lpAccountType = pgEnum('lp_account_type', ['standard', 'bank'])
+export const lpAccountStatus = pgEnum('lp_account_status', ['onboarding', 'active', 'suspended'])
+export const lpKybStatus = pgEnum('lp_kyb_status', ['not_started', 'submitted', 'approved', 'rejected'])
 
 export const lpAccounts = pgTable(
   'lp_accounts',
@@ -810,6 +814,14 @@ export const lpAccounts = pgTable(
     onboardingStep: integer('onboarding_step').notNull().default(1),
 
     kycStatus: lpKycStatus('kyc_status').notNull().default('pending'),
+
+    // Onboarding foundation (additive). `kycStatus` retained for back-compat;
+    // `kybStatus` is the org-level KYB state used by the bank onboarding path.
+    accountType: lpAccountType('account_type').notNull().default('standard'),
+    status: lpAccountStatus('status').notNull().default('onboarding'),
+    kybStatus: lpKybStatus('kyb_status').notNull().default('not_started'),
+    bankingProfile: jsonb('banking_profile'),
+    limits: jsonb('limits'),
 
     apiKeyHash: text('api_key_hash'),
 
