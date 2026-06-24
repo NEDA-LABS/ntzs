@@ -352,6 +352,103 @@ function FxStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) 
   );
 }
 
+interface Member { id: string; email: string; role: string; status: string }
+
+/** Team & roles step — invite operators/approvers (maker-checker). */
+function TeamStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const [members, setMembers] = useState<Member[]>([]);
+  const [yourRole, setYourRole] = useState('owner');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'operator' | 'approver' | 'viewer'>('approver');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = () =>
+    fetch('/simplefx/api/lp/members')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { members?: Member[]; you?: { role?: string } } | null) => {
+        if (d?.members) setMembers(d.members);
+        if (d?.you?.role) setYourRole(d.you.role);
+      })
+      .catch(() => {});
+
+  useEffect(() => { load(); }, []);
+
+  const invite = async () => {
+    setError('');
+    if (!email.includes('@')) { setError('Enter a valid email.'); return; }
+    setBusy(true);
+    try {
+      const res = await fetch('/simplefx/api/lp/members', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, role }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) setError(d?.error || 'Could not send the invite.');
+      else { setEmail(''); await load(); }
+    } catch { setError('Network error. Please try again.'); }
+    setBusy(false);
+  };
+
+  const remove = async (memberId: string) => {
+    setBusy(true);
+    try {
+      await fetch('/simplefx/api/lp/members', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ memberId }) });
+      await load();
+    } catch { /* ignore */ }
+    setBusy(false);
+  };
+
+  const canManage = yourRole === 'owner';
+
+  return (
+    <div className="max-w-md space-y-5">
+      <div className="space-y-2">
+        {members.filter((m) => m.status !== 'disabled').map((m) => (
+          <div key={m.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-zinc-200">{m.email}</p>
+              <p className="text-[11px] text-zinc-600">{m.role}{m.status === 'invited' ? ' · invited' : ''}</p>
+            </div>
+            {canManage && m.role !== 'owner' ? (
+              <button onClick={() => remove(m.id)} disabled={busy} className="shrink-0 text-xs text-zinc-600 transition-colors hover:text-red-400">Remove</button>
+            ) : (
+              <span className="shrink-0 text-[10px] uppercase tracking-wider text-zinc-700">{m.role === 'owner' ? 'You' : ''}</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {canManage && (
+        <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <p className="text-xs leading-relaxed text-zinc-500">
+            Operators set FX and initiate; approvers authorise. Add an approver for dual control — money-moving actions then need a second person’s sign-off.
+          </p>
+          <Field label="Email" value={email} onChange={setEmail} placeholder="teammate@bank.com" type="email" />
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-zinc-500">Role</span>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as 'operator' | 'approver' | 'viewer')}
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white focus:border-blue-500/40 focus:outline-none"
+            >
+              <option value="operator">Operator — sets FX, initiates</option>
+              <option value="approver">Approver — authorises</option>
+              <option value="viewer">Viewer — read-only</option>
+            </select>
+          </label>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button onClick={invite} disabled={busy} className={PILL_PRIMARY}>Send invite</button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className={PILL_GHOST}><ArrowLeft size={15} /> Back</button>
+        <button onClick={onDone} className={PILL_PRIMARY}>Continue <ArrowRight size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -489,6 +586,8 @@ export default function OnboardingPage() {
             <BankingStep onDone={next} onBack={back} />
           ) : current.key === 'fx' ? (
             <FxStep onDone={next} onBack={back} />
+          ) : current.key === 'team' ? (
+            <TeamStep onDone={next} onBack={back} />
           ) : current.key === 'profile' ? (
             <div className="max-w-md space-y-5">
               <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
