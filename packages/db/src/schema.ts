@@ -797,6 +797,9 @@ export const lpAccountType = pgEnum('lp_account_type', ['standard', 'bank'])
 export const lpAccountStatus = pgEnum('lp_account_status', ['onboarding', 'active', 'suspended'])
 export const lpKybStatus = pgEnum('lp_kyb_status', ['not_started', 'submitted', 'approved', 'rejected'])
 export const lpKybDocStatus = pgEnum('lp_kyb_doc_status', ['submitted', 'approved', 'rejected'])
+// Maker-checker: org members + roles.
+export const lpMemberRole = pgEnum('lp_member_role', ['owner', 'operator', 'approver', 'viewer'])
+export const lpMemberStatus = pgEnum('lp_member_status', ['invited', 'active', 'disabled'])
 
 export const lpAccounts = pgTable(
   'lp_accounts',
@@ -861,6 +864,27 @@ export const lpKybDocuments = pgTable(
   (t) => ({
     lpDocUq: uniqueIndex('lp_kyb_documents_lp_doc_uq').on(t.lpId, t.docType),
     lpIdx: index('lp_kyb_documents_lp_id_idx').on(t.lpId),
+  })
+)
+
+// Org members (maker-checker). One row per user; an email belongs to one member.
+export const lpMembers = pgTable(
+  'lp_members',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    email: varchar('email', { length: 320 }).notNull(),
+    role: lpMemberRole('role').notNull().default('owner'),
+    status: lpMemberStatus('status').notNull().default('active'),
+    invitedByMemberId: uuid('invited_by_member_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex('lp_members_email_uq').on(t.email),
+    lpIdx: index('lp_members_lp_id_idx').on(t.lpId),
   })
 )
 

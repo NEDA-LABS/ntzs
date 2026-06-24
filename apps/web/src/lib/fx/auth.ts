@@ -15,24 +15,39 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
-export async function createSession(lpId: string): Promise<string> {
-  return new SignJWT({ lpId })
+export interface FxSession {
+  lpId: string;
+  memberId?: string;
+  role?: string; // owner | operator | approver | viewer (undefined = legacy = owner)
+}
+
+export async function createSession(lpId: string, member?: { memberId: string; role: string }): Promise<string> {
+  const claims: Record<string, string> = { lpId };
+  if (member) {
+    claims.memberId = member.memberId;
+    claims.role = member.role;
+  }
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(getSecret());
 }
 
-export async function verifySession(token: string): Promise<{ lpId: string } | null> {
+export async function verifySession(token: string): Promise<FxSession | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
-    return { lpId: payload.lpId as string };
+    return {
+      lpId: payload.lpId as string,
+      memberId: typeof payload.memberId === 'string' ? payload.memberId : undefined,
+      role: typeof payload.role === 'string' ? payload.role : undefined,
+    };
   } catch {
     return null;
   }
 }
 
-export async function getSessionFromCookies(): Promise<{ lpId: string } | null> {
+export async function getSessionFromCookies(): Promise<FxSession | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
