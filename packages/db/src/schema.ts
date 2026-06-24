@@ -823,6 +823,7 @@ export const lpAccounts = pgTable(
     kybStatus: lpKybStatus('kyb_status').notNull().default('not_started'),
     bankingProfile: jsonb('banking_profile'),
     limits: jsonb('limits'),
+    kybReviewNote: text('kyb_review_note'),
 
     apiKeyHash: text('api_key_hash'),
 

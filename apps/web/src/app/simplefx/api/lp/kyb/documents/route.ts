@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
@@ -26,10 +26,10 @@ export async function GET() {
       })
       .from(lpKybDocuments)
       .where(eq(lpKybDocuments.lpId, session.lpId)),
-    db.select({ kybStatus: lpAccounts.kybStatus }).from(lpAccounts).where(eq(lpAccounts.id, session.lpId)).limit(1),
+    db.select({ kybStatus: lpAccounts.kybStatus, kybReviewNote: lpAccounts.kybReviewNote }).from(lpAccounts).where(eq(lpAccounts.id, session.lpId)).limit(1),
   ]);
 
-  return NextResponse.json({ kybStatus: lp?.kybStatus ?? 'not_started', documents: docs });
+  return NextResponse.json({ kybStatus: lp?.kybStatus ?? 'not_started', reviewNote: lp?.kybReviewNote ?? null, documents: docs });
 }
 
 /**
@@ -89,12 +89,13 @@ export async function POST(req: NextRequest) {
         set: { fileUrl: blobUrl, fileName: file.name, status: 'submitted', updatedAt: new Date() },
       });
 
-    // First document submitted → mark the account's KYB as in review (only advance
-    // from not_started; never override an ops approval/rejection).
+    // Mark the account's KYB as in review on (re)submission. Moves not_started →
+    // submitted and, after ops asked for more info, rejected → submitted; never
+    // overrides an existing approval.
     await db
       .update(lpAccounts)
-      .set({ kybStatus: 'submitted', updatedAt: new Date() })
-      .where(and(eq(lpAccounts.id, session.lpId), eq(lpAccounts.kybStatus, 'not_started')));
+      .set({ kybStatus: 'submitted', kybReviewNote: null, updatedAt: new Date() })
+      .where(and(eq(lpAccounts.id, session.lpId), ne(lpAccounts.kybStatus, 'approved')));
   } catch (err) {
     console.error('[lp/kyb] db write failed:', err);
     return NextResponse.json({ error: 'Could not record the upload. Please try again.' }, { status: 500 });

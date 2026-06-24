@@ -6,9 +6,11 @@ import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions } from '@ntzs/db'
+import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions, lpKybDocuments } from '@ntzs/db'
 import { SubmitButton } from '../../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
+import { sendFxMail, fxEmailShell } from '@/lib/fx/mailer'
+import { KYB_DOC_TYPES } from '@/lib/fx/onboarding'
 
 const TOKENS = {
   nTZS: { address: '0xF476BA983DE2F1AD532380630e2CF1D1b8b10688', decimals: 18, symbol: 'nTZS' },
@@ -41,6 +43,75 @@ async function setKycAction(formData: FormData) {
   revalidatePath('/backstage/simplefx')
 }
 
+async function approveKybAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  if (!id) throw new Error('Missing id')
+  const { db } = getDb()
+  const [lp] = await db
+    .update(lpAccounts)
+    .set({ kybStatus: 'approved', status: 'active', kybReviewNote: null, updatedAt: new Date() })
+    .where(eq(lpAccounts.id, id))
+    .returning({ email: lpAccounts.email, displayName: lpAccounts.displayName })
+  if (lp?.email) {
+    await sendFxMail(
+      lp.email,
+      'Your SimpleFX partner account is approved',
+      fxEmailShell('You’re approved', `
+        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, your KYB documents have been reviewed and approved — your SimpleFX bank-partner account is now active.</p>
+        <p style="font-size:14px;line-height:1.6;color:#334155">Sign in to continue setting up your liquidity.</p>
+        <p><a href="https://www.ntzs.co.tz/simplefx" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px">Open SimpleFX</a></p>
+      `),
+    ).catch((e) => console.error('[kyb approve email]', e))
+  }
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
+async function requestKybInfoAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  const note = String(formData.get('note') ?? '').trim()
+  if (!id) throw new Error('Missing id')
+  if (!note) throw new Error('A comment is required')
+  const { db } = getDb()
+  const [lp] = await db
+    .update(lpAccounts)
+    .set({ kybStatus: 'rejected', kybReviewNote: note, updatedAt: new Date() })
+    .where(eq(lpAccounts.id, id))
+    .returning({ email: lpAccounts.email, displayName: lpAccounts.displayName })
+  if (lp?.email) {
+    await sendFxMail(
+      lp.email,
+      'More information needed for your SimpleFX application',
+      fxEmailShell('We need a bit more information', `
+        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, we reviewed your KYB submission and need more before we can approve:</p>
+        <blockquote style="margin:12px 0;padding:12px 14px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:6px;color:#0f172a;font-size:14px">${note.replace(/</g, '&lt;')}</blockquote>
+        <p style="font-size:14px;line-height:1.6;color:#334155">Please sign in and re-upload the requested documents.</p>
+        <p><a href="https://www.ntzs.co.tz/simplefx/onboarding" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px">Update documents</a></p>
+      `),
+    ).catch((e) => console.error('[kyb info email]', e))
+  }
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
+function KybBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    approved: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    rejected: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    submitted: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    not_started: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status] ?? styles.not_started}`}>
+      {status.replace('_', ' ')}
+    </span>
+  )
+}
+
 function KycBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     approved: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
@@ -62,7 +133,7 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
   if (!lp) notFound()
 
   // Fetch pool positions, recent fills, and wallet transactions
-  const [positions, recentFills, walletTxs] = await Promise.all([
+  const [positions, recentFills, walletTxs, kybDocs] = await Promise.all([
     db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, id)),
     db
       .select()
@@ -76,6 +147,7 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
       .where(eq(lpWalletTransactions.lpId, id))
       .orderBy(desc(lpWalletTransactions.createdAt))
       .limit(50),
+    db.select().from(lpKybDocuments).where(eq(lpKybDocuments.lpId, id)),
   ])
 
   const totalSpreadEarned = recentFills.reduce((sum, f) => sum + parseFloat(f.spreadEarned?.toString() ?? '0'), 0)
@@ -195,6 +267,71 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
               </form>
             </div>
           </div>
+
+          {/* KYB review (bank partners) */}
+          {lp.accountType === 'bank' && (
+            <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">KYB · Bank verification</h2>
+                <KybBadge status={lp.kybStatus} />
+              </div>
+
+              {lp.kybReviewNote && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-300">
+                  <span className="text-amber-500/70">Last request sent: </span>{lp.kybReviewNote}
+                </div>
+              )}
+
+              <ul className="space-y-2">
+                {KYB_DOC_TYPES.map((d) => {
+                  const doc = kybDocs.find((k) => k.docType === d.key)
+                  return (
+                    <li key={d.key} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-black/40 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm text-zinc-200">{d.label}</p>
+                        <p className="truncate text-[11px] text-zinc-600">{doc ? (doc.fileName ?? 'uploaded') : 'not uploaded'}</p>
+                      </div>
+                      {doc ? (
+                        <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg bg-blue-600/15 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-600/25">
+                          View
+                        </a>
+                      ) : (
+                        <span className="shrink-0 text-[11px] text-zinc-600">missing</span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+
+              <div className="space-y-3 border-t border-white/5 pt-4">
+                <form action={approveKybAction}>
+                  <input type="hidden" name="id" value={lp.id} />
+                  <SubmitButton
+                    pendingText="Activating..."
+                    className="w-full rounded-xl bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
+                  >
+                    Approve KYB &amp; activate
+                  </SubmitButton>
+                </form>
+                <form action={requestKybInfoAction} className="space-y-2">
+                  <input type="hidden" name="id" value={lp.id} />
+                  <textarea
+                    name="note"
+                    rows={3}
+                    required
+                    placeholder="What's missing or needs correction? (emailed to the applicant)"
+                    className="w-full resize-none rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none"
+                  />
+                  <SubmitButton
+                    pendingText="Sending..."
+                    className="w-full rounded-xl bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
+                  >
+                    Request more info
+                  </SubmitButton>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Activate / Deactivate */}
           <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 space-y-3">
