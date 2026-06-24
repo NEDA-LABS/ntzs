@@ -207,6 +207,151 @@ function KybUpload({ onDone }: { onDone: () => void }) {
   );
 }
 
+function Field({
+  label, value, onChange, placeholder, type = 'text',
+}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs text-zinc-500">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none"
+      />
+    </label>
+  );
+}
+
+/** Banking & reserve step — trust account + settlement details → bankingProfile. */
+function BankingStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const [form, setForm] = useState({ bankName: '', trustAccountRef: '', swift: '', contactName: '', contactEmail: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/simplefx/api/lp/banking')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { banking?: Partial<typeof form> | null } | null) => { if (d?.banking) setForm((f) => ({ ...f, ...d.banking })); })
+      .catch(() => {});
+  }, []);
+
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    setError('');
+    if (!form.bankName.trim() || !form.trustAccountRef.trim()) {
+      setError('Partner bank and trust account reference are required.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/simplefx/api/lp/banking', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        setError(d?.error || 'Could not save. Please try again.');
+      } else { onDone(); }
+    } catch { setError('Network error. Please try again.'); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="max-w-md space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Partner bank" value={form.bankName} onChange={(v) => set('bankName', v)} placeholder="e.g. CRDB Bank" />
+        <Field label="SWIFT / BIC" value={form.swift} onChange={(v) => set('swift', v)} placeholder="Optional" />
+      </div>
+      <Field label="Trust / escrow account reference" value={form.trustAccountRef} onChange={(v) => set('trustAccountRef', v)} placeholder="Account number or reference" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Settlement contact" value={form.contactName} onChange={(v) => set('contactName', v)} placeholder="Name" />
+        <Field label="Contact email" value={form.contactEmail} onChange={(v) => set('contactEmail', v)} placeholder="ops@bank.com" type="email" />
+      </div>
+      <p className="text-xs leading-relaxed text-zinc-600">Your reserves stay in this ring-fenced account at your own bank — NEDA never holds your funds.</p>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <div className="flex items-center gap-3 pt-1">
+        <button onClick={onBack} className={PILL_GHOST}><ArrowLeft size={15} /> Back</button>
+        <button onClick={save} disabled={saving} className={PILL_PRIMARY}>Save &amp; continue <ArrowRight size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
+/** FX configuration step — spread (bps) + optional exposure limits. */
+function FxStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const [bidBps, setBidBps] = useState('120');
+  const [askBps, setAskBps] = useState('150');
+  const [maxNtzs, setMaxNtzs] = useState('');
+  const [maxUsd, setMaxUsd] = useState('');
+  const [perTxn, setPerTxn] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/simplefx/api/lp/fx-config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { bidBps?: number; askBps?: number; limits?: { maxInventoryNtzs?: number; maxInventoryUsd?: number; perTxnCapUsd?: number } | null } | null) => {
+        if (!d) return;
+        if (typeof d.bidBps === 'number') setBidBps(String(d.bidBps));
+        if (typeof d.askBps === 'number') setAskBps(String(d.askBps));
+        if (d.limits) {
+          setMaxNtzs(d.limits.maxInventoryNtzs?.toString() ?? '');
+          setMaxUsd(d.limits.maxInventoryUsd?.toString() ?? '');
+          setPerTxn(d.limits.perTxnCapUsd?.toString() ?? '');
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setError('');
+    const bid = Number(bidBps), ask = Number(askBps);
+    if (!(bid >= 10 && bid <= 500 && ask >= 10 && ask <= 500)) {
+      setError('Bid and ask spread must each be between 10 and 500 bps.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const limits = {
+        maxInventoryNtzs: maxNtzs ? Number(maxNtzs) : undefined,
+        maxInventoryUsd: maxUsd ? Number(maxUsd) : undefined,
+        perTxnCapUsd: perTxn ? Number(perTxn) : undefined,
+      };
+      const res = await fetch('/simplefx/api/lp/fx-config', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bidBps: bid, askBps: ask, limits }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        setError(d?.error || 'Could not save. Please try again.');
+      } else { onDone(); }
+    } catch { setError('Network error. Please try again.'); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="max-w-md space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Bid spread (bps)" value={bidBps} onChange={setBidBps} type="number" />
+        <Field label="Ask spread (bps)" value={askBps} onChange={setAskBps} type="number" />
+      </div>
+      <p className="text-xs text-zinc-600">Your FX margin on each side of a swap — 100 bps = 1%. You can change it anytime.</p>
+      <div className="grid grid-cols-1 gap-3 border-t border-white/5 pt-4 sm:grid-cols-3">
+        <Field label="Max nTZS inventory" value={maxNtzs} onChange={setMaxNtzs} type="number" placeholder="Optional" />
+        <Field label="Max USD inventory" value={maxUsd} onChange={setMaxUsd} type="number" placeholder="Optional" />
+        <Field label="Per-trade cap (USD)" value={perTxn} onChange={setPerTxn} type="number" placeholder="Optional" />
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <div className="flex items-center gap-3 pt-1">
+        <button onClick={onBack} className={PILL_GHOST}><ArrowLeft size={15} /> Back</button>
+        <button onClick={save} disabled={saving} className={PILL_PRIMARY}>Save &amp; continue <ArrowRight size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -340,6 +485,10 @@ export default function OnboardingPage() {
         <div className="fx-fade-up fx-delay-2 lg:pt-1">
           {current.key === 'kyb' ? (
             <KybUpload onDone={next} />
+          ) : current.key === 'banking' ? (
+            <BankingStep onDone={next} onBack={back} />
+          ) : current.key === 'fx' ? (
+            <FxStep onDone={next} onBack={back} />
           ) : current.key === 'profile' ? (
             <div className="max-w-md space-y-5">
               <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
