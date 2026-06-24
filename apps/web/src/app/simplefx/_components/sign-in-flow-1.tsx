@@ -296,7 +296,7 @@ const Shader: React.FC<ShaderProps> = ({ source, uniforms, maxFps = 60 }) => {
   );
 };
 
-function Navbar() {
+function Navbar({ onStart }: { onStart: () => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const [headerShapeClass, setHeaderShapeClass] = useState("rounded-full");
   const shapeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -335,9 +335,9 @@ function Navbar() {
           </button>
           <div className="relative group">
             <div className="absolute inset-0 -m-2 rounded-full hidden sm:block bg-blue-600 opacity-20 filter blur-lg pointer-events-none transition-all duration-300 group-hover:opacity-40 group-hover:blur-xl" />
-            <a href="/simplefx?next=/simplefx/onboarding" className="relative z-10 inline-flex items-center px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
+            <button type="button" onClick={onStart} className="relative z-10 inline-flex items-center px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
               Become a Market Maker
-            </a>
+            </button>
           </div>
         </div>
 
@@ -366,9 +366,9 @@ function Navbar() {
           <button className="w-full px-4 py-2 text-sm border border-white/10 bg-white/5 text-gray-300 rounded-full">
             Sign In
           </button>
-          <a href="/simplefx?next=/simplefx/onboarding" className="w-full text-center px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
+          <button type="button" onClick={() => { setIsOpen(false); onStart(); }} className="w-full px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
             Become a Market Maker
-          </a>
+          </button>
         </div>
       </div>
     </header>
@@ -379,6 +379,23 @@ export const SignInPage = ({ className }: SignInPageProps) => {
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"email" | "code" | "success">("email");
   const [bankIntent, setBankIntent] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+
+  // "Become a Market Maker" — for a logged-out visitor there's nothing to navigate
+  // to yet, so instead of reloading the same landing we mark the bank intent, scroll
+  // to the sign-up form, and focus the email field. The next= URL is set (without a
+  // reload) so the post-OTP redirect lands them in onboarding.
+  const startOnboarding = () => {
+    setBankIntent(true);
+    setStep("email");
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/simplefx?next=/simplefx/onboarding");
+    }
+    setTimeout(() => {
+      emailInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      emailInputRef.current?.focus();
+    }, 80);
+  };
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [initialCanvasVisible, setInitialCanvasVisible] = useState(true);
@@ -553,7 +570,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
 
       {/* Content */}
       <div className="relative z-10 flex flex-col flex-1">
-        <Navbar />
+        <Navbar onStart={startOnboarding} />
 
         <div className="flex flex-1 flex-col lg:flex-row">
           {/* Left — Hero copy */}
@@ -626,6 +643,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                     <form onSubmit={handleEmailSubmit} className="space-y-3">
                       <div className="relative">
                         <input
+                          ref={emailInputRef}
                           type="email"
                           placeholder="you@example.com"
                           value={email}
