@@ -104,14 +104,16 @@ function KybUpload({ onDone }: { onDone: () => void }) {
   const [docs, setDocs] = useState<Record<string, DocState>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [reviewNote, setReviewNote] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/simplefx/api/lp/kyb/documents')
       .then((r) => (r.ok ? r.json() : { documents: [] }))
-      .then((d: { documents: { docType: string; fileName: string | null; fileUrl: string; status: string }[] }) => {
+      .then((d: { documents: { docType: string; fileName: string | null; fileUrl: string; status: string }[]; reviewNote?: string | null }) => {
         const map: Record<string, DocState> = {};
         for (const doc of d.documents) map[doc.docType] = { fileName: doc.fileName, fileUrl: doc.fileUrl, status: doc.status };
         setDocs(map);
+        setReviewNote(d.reviewNote ?? null);
       })
       .catch(() => {});
   }, []);
@@ -143,6 +145,12 @@ function KybUpload({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="space-y-5">
+      {reviewNote && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+          <p className="text-sm font-medium text-amber-200">More information requested</p>
+          <p className="mt-1 text-sm leading-relaxed text-amber-200/80">{reviewNote}</p>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {KYB_DOC_TYPES.map((doc, i) => {
           const have = docs[doc.key];
