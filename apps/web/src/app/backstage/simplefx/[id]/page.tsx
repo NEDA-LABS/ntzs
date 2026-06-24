@@ -147,7 +147,14 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
       .where(eq(lpWalletTransactions.lpId, id))
       .orderBy(desc(lpWalletTransactions.createdAt))
       .limit(50),
-    db.select().from(lpKybDocuments).where(eq(lpKybDocuments.lpId, id)),
+    db
+      .select({
+        docType: lpKybDocuments.docType,
+        fileName: lpKybDocuments.fileName,
+        status: lpKybDocuments.status,
+      })
+      .from(lpKybDocuments)
+      .where(eq(lpKybDocuments.lpId, id)),
   ])
 
   const totalSpreadEarned = recentFills.reduce((sum, f) => sum + parseFloat(f.spreadEarned?.toString() ?? '0'), 0)
@@ -292,7 +299,7 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
                         <p className="truncate text-[11px] text-zinc-600">{doc ? (doc.fileName ?? 'uploaded') : 'not uploaded'}</p>
                       </div>
                       {doc ? (
-                        <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg bg-blue-600/15 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-600/25">
+                        <a href={`/api/backstage/simplefx/kyb-file?lpId=${lp.id}&docType=${doc.docType}`} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg bg-blue-600/15 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-600/25">
                           View
                         </a>
                       ) : (

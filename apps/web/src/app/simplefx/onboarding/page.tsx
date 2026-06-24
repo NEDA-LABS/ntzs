@@ -18,7 +18,7 @@ interface OnboardingState {
   kybStatus: string;
   steps: StepInfo[];
 }
-interface DocState { fileName: string | null; fileUrl: string; status: string }
+interface DocState { fileName: string | null; status: string }
 
 const DOT_BG: React.CSSProperties = {
   backgroundImage: 'radial-gradient(circle, rgba(96,165,250,0.12) 1px, transparent 1px)',
@@ -109,9 +109,9 @@ function KybUpload({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     fetch('/simplefx/api/lp/kyb/documents')
       .then((r) => (r.ok ? r.json() : { documents: [] }))
-      .then((d: { documents: { docType: string; fileName: string | null; fileUrl: string; status: string }[]; reviewNote?: string | null }) => {
+      .then((d: { documents: { docType: string; fileName: string | null; status: string }[]; reviewNote?: string | null }) => {
         const map: Record<string, DocState> = {};
-        for (const doc of d.documents) map[doc.docType] = { fileName: doc.fileName, fileUrl: doc.fileUrl, status: doc.status };
+        for (const doc of d.documents) map[doc.docType] = { fileName: doc.fileName, status: doc.status };
         setDocs(map);
         setReviewNote(d.reviewNote ?? null);
       })
@@ -127,12 +127,12 @@ function KybUpload({ onDone }: { onDone: () => void }) {
       fd.append('file', file);
       fd.append('docType', docType);
       const res = await fetch('/simplefx/api/lp/kyb/documents', { method: 'POST', body: fd });
-      let data: { error?: string; fileUrl?: string } | null = null;
+      let data: { error?: string } | null = null;
       try { data = await res.json(); } catch { /* non-JSON (e.g. a raw 500) */ }
       if (!res.ok) {
         setError(data?.error || `Upload failed (HTTP ${res.status}). Please try again.`);
       } else {
-        setDocs((prev) => ({ ...prev, [docType]: { fileName: file.name, fileUrl: data?.fileUrl ?? '', status: 'submitted' } }));
+        setDocs((prev) => ({ ...prev, [docType]: { fileName: file.name, status: 'submitted' } }));
       }
     } catch (e) {
       setError('Network error: ' + (e instanceof Error ? e.message : 'request failed'));
