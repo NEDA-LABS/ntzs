@@ -848,7 +848,9 @@ export const lpKybDocuments = pgTable(
       .notNull()
       .references(() => lpAccounts.id, { onDelete: 'cascade' }),
     docType: text('doc_type').notNull(),
-    fileUrl: text('file_url').notNull(),
+    fileUrl: text('file_url'), // legacy (Vercel Blob); new uploads use fileData
+    fileData: text('file_data'), // base64-encoded file bytes, stored in Postgres
+    contentType: text('content_type'),
     fileName: text('file_name'),
     status: lpKybDocStatus('status').notNull().default('submitted'),
     reviewedBy: text('reviewed_by'),
