@@ -335,7 +335,7 @@ function Navbar() {
           </button>
           <div className="relative group">
             <div className="absolute inset-0 -m-2 rounded-full hidden sm:block bg-blue-600 opacity-20 filter blur-lg pointer-events-none transition-all duration-300 group-hover:opacity-40 group-hover:blur-xl" />
-            <a href="/simplefx/onboarding" className="relative z-10 inline-flex items-center px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
+            <a href="/simplefx?next=/simplefx/onboarding" className="relative z-10 inline-flex items-center px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
               Become a Market Maker
             </a>
           </div>
@@ -366,7 +366,7 @@ function Navbar() {
           <button className="w-full px-4 py-2 text-sm border border-white/10 bg-white/5 text-gray-300 rounded-full">
             Sign In
           </button>
-          <a href="/simplefx/onboarding" className="w-full text-center px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
+          <a href="/simplefx?next=/simplefx/onboarding" className="w-full text-center px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
             Become a Market Maker
           </a>
         </div>
@@ -378,12 +378,14 @@ function Navbar() {
 export const SignInPage = ({ className }: SignInPageProps) => {
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"email" | "code" | "success">("email");
+  const [bankIntent, setBankIntent] = useState(false);
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [initialCanvasVisible, setInitialCanvasVisible] = useState(true);
   const [reverseCanvasVisible, setReverseCanvasVisible] = useState(false);
 
   useEffect(() => {
+    setBankIntent((new URLSearchParams(window.location.search).get("next") ?? "").includes("onboarding"));
     fetch("/simplefx/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
@@ -605,12 +607,19 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                     className="space-y-6"
                   >
                     <div className="space-y-1">
+                      {bankIntent && (
+                        <span className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-600/10 text-blue-400 text-xs font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                          Bank onboarding
+                        </span>
+                      )}
                       <h2 className="text-3xl font-bold tracking-tight text-white">
-                        Create your LP Wallet
+                        {bankIntent ? "Start your onboarding" : "Create your LP Wallet"}
                       </h2>
                       <p className="text-gray-400 text-base font-light">
-                        Enter your email to get started. Your inventory wallet
-                        is provisioned instantly.
+                        {bankIntent
+                          ? "Enter your email to begin — we'll guide you through KYB and reserve setup."
+                          : "Enter your email to get started. Your inventory wallet is provisioned instantly."}
                       </p>
                     </div>
 

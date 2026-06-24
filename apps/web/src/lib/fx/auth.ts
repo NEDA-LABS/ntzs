@@ -52,7 +52,16 @@ export async function setSessionCookie(token: string) {
 
 export async function clearSessionCookie() {
   const jar = await cookies();
-  jar.delete(COOKIE);
+  // The session cookie is scoped to path '/simplefx' (see setSessionCookie), so the
+  // delete must match that path — otherwise it targets '/' and the cookie survives,
+  // silently re-authenticating the user on the next request.
+  jar.set(COOKIE, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/simplefx',
+    maxAge: 0,
+  });
 }
 
 // ── MM API Key Authentication ─────────────────────────────────────────────────
