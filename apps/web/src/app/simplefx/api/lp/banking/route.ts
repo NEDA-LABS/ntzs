@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
 import { lpAccounts } from '@ntzs/db';
+import { needsApproval, createApproval } from '@/lib/fx/approvals';
 
 interface BankingProfile {
   bankName?: string;
@@ -50,6 +51,12 @@ export async function PUT(req: NextRequest) {
     contactName: body.contactName?.trim() || undefined,
     contactEmail: body.contactEmail?.trim() || undefined,
   };
+
+  // Maker-checker: an operator's change is queued for an approver.
+  if (needsApproval(session.role)) {
+    await createApproval({ lpId: session.lpId, action: 'set_banking', payload: profile, memberId: session.memberId });
+    return NextResponse.json({ ok: true, pending: true });
+  }
 
   await db
     .update(lpAccounts)

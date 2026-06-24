@@ -33,7 +33,7 @@ export async function GET() {
     if (!lp) return NextResponse.json({ error: 'Account not found' }, { status: 404 });
 
     const { apiKeyHash, ...lpData } = lp;
-    return NextResponse.json({ lp: { ...lpData, hasApiKey: !!apiKeyHash } });
+    return NextResponse.json({ lp: { ...lpData, hasApiKey: !!apiKeyHash, role: session.role ?? 'owner' } });
   } catch (err) {
     console.error('[me]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
