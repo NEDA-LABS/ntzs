@@ -335,9 +335,9 @@ function Navbar() {
           </button>
           <div className="relative group">
             <div className="absolute inset-0 -m-2 rounded-full hidden sm:block bg-blue-600 opacity-20 filter blur-lg pointer-events-none transition-all duration-300 group-hover:opacity-40 group-hover:blur-xl" />
-            <button className="relative z-10 px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
+            <a href="/simplefx/onboarding" className="relative z-10 inline-flex items-center px-4 py-2 text-xs font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full hover:from-blue-300 hover:to-blue-500 transition-all duration-200">
               Become a Market Maker
-            </button>
+            </a>
           </div>
         </div>
 
@@ -366,9 +366,9 @@ function Navbar() {
           <button className="w-full px-4 py-2 text-sm border border-white/10 bg-white/5 text-gray-300 rounded-full">
             Sign In
           </button>
-          <button className="w-full px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
+          <a href="/simplefx/onboarding" className="w-full text-center px-4 py-2 text-sm font-semibold text-black bg-gradient-to-br from-blue-400 to-blue-600 rounded-full">
             Become a Market Maker
-          </button>
+          </a>
         </div>
       </div>
     </header>
@@ -388,8 +388,10 @@ export const SignInPage = ({ className }: SignInPageProps) => {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.lp) {
-          const dest = data.lp.accountType === "bank" && data.lp.status === "onboarding"
-            ? "/simplefx/onboarding" : "/simplefx/dashboard";
+          const next = new URLSearchParams(window.location.search).get("next");
+          const safe = next && next.startsWith("/simplefx") ? next : null;
+          const dest = safe || (data.lp.accountType === "bank" && data.lp.status === "onboarding"
+            ? "/simplefx/onboarding" : "/simplefx/dashboard");
           window.location.replace(dest);
         }
       })
@@ -489,6 +491,8 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                 const me = await fetch("/simplefx/api/auth/me").then((r) => (r.ok ? r.json() : null));
                 if (me?.lp?.accountType === "bank" && me.lp.status === "onboarding") dest = "/simplefx/onboarding";
               } catch { /* fall back to dashboard */ }
+              const next = new URLSearchParams(window.location.search).get("next");
+              if (next && next.startsWith("/simplefx")) dest = next;
               router.push(dest);
             }, 1200);
           }, 2000);

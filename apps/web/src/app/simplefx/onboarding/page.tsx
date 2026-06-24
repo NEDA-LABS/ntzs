@@ -125,14 +125,15 @@ function KybUpload({ onDone }: { onDone: () => void }) {
       fd.append('file', file);
       fd.append('docType', docType);
       const res = await fetch('/simplefx/api/lp/kyb/documents', { method: 'POST', body: fd });
-      const data = await res.json();
+      let data: { error?: string; fileUrl?: string } | null = null;
+      try { data = await res.json(); } catch { /* non-JSON (e.g. a raw 500) */ }
       if (!res.ok) {
-        setError(data.error || 'Upload failed. Please try again.');
+        setError(data?.error || `Upload failed (HTTP ${res.status}). Please try again.`);
       } else {
-        setDocs((prev) => ({ ...prev, [docType]: { fileName: file.name, fileUrl: data.fileUrl, status: 'submitted' } }));
+        setDocs((prev) => ({ ...prev, [docType]: { fileName: file.name, fileUrl: data?.fileUrl ?? '', status: 'submitted' } }));
       }
-    } catch {
-      setError('Network error. Please try again.');
+    } catch (e) {
+      setError('Network error: ' + (e instanceof Error ? e.message : 'request failed'));
     }
     setBusy(null);
   };
@@ -206,7 +207,8 @@ export default function OnboardingPage() {
   const load = useCallback(async () => {
     const res = await fetch('/simplefx/api/lp/onboarding');
     if (!res.ok) {
-      router.replace('/simplefx');
+      // Not signed in → sign in, then return here (banks arriving from the landing CTA).
+      router.replace('/simplefx?next=' + encodeURIComponent('/simplefx/onboarding'));
       return;
     }
     setState(await res.json());
@@ -258,23 +260,26 @@ export default function OnboardingPage() {
             Choose how you want to onboard. You can change this later with our team.
           </p>
           <div className="mt-10 grid grid-cols-1 gap-4 text-left sm:grid-cols-2">
-            <button
-              onClick={() => choose('standard')}
-              className="fx-fade-up fx-delay-3 group flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/25"
+            <div
+              aria-disabled
+              className="fx-fade-up fx-delay-3 relative flex cursor-not-allowed flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 opacity-60"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-zinc-400 group-hover:text-white">
+              <span className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                Coming soon
+              </span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-zinc-600">
                 <Sparkles size={18} />
               </span>
               <div>
-                <p className="text-base font-medium text-white">Standard LP</p>
-                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-                  Self-serve. Deposit, set your spread, and go live in minutes.
+                <p className="text-base font-medium text-zinc-300">Standard LP</p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-600">
+                  Self-serve liquidity provision. Available soon.
                 </p>
               </div>
-              <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-zinc-400 group-hover:text-blue-400">
-                Continue <ArrowRight size={14} />
+              <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-zinc-600">
+                Coming soon
               </span>
-            </button>
+            </div>
             <button
               onClick={() => choose('bank')}
               className="fx-fade-up fx-delay-4 group flex flex-col gap-4 rounded-2xl border border-blue-500/30 bg-blue-600/[0.06] p-6 transition-colors hover:border-blue-400/50"
