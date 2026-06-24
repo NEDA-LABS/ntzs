@@ -800,6 +800,7 @@ export const lpKybDocStatus = pgEnum('lp_kyb_doc_status', ['submitted', 'approve
 // Maker-checker: org members + roles.
 export const lpMemberRole = pgEnum('lp_member_role', ['owner', 'operator', 'approver', 'viewer'])
 export const lpMemberStatus = pgEnum('lp_member_status', ['invited', 'active', 'disabled'])
+export const lpApprovalStatus = pgEnum('lp_approval_status', ['pending', 'approved', 'rejected'])
 
 export const lpAccounts = pgTable(
   'lp_accounts',
@@ -885,6 +886,27 @@ export const lpMembers = pgTable(
   (t) => ({
     emailUq: uniqueIndex('lp_members_email_uq').on(t.email),
     lpIdx: index('lp_members_lp_id_idx').on(t.lpId),
+  })
+)
+
+// Maker-checker approvals — a maker's gated action waits here for a checker.
+export const lpApprovals = pgTable(
+  'lp_approvals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    action: text('action').notNull(), // set_fx | set_banking
+    payload: jsonb('payload'),
+    requestedByMemberId: uuid('requested_by_member_id'),
+    status: lpApprovalStatus('status').notNull().default('pending'),
+    decidedByMemberId: uuid('decided_by_member_id'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lpStatusIdx: index('lp_approvals_lp_status_idx').on(t.lpId, t.status),
   })
 )
 

@@ -6,7 +6,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ArrowDownToLine, ArrowUpRight, SlidersHorizontal,
-  Activity, Settings, LogOut, Menu, ArrowLeftRight, Clock,
+  Activity, Settings, LogOut, Menu, ArrowLeftRight, Clock, ShieldCheck,
+  type LucideIcon,
 } from 'lucide-react';
 
 export interface LpAccount {
@@ -20,6 +21,7 @@ export interface LpAccount {
   accountType: 'standard' | 'bank';
   status: 'onboarding' | 'active' | 'suspended';
   kybStatus: 'not_started' | 'submitted' | 'approved' | 'rejected';
+  role?: 'owner' | 'operator' | 'approver' | 'viewer';
   onboardingStep: number;
   kycStatus: 'pending' | 'approved' | 'rejected';
   hasApiKey: boolean;
@@ -34,7 +36,9 @@ interface LpCtx {
 const Ctx = createContext<LpCtx>({ lp: null, refresh: async () => {} });
 export const useLp = () => useContext(Ctx);
 
-const NAV = [
+type NavItem = { href: string; label: string; icon: LucideIcon; exact?: boolean; roles?: string[] };
+
+const NAV: NavItem[] = [
   { href: '/simplefx/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/simplefx/dashboard/deposit', label: 'Deposit', icon: ArrowDownToLine },
   { href: '/simplefx/dashboard/withdraw', label: 'Withdraw', icon: ArrowUpRight },
@@ -43,11 +47,14 @@ const NAV = [
   { href: '/simplefx/dashboard/positions', label: 'Positions', icon: Activity },
   { href: '/simplefx/dashboard/rebalance', label: 'Rebalance', icon: SlidersHorizontal },
   { href: '/simplefx/dashboard/transactions', label: 'Transactions', icon: Clock },
+  { href: '/simplefx/dashboard/approvals', label: 'Approvals', icon: ShieldCheck, roles: ['owner', 'approver'] },
   { href: '/simplefx/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
 function Sidebar({ lp, onLogout }: { lp: LpAccount | null; onLogout: () => void }) {
   const pathname = usePathname();
+  const role = lp?.role ?? 'owner';
+  const items = NAV.filter((i) => !i.roles || i.roles.includes(role));
 
   return (
     <aside className="flex flex-col h-full w-60 bg-black border-r border-white/5 px-4 py-6">
@@ -61,7 +68,7 @@ function Sidebar({ lp, onLogout }: { lp: LpAccount | null; onLogout: () => void 
       </div>
 
       <nav className="flex-1 space-y-0.5">
-        {NAV.map(({ href, label, icon: Icon, exact }) => {
+        {items.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);
           return (
             <Link

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
 import { lpAccounts } from '@ntzs/db';
+import { needsApproval, createApproval } from '@/lib/fx/approvals';
 
 interface Limits {
   maxInventoryNtzs?: number;
@@ -57,6 +58,12 @@ export async function PUT(req: NextRequest) {
     if (typeof v === 'number' && Number.isFinite(v) && v >= 0) clean[key] = v;
   }
   const limits = Object.keys(clean).length ? clean : null;
+
+  // Maker-checker: an operator's change is queued for an approver.
+  if (needsApproval(session.role)) {
+    await createApproval({ lpId: session.lpId, action: 'set_fx', payload: { bidBps, askBps, limits }, memberId: session.memberId });
+    return NextResponse.json({ ok: true, pending: true, message: 'Submitted to an approver.' });
+  }
 
   await db
     .update(lpAccounts)
