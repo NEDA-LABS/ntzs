@@ -59,22 +59,46 @@ export async function POST(req: NextRequest) {
   const ext = file.name.split('.').pop() ?? 'bin';
   const pathname = `kyb/lp/${session.lpId}/${docType}.${ext}`;
 
-  const blob = await put(pathname, file, { access: 'public', addRandomSuffix: false, allowOverwrite: true });
+  // Store the file. Wrapped so a storage failure (e.g. BLOB_READ_WRITE_TOKEN not
+  // configured) returns a clear JSON error instead of an unhandled 500 — which the
+  // client otherwise surfaces as a generic "Network error".
+  let blobUrl: string;
+  try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return NextResponse.json(
+        { error: 'Document storage is not configured (BLOB_READ_WRITE_TOKEN missing). Connect a Vercel Blob store.' },
+        { status: 503 },
+      );
+    }
+    const blob = await put(pathname, file, { access: 'public', addRandomSuffix: false, allowOverwrite: true });
+    blobUrl = blob.url;
+  } catch (err) {
+    console.error('[lp/kyb] blob upload failed:', err);
+    return NextResponse.json(
+      { error: 'Storage upload failed: ' + (err instanceof Error ? err.message : 'unknown error') },
+      { status: 502 },
+    );
+  }
 
-  await db
-    .insert(lpKybDocuments)
-    .values({ lpId: session.lpId, docType, fileUrl: blob.url, fileName: file.name, status: 'submitted' })
-    .onConflictDoUpdate({
-      target: [lpKybDocuments.lpId, lpKybDocuments.docType],
-      set: { fileUrl: blob.url, fileName: file.name, status: 'submitted', updatedAt: new Date() },
-    });
+  try {
+    await db
+      .insert(lpKybDocuments)
+      .values({ lpId: session.lpId, docType, fileUrl: blobUrl, fileName: file.name, status: 'submitted' })
+      .onConflictDoUpdate({
+        target: [lpKybDocuments.lpId, lpKybDocuments.docType],
+        set: { fileUrl: blobUrl, fileName: file.name, status: 'submitted', updatedAt: new Date() },
+      });
 
-  // First document submitted → mark the account's KYB as in review (only advance
-  // from not_started; never override an ops approval/rejection).
-  await db
-    .update(lpAccounts)
-    .set({ kybStatus: 'submitted', updatedAt: new Date() })
-    .where(and(eq(lpAccounts.id, session.lpId), eq(lpAccounts.kybStatus, 'not_started')));
+    // First document submitted → mark the account's KYB as in review (only advance
+    // from not_started; never override an ops approval/rejection).
+    await db
+      .update(lpAccounts)
+      .set({ kybStatus: 'submitted', updatedAt: new Date() })
+      .where(and(eq(lpAccounts.id, session.lpId), eq(lpAccounts.kybStatus, 'not_started')));
+  } catch (err) {
+    console.error('[lp/kyb] db write failed:', err);
+    return NextResponse.json({ error: 'Could not record the upload. Please try again.' }, { status: 500 });
+  }
 
-  return NextResponse.json({ ok: true, docType, fileUrl: blob.url });
+  return NextResponse.json({ ok: true, docType, fileUrl: blobUrl });
 }
