@@ -340,6 +340,55 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
             </div>
           )}
 
+          {/* Banking & reserve (bank partners) */}
+          {lp.accountType === 'bank' && (() => {
+            const bank = (lp.bankingProfile ?? {}) as { bankName?: string; trustAccountRef?: string; swift?: string; contactName?: string; contactEmail?: string }
+            const limits = (lp.limits ?? {}) as { maxInventoryNtzs?: number; maxInventoryUsd?: number; perTxnCapUsd?: number }
+            const hasBank = !!(bank.bankName || bank.trustAccountRef)
+            return (
+              <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 space-y-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Banking &amp; reserve</h2>
+                {hasBank ? (
+                  <dl className="space-y-3 text-sm">
+                    <div>
+                      <dt className="text-xs text-zinc-600 mb-0.5">Partner bank</dt>
+                      <dd className="text-white">{bank.bankName || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-zinc-600 mb-0.5">Trust / escrow reference</dt>
+                      <dd className="font-mono text-xs text-zinc-300 break-all">{bank.trustAccountRef || '—'}</dd>
+                    </div>
+                    {bank.swift && (
+                      <div>
+                        <dt className="text-xs text-zinc-600 mb-0.5">SWIFT / BIC</dt>
+                        <dd className="font-mono text-xs text-zinc-300">{bank.swift}</dd>
+                      </div>
+                    )}
+                    {(bank.contactName || bank.contactEmail) && (
+                      <div>
+                        <dt className="text-xs text-zinc-600 mb-0.5">Settlement contact</dt>
+                        <dd className="text-zinc-300">{[bank.contactName, bank.contactEmail].filter(Boolean).join(' · ')}</dd>
+                      </div>
+                    )}
+                  </dl>
+                ) : (
+                  <p className="text-sm text-zinc-600">Not yet provided.</p>
+                )}
+                <div className="border-t border-white/5 pt-3">
+                  <p className="mb-2 text-xs text-zinc-600">Exposure limits</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {([['Max nTZS', limits.maxInventoryNtzs], ['Max USD', limits.maxInventoryUsd], ['Per-trade USD', limits.perTxnCapUsd]] as const).map(([label, v]) => (
+                      <div key={label} className="rounded-lg bg-black/40 border border-white/5 p-2.5">
+                        <p className="text-[10px] text-zinc-600">{label}</p>
+                        <p className="text-sm text-zinc-200 tabular-nums">{typeof v === 'number' ? v.toLocaleString() : '—'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Activate / Deactivate */}
           <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Position</h2>
