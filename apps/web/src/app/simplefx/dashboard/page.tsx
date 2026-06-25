@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap,
-  Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle, Building2,
+  Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle, Building2, Settings,
 } from 'lucide-react';
-import { useLp } from './layout';
+import { useLp, type LpAccount } from './layout';
 
 const STEPS = [
   {
@@ -92,6 +92,45 @@ function OnboardingWizard({ currentStep }: { currentStep: number }) {
             </motion.div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function BankOverviewBody({ lp, spreadPct }: { lp: LpAccount; spreadPct: string }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard label="Your FX rate" value={`${spreadPct}%`} sub={`Bid ${lp.bidBps}bps / Ask ${lp.askBps}bps`} accent />
+        <StatCard label="Reserve backing" value="1 : 1" sub="TZS reserves = nTZS issued" />
+        <StatCard
+          label="Account status"
+          value={lp.status === 'active' ? 'Active' : 'Onboarding'}
+          sub={lp.kybStatus === 'approved' ? 'KYB approved' : `KYB ${lp.kybStatus.replace('_', ' ')}`}
+        />
+      </div>
+      <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">
+        <p className="text-sm font-medium text-white">Reserve &amp; settlement</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+          You hold TZS reserves in your trust account; nTZS is issued 1:1 against them. Your FX rate prices the trades
+          routed to you, settled in TZS — you never hold or touch USDC or USDT.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[
+          { href: '/simplefx/dashboard/spread', icon: SlidersHorizontal, label: 'Set FX rate' },
+          { href: '/simplefx/dashboard/transactions', icon: Clock, label: 'Settlements' },
+          { href: '/simplefx/dashboard/settings', icon: Settings, label: 'Settings' },
+        ].map(({ href, icon: Icon, label }) => (
+          <Link
+            key={href}
+            href={href}
+            className="flex items-center justify-between px-4 py-3 rounded-lg border border-white/5 hover:border-blue-500/30 hover:bg-blue-600/5 transition-all text-sm text-zinc-400 hover:text-white"
+          >
+            <span className="flex items-center gap-2"><Icon size={15} className="text-blue-400" />{label}</span>
+            <ChevronRight size={14} className="text-zinc-700" />
+          </Link>
+        ))}
       </div>
     </div>
   );
@@ -283,6 +322,7 @@ export default function OverviewPage() {
 
   const isBankOnboarding = lp.accountType === 'bank' && lp.status === 'onboarding';
   const isStandardOnboarding = lp.accountType === 'standard' && lp.onboardingStep < 4;
+  const isBank = lp.accountType === 'bank';
   const spreadPct = ((lp.bidBps + lp.askBps) / 2 / 100).toFixed(2);
 
   const fmt = (v: string | undefined) => {
@@ -344,6 +384,10 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {isBank ? (
+        <BankOverviewBody lp={lp} spreadPct={spreadPct} />
+      ) : (
+      <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="nTZS Inventory"
@@ -418,6 +462,8 @@ export default function OverviewPage() {
           </Link>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }

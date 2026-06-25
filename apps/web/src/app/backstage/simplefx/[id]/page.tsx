@@ -43,6 +43,18 @@ async function setKycAction(formData: FormData) {
   revalidatePath('/backstage/simplefx')
 }
 
+async function setAccountTypeAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  const accountType = String(formData.get('accountType') ?? '') as 'standard' | 'bank'
+  if (!id || !['standard', 'bank'].includes(accountType)) throw new Error('Invalid params')
+  const { db } = getDb()
+  await db.update(lpAccounts).set({ accountType, updatedAt: new Date() }).where(eq(lpAccounts.id, id))
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
 async function approveKybAction(formData: FormData) {
   'use server'
   await requireAnyRole(['super_admin'])
@@ -236,6 +248,37 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
                 <dd className="text-zinc-400">{formatDateEAT(lp.createdAt)}</dd>
               </div>
             </dl>
+          </div>
+
+          {/* Account type */}
+          <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Account type</h2>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              Currently <span className="font-medium text-white">{lp.accountType}</span>. Banks get the reserve / FX
+              portal (no token inventory); standard LPs get the crypto-LP portal.
+            </p>
+            <div className="flex items-center gap-2">
+              <form action={setAccountTypeAction}>
+                <input type="hidden" name="id" value={lp.id} />
+                <input type="hidden" name="accountType" value="bank" />
+                <SubmitButton
+                  pendingText="..."
+                  className="rounded-xl bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-400 hover:bg-blue-500/20 disabled:opacity-40"
+                >
+                  Set as Bank
+                </SubmitButton>
+              </form>
+              <form action={setAccountTypeAction}>
+                <input type="hidden" name="id" value={lp.id} />
+                <input type="hidden" name="accountType" value="standard" />
+                <SubmitButton
+                  pendingText="..."
+                  className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-700 disabled:opacity-40"
+                >
+                  Set as Standard
+                </SubmitButton>
+              </form>
+            </div>
           </div>
 
           {/* KYC Actions */}
