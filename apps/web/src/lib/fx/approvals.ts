@@ -2,8 +2,9 @@ import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/fx/db';
 import { lpApprovals, lpAccounts } from '@ntzs/db';
+import { executeWithdraw, type WithdrawParams } from '@/lib/fx/withdraw';
 
-export type ApprovalAction = 'set_fx' | 'set_banking';
+export type ApprovalAction = 'set_fx' | 'set_banking' | 'withdraw';
 
 /**
  * Maker-checker policy. Operators are "makers": their gated actions must be approved
@@ -34,18 +35,28 @@ export async function createApproval(opts: {
   });
 }
 
+export interface ApplyResult { ok: boolean; error?: string; txHash?: string }
+
 /** Execute an approved action's stored payload. */
-export async function applyApproval(action: string, lpId: string, payload: unknown): Promise<void> {
+export async function applyApproval(action: string, lpId: string, payload: unknown): Promise<ApplyResult> {
   if (action === 'set_fx') {
     const p = payload as { bidBps: number; askBps: number; limits?: unknown };
     await db
       .update(lpAccounts)
       .set({ bidBps: p.bidBps, askBps: p.askBps, limits: (p.limits ?? null) as Record<string, unknown> | null, updatedAt: new Date() })
       .where(eq(lpAccounts.id, lpId));
-  } else if (action === 'set_banking') {
+    return { ok: true };
+  }
+  if (action === 'set_banking') {
     await db
       .update(lpAccounts)
       .set({ bankingProfile: payload as Record<string, unknown>, updatedAt: new Date() })
       .where(eq(lpAccounts.id, lpId));
+    return { ok: true };
   }
+  if (action === 'withdraw') {
+    const r = await executeWithdraw(lpId, payload as WithdrawParams);
+    return { ok: r.ok, error: r.error, txHash: r.txHash };
+  }
+  return { ok: false, error: `Unknown action: ${action}` };
 }

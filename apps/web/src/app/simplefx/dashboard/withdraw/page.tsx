@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowUpRight, CheckCircle2, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Loader2, AlertCircle, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useLp } from '../layout';
 
 type Chain = 'base' | 'bnb';
@@ -16,7 +16,7 @@ const TOKENS = [
 
 type TokenEntry = typeof TOKENS[number];
 
-type WithdrawState = 'idle' | 'loading' | 'success' | 'error';
+type WithdrawState = 'idle' | 'loading' | 'success' | 'pending' | 'error';
 
 export default function WithdrawPage() {
   const { lp } = useLp();
@@ -62,6 +62,10 @@ export default function WithdrawPage() {
       if (!res.ok) {
         setErrorMsg(data.error || 'Withdrawal failed. Please try again.');
         setState('error');
+      } else if (data.pending) {
+        // Maker-checker: an operator's withdrawal is held for an approver.
+        setState('pending');
+        idemKeyRef.current = null;
       } else {
         setTxHash(data.txHash);
         setState('success');
@@ -85,7 +89,14 @@ export default function WithdrawPage() {
         </p>
 
         <AnimatePresence mode="wait">
-          {state === 'success' ? (
+          {state === 'pending' ? (
+            <motion.div key="pending" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-2xl border border-blue-500/20 bg-blue-950/20 p-8 text-center">
+              <ShieldCheck size={32} className="text-blue-400 mx-auto mb-4" />
+              <p className="text-lg font-medium text-white mb-1">Submitted for approval</p>
+              <p className="text-sm text-zinc-500 mb-6">An approver on your team must authorise this withdrawal before it’s sent.</p>
+              <button onClick={reset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">Make another request</button>
+            </motion.div>
+          ) : state === 'success' ? (
             <motion.div key="success" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 p-8 text-center">
               <CheckCircle2 size={32} className="text-emerald-400 mx-auto mb-4" />
               <p className="text-lg font-medium text-white mb-1">Withdrawal confirmed</p>

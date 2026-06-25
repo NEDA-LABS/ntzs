@@ -58,18 +58,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'You cannot approve your own request.' }, { status: 403 });
   }
 
-  if (body.decision === 'approve') {
-    await applyApproval(appr.action, appr.lpId, appr.payload);
-  }
-
-  await db
+  // Atomically claim the request before executing — two approvers must not both
+  // run it (critical for withdrawals, where that would be a double-spend).
+  const [claimed] = await db
     .update(lpApprovals)
     .set({
       status: body.decision === 'approve' ? 'approved' : 'rejected',
       decidedByMemberId: session.memberId ?? null,
       decidedAt: new Date(),
     })
-    .where(eq(lpApprovals.id, body.approvalId));
+    .where(and(eq(lpApprovals.id, body.approvalId), eq(lpApprovals.status, 'pending')))
+    .returning({ id: lpApprovals.id });
+  if (!claimed) return NextResponse.json({ error: 'This request has already been decided.' }, { status: 409 });
+
+  if (body.decision === 'approve') {
+    const result = await applyApproval(appr.action, appr.lpId, appr.payload);
+    if (!result.ok) {
+      // Consumed (not auto-reverted) so an on-chain action can't be retried into a
+      // double-spend. Surface the error; the maker can submit a fresh request.
+      return NextResponse.json({ error: result.error || 'The action could not be completed.', executed: false }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true, txHash: result.txHash });
+  }
 
   return NextResponse.json({ ok: true });
 }
