@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Copy, AlertCircle, Pencil, RefreshCw, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useLp } from '../layout';
+import ReserveMonitor from '../_components/ReserveMonitor';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -140,6 +141,12 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+
+        {lp.accountType === 'bank' && (
+          <div className="mb-6">
+            <ReserveMonitor />
+          </div>
+        )}
 
         {lp.kycStatus === 'pending' && (
           <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-500/20 bg-amber-950/20 mb-6">
