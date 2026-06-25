@@ -25,6 +25,12 @@ function summarize(action: string, payload: Record<string, unknown> | null): str
     const ref = typeof p.trustAccountRef === 'string' ? ` (${p.trustAccountRef})` : '';
     return 'Update banking — ' + name + ref;
   }
+  if (action === 'withdraw') {
+    const amt = typeof p.amount === 'string' ? p.amount : '';
+    const tok = typeof p.token === 'string' ? p.token.toUpperCase() : '';
+    const to = typeof p.toAddress === 'string' ? `${p.toAddress.slice(0, 8)}…${p.toAddress.slice(-4)}` : '';
+    return `Withdraw ${amt} ${tok} → ${to}`;
+  }
   return action;
 }
 
