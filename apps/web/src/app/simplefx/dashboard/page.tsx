@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import {
   ArrowDownToLine, ArrowUpRight, SlidersHorizontal, Zap,
   Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle, Building2, Settings,
+  ShieldCheck, RefreshCw,
 } from 'lucide-react';
 import { useLp, type LpAccount } from './layout';
 
@@ -97,12 +98,113 @@ function OnboardingWizard({ currentStep }: { currentStep: number }) {
   );
 }
 
+type Reserve = {
+  ntzsIssued: number;
+  reserveTzs: number;
+  pendingTzs: number;
+  ratio: number;
+  asOf: string;
+};
+
+const fmtTzs = (n: number) => 'TZS ' + Math.round(n).toLocaleString('en-US');
+const fmtNtzs = (n: number) => Math.round(n).toLocaleString('en-US') + ' nTZS';
+
+function ReserveStat({ label, value, sub, tone = 'default', loading = false }: {
+  label: string; value: string; sub?: string; tone?: 'default' | 'good' | 'warn'; loading?: boolean;
+}) {
+  const valueColor = tone === 'good' ? 'text-emerald-400' : tone === 'warn' ? 'text-amber-400' : 'text-white';
+  return (
+    <div className="rounded-lg border border-white/5 bg-white/2 p-4">
+      <p className="text-[11px] text-zinc-600 mb-2 uppercase tracking-[0.2em]">{label}</p>
+      {loading ? (
+        <div className="h-7 w-24 rounded bg-white/5 animate-pulse" />
+      ) : (
+        <p className={`text-xl font-light tracking-tight ${valueColor}`}>{value}</p>
+      )}
+      {sub && <p className="text-xs text-zinc-600 mt-1">{sub}</p>}
+    </div>
+  );
+}
+
 function BankOverviewBody({ lp, spreadPct }: { lp: LpAccount; spreadPct: string }) {
+  const [reserve, setReserve] = useState<Reserve | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    setErr(false);
+    fetch('/simplefx/api/lp/reserve')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d: Reserve) => setReserve(d))
+      .catch(() => setErr(true))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const hasIssuance = !!reserve && reserve.ntzsIssued > 0;
+  const fullyBacked = !reserve || reserve.reserveTzs >= reserve.ntzsIssued;
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Reserve monitor — live 1:1 oversight (BoT) */}
+      <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={15} className="text-blue-400" />
+            <p className="text-sm font-medium text-white">Reserve monitor</p>
+          </div>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-300 disabled:opacity-40 transition-colors"
+          >
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {err ? (
+          <p className="text-xs text-red-400">Couldn’t load reserve figures. Tap refresh to retry.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <ReserveStat
+                label="nTZS in circulation"
+                value={reserve ? fmtNtzs(reserve.ntzsIssued) : '—'}
+                sub="On-chain supply · Base"
+                loading={loading && !reserve}
+              />
+              <ReserveStat
+                label="TZS reserves"
+                value={reserve ? fmtTzs(reserve.reserveTzs) : '—'}
+                sub="Deposit-backed, held in trust"
+                loading={loading && !reserve}
+              />
+              <ReserveStat
+                label="Backing ratio"
+                value={reserve ? (hasIssuance ? `${reserve.ratio.toFixed(2)} : 1` : '1 : 1') : '—'}
+                sub={fullyBacked ? 'Fully backed' : 'Below 1:1 — review'}
+                tone={fullyBacked ? 'good' : 'warn'}
+                loading={loading && !reserve}
+              />
+            </div>
+            {reserve && reserve.pendingTzs > 0 && (
+              <p className="mt-3 text-xs text-zinc-600">
+                + {fmtTzs(reserve.pendingTzs)} in deposits in-flight (not yet issued).
+              </p>
+            )}
+            {reserve && (
+              <p className="mt-3 text-[11px] text-zinc-700">
+                As of {new Date(reserve.asOf).toLocaleString()}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <StatCard label="Your FX rate" value={`${spreadPct}%`} sub={`Bid ${lp.bidBps}bps / Ask ${lp.askBps}bps`} accent />
-        <StatCard label="Reserve backing" value="1 : 1" sub="TZS reserves = nTZS issued" />
         <StatCard
           label="Account status"
           value={lp.status === 'active' ? 'Active' : 'Onboarding'}
