@@ -4,7 +4,7 @@ import { ethers } from 'ethers'
 import { requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
-import { burnRequests, lpFills, fxFeeSweeps, partners, users } from '@ntzs/db'
+import { burnRequests, lpFills, fxFeeSweeps, rampSettlements, partners, users } from '@ntzs/db'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 export const dynamic = 'force-dynamic'
@@ -71,6 +71,19 @@ export default async function TreasuryPage() {
     .from(fxFeeSweeps)
   const fxSweptTotal = fxSwept?.totalSwept ?? 0
   const fxPending = Math.max(0, (fxFeeStats?.totalFeeEarned ?? 0) - fxSweptTotal)
+
+  // Ramp corridor — NEDA's realized cut (off-ramp on burn_requests, on-ramp on ramp_settlements).
+  const [rampOffNeda] = await db
+    .select({ total: sql<number>`coalesce(sum(${burnRequests.nedaFeeTzs}), 0)`.mapWith(Number) })
+    .from(burnRequests)
+    .where(isNotNull(burnRequests.nedaFeeTxHash))
+  const [rampOnNeda] = await db
+    .select({ total: sql<number>`coalesce(sum(${rampSettlements.nedaFeeTzs}), 0)`.mapWith(Number) })
+    .from(rampSettlements)
+    .where(isNotNull(rampSettlements.nedaFeeTxHash))
+  const rampOffTotal = rampOffNeda?.total ?? 0
+  const rampOnTotal = rampOnNeda?.total ?? 0
+  const rampNedaTotal = rampOffTotal + rampOnTotal
 
   // ── Aggregate fee metrics ────────────────────────────────────────────────
   const [feeStats] = await db
@@ -251,6 +264,35 @@ export default async function TreasuryPage() {
             </table>
           </div>
         )}
+      </section>
+
+      {/* Ramp corridor NEDA fees */}
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <h2 className="text-lg font-semibold text-white">Ramp Corridor Fees (NEDA cut)</h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          NEDA&apos;s share of the ramp platform fee — split from the fee the customer already pays and
+          routed to the treasury. The partner keeps the remainder. RAMP_NEDA_FEE_BPS sets the split.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <MetricCard
+            title="Total NEDA Cut"
+            value={`${formatNumber(rampNedaTotal)} TZS`}
+            subtitle="Realized to treasury"
+            color="emerald"
+          />
+          <MetricCard
+            title="Off-ramp"
+            value={`${formatNumber(rampOffTotal)} TZS`}
+            subtitle="USDC → mobile money"
+            color="violet"
+          />
+          <MetricCard
+            title="On-ramp"
+            value={`${formatNumber(rampOnTotal)} TZS`}
+            subtitle="Mobile money → USDC"
+            color="blue"
+          />
+        </div>
       </section>
 
       {/* Primary metrics */}

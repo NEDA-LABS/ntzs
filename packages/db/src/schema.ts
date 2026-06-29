@@ -1698,6 +1698,12 @@ export const rampSettlements = pgTable(
     usdcAmount: numeric('usdc_amount', { precision: 36, scale: 6 }).notNull(),
     tzsAmount: bigint('tzs_amount', { mode: 'number' }).notNull(),
     feeTzs: bigint('fee_tzs', { mode: 'number' }).notNull().default(0),
+    // On-ramp fee split (off-ramp's split lives on burn_requests instead):
+    // neda_fee_tzs = NEDA's protocol cut; fee_tx_hash / neda_fee_tx_hash are the
+    // nTZS transfers of the partner / NEDA shares out of the settlement wallet.
+    nedaFeeTzs: bigint('neda_fee_tzs', { mode: 'number' }).notNull().default(0),
+    feeTxHash: text('fee_tx_hash'),
+    nedaFeeTxHash: text('neda_fee_tx_hash'),
 
     // Off-ramp: recipient mobile-money phone. On-ramp: payer phone (push) +
     // optional address to forward delivered USDC to.
