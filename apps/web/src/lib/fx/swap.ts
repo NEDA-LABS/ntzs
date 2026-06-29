@@ -111,8 +111,14 @@ const ERC20_ABI = [
 /**
  * Calculate the output amount for a swap.
  *
- * nTZS → USDC: output = (amount / midRate) × (1 - bidBps/10000) × (1 - slippage)
- * USDC → nTZS: output = amount × midRate × (1 - askBps/10000) × (1 - slippage)
+ * nTZS → USDC: output = (amount / midRate) × (1 - bidBps/10000) × (1 - slippage) × (1 - protocolFee)
+ * USDC → nTZS: output = amount × midRate × (1 - askBps/10000) × (1 - slippage) × (1 - protocolFee)
+ *
+ * The protocol fee is NEDA's platform toll, charged ON TOP of the LP's spread:
+ * it's an additional haircut on the taker's output, so the LP keeps its full
+ * spread and the fee accrues as surplus in the solver pool (later swept to the
+ * platform treasury). Pass `protocolFeeBps: 0` (the default) to price a pure
+ * LP-spread output with no toll.
  */
 export function calcMinOutput(params: {
   fromToken: SwapTokenSymbol
@@ -122,19 +128,21 @@ export function calcMinOutput(params: {
   bidBps: number
   askBps: number
   slippageBps?: number
+  protocolFeeBps?: number
 }): number {
-  const { fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps = 100 } = params
+  const { fromToken, toToken, amount, midRate, bidBps, askBps, slippageBps = 100, protocolFeeBps = 0 } = params
   const slippage = 1 - slippageBps / 10000
+  const fee = 1 - protocolFeeBps / 10000
 
   if (toToken === 'NTZS') {
     // Any stablecoin → nTZS: user pays ask spread
     const askRate = midRate * (1 - askBps / 10000)
-    return amount * askRate * slippage
+    return amount * askRate * slippage * fee
   }
   if (fromToken === 'NTZS') {
     // nTZS → any stablecoin: user pays bid spread
     const bidRate = midRate * (1 + bidBps / 10000)
-    return (amount / bidRate) * slippage
+    return (amount / bidRate) * slippage * fee
   }
   throw new Error(`Unsupported pair: ${fromToken} → ${toToken}`)
 }

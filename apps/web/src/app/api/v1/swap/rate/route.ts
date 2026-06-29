@@ -5,6 +5,7 @@ import { lpFxPairs, lpAccounts, lpFills } from '@ntzs/db'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
 import { getChainToken, type ChainId } from '@/lib/fx/chainConfig'
+import { PLATFORM_FX_FEE_BPS } from '@/lib/env'
 
 export const runtime = 'nodejs'
 
@@ -100,6 +101,8 @@ export async function GET(req: NextRequest) {
     askBps = bestLP.askBps
   }
 
+  // Quote the post-fee output so the displayed rate matches what the swap
+  // actually delivers (the protocol fee is charged on top of the LP spread).
   const expectedOutput = calcMinOutput({
     fromToken: from,
     toToken: to,
@@ -108,6 +111,7 @@ export async function GET(req: NextRequest) {
     bidBps,
     askBps,
     slippageBps: 0,
+    protocolFeeBps: PLATFORM_FX_FEE_BPS,
   })
 
   const minOutput = calcMinOutput({
@@ -118,6 +122,7 @@ export async function GET(req: NextRequest) {
     bidBps,
     askBps,
     slippageBps: 100,
+    protocolFeeBps: PLATFORM_FX_FEE_BPS,
   })
 
   // Liquidity check against the chain-correct solver wallet
@@ -157,6 +162,7 @@ export async function GET(req: NextRequest) {
     midRate,
     bidBps,
     askBps,
+    protocolFeeBps: PLATFORM_FX_FEE_BPS,
     expectedOutput: +expectedOutput.toFixed(6),
     minOutput: +minOutput.toFixed(6),
     rate: +(expectedOutput / amount).toFixed(6),
