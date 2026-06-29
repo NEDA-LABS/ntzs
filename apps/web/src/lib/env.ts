@@ -44,6 +44,15 @@ export const PLATFORM_TREASURY_ADDRESS = sanitizeEnv(process.env.PLATFORM_TREASU
 export const PLATFORM_FX_FEE_BPS = parseInt(process.env.PLATFORM_FX_FEE_BPS ?? '20', 10)
 
 /**
+ * NEDA's protocol cut on the Ramp corridor, in bps of the gross TZS. The
+ * customer already pays a platform fee (PLATFORM_FEE_PCT); this only splits it —
+ * NEDA takes RAMP_NEDA_FEE_BPS (capped at the total platform fee) and the partner
+ * keeps the remainder. The customer-facing price is unchanged. Partners with no
+ * treasury → NEDA takes the whole platform fee (the prior fallback).
+ */
+export const RAMP_NEDA_FEE_BPS = parseInt(process.env.RAMP_NEDA_FEE_BPS ?? '20', 10)
+
+/**
  * Minimum pending protocol fee (in token units) before the sweep cron triggers
  * an on-chain transfer to treasury — avoids burning gas on dust amounts.
  * NTZS is TZS-denominated so the threshold is higher.

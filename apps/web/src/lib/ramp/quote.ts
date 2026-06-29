@@ -118,13 +118,18 @@ export async function computeRampQuote(params: {
   const tzsAmount = Math.trunc(Number(params.tzsAmount))
   if (!Number.isFinite(tzsAmount) || tzsAmount < 5000) return { error: 'tzsAmount must be at least 5,000 TZS' }
 
-  // nTZS (== TZS minted) → USDC.
-  const usdcAmount = calcMinOutput({ fromToken: 'NTZS', toToken: 'USDC', amount: tzsAmount, midRate, bidBps, askBps, slippageBps: 0 })
+  // Platform fee skimmed in nTZS after the swap; the customer pays tzsAmount and
+  // receives USDC for the net. Mirrors the off-ramp's PLATFORM_FEE_PCT.
+  const platformFee = Math.ceil(tzsAmount * PLATFORM_FEE_PCT)
+  const netTzs = tzsAmount - platformFee
+
+  // nTZS (== TZS minted) → USDC, on the net after the platform fee.
+  const usdcAmount = calcMinOutput({ fromToken: 'NTZS', toToken: 'USDC', amount: netTzs, midRate, bidBps, askBps, slippageBps: 0 })
   if (usdcAmount <= 0) return { error: 'Amount too small to deliver any USDC' }
 
   const lowLiquidity = (await solverUsdcLiquidity()) < usdcAmount
   return {
-    direction, usdcAmount: +usdcAmount.toFixed(6), tzsAmount, feeTzs: 0,
+    direction, usdcAmount: +usdcAmount.toFixed(6), tzsAmount, feeTzs: platformFee,
     rateUsdTzs: +(tzsAmount / usdcAmount).toFixed(6),
     bidBps, askBps, lowLiquidity,
   }

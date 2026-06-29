@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 import { eq, and, inArray, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { BASE_RPC_URL } from '@/lib/env'
+import { BASE_RPC_URL, RAMP_NEDA_FEE_BPS, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { rampSettlements, depositRequests, banks, users, wallets, partners, lpAccounts, lpFills } from '@ntzs/db'
 import { executeSwap, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
 import { initiatePayment } from '@/lib/psp'
@@ -115,11 +115,13 @@ export async function runOnrampSwapLeg(settlementId: string): Promise<{ ok: bool
   const solverAddress = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as `0x${string}`
   if (!rpcUrl || !solverPrivateKey) { await setStatus(settlementId, { status: 'failed', error: 'executor not configured' }); return { ok: false, status: 'failed', error: 'executor not configured' } }
 
-  const [partner] = await db.select({ encryptedHdSeed: partners.encryptedHdSeed }).from(partners).where(eq(partners.id, s.partnerId)).limit(1)
+  const [partner] = await db.select({ encryptedHdSeed: partners.encryptedHdSeed, treasuryWalletAddress: partners.treasuryWalletAddress }).from(partners).where(eq(partners.id, s.partnerId)).limit(1)
   if (!partner?.encryptedHdSeed) { await setStatus(settlementId, { status: 'failed', error: 'partner seed' }); return { ok: false, status: 'failed', error: 'partner seed' } }
 
   const wallet = await getOrCreateSettlementWallet(s.partnerId)
-  const tzsAmount = s.tzsAmount
+  const tzsAmount = s.tzsAmount         // gross nTZS minted to the settlement wallet
+  const feeTzs = s.feeTzs               // platform fee, skimmed in nTZS after the swap
+  const netTzs = tzsAmount - feeTzs     // amount actually swapped to USDC for the customer
   const usdcAmount = Number(s.usdcAmount)
 
   // nTZS must be present (minted) before we swap.
@@ -153,7 +155,7 @@ export async function runOnrampSwapLeg(settlementId: string): Promise<{ ok: bool
       selectedLpId: lpId,
       fromToken: 'NTZS',
       toToken: 'USDC',
-      amount: tzsAmount,
+      amount: netTzs,
       minOutput: usdcAmount,
       recipientAddress: recipient as `0x${string}`,
       rpcUrl,
@@ -171,10 +173,41 @@ export async function runOnrampSwapLeg(settlementId: string): Promise<{ ok: bool
     return { ok: false, status: 'failed', error: msg }
   }
 
+  // Skim the platform fee: after the swap, `feeTzs` nTZS remain in the settlement
+  // wallet (we only swapped the net). Split NEDA / partner and transfer it out.
+  // Best-effort: a failed transfer leaves backed nTZS in the settlement to
+  // reconcile later — it never blocks the customer's completed settlement.
+  let feeTxHash: string | undefined
+  let nedaFeeTxHash: string | undefined
+  let nedaFee = 0
+  if (feeTzs > 0) {
+    const partnerRecipient = ethers.isAddress(partner.treasuryWalletAddress ?? '') ? partner.treasuryWalletAddress! : null
+    const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
+    nedaFee = nedaRecipient ? Math.min(feeTzs, Math.round(tzsAmount * RAMP_NEDA_FEE_BPS / 10000)) : 0
+    let partnerFee = partnerRecipient ? feeTzs - nedaFee : 0
+    if (!partnerRecipient && nedaRecipient) nedaFee = feeTzs
+    if (!nedaRecipient && partnerRecipient) partnerFee = feeTzs
+
+    const settlementWallet = new ethers.Wallet(signer.privateKey as string, provider)
+    const ntzsToken = new ethers.Contract(SWAP_TOKENS.NTZS.address, ['function transfer(address to, uint256 amount) returns (bool)'], settlementWallet)
+    const toWei = (n: number) => BigInt(n) * BigInt(10) ** BigInt(18)
+    if (partnerFee > 0 && partnerRecipient) {
+      try { const t = await ntzsToken.transfer(partnerRecipient, toWei(partnerFee)); await t.wait(1); feeTxHash = t.hash }
+      catch (e) { console.error('[ramp/onramp] partner fee transfer failed (non-fatal):', e instanceof Error ? e.message : e) }
+    }
+    if (nedaFee > 0 && nedaRecipient) {
+      try { const t = await ntzsToken.transfer(nedaRecipient, toWei(nedaFee)); await t.wait(1); nedaFeeTxHash = t.hash }
+      catch (e) { console.error('[ramp/onramp] NEDA fee transfer failed (non-fatal):', e instanceof Error ? e.message : e) }
+    }
+  }
+
   await setStatus(settlementId, {
     status: 'completed',
     swapInTxHash,
     swapOutTxHash,
+    nedaFeeTzs: nedaFee,
+    feeTxHash,
+    nedaFeeTxHash,
     ...(recipient !== wallet.address ? { forwardTxHash: swapOutTxHash } : {}),
   })
   await queuePartnerWebhook(s.partnerId, 'ramp.settlement.completed', {

@@ -280,6 +280,10 @@ export const burnRequests = pgTable(
     // On-chain tx hash for the mint-to-treasury of the platform fee (nullable: legacy / zero-fee rows)
     feeTxHash: text('fee_tx_hash'),
     feeRecipientAddress: text('fee_recipient_address'),
+    // Ramp corridor: NEDA's protocol cut, split out of the platform fee and minted
+    // to the platform treasury. (platform_fee_tzs then holds the partner's share.)
+    nedaFeeTzs: bigint('neda_fee_tzs', { mode: 'number' }),
+    nedaFeeTxHash: text('neda_fee_tx_hash'),
     // Explicit on-chain address to burn from (overrides wallet_id lookup).
     // Set for merchant financing disbursements → the lender's treasury wallet.
     burnFromAddress: text('burn_from_address'),
@@ -1694,6 +1698,12 @@ export const rampSettlements = pgTable(
     usdcAmount: numeric('usdc_amount', { precision: 36, scale: 6 }).notNull(),
     tzsAmount: bigint('tzs_amount', { mode: 'number' }).notNull(),
     feeTzs: bigint('fee_tzs', { mode: 'number' }).notNull().default(0),
+    // On-ramp fee split (off-ramp's split lives on burn_requests instead):
+    // neda_fee_tzs = NEDA's protocol cut; fee_tx_hash / neda_fee_tx_hash are the
+    // nTZS transfers of the partner / NEDA shares out of the settlement wallet.
+    nedaFeeTzs: bigint('neda_fee_tzs', { mode: 'number' }).notNull().default(0),
+    feeTxHash: text('fee_tx_hash'),
+    nedaFeeTxHash: text('neda_fee_tx_hash'),
 
     // Off-ramp: recipient mobile-money phone. On-ramp: payer phone (push) +
     // optional address to forward delivered USDC to.

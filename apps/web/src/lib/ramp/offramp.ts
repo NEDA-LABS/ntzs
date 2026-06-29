@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { eq, and, or, inArray, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS, RAMP_NEDA_FEE_BPS } from '@/lib/env'
 import { rampSettlements, burnRequests, users, wallets, partners, lpAccounts, lpFills } from '@ntzs/db'
 import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
 import {
@@ -91,7 +91,7 @@ export async function runOfframpSettlement(args: {
   }
 
   const grossTzs = args.recipientTzs + args.feeTzs       // nTZS we expect from the swap
-  const platformFeeTzs = args.feeTzs - PSP_FLAT_FEE_TZS  // spread we retain (minted to treasury)
+  const totalPlatformFeeTzs = args.feeTzs - PSP_FLAT_FEE_TZS  // the 0.5% the customer already pays
 
   // ── Verify settlement float holds enough USDC ──────────────────────────────
   const provider = new ethers.JsonRpcProvider(rpcUrl)
@@ -149,9 +149,17 @@ export async function runOfframpSettlement(args: {
   }
 
   const [partnerRow] = await db.select({ treasuryWalletAddress: partners.treasuryWalletAddress }).from(partners).where(eq(partners.id, args.partnerId)).limit(1)
-  const feeRecipient = ethers.isAddress(partnerRow?.treasuryWalletAddress ?? '')
-    ? partnerRow!.treasuryWalletAddress!
-    : ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
+  const partnerRecipient = ethers.isAddress(partnerRow?.treasuryWalletAddress ?? '') ? partnerRow!.treasuryWalletAddress! : null
+  const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
+
+  // Split the platform fee: NEDA takes RAMP_NEDA_FEE_BPS of gross (capped at the
+  // total), the partner keeps the rest. The customer already paid totalPlatformFeeTzs
+  // either way — this only routes it. With no partner treasury (or no NEDA treasury),
+  // the whole fee goes to the one configured recipient (prior fallback behaviour).
+  let nedaFeeTzs = nedaRecipient ? Math.min(totalPlatformFeeTzs, Math.round(grossTzs * RAMP_NEDA_FEE_BPS / 10000)) : 0
+  let partnerFeeTzs = partnerRecipient ? totalPlatformFeeTzs - nedaFeeTzs : 0
+  if (!partnerRecipient && nedaRecipient) nedaFeeTzs = totalPlatformFeeTzs
+  if (!nedaRecipient && partnerRecipient) partnerFeeTzs = totalPlatformFeeTzs
 
   const [burn] = await db.insert(burnRequests).values({
     userId: fk.userId,
@@ -163,7 +171,8 @@ export async function runOfframpSettlement(args: {
     status: 'burn_submitted',
     requestedByUserId: fk.userId,
     recipientPhone,
-    platformFeeTzs,
+    platformFeeTzs: partnerFeeTzs,
+    nedaFeeTzs,
     burnFromAddress: settlementAddress,
     rampSettlementId: settlementId,
   }).returning({ id: burnRequests.id })
@@ -171,7 +180,8 @@ export async function runOfframpSettlement(args: {
   await setStatus(settlementId, { burnRequestId })
 
   // Burn on-chain from the settlement wallet.
-  let feeMinted = false
+  let feeMinted = false       // partner-share mint occurred
+  let nedaFeeMinted = false   // NEDA-share mint occurred
   try {
     const burnSigner = new ethers.Wallet(burnerKey, provider)
     const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, burnSigner)
@@ -185,14 +195,27 @@ export async function runOfframpSettlement(args: {
     await tx.wait(1)
     await db.update(burnRequests).set({ status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
 
-    if (platformFeeTzs > 0 && feeRecipient) {
+    // Partner's share of the platform fee.
+    if (partnerFeeTzs > 0 && partnerRecipient) {
       try {
-        const feeTx = await token.mint(feeRecipient, BigInt(platformFeeTzs) * BigInt(10) ** BigInt(18))
+        const feeTx = await token.mint(partnerRecipient, BigInt(partnerFeeTzs) * BigInt(10) ** BigInt(18))
         await feeTx.wait(1)
         feeMinted = true
-        await db.update(burnRequests).set({ feeTxHash: feeTx.hash, feeRecipientAddress: feeRecipient, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+        await db.update(burnRequests).set({ feeTxHash: feeTx.hash, feeRecipientAddress: partnerRecipient, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
       } catch (feeErr) {
-        console.error('[ramp/offramp] fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
+        console.error('[ramp/offramp] partner fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
+      }
+    }
+
+    // NEDA's protocol cut of the corridor.
+    if (nedaFeeTzs > 0 && nedaRecipient) {
+      try {
+        const nedaTx = await token.mint(nedaRecipient, BigInt(nedaFeeTzs) * BigInt(10) ** BigInt(18))
+        await nedaTx.wait(1)
+        nedaFeeMinted = true
+        await db.update(burnRequests).set({ nedaFeeTxHash: nedaTx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      } catch (feeErr) {
+        console.error('[ramp/offramp] NEDA fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
       }
     }
   } catch (err) {
@@ -213,7 +236,9 @@ export async function runOfframpSettlement(args: {
     if (!(await claimRevert())) return
     const res = await revertOffRampBurn({
       burnRequestId, userAddress: settlementAddress, burnAmountTzs: grossTzs,
-      platformFeeTzs, feeRecipientAddress: feeRecipient, feeMintOccurred: feeMinted, reason,
+      platformFeeTzs: partnerFeeTzs, feeRecipientAddress: partnerRecipient, feeMintOccurred: feeMinted,
+      nedaFeeTzs, nedaFeeRecipientAddress: nedaRecipient, nedaFeeMintOccurred: nedaFeeMinted,
+      reason,
     })
     await db.update(burnRequests).set({
       status: 'failed', payoutStatus: res.error ? 'reconcile_required' : 'reverted',
