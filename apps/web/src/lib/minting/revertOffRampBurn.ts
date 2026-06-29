@@ -6,6 +6,7 @@ import {
   NTZS_CONTRACT_ADDRESS_BASE,
   MINTER_PRIVATE_KEY,
   BURNER_PRIVATE_KEY,
+  PLATFORM_TREASURY_ADDRESS,
 } from '@/lib/env'
 import { auditLogs } from '@ntzs/db'
 
@@ -28,8 +29,12 @@ export async function revertOffRampBurn(args: {
   platformFeeTzs: number | null
   feeRecipientAddress: string | null
   feeMintOccurred: boolean
+  /** Ramp corridor: NEDA's share of the platform fee, minted separately. */
+  nedaFeeTzs?: number | null
+  nedaFeeRecipientAddress?: string | null
+  nedaFeeMintOccurred?: boolean
   reason: string
-}): Promise<{ remintTxHash?: string; feeBurnTxHash?: string; error?: string }> {
+}): Promise<{ remintTxHash?: string; feeBurnTxHash?: string; nedaFeeBurnTxHash?: string; error?: string }> {
   const {
     burnRequestId,
     userAddress,
@@ -37,6 +42,9 @@ export async function revertOffRampBurn(args: {
     platformFeeTzs,
     feeRecipientAddress,
     feeMintOccurred,
+    nedaFeeTzs,
+    nedaFeeRecipientAddress,
+    nedaFeeMintOccurred,
     reason,
   } = args
 
@@ -63,29 +71,37 @@ export async function revertOffRampBurn(args: {
     return { error: `remint_failed: ${message}` }
   }
 
-  // If the platform fee was minted, burn it back from the recipient so the
-  // reserve stays net-zero for this reverted withdrawal.
-  let feeBurnTxHash: string | undefined
-  if (feeMintOccurred && platformFeeTzs && platformFeeTzs > 0 && feeRecipientAddress) {
-    const burnerKey = BURNER_PRIVATE_KEY || MINTER_PRIVATE_KEY
+  // If a fee was minted, burn it back from each recipient so the reserve stays
+  // net-zero for this reverted withdrawal. The platform fee may be split across
+  // the partner and the NEDA treasury — burn back whichever legs actually minted.
+  const burnerKey = BURNER_PRIVATE_KEY || MINTER_PRIVATE_KEY
+  const burnBackFee = async (
+    label: string, amountTzs: number | null | undefined, recipient: string | null | undefined, occurred: boolean | undefined,
+  ): Promise<string | undefined> => {
+    if (!occurred || !amountTzs || amountTzs <= 0 || !recipient) return undefined
     try {
       const burner = new ethers.Wallet(burnerKey, provider)
       const tokenAsBurner = new ethers.Contract(NTZS_CONTRACT_ADDRESS_BASE, NTZS_ABI, burner)
-      const feeWei = BigInt(platformFeeTzs) * (BigInt(10) ** BigInt(18))
-      const tx = await tokenAsBurner.burn(feeRecipientAddress, feeWei)
+      const feeWei = BigInt(amountTzs) * (BigInt(10) ** BigInt(18))
+      const tx = await tokenAsBurner.burn(recipient, feeWei)
       await tx.wait(1)
-      feeBurnTxHash = tx.hash
+      return tx.hash
     } catch (err) {
       // Non-fatal: user is made whole, but operator must reconcile the fee dust.
       const message = err instanceof Error ? err.message : String(err)
-      console.error('[revertOffRampBurn] fee burn failed — reserve has fee dust', {
-        burnRequestId,
-        platformFeeTzs,
-        feeRecipientAddress,
-        error: message,
+      console.error(`[revertOffRampBurn] ${label} fee burn failed — reserve has fee dust`, {
+        burnRequestId, amountTzs, recipient, error: message,
       })
+      return undefined
     }
   }
+
+  // NEDA's share always mints to the platform treasury, so default the recipient
+  // for callers (webhooks/reconcile) that only carry the amount + occurred flag.
+  const effectiveNedaRecipient = nedaFeeRecipientAddress
+    ?? (ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null)
+  const feeBurnTxHash = await burnBackFee('partner', platformFeeTzs, feeRecipientAddress, feeMintOccurred)
+  const nedaFeeBurnTxHash = await burnBackFee('neda', nedaFeeTzs, effectiveNedaRecipient, nedaFeeMintOccurred)
 
   const { db } = getDb()
   await db.insert(auditLogs).values({
@@ -96,11 +112,14 @@ export async function revertOffRampBurn(args: {
       burnAmountTzs,
       platformFeeTzs,
       feeRecipientAddress,
+      nedaFeeTzs,
+      nedaFeeRecipientAddress,
       remintTxHash,
       feeBurnTxHash,
+      nedaFeeBurnTxHash,
       reason,
     },
   })
 
-  return { remintTxHash, feeBurnTxHash }
+  return { remintTxHash, feeBurnTxHash, nedaFeeBurnTxHash }
 }

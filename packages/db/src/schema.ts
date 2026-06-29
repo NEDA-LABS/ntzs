@@ -280,6 +280,10 @@ export const burnRequests = pgTable(
     // On-chain tx hash for the mint-to-treasury of the platform fee (nullable: legacy / zero-fee rows)
     feeTxHash: text('fee_tx_hash'),
     feeRecipientAddress: text('fee_recipient_address'),
+    // Ramp corridor: NEDA's protocol cut, split out of the platform fee and minted
+    // to the platform treasury. (platform_fee_tzs then holds the partner's share.)
+    nedaFeeTzs: bigint('neda_fee_tzs', { mode: 'number' }),
+    nedaFeeTxHash: text('neda_fee_tx_hash'),
     // Explicit on-chain address to burn from (overrides wallet_id lookup).
     // Set for merchant financing disbursements → the lender's treasury wallet.
     burnFromAddress: text('burn_from_address'),

@@ -101,6 +101,8 @@ export async function POST(
       platformFeeTzs: burn.platformFeeTzs,
       feeRecipientAddress: burn.feeRecipientAddress,
       feeMintOccurred: Boolean(burn.feeTxHash),
+      nedaFeeTzs: burn.nedaFeeTzs,
+      nedaFeeMintOccurred: Boolean(burn.nedaFeeTxHash),
       reason: `operator_force_revert: ${body.notes ?? 'no_notes'}`,
     })
 
@@ -234,6 +236,8 @@ export async function POST(
       platformFeeTzs: burn.platformFeeTzs,
       feeRecipientAddress: burn.feeRecipientAddress,
       feeMintOccurred: Boolean(burn.feeTxHash),
+      nedaFeeTzs: burn.nedaFeeTzs,
+      nedaFeeMintOccurred: Boolean(burn.nedaFeeTxHash),
       reason: `reconcile: snippe_status=${snippeState.status} failure_reason=${snippeState.failureReason ?? 'n/a'} ref=${effectiveReference}`,
     })
 

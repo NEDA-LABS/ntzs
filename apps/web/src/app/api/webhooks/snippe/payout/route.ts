@@ -278,6 +278,8 @@ export async function POST(request: NextRequest) {
       platformFeeTzs: burn.platformFeeTzs,
       feeRecipientAddress: burn.feeRecipientAddress,
       feeMintOccurred: Boolean(burn.feeTxHash),
+      nedaFeeTzs: burn.nedaFeeTzs,
+      nedaFeeMintOccurred: Boolean(burn.nedaFeeTxHash),
       reason: data.failure_reason || 'Payout failed (webhook)',
     })
 
