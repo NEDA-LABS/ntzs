@@ -4,7 +4,7 @@ import { ethers } from 'ethers'
 import { requireRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
-import { burnRequests, lpFills, partners, users } from '@ntzs/db'
+import { burnRequests, lpFills, fxFeeSweeps, partners, users } from '@ntzs/db'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 export const dynamic = 'force-dynamic'
@@ -63,6 +63,14 @@ export default async function TreasuryPage() {
     .where(sql`${lpFills.protocolFeeEarned}::numeric > 0`)
     .groupBy(lpFills.toToken)
     .orderBy(desc(sql`sum(${lpFills.protocolFeeEarned})`))
+
+  // Fees the daily sweep cron has already moved to the treasury wallet.
+  // Pending = earned − swept = what's still sitting in the solver as surplus.
+  const [fxSwept] = await db
+    .select({ totalSwept: sql<number>`coalesce(sum(${fxFeeSweeps.amount}), 0)`.mapWith(Number) })
+    .from(fxFeeSweeps)
+  const fxSweptTotal = fxSwept?.totalSwept ?? 0
+  const fxPending = Math.max(0, (fxFeeStats?.totalFeeEarned ?? 0) - fxSweptTotal)
 
   // ── Aggregate fee metrics ────────────────────────────────────────────────
   const [feeStats] = await db
@@ -183,10 +191,11 @@ export default async function TreasuryPage() {
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <h2 className="text-lg font-semibold text-white">SimpleFX Swap Fees</h2>
         <p className="mt-1 text-sm text-zinc-400">
-          Protocol fee carved from LP spread on every swap fill. Accumulates in the solver wallet —
-          withdraw manually to treasury as needed.
+          Protocol fee charged on top of the LP spread on every swap fill — the LP keeps its full
+          spread; the fee accrues as surplus in the solver wallet and is swept to the treasury
+          automatically by the daily fee-sweep cron (above the configured per-token minimum).
         </p>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
           <MetricCard
             title="Total Fee Earned"
             value={fxFeeStats?.totalFeeEarned
@@ -196,16 +205,22 @@ export default async function TreasuryPage() {
             color="violet"
           />
           <MetricCard
-            title="Fee Rate"
-            value={`${parseInt(process.env.PLATFORM_FX_FEE_BPS ?? '20', 10)} bps`}
-            subtitle="From PLATFORM_FX_FEE_BPS env var"
-            color="blue"
+            title="Swept to Treasury"
+            value={fxSweptTotal.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            subtitle="Realized — moved on-chain"
+            color="emerald"
           />
           <MetricCard
-            title="Location"
-            value="Solver wallet"
-            subtitle="Implicit — withdraw to settle"
+            title="Pending Sweep"
+            value={fxPending.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            subtitle="Surplus still in solver"
             color="zinc"
+          />
+          <MetricCard
+            title="Fee Rate"
+            value={`${parseInt(process.env.PLATFORM_FX_FEE_BPS ?? '20', 10)} bps`}
+            subtitle="On top of LP spread"
+            color="blue"
           />
         </div>
         {fxFeeByToken.length > 0 && (
