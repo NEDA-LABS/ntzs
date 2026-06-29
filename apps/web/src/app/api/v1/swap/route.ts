@@ -147,9 +147,14 @@ export async function POST(request: NextRequest) {
   }))
   const bestLP = rankLPsByRate(lpConfigs, direction)[0]
 
+  // Protocol fee is charged on top of the LP spread: the taker's output is cut
+  // by PLATFORM_FX_FEE_BPS, the LP keeps its full spread, and the fee accrues as
+  // surplus in the solver pool. The fill-recording below derives the split from
+  // (midOutput − amountOut), so reducing minOutput here is the only change needed.
   const minOutput = calcMinOutput({
     fromToken, toToken, amount, midRate,
     bidBps: bestLP.bidBps, askBps: bestLP.askBps, slippageBps,
+    protocolFeeBps: PLATFORM_FX_FEE_BPS,
   })
 
   // Stream SSE
