@@ -108,8 +108,10 @@ export default async function OversightDashboard() {
     })
     .from(auditLogs)
     .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+    // Exclude internal UI telemetry (assistant clicks etc.) — not a regulatory event.
+    .where(sql`${auditLogs.entityType} is distinct from 'ui'`)
     .orderBy(desc(auditLogs.createdAt))
-    .limit(15)
+    .limit(60)
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   const statusBreakdown = await db
