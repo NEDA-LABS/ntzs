@@ -11,6 +11,7 @@ export interface OversightData {
   stats: { totalUsers: number; totalDeposits: number }
   pspBalance: { available: number; pending: number; currency: string; pspName: string }
   kycStats: { total: number; approved: number; pending: number; rejected: number }
+  kycByProvider: Array<{ provider: string; count: number; approved: number }>
   todayIssuance: { issuedTzs: number; capTzs: number } | null
   recentDeposits: Array<{
     id: string; amountTzs: number; status: string
@@ -53,7 +54,7 @@ const SECTION_META: Record<string, { title: string; sub: string }> = {
   reserves:    { title: 'Reserve Proof',          sub: 'Verify 1:1 TZS backing for every nTZS in circulation' },
   attestations:{ title: 'Daily Attestation',      sub: 'Reserve reconciliation submitted to BoT by 10:00 EAT · Parameter 7 & 16' },
   issuance:    { title: 'Issuance Controls',      sub: 'Daily mint cap and regulatory transaction limits' },
-  kyc:         { title: 'Identity Verification',  sub: 'KYC pipeline and user verification status' },
+  kyc:         { title: 'Identity & AML',         sub: 'KYC method by cohort, screening, and AML/CFT controls · Parameter 8, 10 & 11' },
   deposits:    { title: 'Deposits — Money In',    sub: 'TZS deposits converted to nTZS on Base Mainnet' },
   withdrawals: { title: 'Redemptions — Money Out', sub: 'nTZS burned and TZS returned via mobile money' },
   audit:       { title: 'Audit Trail',            sub: 'Administration actions and system events' },
@@ -506,20 +507,96 @@ function IssuanceSection({ data, d }: { data: OversightData; d: boolean }) {
 
 // ── Section: Identity (KYC) ───────────────────────────────────────────────────
 
+type ControlStatus = 'live' | 'partial' | 'planned'
+
+function ControlStatusBadge({ status, d }: { status: ControlStatus; d: boolean }) {
+  const map: Record<ControlStatus, { label: string; cls: string }> = {
+    live:    { label: 'Live',    cls: d ? 'border-emerald-500/40 text-emerald-400' : 'border-emerald-600/40 text-emerald-700' },
+    partial: { label: 'Partial', cls: d ? 'border-amber-500/40 text-amber-400' : 'border-amber-600/40 text-amber-700' },
+    planned: { label: 'Planned', cls: d ? 'border-zinc-600/40 text-zinc-400' : 'border-gray-400/50 text-gray-500' },
+  }
+  const s = map[status]
+  return <span className={`shrink-0 border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${s.cls}`}>{s.label}</span>
+}
+
 function KycSection({ data, d }: { data: OversightData; d: boolean }) {
   const t1 = d ? 'text-white' : 'text-gray-900'
+  const t2 = d ? 'text-zinc-400' : 'text-gray-500'
   const t3 = d ? 'text-zinc-600' : 'text-gray-400'
+  const t4 = d ? 'text-zinc-600' : 'text-gray-400'
   const border = d ? 'border-white/8' : 'border-gray-200'
   const divider = d ? 'divide-white/5' : 'divide-gray-100'
+  const info = d ? 'bg-blue-500/5 border-blue-500/20' : 'bg-blue-50 border-blue-200'
+
+  // Cohort split is read directly from real data — kyc_cases.provider. 'manual'
+  // = self-administered by NEDA; anything else = bank-grade / provider-verified.
+  const manualCount = data.kycByProvider.filter(p => p.provider === 'manual').reduce((s, p) => s + p.count, 0)
+  const bankGradeCount = data.kycByProvider.filter(p => p.provider !== 'manual').reduce((s, p) => s + p.count, 0)
+
+  // Honest control inventory mapped to the Testing Parameters. 'live' = in place
+  // today; 'partial' = limited/manual; 'planned' = not yet, via the partner bank.
+  const controls: Array<{ param: string; label: string; detail: string; status: ControlStatus }> = [
+    { param: 'Para 8(a)', label: 'Government national ID verification', detail: 'Collected and reviewed for every participant', status: 'live' },
+    { param: 'Para 8(a)', label: 'Mobile OTP authentication', detail: 'Phone OTP enforced for account access', status: 'live' },
+    { param: 'Para 8(a)', label: 'Biometric selfie verification', detail: 'Via Selcom bank-ID / approved provider (Cohort 2)', status: 'planned' },
+    { param: 'Para 8(b)', label: 'Source-of-funds self-declaration', detail: 'Structured capture at onboarding for Cohort 2', status: 'planned' },
+    { param: 'Para 8(b)', label: 'Wallet address verification', detail: 'Every wallet bound to a verified user', status: 'live' },
+    { param: 'Para 8(c)', label: 'PEP + sanctions screening (UN / BoT / OFAC)', detail: 'Via partner bank (Selcom) before wallet activation', status: 'planned' },
+    { param: 'Para 8(e)', label: 'No anonymous wallets', detail: 'Enforced — identity required before any transaction', status: 'live' },
+    { param: 'Para 11', label: 'Transaction-limit monitoring', detail: 'Per-txn 1M · daily 2M · monthly 60M · platform 100M, enforced in real time', status: 'live' },
+    { param: 'Para 10', label: 'Enhanced Due Diligence (high-risk / large)', detail: 'Manual review today; automated triggers with the bank', status: 'partial' },
+    { param: 'Para 10/11', label: 'STR filing to FIU (within 24h)', detail: 'Channelled through partner-bank AML/CFT — pending go-live', status: 'planned' },
+  ]
 
   return (
     <div className="space-y-5">
+      {/* KYC status */}
       <div className={`grid gap-px md:grid-cols-3 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
         <Metric label="KYC verified" value={n(data.kycStats.approved)} sub="Identity confirmed, can transact" d={d} valueColor={d ? 'text-emerald-400' : 'text-emerald-600'} />
         <Metric label="Pending review" value={n(data.kycStats.pending)} sub="Submitted, awaiting manual check" d={d} valueColor={d ? 'text-amber-400' : 'text-amber-600'} />
         <Metric label="Rejected" value={n(data.kycStats.rejected)} sub="Did not pass verification" d={d} valueColor={d ? 'text-red-400' : 'text-red-600'} />
       </div>
 
+      {/* Honest cohort framing */}
+      <div className={`border p-5 ${info}`}>
+        <div className={`font-mono text-[9px] tracking-widest uppercase ${d ? 'text-blue-400' : 'text-blue-600'}`}>Verification cohorts — current state &amp; roadmap</div>
+        <p className={`mt-2 text-sm leading-relaxed ${t2}`}>
+          The sandbox onboards a maximum of 100 pilot users (Parameter 2). Verification is reported by method, with no
+          retroactive relabelling. Banking-grade Tier-1 KYC (biometric + PEP/sanctions) comes online for new participants
+          through the partner bank (Selcom), which also performs AML/CFT per Parameter 6 &amp; 15.
+        </p>
+      </div>
+      <div className={`grid gap-px sm:grid-cols-2 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
+        <Metric label="Cohort 1 · Self-administered" value={n(manualCount)} sub="National ID + manual NEDA compliance review (interim sandbox verification)" d={d} />
+        <Metric label="Cohort 2 · Bank-grade (Selcom)" value={n(bankGradeCount)} sub="Tier-1 biometric + PEP/sanctions via partner bank — onboarding pending green-light" d={d} valueColor={bankGradeCount > 0 ? (d ? 'text-emerald-400' : 'text-emerald-600') : (d ? 'text-zinc-500' : 'text-gray-400')} />
+      </div>
+
+      {/* Control inventory */}
+      <div className={`border ${border}`}>
+        <div className={`border-b px-5 py-3 ${border}`}>
+          <span className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>KYC / AML controls — status against the Testing Parameters</span>
+        </div>
+        <div className={`divide-y ${divider}`}>
+          {controls.map((c, i) => (
+            <div key={i} className="flex items-start justify-between gap-4 px-5 py-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`font-mono text-[9px] tracking-wider uppercase ${t4}`}>{c.param}</span>
+                  <span className={`text-sm font-medium ${t1}`}>{c.label}</span>
+                </div>
+                <p className={`mt-0.5 text-[11px] leading-relaxed ${t2}`}>{c.detail}</p>
+              </div>
+              <ControlStatusBadge status={c.status} d={d} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className={`text-[10px] leading-relaxed ${t4}`}>
+        Status reflects controls in place today. &quot;Planned&quot; items are delivered through the partner bank (Selcom) as
+        Cohort 2 onboards; nothing here is represented as operational before it is. AML/CFT custody and screening sit with
+        the BoT-licensed partner bank (Parameter 6 &amp; 15).
+      </p>
     </div>
   )
 }
