@@ -55,8 +55,7 @@ const SECTION_META: Record<string, { title: string; sub: string }> = {
   attestations:{ title: 'Daily Attestation',      sub: 'Reserve reconciliation submitted to BoT by 10:00 EAT · Parameter 7 & 16' },
   issuance:    { title: 'Issuance Controls',      sub: 'Daily mint cap and regulatory transaction limits' },
   kyc:         { title: 'Identity & AML',         sub: 'KYC method by cohort, screening, and AML/CFT controls · Parameter 8, 10 & 11' },
-  deposits:    { title: 'Deposits — Money In',    sub: 'TZS deposits converted to nTZS on Base Mainnet' },
-  withdrawals: { title: 'Redemptions — Money Out', sub: 'nTZS burned and TZS returned via mobile money' },
+  issuance_redemption: { title: 'Issuance & Redemption', sub: 'How TZS becomes nTZS and back — the mint-after-cash and redemption lifecycle · Parameter 7 & 16' },
   audit:       { title: 'Audit Trail',            sub: 'Administration actions and system events' },
   contract:    { title: 'Smart Contract',         sub: 'On-chain infrastructure and contract governance' },
 }
@@ -194,10 +193,10 @@ function OverviewSection({ data, d, onNavigate }: { data: OversightData; d: bool
       {/* Quick navigation cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { id: 'reserves',    label: 'Reserve Proof',   desc: 'Verify 1:1 TZS backing' },
-          { id: 'deposits',    label: 'Money In',        desc: 'TZS deposit flow' },
-          { id: 'withdrawals', label: 'Money Out',       desc: 'Redemption flow' },
-          { id: 'audit',       label: 'Audit Trail',     desc: 'Admin actions log' },
+          { id: 'reserves',            label: 'Reserve Proof',         desc: 'Verify 1:1 TZS backing' },
+          { id: 'attestations',        label: 'Daily Attestation',     desc: 'Reserve report to BoT' },
+          { id: 'issuance_redemption', label: 'Issuance & Redemption', desc: 'Mint & redeem lifecycle' },
+          { id: 'audit',               label: 'Audit Trail',           desc: 'Full activity ledger' },
         ].map(item => (
           <button
             key={item.id}
@@ -602,6 +601,36 @@ function KycSection({ data, d }: { data: OversightData; d: boolean }) {
 }
 
 // ── Section: Deposits (Money In) ──────────────────────────────────────────────
+
+// ── Section: Issuance & Redemption (Money In + Money Out) ─────────────────────
+
+function FlowHeading({ label, sub, d }: { label: string; sub: string; d: boolean }) {
+  const t1 = d ? 'text-white' : 'text-gray-900'
+  const t3 = d ? 'text-zinc-600' : 'text-gray-400'
+  return (
+    <div className="mb-3">
+      <h3 className={`text-sm font-bold tracking-wide ${t1}`}>{label}</h3>
+      <p className={`mt-0.5 font-mono text-[9px] tracking-widest uppercase ${t3}`}>{sub}</p>
+    </div>
+  )
+}
+
+function IssuanceRedemptionSection({ data, d }: { data: OversightData; d: boolean }) {
+  const border = d ? 'border-white/8' : 'border-gray-200'
+  return (
+    <div className="space-y-8">
+      <div>
+        <FlowHeading label="Issuance — Money In" sub="TZS deposits converted to nTZS · mint only after confirmed cash" d={d} />
+        <DepositsSection data={data} d={d} />
+      </div>
+      <div className={`border-t ${border}`} />
+      <div>
+        <FlowHeading label="Redemption — Money Out" sub="nTZS burned and TZS returned via mobile money" d={d} />
+        <WithdrawalsSection data={data} d={d} />
+      </div>
+    </div>
+  )
+}
 
 function DepositsSection({ data, d }: { data: OversightData; d: boolean }) {
   const t1 = d ? 'text-white' : 'text-gray-900'
@@ -1032,8 +1061,7 @@ export function OversightPortal({ data }: { data: OversightData }) {
       case 'attestations':return <AttestationsSection data={data} d={d} />
       case 'issuance':    return <IssuanceSection    data={data} d={d} />
       case 'kyc':         return <KycSection         data={data} d={d} />
-      case 'deposits':    return <DepositsSection    data={data} d={d} />
-      case 'withdrawals': return <WithdrawalsSection data={data} d={d} />
+      case 'issuance_redemption': return <IssuanceRedemptionSection data={data} d={d} />
       case 'audit':       return <AuditSection       data={data} d={d} />
       case 'contract':    return <ContractSection    data={data} d={d} />
       default:            return <OverviewSection    data={data} d={d} onNavigate={navigate} />
