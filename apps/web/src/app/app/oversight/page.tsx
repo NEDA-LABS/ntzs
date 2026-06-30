@@ -1,4 +1,4 @@
-import { desc, eq, gte, sql } from 'drizzle-orm'
+import { desc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
@@ -167,6 +167,33 @@ export default async function OversightDashboard() {
     .orderBy(desc(attestations.reportDate))
     .limit(30)
 
+  // ── TZS provenance trail for issuance/redemption audit events ──────────────
+  // Joins each mint event to its deposit (cash-before-mint proof: fiat_confirmed
+  // → minted timestamps) and each burn event to its redemption (dual approval →
+  // payout). This is the §7(d) "no fake e-money" evidence the regulator wants.
+  const auditDepIds = [...new Set(recentAuditLogsRaw.filter(l => l.entityType === 'deposit_request' && l.entityId).map(l => l.entityId as string))]
+  const auditBurnIds = [...new Set(recentAuditLogsRaw.filter(l => l.entityType === 'burn_request' && l.entityId).map(l => l.entityId as string))]
+
+  const depProvRows = auditDepIds.length
+    ? await db.select({
+        id: depositRequests.id, amountTzs: depositRequests.amountTzs, provider: depositRequests.paymentProvider,
+        channel: depositRequests.pspChannel, reference: depositRequests.pspReference, payerName: depositRequests.payerName,
+        buyerPhone: depositRequests.buyerPhone, submittedAt: depositRequests.createdAt,
+        fiatConfirmedAt: depositRequests.fiatConfirmedAt, mintedAt: depositRequests.mintedAt,
+      }).from(depositRequests).where(inArray(depositRequests.id, auditDepIds))
+    : []
+  const burnProvRows = auditBurnIds.length
+    ? await db.select({
+        id: burnRequests.id, amountTzs: burnRequests.amountTzs, recipientPhone: burnRequests.recipientPhone,
+        reference: burnRequests.payoutReference, payoutStatus: burnRequests.payoutStatus,
+        burnAt: burnRequests.createdAt, approvedAt: burnRequests.approvedAt, secondApprovedAt: burnRequests.secondApprovedAt,
+      }).from(burnRequests).where(inArray(burnRequests.id, auditBurnIds))
+    : []
+  const depProvMap = new Map(depProvRows.map(r => [r.id, r]))
+  const burnProvMap = new Map(burnProvRows.map(r => [r.id, r]))
+  const isoStr = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null))
+  const maskPhone = (p?: string | null) => { if (!p) return null; const s = p.replace(/\s/g, ''); return s.length > 7 ? `${s.slice(0, 6)}****${s.slice(-2)}` : s }
+
   const data: OversightData = {
     stats: {
       totalUsers: stats?.totalUsers ?? 0,
@@ -196,10 +223,32 @@ export default async function OversightDashboard() {
       ...r,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
     })),
-    recentAuditLogs: recentAuditLogsRaw.map(r => ({
-      ...r,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
-    })),
+    recentAuditLogs: recentAuditLogsRaw.map(r => {
+      let provenance: OversightData['recentAuditLogs'][number]['provenance']
+      const dep = r.entityType === 'deposit_request' && r.entityId ? depProvMap.get(r.entityId) : undefined
+      const burn = r.entityType === 'burn_request' && r.entityId ? burnProvMap.get(r.entityId) : undefined
+      if (dep) {
+        provenance = {
+          kind: 'issuance', amountTzs: dep.amountTzs,
+          provider: dep.provider, channel: dep.channel, reference: dep.reference,
+          counterparty: dep.payerName ?? maskPhone(dep.buyerPhone),
+          submittedAt: isoStr(dep.submittedAt), confirmedAt: isoStr(dep.fiatConfirmedAt), completedAt: isoStr(dep.mintedAt),
+        }
+      } else if (burn) {
+        provenance = {
+          kind: 'redemption', amountTzs: burn.amountTzs,
+          reference: burn.reference, payoutStatus: burn.payoutStatus,
+          counterparty: maskPhone(burn.recipientPhone),
+          submittedAt: isoStr(burn.burnAt), confirmedAt: isoStr(burn.approvedAt), completedAt: isoStr(burn.secondApprovedAt),
+          approvals: (burn.approvedAt ? 1 : 0) + (burn.secondApprovedAt ? 1 : 0),
+        }
+      }
+      return {
+        ...r,
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+        provenance,
+      }
+    }),
     statusBreakdown,
     recentBurns: recentBurnsRaw.map(r => ({
       ...r,
