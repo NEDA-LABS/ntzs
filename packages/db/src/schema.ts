@@ -1731,3 +1731,36 @@ export const rampSettlements = pgTable(
     createdIdx: index('ramp_settlements_created_at_idx').on(t.createdAt),
   })
 )
+
+/**
+ * Daily reserve attestation — BoT sandbox Parameter 7 + 16. The 10:00 EAT
+ * reconciliation snapshot submitted to the Bank of Tanzania: nTZS in circulation
+ * vs the ring-fenced TZS reserve (custodial cash + government securities), and the
+ * deviation from the strict 1:1 peg. One immutable row per EAT day; report_hash
+ * makes each record tamper-evident.
+ */
+export const attestations = pgTable(
+  'attestations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    reportDate: text('report_date').notNull().unique(), // 'YYYY-MM-DD' in EAT
+    ntzsCirculation: numeric('ntzs_circulation', { precision: 36, scale: 2 }).notNull(),
+    tzsCustodialReserve: numeric('tzs_custodial_reserve', { precision: 36, scale: 2 }).notNull(),
+    tzsGovtSecurities: numeric('tzs_govt_securities', { precision: 36, scale: 2 }).notNull().default('0'),
+    reserveTotal: numeric('reserve_total', { precision: 36, scale: 2 }).notNull(),
+    // (reserve_total - ntzs_circulation) / ntzs_circulation * 100. Target 0.00%.
+    deviationPct: numeric('deviation_pct', { precision: 12, scale: 6 }).notNull(),
+    fullyBacked: boolean('fully_backed').notNull(),   // reserve_total >= ntzs_circulation (the hard rule)
+    withinKpi: boolean('within_kpi').notNull(),       // not under-backed (peg intact)
+    blockNumber: bigint('block_number', { mode: 'number' }),
+    supplySource: text('supply_source').notNull(),
+    reserveSource: text('reserve_source').notNull(),
+    reportHash: text('report_hash').notNull(),
+    emailedTo: text('emailed_to'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    reportDateIdx: index('attestations_report_date_idx').on(t.reportDate),
+    createdAtIdx: index('attestations_created_at_idx').on(t.createdAt),
+  })
+)
