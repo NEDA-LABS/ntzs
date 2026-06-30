@@ -21,6 +21,14 @@ export interface OversightData {
   recentAuditLogs: Array<{
     id: string; action: string; entityType: string | null; entityId: string | null
     metadata: unknown; createdAt: string | null; actorEmail: string | null
+    provenance?: {
+      kind: 'issuance' | 'redemption'
+      amountTzs: number
+      provider?: string | null; channel?: string | null; reference?: string | null
+      counterparty?: string | null
+      submittedAt?: string | null; confirmedAt?: string | null; completedAt?: string | null
+      payoutStatus?: string | null; approvals?: number
+    }
   }>
   statusBreakdown: Array<{ status: string; count: number; total: number }>
   recentBurns: Array<{
@@ -889,6 +897,77 @@ function AuditFact({ k, v, d }: { k: string; v: unknown; d: boolean }) {
   )
 }
 
+function humanGap(a?: string | null, b?: string | null): string | null {
+  if (!a || !b) return null
+  const ms = new Date(b).getTime() - new Date(a).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return null
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
+}
+
+function ProvenanceStep({ label, detail, time, d, accent }: { label: string; detail?: string; time?: string | null; d: boolean; accent?: boolean }) {
+  const t1 = d ? 'text-zinc-200' : 'text-gray-800'
+  const t2 = d ? 'text-zinc-500' : 'text-gray-500'
+  const t3 = d ? 'text-zinc-600' : 'text-gray-400'
+  const dot = accent ? (d ? 'bg-emerald-400' : 'bg-emerald-600') : (d ? 'bg-zinc-600' : 'bg-gray-300')
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <div className={`mt-1 h-1.5 w-1.5 rounded-full ${dot}`} />
+        <div className={`w-px flex-1 ${d ? 'bg-white/8' : 'bg-gray-200'}`} />
+      </div>
+      <div className="flex-1 pb-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <span className={`text-[12px] font-medium ${t1}`}>{label}</span>
+          {time && <span className={`font-mono text-[9px] ${t3}`}>{formatDateTimeEAT(new Date(time))}</span>}
+        </div>
+        {detail && <p className={`mt-0.5 text-[11px] ${t2}`}>{detail}</p>}
+      </div>
+    </div>
+  )
+}
+
+function ProvenancePanel({ p, d }: { p: NonNullable<OversightData['recentAuditLogs'][number]['provenance']>; d: boolean }) {
+  const border = d ? 'border-white/8' : 'border-gray-200'
+  const surface = d ? 'bg-white/[0.02]' : 'bg-gray-50'
+  const t3 = d ? 'text-zinc-600' : 'text-gray-400'
+  const okc = d ? 'border-emerald-500/40 text-emerald-400' : 'border-emerald-600/40 text-emerald-700'
+  const amt = p.amountTzs.toLocaleString('en-US')
+
+  if (p.kind === 'issuance') {
+    const gap = humanGap(p.confirmedAt, p.completedAt)
+    const providerLabel = [p.provider, p.channel].filter(Boolean).join(' · ')
+    return (
+      <div className={`mt-3 border p-4 ${border} ${surface}`}>
+        <div className="mb-3 flex items-center justify-between">
+          <span className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>TZS provenance — cash before mint</span>
+          <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${okc}`}>{amt} TZS in = {amt} nTZS · 1:1</span>
+        </div>
+        <ProvenanceStep label={`Customer paid ${amt} TZS`} detail={[providerLabel, p.reference && `ref ${p.reference}`, p.counterparty && `payer ${p.counterparty}`].filter(Boolean).join(' · ') || undefined} time={p.submittedAt} d={d} />
+        <ProvenanceStep label="Cash confirmed in custodial account" detail="PSP webhook — funds settled before any token was issued" time={p.confirmedAt} d={d} />
+        <ProvenanceStep label={`${amt} nTZS minted`} detail={gap ? `Issued ${gap} after cash was confirmed` : 'Issued only after cash confirmation'} time={p.completedAt} d={d} accent />
+      </div>
+    )
+  }
+
+  const okRedeem = !!p.payoutStatus && /complete|success|paid/i.test(p.payoutStatus)
+  return (
+    <div className={`mt-3 border p-4 ${border} ${surface}`}>
+      <div className="mb-3 flex items-center justify-between">
+        <span className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>TZS provenance — burn before payout</span>
+        {p.approvals != null && <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${d ? 'border-blue-500/40 text-blue-400' : 'border-blue-600/40 text-blue-700'}`}>{p.approvals}/2 approvals</span>}
+      </div>
+      <ProvenanceStep label={`${amt} nTZS burned`} detail="Tokens removed from supply for redemption" time={p.submittedAt} d={d} />
+      <ProvenanceStep label="Dual-control approval" detail={`Maker-checker — ${p.approvals ?? 0} of 2 approvals recorded`} time={p.confirmedAt ?? p.completedAt} d={d} />
+      <ProvenanceStep label={`${amt} TZS paid out`} detail={[p.counterparty && `to ${p.counterparty}`, p.reference && `ref ${p.reference}`, p.payoutStatus && `status ${p.payoutStatus}`].filter(Boolean).join(' · ') || undefined} time={p.completedAt} d={d} accent={okRedeem} />
+    </div>
+  )
+}
+
 function AuditSection({ data, d }: { data: OversightData; d: boolean }) {
   const t1 = d ? 'text-white' : 'text-gray-900'
   const t2 = d ? 'text-zinc-400' : 'text-gray-500'
@@ -952,6 +1031,7 @@ function AuditSection({ data, d }: { data: OversightData; d: boolean }) {
                     {facts.map(([k, v]) => <AuditFact key={k} k={k} v={v} d={d} />)}
                   </div>
                 )}
+                {log.provenance && <ProvenancePanel p={log.provenance} d={d} />}
                 {log.entityId && (
                   <div className={`mt-1.5 font-mono text-[9px] ${t4}`}>Ref {log.entityId.slice(0, 18)}… · {log.entityType ?? 'event'}</div>
                 )}
