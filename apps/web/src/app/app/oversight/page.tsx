@@ -63,6 +63,15 @@ export default async function OversightDashboard() {
     })
     .from(kycCases)
 
+  const kycByProvider = await db
+    .select({
+      provider: kycCases.provider,
+      count: sql<number>`count(*)`.mapWith(Number),
+      approved: sql<number>`count(*) filter (where ${kycCases.status} = 'approved')`.mapWith(Number),
+    })
+    .from(kycCases)
+    .groupBy(kycCases.provider)
+
   const today = new Date().toISOString().slice(0, 10)
   const [todayIssuance] = await db
     .select()
@@ -173,6 +182,11 @@ export default async function OversightDashboard() {
       pending: kycStats?.pending ?? 0,
       rejected: kycStats?.rejected ?? 0,
     },
+    kycByProvider: kycByProvider.map(p => ({
+      provider: p.provider ?? 'manual',
+      count: p.count,
+      approved: p.approved,
+    })),
     todayIssuance: todayIssuance
       ? { issuedTzs: todayIssuance.issuedTzs, capTzs: todayIssuance.capTzs }
       : null,
