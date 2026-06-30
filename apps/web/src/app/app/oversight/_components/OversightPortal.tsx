@@ -33,6 +33,17 @@ export interface OversightData {
   userCount: number
   walletCount: number
   contractAddress: string
+  attestations: Array<{
+    reportDate: string
+    ntzsCirculation: number
+    tzsCustodialReserve: number
+    tzsGovtSecurities: number
+    reserveTotal: number
+    deviationPct: number
+    fullyBacked: boolean
+    reportHash: string
+    createdAt: string | null
+  }>
 }
 
 // ── Section registry ──────────────────────────────────────────────────────────
@@ -40,6 +51,7 @@ export interface OversightData {
 const SECTION_META: Record<string, { title: string; sub: string }> = {
   overview:    { title: 'Dashboard',              sub: 'Platform health at a glance' },
   reserves:    { title: 'Reserve Proof',          sub: 'Verify 1:1 TZS backing for every nTZS in circulation' },
+  attestations:{ title: 'Daily Attestation',      sub: 'Reserve reconciliation submitted to BoT by 10:00 EAT · Parameter 7 & 16' },
   issuance:    { title: 'Issuance Controls',      sub: 'Daily mint cap and regulatory transaction limits' },
   kyc:         { title: 'Identity Verification',  sub: 'KYC pipeline and user verification status' },
   deposits:    { title: 'Deposits — Money In',    sub: 'TZS deposits converted to nTZS on Base Mainnet' },
@@ -223,6 +235,93 @@ function OverviewSection({ data, d, onNavigate }: { data: OversightData; d: bool
 }
 
 // ── Section: Reserve Proof ────────────────────────────────────────────────────
+
+// ── Section: Daily Attestation ────────────────────────────────────────────────
+
+function AttestationsSection({ data, d }: { data: OversightData; d: boolean }) {
+  const t1 = d ? 'text-white' : 'text-gray-900'
+  const t2 = d ? 'text-zinc-400' : 'text-gray-500'
+  const t3 = d ? 'text-zinc-600' : 'text-gray-400'
+  const t4 = d ? 'text-zinc-600' : 'text-gray-400'
+  const border = d ? 'border-white/8' : 'border-gray-200'
+  const surface = d ? 'bg-black' : 'bg-white'
+  const divider = d ? 'divide-white/5' : 'divide-gray-100'
+  const rowHov = d ? 'hover:bg-white/[0.02]' : 'hover:bg-gray-50'
+  const tblHdr = d ? 'bg-white/[0.02]' : 'bg-gray-50'
+  const info = d ? 'bg-blue-500/5 border-blue-500/20' : 'bg-blue-50 border-blue-200'
+  const ok = d ? 'text-emerald-400' : 'text-emerald-600'
+  const bad = d ? 'text-red-400' : 'text-red-600'
+
+  const latest = data.attestations[0] ?? null
+  const fmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 2 })
+
+  return (
+    <div className="space-y-6">
+      <div className={`border p-5 ${info}`}>
+        <div className={`font-mono text-[9px] tracking-widest uppercase ${d ? 'text-blue-400' : 'text-blue-600'}`}>How the daily attestation works</div>
+        <p className={`mt-2 text-sm leading-relaxed ${t2}`}>
+          Every day at <b>10:00 EAT</b> the platform snapshots the on-chain nTZS supply against the ring-fenced TZS
+          reserve and submits the reconciliation to the Bank of Tanzania (Testing Parameter 7 &amp; 16). Each report is
+          hashed (SHA-256) and archived immutably. The hard rule: <b>nTZS in circulation must never exceed the TZS reserve</b>.
+        </p>
+      </div>
+
+      {latest ? (
+        <>
+          <div className={`grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-4 ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
+            <Metric label="(a) nTZS in circulation" value={fmt(latest.ntzsCirculation)} sub={`As of ${latest.reportDate} EAT`} d={d} />
+            <Metric label="(b) TZS custodial reserve" value={fmt(latest.tzsCustodialReserve)} sub="Ring-fenced trust account" d={d} />
+            <Metric label="(c) TZS in govt securities" value={fmt(latest.tzsGovtSecurities)} sub="Treasury bills" d={d} />
+            <Metric label="(d) Deviation from 1:1" value={`${latest.deviationPct.toFixed(4)}%`} sub={latest.fullyBacked ? 'Fully backed' : 'UNDER-BACKED'} valueColor={latest.fullyBacked ? ok : bad} d={d} />
+          </div>
+          <p className={`text-[10px] ${t4}`}>
+            Exchange rate is fixed at 1.00 TZS by the mint/redeem protocol. A positive deviation means reserves exceed
+            circulating supply (over-backed, safe). Latest report hash: <span className="font-mono">{latest.reportHash.slice(0, 16)}…</span>
+          </p>
+        </>
+      ) : (
+        <div className={`border p-8 text-center ${border} ${surface}`}>
+          <p className={`text-sm ${t2}`}>No attestation has been generated yet.</p>
+          <p className={`mt-1 text-[10px] ${t4}`}>The first report runs automatically at 10:00 EAT, or generate one now via the compliance tools.</p>
+        </div>
+      )}
+
+      <div>
+        <div className={`mb-3 font-mono text-[9px] tracking-widest uppercase ${t3}`}>Attestation history</div>
+        <div className={`border overflow-x-auto ${border}`}>
+          <table className="min-w-full text-xs">
+            <thead>
+              <tr className={tblHdr}>
+                {['Date (EAT)', 'nTZS supply', 'TZS reserve', 'Govt securities', 'Deviation', 'Status', 'Hash'].map(h => (
+                  <th key={h} className={`px-4 py-3 text-left font-mono text-[9px] tracking-widest uppercase ${t3}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className={`divide-y ${divider}`}>
+              {data.attestations.length === 0 ? (
+                <tr><td colSpan={7} className={`px-4 py-6 text-center font-mono text-[10px] ${t4}`}>No records yet</td></tr>
+              ) : data.attestations.map(a => (
+                <tr key={a.reportDate} className={`transition-colors ${rowHov}`}>
+                  <td className={`px-4 py-3 font-mono text-[11px] ${t1}`}>{a.reportDate}</td>
+                  <td className={`px-4 py-3 font-mono text-sm tabular-nums ${t1}`}>{fmt(a.ntzsCirculation)}</td>
+                  <td className={`px-4 py-3 font-mono text-[11px] tabular-nums ${t2}`}>{fmt(a.tzsCustodialReserve)}</td>
+                  <td className={`px-4 py-3 font-mono text-[11px] tabular-nums ${t2}`}>{fmt(a.tzsGovtSecurities)}</td>
+                  <td className={`px-4 py-3 font-mono text-[11px] tabular-nums ${a.fullyBacked ? ok : bad}`}>{a.deviationPct.toFixed(4)}%</td>
+                  <td className="px-4 py-3">
+                    <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${a.fullyBacked ? (d ? 'border-emerald-500/30 text-emerald-400' : 'border-emerald-600/30 text-emerald-700') : (d ? 'border-red-500/30 text-red-400' : 'border-red-600/30 text-red-700')}`}>
+                      {a.fullyBacked ? 'Backed 1:1' : 'Breach'}
+                    </span>
+                  </td>
+                  <td className={`px-4 py-3 font-mono text-[10px] ${t4}`}>{a.reportHash.slice(0, 12)}…</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ReservesSection({ data, d }: { data: OversightData; d: boolean }) {
   const supply = Math.floor(parseFloat(data.onChainSupply))
@@ -755,6 +854,7 @@ export function OversightPortal({ data }: { data: OversightData }) {
     switch (activeSection) {
       case 'overview':    return <OverviewSection    data={data} d={d} onNavigate={navigate} />
       case 'reserves':    return <ReservesSection    data={data} d={d} />
+      case 'attestations':return <AttestationsSection data={data} d={d} />
       case 'issuance':    return <IssuanceSection    data={data} d={d} />
       case 'kyc':         return <KycSection         data={data} d={d} />
       case 'deposits':    return <DepositsSection    data={data} d={d} />

@@ -12,6 +12,7 @@ import {
   auditLogs,
   wallets,
   burnRequests,
+  attestations,
 } from '@ntzs/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { getBalance, ACTIVE_PSP_NAME } from '@/lib/psp'
@@ -37,7 +38,7 @@ async function getOnChainTotalSupply(): Promise<string> {
 }
 
 export default async function OversightDashboard() {
-  await requireAnyRole(['platform_compliance', 'super_admin'])
+  await requireAnyRole(['platform_compliance', 'super_admin', 'bot_regulator'])
 
   const { db } = getDb()
 
@@ -149,6 +150,12 @@ export default async function OversightDashboard() {
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(wallets)
 
+  const attestationRows = await db
+    .select()
+    .from(attestations)
+    .orderBy(desc(attestations.reportDate))
+    .limit(30)
+
   const data: OversightData = {
     stats: {
       totalUsers: stats?.totalUsers ?? 0,
@@ -191,6 +198,17 @@ export default async function OversightDashboard() {
     userCount: userCount?.count ?? 0,
     walletCount: walletCount?.count ?? 0,
     contractAddress: CONTRACT_ADDRESS ?? '',
+    attestations: attestationRows.map(a => ({
+      reportDate: a.reportDate,
+      ntzsCirculation: Number(a.ntzsCirculation),
+      tzsCustodialReserve: Number(a.tzsCustodialReserve),
+      tzsGovtSecurities: Number(a.tzsGovtSecurities),
+      reserveTotal: Number(a.reserveTotal),
+      deviationPct: Number(a.deviationPct),
+      fullyBacked: a.fullyBacked,
+      reportHash: a.reportHash,
+      createdAt: a.createdAt instanceof Date ? a.createdAt.toISOString() : a.createdAt,
+    })),
   }
 
   return <OversightPortal data={data} />
