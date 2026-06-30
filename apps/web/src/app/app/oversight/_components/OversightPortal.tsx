@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { OversightSidebar } from './OversightSidebar'
 import { ExportReportButton } from './ExportReportButton'
 import { formatDateTimeEAT } from '@/lib/format-date'
@@ -791,48 +791,146 @@ function WithdrawalsSection({ data, d }: { data: OversightData; d: boolean }) {
 
 // ── Section: Audit Trail ──────────────────────────────────────────────────────
 
+type AuditCat = 'issuance' | 'redemption' | 'transfer' | 'compliance' | 'admin' | 'system'
+
+const CAT_META: Record<AuditCat, { label: string; cls: (d: boolean) => string }> = {
+  issuance:   { label: 'Issuance',   cls: d => d ? 'border-emerald-500/40 text-emerald-400' : 'border-emerald-600/40 text-emerald-700' },
+  redemption: { label: 'Redemption', cls: d => d ? 'border-violet-500/40 text-violet-400' : 'border-violet-600/40 text-violet-700' },
+  transfer:   { label: 'Transfer',   cls: d => d ? 'border-blue-500/40 text-blue-400' : 'border-blue-600/40 text-blue-700' },
+  compliance: { label: 'Compliance', cls: d => d ? 'border-amber-500/40 text-amber-400' : 'border-amber-600/40 text-amber-700' },
+  admin:      { label: 'Administration', cls: d => d ? 'border-zinc-500/40 text-zinc-300' : 'border-gray-400/50 text-gray-600' },
+  system:     { label: 'System',     cls: d => d ? 'border-zinc-600/40 text-zinc-500' : 'border-gray-300 text-gray-400' },
+}
+
+interface ActionDef { label: string; cat: AuditCat; summary?: (m: Record<string, unknown>) => string }
+
+const auditNum = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x.toLocaleString('en-US') : String(v ?? '') }
+const auditShort = (v: unknown) => { const s = String(v ?? ''); return s.length > 14 ? `${s.slice(0, 8)}…${s.slice(-4)}` : s }
+
+const AUDIT_ACTIONS: Record<string, ActionDef> = {
+  mint_completed:            { label: 'nTZS Issued',                 cat: 'issuance',   summary: m => `${auditNum(m.amountTzs)} nTZS minted${m.walletAddress ? ` to ${auditShort(m.walletAddress)}` : ''}` },
+  'mint.executed':           { label: 'nTZS Issued',                 cat: 'issuance',   summary: m => `${auditNum(m.amountTzs)} nTZS minted${m.walletAddress ? ` to ${auditShort(m.walletAddress)}` : ''}` },
+  mint_failed:               { label: 'Issuance Failed',             cat: 'issuance',   summary: m => `Mint of ${auditNum(m.amountTzs)} nTZS did not complete` },
+  payout_completed:          { label: 'Redemption Paid Out',         cat: 'redemption', summary: m => `${auditNum(m.amountTzs)} TZS paid${m.recipientPhone ? ` to ${m.recipientPhone}` : ''}` },
+  'burn.executed':           { label: 'nTZS Burned',                 cat: 'redemption', summary: m => `${auditNum(m.amountTzs)} nTZS burned for redemption` },
+  'burn.payout_initiated':   { label: 'Redemption Initiated',        cat: 'redemption' },
+  'burn.queued_for_approval':{ label: 'Redemption Queued for Approval', cat: 'redemption' },
+  'burn.fee_mint_failed':    { label: 'Fee Mint Failed',             cat: 'redemption' },
+  offramp_burn_reverted:     { label: 'Redemption Reverted',         cat: 'redemption' },
+  merchant_withdrawal_requested: { label: 'Withdrawal Requested',    cat: 'redemption' },
+  transfer_completed:        { label: 'Transfer Settled',            cat: 'transfer',   summary: m => `${auditNum(m.amount ?? m.amountTzs)} ${String(m.token ?? 'nTZS').toUpperCase()} transferred` },
+  user_send_ntzs:            { label: 'User Sent nTZS',              cat: 'transfer',   summary: m => `User sent ${auditNum(m.amountTzs)} nTZS${m.toAddress ? ` to ${auditShort(m.toAddress)}` : ''}` },
+  user_send_usdc:            { label: 'User Sent USDC',              cat: 'transfer',   summary: m => `User sent ${auditNum(m.amount)} USDC${m.toAddress ? ` to ${auditShort(m.toAddress)}` : ''}` },
+  user_send_ntzs_refunded:   { label: 'Transfer Refunded',          cat: 'transfer',   summary: m => `${auditNum(m.amountTzs)} nTZS refunded to sender` },
+  'kyc.approved':            { label: 'KYC Approved',                cat: 'compliance' },
+  'kyc.rejected':            { label: 'KYC Rejected',                cat: 'compliance' },
+  'partner.created':         { label: 'Partner Onboarded',           cat: 'admin',      summary: m => `Partner ${m.name ?? ''} created` },
+  'partner.suspended':       { label: 'Partner Suspended',           cat: 'admin' },
+  'partner.fee_updated':     { label: 'Partner Fee Updated',         cat: 'admin' },
+  'user.role_changed':       { label: 'User Role Changed',           cat: 'admin' },
+  treasury_disbursement:     { label: 'Treasury Disbursement',       cat: 'admin' },
+  lender_disbursement:       { label: 'Lender Disbursement',         cat: 'admin' },
+  wallet_migration_completed:{ label: 'Wallet Migration',            cat: 'system' },
+}
+const auditDef = (action: string): ActionDef => AUDIT_ACTIONS[action] ?? { label: action.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), cat: 'system' }
+
+const AUDIT_FIELD_LABELS: Record<string, string> = {
+  amountTzs: 'Amount (TZS)', amount: 'Amount', token: 'Token', toAddress: 'To', fromAddress: 'From',
+  walletAddress: 'Wallet', recipientPhone: 'Recipient', chain: 'Chain', name: 'Name', email: 'Email',
+  reason: 'Reason', mintError: 'Error', status: 'Status', pspReference: 'PSP reference', feeRecipientAddress: 'Fee recipient',
+}
+const AUDIT_HIDE = new Set(['burnRequestId', 'depositRequestId', 'idempotencyKey', 'userId', 'walletId'])
+const isTxHash = (v: unknown) => typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v)
+const isAddress = (v: unknown) => typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v)
+
+function AuditFact({ k, v, d }: { k: string; v: unknown; d: boolean }) {
+  const t2 = d ? 'text-zinc-300' : 'text-gray-700'
+  const t3 = d ? 'text-zinc-600' : 'text-gray-400'
+  const label = AUDIT_FIELD_LABELS[k] ?? k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
+  let value: ReactNode
+  if (isTxHash(v)) value = <BasescanLink hash={v as string} type="tx" d={d} />
+  else if (isAddress(v)) value = <BasescanLink hash={v as string} type="address" d={d} />
+  else if (k === 'amountTzs' || k === 'amount') value = <span className="tabular-nums">{auditNum(v)}</span>
+  else value = <span className="break-all">{String(v)}</span>
+  return (
+    <div className="flex gap-2">
+      <span className={`shrink-0 font-mono text-[9px] tracking-wider uppercase ${t3}`}>{label}</span>
+      <span className={`font-mono text-[10px] ${t2}`}>{value}</span>
+    </div>
+  )
+}
+
 function AuditSection({ data, d }: { data: OversightData; d: boolean }) {
   const t1 = d ? 'text-white' : 'text-gray-900'
+  const t2 = d ? 'text-zinc-400' : 'text-gray-500'
   const t3 = d ? 'text-zinc-600' : 'text-gray-400'
   const t4 = d ? 'text-zinc-700' : 'text-gray-300'
   const border = d ? 'border-white/8' : 'border-gray-200'
   const divider = d ? 'divide-white/5' : 'divide-gray-100'
   const rowHov = d ? 'hover:bg-white/[0.02]' : 'hover:bg-gray-50'
 
+  const [filter, setFilter] = useState<'all' | AuditCat>('all')
+
+  const counts: Partial<Record<AuditCat, number>> = {}
+  data.recentAuditLogs.forEach(l => { const c = auditDef(l.action).cat; counts[c] = (counts[c] ?? 0) + 1 })
+  const present = (Object.keys(CAT_META) as AuditCat[]).filter(c => counts[c])
+  const shown = filter === 'all' ? data.recentAuditLogs : data.recentAuditLogs.filter(l => auditDef(l.action).cat === filter)
+
+  const tab = (active: boolean) =>
+    `px-3 py-1.5 font-mono text-[9px] tracking-wider uppercase border transition-colors ${
+      active ? (d ? 'border-white/30 text-white bg-white/5' : 'border-gray-400 text-gray-900 bg-gray-100')
+             : (d ? 'border-white/8 text-zinc-500 hover:text-zinc-300' : 'border-gray-200 text-gray-400 hover:text-gray-600')}`
+
   return (
-    <div className={`border divide-y ${border} ${divider}`}>
-      {data.recentAuditLogs.length === 0 ? (
-        <div className={`px-5 py-12 text-center font-mono text-xs ${t3}`}>No audit events recorded</div>
-      ) : data.recentAuditLogs.map(log => (
-        <div key={log.id} className={`flex items-start gap-5 px-5 py-4 transition-colors ${rowHov}`}>
-          <div className={`w-28 shrink-0 pt-0.5 font-mono text-[9px] tracking-wider uppercase ${t3}`}>
-            {log.createdAt ? formatDateTimeEAT(new Date(log.createdAt)) : '—'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`font-mono text-xs font-semibold tracking-wider uppercase ${t1}`}>
-                {log.action.replace(/_/g, ' ')}
-              </span>
-              {log.entityType && (
-                <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${d ? 'border-white/10 text-zinc-500' : 'border-gray-300 text-gray-400'}`}>
-                  {log.entityType}
-                </span>
-              )}
-              {log.actorEmail && (
-                <span className={`font-mono text-[10px] ${t3}`}>by {log.actorEmail}</span>
-              )}
+    <div className="space-y-4">
+      <p className={`text-[11px] leading-relaxed ${t2}`}>
+        A complete, plain-language record of every issuance, redemption, transfer, and administrative action — each with
+        its on-chain transaction, verifiable on Basescan. Internal interface telemetry is excluded. Showing the most
+        recent {data.recentAuditLogs.length} events.
+      </p>
+
+      {/* Category filter */}
+      <div className="flex flex-wrap gap-1.5">
+        <button onClick={() => setFilter('all')} className={tab(filter === 'all')}>All · {data.recentAuditLogs.length}</button>
+        {present.map(c => (
+          <button key={c} onClick={() => setFilter(c)} className={tab(filter === c)}>{CAT_META[c].label} · {counts[c]}</button>
+        ))}
+      </div>
+
+      <div className={`border divide-y ${border} ${divider}`}>
+        {shown.length === 0 ? (
+          <div className={`px-5 py-12 text-center font-mono text-xs ${t3}`}>No events in this category</div>
+        ) : shown.map(log => {
+          const def = auditDef(log.action)
+          const meta = (log.metadata && typeof log.metadata === 'object' ? log.metadata : {}) as Record<string, unknown>
+          const facts = Object.entries(meta).filter(([k, v]) => v != null && v !== '' && !AUDIT_HIDE.has(k) && typeof v !== 'object')
+          return (
+            <div key={log.id} className={`flex items-start gap-5 px-5 py-4 transition-colors ${rowHov}`}>
+              <div className={`w-28 shrink-0 pt-0.5 font-mono text-[9px] tracking-wider uppercase ${t3}`}>
+                {log.createdAt ? formatDateTimeEAT(new Date(log.createdAt)) : '—'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`border font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 ${CAT_META[def.cat].cls(d)}`}>{CAT_META[def.cat].label}</span>
+                  <span className={`text-sm font-semibold ${t1}`}>{def.label}</span>
+                  {log.actorEmail && <span className={`font-mono text-[10px] ${t3}`}>by {log.actorEmail}</span>}
+                </div>
+                {def.summary && (
+                  <p className={`mt-1 text-[12px] ${t2}`}>{(() => { try { return def.summary!(meta) } catch { return '' } })()}</p>
+                )}
+                {facts.length > 0 && (
+                  <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                    {facts.map(([k, v]) => <AuditFact key={k} k={k} v={v} d={d} />)}
+                  </div>
+                )}
+                {log.entityId && (
+                  <div className={`mt-1.5 font-mono text-[9px] ${t4}`}>Ref {log.entityId.slice(0, 18)}… · {log.entityType ?? 'event'}</div>
+                )}
+              </div>
             </div>
-            {log.entityId && (
-              <div className={`mt-0.5 font-mono text-[10px] ${t4}`}>{log.entityId.slice(0, 20)}...</div>
-            )}
-            {log.metadata != null && (
-              <pre className={`mt-2 max-h-16 overflow-auto border p-2 font-mono text-[9px] ${d ? 'border-white/5 bg-white/[0.02] text-zinc-600' : 'border-gray-200 bg-gray-50 text-gray-400'}`}>
-                {JSON.stringify(log.metadata as Record<string, unknown>, null, 2)}
-              </pre>
-            )}
-          </div>
-        </div>
-      ))}
+          )
+        })}
+      </div>
     </div>
   )
 }
