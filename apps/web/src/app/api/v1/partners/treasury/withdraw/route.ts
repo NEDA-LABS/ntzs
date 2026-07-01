@@ -116,15 +116,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
   }
 
-  if (!BURNER_PRIVATE_KEY) {
-    console.error('[treasury/withdraw] BURNER_PRIVATE_KEY is not configured')
-    return NextResponse.json({ error: 'Treasury withdrawal temporarily unavailable' }, { status: 503 })
-  }
-  // MINTER_PRIVATE_KEY is required to roll back the burn if payout fails.
+  // MINTER_PRIVATE_KEY is required both to roll back the burn if payout fails and
+  // (via the fallback below) as the burn signer.
   if (!MINTER_PRIVATE_KEY) {
     console.error('[treasury/withdraw] MINTER_PRIVATE_KEY is not configured — refusing to burn without rollback capability')
     return NextResponse.json({ error: 'Treasury withdrawal temporarily unavailable' }, { status: 503 })
   }
+  // Burn authority: prefer a dedicated burner key, else fall back to the minter
+  // key (which holds BURNER_ROLE) — matching every other burn flow in the app
+  // (offramp.ts, revertOffRampBurn). Without this fallback, treasury withdrawal
+  // was the ONLY burn path that broke when BURNER_PRIVATE_KEY is unset.
+  const burnerKey = BURNER_PRIVATE_KEY || MINTER_PRIVATE_KEY
 
   // Dedup the burn+payout so a client retry (same Idempotency-Key) can't
   // trigger a second withdrawal. A completed call replays its stored response.
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
   const amountWei = BigInt(Math.trunc(amountTzs)) * (BigInt(10) ** BigInt(18))
 
   const provider = new ethers.JsonRpcProvider(rpcUrl)
-  const burnerSigner = new ethers.Wallet(BURNER_PRIVATE_KEY, provider)
+  const burnerSigner = new ethers.Wallet(burnerKey, provider)
   const tokenAsBurner = new ethers.Contract(contractAddress, NTZS_WRITE_ABI, burnerSigner)
 
   // 1) Verify balance.
