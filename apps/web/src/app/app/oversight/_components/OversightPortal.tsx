@@ -989,8 +989,31 @@ function AuditSection({ data, d }: { data: OversightData; d: boolean }) {
       active ? (d ? 'border-white/30 text-white bg-white/5' : 'border-gray-400 text-gray-900 bg-gray-100')
              : (d ? 'border-white/8 text-zinc-500 hover:text-zinc-300' : 'border-gray-200 text-gray-400 hover:text-gray-600')}`
 
+  // Live reserve invariant — every event below settles under this 1:1 position.
+  const invSupply = Math.floor(parseFloat(data.onChainSupply)) || 0
+  const invReserve = data.pspBalance.available || 0
+  const invBacked = invReserve >= invSupply
+  const invPct = invSupply > 0 ? (invReserve / invSupply) * 100 : 100
+  const invBox = invBacked
+    ? (d ? 'border-emerald-500/25 bg-emerald-500/5' : 'border-emerald-300 bg-emerald-50')
+    : (d ? 'border-red-500/30 bg-red-500/5' : 'border-red-300 bg-red-50')
+  const invBadge = invBacked
+    ? (d ? 'border-emerald-500/40 text-emerald-400' : 'border-emerald-600/40 text-emerald-700')
+    : (d ? 'border-red-500/40 text-red-400' : 'border-red-600/40 text-red-700')
+
   return (
     <div className="space-y-4">
+      {/* Reserve invariant banner */}
+      <div className={`flex flex-wrap items-center justify-between gap-3 border p-4 ${invBox}`}>
+        <div className="min-w-0">
+          <div className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>Reserve position · every event below settles under this invariant</div>
+          <div className={`mt-1 text-sm ${t1}`}>
+            <b className="tabular-nums">{n(invSupply)}</b> nTZS in circulation · backed by <b className="tabular-nums">{n(invReserve)} TZS</b> in reserve · <b className="tabular-nums">{invPct.toFixed(2)}%</b>
+          </div>
+        </div>
+        <span className={`shrink-0 border font-mono text-[9px] tracking-wider uppercase px-2.5 py-1 ${invBadge}`}>{invBacked ? '1:1 maintained' : 'Under-backed'}</span>
+      </div>
+
       <p className={`text-[11px] leading-relaxed ${t2}`}>
         A complete, plain-language record of every issuance, redemption, transfer, and administrative action — each with
         its on-chain transaction, verifiable on Basescan. Internal interface telemetry is excluded. Showing the most
