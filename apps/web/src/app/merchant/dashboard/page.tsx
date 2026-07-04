@@ -96,6 +96,35 @@ export default function MerchantOverviewPage() {
   const [links, setLinks] = useState<PayLink[]>([]);
   const [wallet, setWallet] = useState<{ walletAddress: string | null; balanceTzs: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawPhone, setWithdrawPhone] = useState('');
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawMsg, setWithdrawMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function submitWithdraw() {
+    setWithdrawBusy(true);
+    setWithdrawMsg(null);
+    try {
+      const res = await fetch('/merchant/api/merchant/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amountTzs: Number(withdrawAmount), phone: withdrawPhone || undefined }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setWithdrawMsg({ ok: true, text: data.message ?? 'Withdrawal queued — cash arrives shortly.' });
+        setWithdrawAmount('');
+        fetch('/merchant/api/merchant/wallet').then(r => r.json()).then(setWallet).catch(() => {});
+      } else {
+        setWithdrawMsg({ ok: false, text: data.message ?? data.error ?? 'Withdrawal failed' });
+      }
+    } catch {
+      setWithdrawMsg({ ok: false, text: 'Network error — try again' });
+    } finally {
+      setWithdrawBusy(false);
+    }
+  }
 
   const base = typeof window !== 'undefined' ? window.location.origin : '';
   const payUrl = merchant ? `${base}/m/${merchant.handle}` : '';
@@ -212,14 +241,58 @@ export default function MerchantOverviewPage() {
             )}
           </div>
 
-          {/* nTZS wallet balance — capital received (financing) / settled funds */}
+          {/* nTZS wallet balance + explicit cash-out (Withdraw) */}
           {wallet?.walletAddress && (
             <div className="mb-5 border border-emerald-500/20 bg-emerald-500/[0.04] rounded-lg px-4 py-3">
-              <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">nTZS Wallet Balance</p>
-              <p className="text-2xl font-bold text-white tabular-nums leading-none">
-                {formatTzs(Math.round(wallet.balanceTzs))} <span className="text-sm text-white/40 font-medium">nTZS</span>
-              </p>
-              <p className="text-[10px] text-white/30 mt-1.5">Spendable nTZS in your wallet — cash out in Settings → Financing.</p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">nTZS Wallet Balance</p>
+                  <p className="text-2xl font-bold text-white tabular-nums leading-none">
+                    {formatTzs(Math.round(wallet.balanceTzs))} <span className="text-sm text-white/40 font-medium">nTZS</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setWithdrawOpen((v) => !v); setWithdrawMsg(null); }}
+                  className="shrink-0 border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-[10px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/20 transition-colors"
+                >
+                  Withdraw
+                </button>
+              </div>
+
+              {withdrawOpen && (
+                <div className="mt-3 border-t border-white/10 pt-3 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min={5000}
+                      placeholder="Amount you receive (min 5,000)"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      className="flex-1 bg-black/20 border border-white/15 px-3 py-2 text-sm text-white placeholder-white/30 focus:border-emerald-500/50 outline-none tabular-nums"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Phone (07…) — optional if saved"
+                      value={withdrawPhone}
+                      onChange={(e) => setWithdrawPhone(e.target.value)}
+                      className="flex-1 bg-black/20 border border-white/15 px-3 py-2 text-sm text-white placeholder-white/30 focus:border-emerald-500/50 outline-none"
+                    />
+                    <button
+                      onClick={submitWithdraw}
+                      disabled={withdrawBusy}
+                      className="border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-[10px] tracking-widest text-emerald-400 uppercase hover:bg-emerald-500/25 transition-colors disabled:opacity-40"
+                    >
+                      {withdrawBusy ? 'Sending…' : 'Confirm'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-white/30">
+                    Cash to mobile money. Fees (PSP + 0.5%) are added on top of the amount you enter.
+                  </p>
+                  {withdrawMsg && (
+                    <p className={`text-xs ${withdrawMsg.ok ? 'text-emerald-400/90' : 'text-rose-400/90'}`}>{withdrawMsg.text}</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
