@@ -53,12 +53,15 @@ async function reserveDailyIssuance(
     on conflict (day) do nothing
   `
 
-  // Atomically reserve if capacity available
+  // Atomically reserve if capacity available. The cap check MUST include
+  // issued_tzs: once mints commit (reserved -> issued), reserved returns toward
+  // zero, so omitting issued_tzs would let the daily total blow past the cap.
+  // Matches executeMint (reserved + issued + amount <= cap).
   const result = await sql<{ success: boolean }[]>`
     update daily_issuance
     set reserved_tzs = reserved_tzs + ${amountTzs}, updated_at = now()
     where day = ${today}
-      and (reserved_tzs + ${amountTzs}) <= cap_tzs
+      and (reserved_tzs + issued_tzs + ${amountTzs}) <= cap_tzs
     returning true as success
   `
 
