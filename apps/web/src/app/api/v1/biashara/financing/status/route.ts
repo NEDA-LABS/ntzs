@@ -9,6 +9,7 @@ import {
 } from '@ntzs/db'
 import { eq, and } from 'drizzle-orm'
 import { requireServiceKey } from '@/lib/service-auth'
+import { MIN_LENDER_REPAYMENT_TZS } from '@/lib/settlement-payoff'
 
 /**
  * GET /api/v1/biashara/financing/status  (NEDApay service layer)
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
     .select({
       lenderPartnerId: merchantAccounts.lenderPartnerId,
       lenderSplitPct: merchantAccounts.lenderSplitPct,
+      lenderPendingTzs: merchantAccounts.lenderPendingTzs,
       lenderControlsSettlement: merchantAccounts.lenderControlsSettlement,
       withdrawalLimitTzs: merchantAccounts.withdrawalLimitTzs,
       settlePct: merchantAccounts.settlePct,
@@ -115,7 +117,18 @@ export async function GET(req: NextRequest) {
     lenderControlsSettlement: merchant.lenderControlsSettlement,
     withdrawalLimitTzs: merchant.withdrawalLimitTzs,
     settlePct: merchant.settlePct,
-    loan: lenderName ? { loanStatus, principalTzs, totalOwedTzs, repaidTzs, interestRatePct } : null,
+    loan: lenderName
+      ? {
+          loanStatus,
+          principalTzs,
+          totalOwedTzs,
+          repaidTzs,
+          interestRatePct,
+          outstandingTzs: totalOwedTzs !== null && repaidTzs !== null ? Math.max(0, totalOwedTzs - repaidTzs) : null,
+          collectedTowardNextTransferTzs: merchant.lenderPendingTzs,
+          transferThresholdTzs: MIN_LENDER_REPAYMENT_TZS,
+        }
+      : null,
     pendingInvite: pendingInvite ?? null,
     pendingApplication: pendingApplication ?? null,
   })

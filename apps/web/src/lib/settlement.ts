@@ -12,11 +12,9 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { fundWalletWithGas } from '@/lib/waas/hd-wallets'
-import { computeLoanPayoffTzs } from './settlement-payoff'
+import { computeLoanPayoffTzs, MIN_LENDER_REPAYMENT_TZS } from './settlement-payoff'
 
 type SqlClient = ReturnType<typeof getDb>['sql']
-
-const MIN_LENDER_REPAYMENT_TZS = 1000
 
 const MERCHANT_HD_MNEMONIC_KEY = 'MERCHANT_HD_MNEMONIC'
 const MERCHANT_DERIVATION_BASE = "m/44'/8453'/2'/0"

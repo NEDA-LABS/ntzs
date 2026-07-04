@@ -3,6 +3,7 @@ import { getSessionFromCookies } from '@/lib/merchant/auth';
 import { db } from '@/lib/merchant/db';
 import { merchantAccounts, merchantCollections, merchantPaymentLinks } from '@ntzs/db';
 import { and, count, eq, gte, sum } from 'drizzle-orm';
+import { getCapitalSummary } from '@/lib/merchant/capital';
 
 export async function GET() {
   const session = await getSessionFromCookies();
@@ -66,6 +67,8 @@ export async function GET() {
       and(eq(merchantPaymentLinks.merchantId, mid), eq(merchantPaymentLinks.isActive, true))
     );
 
+  const capital = await getCapitalSummary(mid);
+
   return NextResponse.json({
     totalCollected: Number(totals?.totalCollected ?? 0),
     totalSettled: Number(totals?.totalSettled ?? 0),
@@ -74,5 +77,6 @@ export async function GET() {
     thisMonth: Number(thisMonth?.amountTzs ?? 0),
     pending: Number(pending?.amountTzs ?? 0),
     activeLinks: activeLinks?.count ?? 0,
+    capital,
   });
 }

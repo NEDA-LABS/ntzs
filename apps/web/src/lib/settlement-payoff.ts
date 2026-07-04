@@ -4,6 +4,13 @@
  */
 
 /**
+ * Minimum accrued lender share before the drip fires an on-chain transfer
+ * (settlement Phase D). Exported so API responses can tell clients how far the
+ * merchant is from the next automatic transfer.
+ */
+export const MIN_LENDER_REPAYMENT_TZS = 1000
+
+/**
  * Decide how much nTZS to move to pay off a lender loan from the merchant's
  * on-chain balance.
  *
