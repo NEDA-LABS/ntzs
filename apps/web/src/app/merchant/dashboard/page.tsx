@@ -16,6 +16,7 @@ interface CapitalSummary {
   outstandingTzs: number;
   collectedTowardNextTransferTzs: number;
   transferThresholdTzs: number;
+  updatedAt: string | null;
 }
 
 interface Stats {
@@ -269,7 +270,21 @@ export default function MerchantOverviewPage() {
       {/* Capital repayment (lender loan) — shown instead of the settlement
           banner while a loan is active, so repayment progress is visible and
           the settlement pot isn't mistaken for the loan. */}
-      {stats?.capital ? (
+      {stats?.capital && stats.capital.loanStatus !== 'active' ? (
+        <div className="anim-3 border border-emerald-500/25 bg-emerald-500/[0.04] px-5 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] tracking-widest text-emerald-400/80 uppercase mb-1">
+              Capital {stats.capital.loanStatus === 'repaid' ? 'Repaid' : stats.capital.loanStatus}
+              {stats.capital.lenderName ? ` · ${stats.capital.lenderName}` : ''}
+            </p>
+            <p className="text-xs text-white/50">
+              {stats.capital.totalOwedTzs.toLocaleString()} TZS fully repaid
+              {stats.capital.updatedAt ? ` · ${new Date(stats.capital.updatedAt).toLocaleDateString()}` : ''}
+            </p>
+          </div>
+          <span className="text-emerald-400 text-lg">✓</span>
+        </div>
+      ) : stats?.capital ? (
         <div className="anim-3 border border-emerald-500/25 bg-emerald-500/[0.04] px-5 py-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] tracking-widest text-emerald-400/80 uppercase">
