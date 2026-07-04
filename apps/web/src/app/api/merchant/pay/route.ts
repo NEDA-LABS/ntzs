@@ -156,7 +156,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 });
   }
 
-  // Record merchant collection (snapshots settlePct + lenderPct for auto-settlement)
+  // Record merchant collection (snapshots lenderPct for the capital split).
+  // Sales stay as nTZS in the merchant's wallet — there is no automatic
+  // per-sale conversion to mobile money; cash-out is explicit (withdrawals).
   const settlePct = merchant.settlePct;
   const lenderPct = merchant.lenderSplitPct ?? 0;
   const lenderAmountTzs = lenderPct > 0 ? Math.floor(amountInt * lenderPct / 100) : null;
@@ -170,7 +172,7 @@ export async function POST(req: NextRequest) {
       payerPhone: normalizePhone(phone),
       payerName: payerName || null,
       settlePct,
-      settlementStatus: settlePct > 0 ? 'pending' : 'skipped',
+      settlementStatus: 'skipped',
       lenderPct,
       lenderAmountTzs,
       lenderSettlementStatus: lenderPct > 0 ? 'pending' : 'skipped',

@@ -317,22 +317,7 @@ export default function MerchantOverviewPage() {
             />
           </div>
         </div>
-      ) : (
-        stats && stats.settlementPendingTzs > 0 && merchant.settlePct > 0 && (
-          <div className="anim-3 border border-amber-500/25 bg-amber-500/[0.04] px-5 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] tracking-widest text-amber-400/80 uppercase mb-1">Settlement Accumulating</p>
-              <p className="text-xs text-white/50">Building toward the 5,000 TZS payout threshold</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-bold text-amber-400">{formatTzs(stats.settlementPendingTzs)} TZS</p>
-              <p className="text-[10px] text-white/40 mt-0.5">
-                {Math.round((stats.settlementPendingTzs / 5000) * 100)}% of threshold
-              </p>
-            </div>
-          </div>
-        )
-      )}
+      ) : null}
 
       {/* ── PRODUCTS SHELF ── */}
       <div className="anim-4">

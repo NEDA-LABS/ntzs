@@ -15,12 +15,6 @@ export async function GET() {
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [account] = await db
-    .select({ settlementPendingTzs: merchantAccounts.settlementPendingTzs })
-    .from(merchantAccounts)
-    .where(eq(merchantAccounts.id, mid))
-    .limit(1);
-
   const [totals] = await db
     .select({
       totalCollected: sum(merchantCollections.amountTzs),
@@ -72,7 +66,9 @@ export async function GET() {
   return NextResponse.json({
     totalCollected: Number(totals?.totalCollected ?? 0),
     totalSettled: Number(totals?.totalSettled ?? 0),
-    settlementPendingTzs: account?.settlementPendingTzs ?? 0,
+    // Auto-settlement is retired (sales stay as nTZS; cash-out is explicit).
+    // Field kept at 0 for app compatibility so the old banner never renders.
+    settlementPendingTzs: 0,
     today: Number(today?.amountTzs ?? 0),
     thisMonth: Number(thisMonth?.amountTzs ?? 0),
     pending: Number(pending?.amountTzs ?? 0),
