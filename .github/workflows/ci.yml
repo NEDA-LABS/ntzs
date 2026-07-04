@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install (reproducible)
+        run: npm ci
+      - name: Typecheck (apps/web)
+        working-directory: apps/web
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Unit tests
+        run: npm test --workspace apps/web
+
+  quality:
+    name: Lint & dependency audit (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      # NON-BLOCKING for now: the codebase has ~58 pre-existing eslint errors and
+      # known dependency advisories (2 critical). Burn the debt down, then make
+      # these blocking by removing `continue-on-error`.
+      # See docs/ITGC-CONTROLS-FRAMEWORK.md (Domain 2 — Change Management).
+      - name: Lint (apps/web)
+        run: npm run lint:web
+        continue-on-error: true
+      - name: npm audit (high and above)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  dependency-review:
+    name: Dependency review (PRs only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Flags newly-introduced vulnerable dependencies on a PR. Requires the
+      # repository dependency graph (and GitHub Advanced Security on private
+      # repos); left non-blocking so CI is green if that is not yet enabled.
+      - name: Review new dependencies
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+        continue-on-error: true
