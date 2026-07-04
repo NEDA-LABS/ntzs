@@ -6,59 +6,34 @@ const CDP_JWT_PRIVATE_KEY_JWK = process.env.CDP_JWT_PRIVATE_KEY_JWK
 const CDP_JWT_PUBLIC_KEY_JWK = process.env.CDP_JWT_PUBLIC_KEY_JWK
 const CDP_JWT_KID = process.env.CDP_JWT_KID || 'cdp-key-1'
 
-// Fallback development keys (generate your own for production!)
-// Freshly generated ES256 keys
-const DEV_PRIVATE_KEY: JWK = {
-  kty: 'EC',
-  x: 'nHaZFcHbwbIg8r3n4KA_MQVE_mfDRpVI6FgB-No8C4I',
-  y: 'iE9c9ce7XtdnLMurcB2u1wehrXNA5IW51g8x_3HmQ8A',
-  crv: 'P-256',
-  d: 'B8yO4x8l-znRo_caSO0FKPsDKe8CWClSzBOziKl3qjA',
-  alg: 'ES256',
-  use: 'sig',
-  kid: 'cdp-key-1',
-}
-
-const DEV_PUBLIC_KEY: JWK = {
-  kty: 'EC',
-  x: 'nHaZFcHbwbIg8r3n4KA_MQVE_mfDRpVI6FgB-No8C4I',
-  y: 'iE9c9ce7XtdnLMurcB2u1wehrXNA5IW51g8x_3HmQ8A',
-  crv: 'P-256',
-  alg: 'ES256',
-  use: 'sig',
-  kid: 'cdp-key-1',
-}
-
 let cachedPrivateKey: CryptoKey | null = null
 let cachedPublicJwk: JWK | null = null
 
 export async function getPrivateKey(): Promise<CryptoKey> {
   if (cachedPrivateKey) return cachedPrivateKey
 
-  let jwk: JWK
-  if (CDP_JWT_PRIVATE_KEY_JWK) {
-    jwk = JSON.parse(CDP_JWT_PRIVATE_KEY_JWK)
-  } else {
-    console.warn('[CDP-JWT] Using development keys. Set CDP_JWT_PRIVATE_KEY_JWK in production!')
-    jwk = DEV_PRIVATE_KEY
+  // Fail closed. There is deliberately no built-in key: a missing env var must
+  // NOT fall back to a shared/committed private key, because this key signs the
+  // JWTs that authenticate users to their CDP embedded wallets — anyone holding
+  // it could forge a token for any user. Callers wrap this and return 500.
+  if (!CDP_JWT_PRIVATE_KEY_JWK) {
+    throw new Error('CDP_JWT_PRIVATE_KEY_JWK is not configured')
   }
 
-  cachedPrivateKey = await importJWK(jwk, 'ES256') as CryptoKey
+  cachedPrivateKey = await importJWK(JSON.parse(CDP_JWT_PRIVATE_KEY_JWK), 'ES256') as CryptoKey
   return cachedPrivateKey
 }
 
 export async function getPublicKeyJwk(): Promise<JWK> {
   if (cachedPublicJwk) return cachedPublicJwk
 
-  let jwk: JWK
-  if (CDP_JWT_PUBLIC_KEY_JWK) {
-    jwk = JSON.parse(CDP_JWT_PUBLIC_KEY_JWK)
-  } else {
-    jwk = DEV_PUBLIC_KEY
+  // Fail closed — the JWKS must advertise the real signing key, never a default.
+  if (!CDP_JWT_PUBLIC_KEY_JWK) {
+    throw new Error('CDP_JWT_PUBLIC_KEY_JWK is not configured')
   }
 
-  cachedPublicJwk = jwk
-  return jwk
+  cachedPublicJwk = JSON.parse(CDP_JWT_PUBLIC_KEY_JWK) as JWK
+  return cachedPublicJwk
 }
 
 export async function getPublicJWKS() {
