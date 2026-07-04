@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 import { getDb } from '@/lib/db'
 import { runLenderSettlement } from '@/lib/settlement'
-
-const CRON_SECRET = process.env.CRON_SECRET || ''
 
 export const maxDuration = 60
 
@@ -18,9 +17,7 @@ export const maxDuration = 60
  * lenders were never repaid.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
-  if (CRON_SECRET && !isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

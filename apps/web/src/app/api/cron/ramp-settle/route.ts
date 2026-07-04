@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { eq, and } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { rampSettlements, depositRequests } from '@ntzs/db'
 import { runOnrampSwapLeg } from '@/lib/ramp/onramp'
-
-const CRON_SECRET = process.env.CRON_SECRET || ''
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -18,9 +17,7 @@ export const maxDuration = 120
  * Advisory-locked so overlapping invocations can't double-process.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
-  if (CRON_SECRET && !isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

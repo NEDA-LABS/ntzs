@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { sql } from 'drizzle-orm'
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
@@ -7,7 +8,6 @@ import { lpPoolPositions, lpFills, fxFeeSweeps } from '@ntzs/db'
 import { BASE_RPC_URL } from '@/lib/env'
 import { sendPoolAlertEmail } from '@/lib/fx/alert-email'
 
-const CRON_SECRET = process.env.CRON_SECRET || ''
 const SOLVER_ADDRESS = (process.env.SOLVER_WALLET_ADDRESS ?? '0xf4766439DC70f5B943Cc1918747b408b612ba646') as string
 
 export const maxDuration = 60
@@ -45,9 +45,7 @@ const TOLERANCE: Record<string, number> = { nTZS: 50, USDC: 0.5, USDT: 0.5 }
  * Never writes — safe to run on a schedule or hit manually with the cron secret.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
-  if (CRON_SECRET && !isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
