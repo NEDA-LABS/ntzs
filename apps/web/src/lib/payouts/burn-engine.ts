@@ -10,10 +10,6 @@
  * wallet), mint the platform fee to a treasury (best-effort), then pay the
  * recipient mobile money via the PSP. The deployed payout webhook completes
  * the loop by marking payout_status = 'completed'.
- *
- * ENTIRE ENGINE IS GATED by BURN_CRON_ENABLED === 'true' (checked by the cron
- * routes, not here) so it ships dark and is switched on deliberately — old
- * stuck approved requests will start executing the moment it's enabled.
  */
 import { ethers } from 'ethers'
 
