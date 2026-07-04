@@ -5,10 +5,6 @@
  * /api/cron/process-burns executes: burn nTZS → mobile-money payout); Phase C
  * propagates the payout outcome back onto the merchant's collections so
  * dashboards show settled/failed instead of processing forever.
- *
- * Gated with the burn engine via BURN_CRON_ENABLED (checked by the cron
- * routes): queueing payout orders without an executor would just strand pots
- * in 'processing'.
  */
 import { getDb } from '@/lib/db'
 import { grossUpSettlement, MIN_SETTLEMENT_TZS } from './payout-math'

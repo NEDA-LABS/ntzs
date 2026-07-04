@@ -40,16 +40,13 @@ export async function GET(request: NextRequest) {
     const result = await runLenderSettlement(rawSql)
 
     // Merchant payout phases (pot → burn request → status sync) ride the same
-    // lock, but only once the burn engine is switched on — queueing payout
-    // orders with no executor would strand pots in 'processing'.
+    // lock; /api/cron/process-burns executes the resulting burn requests.
     let payoutBatches = 0
     let payoutsSynced = 0
-    if (process.env.BURN_CRON_ENABLED === 'true') {
-      try { payoutBatches = await fireBatchSettlements(rawSql) }
-      catch (err) { result.errors.push(`payout-batch: ${err instanceof Error ? err.message : String(err)}`) }
-      try { payoutsSynced = await syncMerchantSettlementStatus(rawSql) }
-      catch (err) { result.errors.push(`payout-sync: ${err instanceof Error ? err.message : String(err)}`) }
-    }
+    try { payoutBatches = await fireBatchSettlements(rawSql) }
+    catch (err) { result.errors.push(`payout-batch: ${err instanceof Error ? err.message : String(err)}`) }
+    try { payoutsSynced = await syncMerchantSettlementStatus(rawSql) }
+    catch (err) { result.errors.push(`payout-sync: ${err instanceof Error ? err.message : String(err)}`) }
 
     return NextResponse.json({ ok: true, ...result, payoutBatches, payoutsSynced })
   } finally {

@@ -12,19 +12,12 @@ export const maxDuration = 60
  * Executes approved burn_requests (burn nTZS on-chain → mobile-money payout).
  * Replaces the standalone burn worker, which was never deployed — every fiat
  * off-ramp (auto-settlement, financing withdrawals, disbursements) inserted
- * approved requests that nothing executed.
- *
- * GATED: no-ops unless BURN_CRON_ENABLED === 'true'. Ships dark — review any
- * stuck approved requests (Backstage → Treasury) before flipping the switch,
- * because the backlog starts executing immediately when enabled.
+ * approved requests that nothing executed. Always on, matching how the rest of
+ * the platform off-ramps (consumer withdrawals + ramp execute inline).
  */
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  if (process.env.BURN_CRON_ENABLED !== 'true') {
-    return NextResponse.json({ ok: true, disabled: true })
   }
 
   const { sql: rawSql } = getDb()
