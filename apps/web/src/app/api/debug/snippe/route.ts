@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { getBalance } from '@/lib/psp'
 
 export async function GET() {
+  // Debug endpoint — must not exist in production (leaks PSP float balance).
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   try {
     const balance = await getBalance()
     return NextResponse.json({ status: 'ok', balance })

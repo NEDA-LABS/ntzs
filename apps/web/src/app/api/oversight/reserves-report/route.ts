@@ -3,6 +3,7 @@ import { desc, eq, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
+import { getCurrentDbUser } from '@/lib/auth/rbac'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import {
   users,
@@ -103,11 +104,25 @@ export async function GET() {
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(wallets)
 
-  return NextResponse.json({
+  // Public transparency payload: on-chain supply vs. DB-minted total only.
+  const publicReport = {
     generatedAt: new Date().toISOString(),
     contractAddress: CONTRACT_ADDRESS,
     network: 'Base Mainnet',
     onChainSupply: parseFloat(onChainSupply),
+    totalMintedTzs: stats?.totalMinted || 0,
+  }
+
+  // Operational detail (per-deposit PSP references + tx hashes, KYC pipeline,
+  // user/wallet counts, issuance internals) is restricted to oversight roles.
+  const viewer = await getCurrentDbUser().catch(() => null)
+  const OVERSIGHT_ROLES = ['super_admin', 'platform_compliance', 'bot_regulator']
+  if (!viewer || !OVERSIGHT_ROLES.includes(viewer.role)) {
+    return NextResponse.json(publicReport)
+  }
+
+  return NextResponse.json({
+    ...publicReport,
     stats: {
       totalUsers: userCount?.count || 0,
       totalWallets: walletCount?.count || 0,

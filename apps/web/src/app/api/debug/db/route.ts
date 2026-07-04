@@ -3,6 +3,11 @@ import { neonAuth } from '@neondatabase/auth/next/server'
 import { getDb } from '@/lib/db'
 
 export async function GET() {
+  // Debug endpoint — must not exist in production (leaks DB host + row counts).
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   const { user } = await neonAuth()
 
   const databaseUrl = process.env.DATABASE_URL
