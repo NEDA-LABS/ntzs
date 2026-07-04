@@ -12,6 +12,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { fundWalletWithGas } from '@/lib/waas/hd-wallets'
+import { computeLoanPayoffTzs } from './settlement-payoff'
 
 type SqlClient = ReturnType<typeof getDb>['sql']
 
@@ -21,6 +22,9 @@ const MERCHANT_HD_MNEMONIC_KEY = 'MERCHANT_HD_MNEMONIC'
 const MERCHANT_DERIVATION_BASE = "m/44'/8453'/2'/0"
 
 const NTZS_TRANSFER_ABI = ['function transfer(address to, uint256 amount) returns (bool)'] as const
+const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
+
+const WEI_PER_TZS = BigInt(10) ** BigInt(18)
 
 function deriveMerchantWallet(walletIndex: number, provider: ethers.JsonRpcProvider) {
   const mnemonic = process.env[MERCHANT_HD_MNEMONIC_KEY] ?? process.env['FX_HD_MNEMONIC']
@@ -241,6 +245,148 @@ async function fireBatchLenderRepayments(sql: SqlClient): Promise<number> {
 }
 
 /**
+ * Phase F — Balance-driven payoff. The drip (Phase A + D) only forwards the
+ * lender's slice of each new sale, so a merchant can sit on far more nTZS than
+ * they owe and still show an open loan. Here, for each merchant with an ACTIVE
+ * loan whose on-chain nTZS balance already covers the full outstanding balance,
+ * we repay the entire remaining loan in one transfer (never more than owed) and
+ * let Phase E close it. This is what makes repayment automatic: the loan clears
+ * the moment the wallet can afford it, instead of trickling out over months.
+ */
+async function fireBalancePayoffs(sql: SqlClient): Promise<number> {
+  const contractAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  const rpcUrl = process.env.BASE_RPC_URL
+  if (!contractAddress || !rpcUrl) return 0
+
+  const merchants = await sql<{
+    merchant_id: string
+    wallet_address: string
+    wallet_index: number
+    lender_partner_id: string
+    lender_treasury_address: string
+    loan_id: string
+    total_owed_tzs: number
+    repaid_tzs: number
+  }[]>`
+    select ma.id as merchant_id, ma.wallet_address, ma.wallet_index, ma.lender_partner_id,
+           p.treasury_wallet_address as lender_treasury_address,
+           la.id as loan_id, la.total_owed_tzs, la.repaid_tzs
+    from merchant_accounts ma
+    join partners p on p.id = ma.lender_partner_id
+    join enterprise_loan_agreements la
+      on la.merchant_id = ma.id and la.partner_id = ma.lender_partner_id and la.status = 'active'
+    where ma.lender_partner_id is not null
+      and ma.is_active = true
+      and la.total_owed_tzs > la.repaid_tzs
+    order by la.updated_at asc
+    limit 5
+  `
+
+  const provider = new ethers.JsonRpcProvider(rpcUrl)
+  const token = new ethers.Contract(contractAddress, NTZS_BALANCE_ABI, provider)
+
+  let paid = 0
+  for (const merchant of merchants) {
+    let balanceTzs: number
+    try {
+      const raw: bigint = await token.balanceOf(merchant.wallet_address)
+      balanceTzs = Number(raw / WEI_PER_TZS)
+    } catch (balErr) {
+      console.warn('[settle] payoff balance read failed (skip)', { merchantId: merchant.merchant_id, error: balErr instanceof Error ? balErr.message : balErr })
+      continue
+    }
+
+    const amountTzs = computeLoanPayoffTzs({
+      totalOwedTzs: merchant.total_owed_tzs,
+      repaidTzs: merchant.repaid_tzs,
+      balanceTzs,
+    })
+    if (amountTzs <= 0) continue
+
+    // Claim: jump repaid_tzs to fully-repaid under an optimistic guard so no
+    // concurrent run (or the drip phase) can double-pay the same loan.
+    const claimed = await sql<{ id: string }[]>`
+      update enterprise_loan_agreements
+      set repaid_tzs = total_owed_tzs, updated_at = now()
+      where id = ${merchant.loan_id} and status = 'active' and repaid_tzs = ${merchant.repaid_tzs}
+      returning id
+    `
+    if (!claimed.length) continue
+
+    const amountWei = BigInt(String(amountTzs)) * WEI_PER_TZS
+
+    let txHash: string | null = null
+    try {
+      const wallet = deriveMerchantWallet(merchant.wallet_index, provider)
+
+      // Merchant wallet needs ETH to send the transfer — top up from the relayer if low.
+      try {
+        const gasBalance = await provider.getBalance(wallet.address)
+        if (gasBalance < ethers.parseEther('0.00003')) {
+          await fundWalletWithGas({ toAddress: wallet.address, rpcUrl, amountEth: '0.00005' })
+        }
+      } catch (gasErr) {
+        console.warn('[settle] payoff gas top-up failed (continuing):', gasErr instanceof Error ? gasErr.message : gasErr)
+      }
+
+      const iface = new ethers.Interface(NTZS_TRANSFER_ABI)
+      const tx = await wallet.sendTransaction({
+        to: contractAddress,
+        data: iface.encodeFunctionData('transfer', [merchant.lender_treasury_address, amountWei]),
+      })
+      const receipt = await tx.wait()
+      if (!receipt) throw new Error('No receipt for lender payoff transfer')
+      txHash = receipt.hash
+    } catch (err) {
+      // Roll the claim back so it retries next cycle.
+      await sql`
+        update enterprise_loan_agreements
+        set repaid_tzs = ${merchant.repaid_tzs}, updated_at = now()
+        where id = ${merchant.loan_id}
+      `
+      console.warn('[settle] lender payoff transfer failed', { merchantId: merchant.merchant_id, error: err instanceof Error ? err.message : String(err) })
+      continue
+    }
+
+    // The payoff supersedes the drip: clear the accrued pot and mark the queued
+    // lender collections settled. Any still-`pending` collections self-heal — once
+    // Phase E flips the loan to 'repaid', their lender share resolves to the merchant.
+    await sql`
+      update merchant_accounts
+      set lender_pending_tzs = 0, updated_at = now()
+      where id = ${merchant.merchant_id}
+    `
+    await sql`
+      update merchant_collections
+      set lender_settlement_status = 'completed', updated_at = now()
+      where merchant_id = ${merchant.merchant_id} and lender_settlement_status = 'queued'
+    `
+
+    const syntheticNeonId = `merchant_${merchant.wallet_address.toLowerCase()}`
+    const userRows = await sql<{ id: string }[]>`select id from users where neon_auth_user_id = ${syntheticNeonId} limit 1`
+    const userId = userRows[0]?.id
+    if (userId) {
+      await sql`
+        insert into transfers (partner_id, from_user_id, to_address, token, amount_tzs, tx_hash, status, metadata, created_at, updated_at)
+        values (
+          ${merchant.lender_partner_id}, ${userId}, ${merchant.lender_treasury_address},
+          'ntzs', ${amountTzs}, ${txHash}, 'completed',
+          ${JSON.stringify({ reason: 'lender_payoff', merchantId: merchant.merchant_id, lenderPartnerId: merchant.lender_partner_id, loanId: merchant.loan_id })}::jsonb,
+          now(), now()
+        )
+      `
+    }
+
+    await logAudit(sql, 'lender_loan_paid_off', 'enterprise_loan_agreement', merchant.loan_id, {
+      merchantId: merchant.merchant_id, lenderPartnerId: merchant.lender_partner_id, amountTzs, txHash,
+    })
+    console.log('[settle] lender loan paid off from balance', { merchantId: merchant.merchant_id, amountTzs, txHash })
+    paid += 1
+  }
+  return paid
+}
+
+/**
  * Phase E — Auto-close fully-repaid loans and release the merchant's split.
  */
 async function revertCompletedLoanAgreements(sql: SqlClient): Promise<number> {
@@ -267,20 +413,26 @@ async function revertCompletedLoanAgreements(sql: SqlClient): Promise<number> {
 
 export interface SettlementResult {
   queued: number
+  paidOff: number
   repaymentsFired: number
   loansClosed: number
   errors: string[]
 }
 
 /**
- * Run one lender-settlement cycle: queue collections → fire repayments → close
- * loans. Each phase is isolated so one failing doesn't block the others.
+ * Run one lender-settlement cycle: queue collections → pay off any loan the
+ * merchant's balance can already cover → fire the remaining drip repayments →
+ * close repaid loans. Each phase is isolated so one failing doesn't block the
+ * others. Payoff runs before the drip so a covered loan settles in one transfer.
  */
 export async function runLenderSettlement(sql: SqlClient): Promise<SettlementResult> {
-  const result: SettlementResult = { queued: 0, repaymentsFired: 0, loansClosed: 0, errors: [] }
+  const result: SettlementResult = { queued: 0, paidOff: 0, repaymentsFired: 0, loansClosed: 0, errors: [] }
 
   try { result.queued = await queueCollectionSettlements(sql) }
   catch (err) { result.errors.push(`queue: ${err instanceof Error ? err.message : String(err)}`) }
+
+  try { result.paidOff = await fireBalancePayoffs(sql) }
+  catch (err) { result.errors.push(`payoff: ${err instanceof Error ? err.message : String(err)}`) }
 
   try { result.repaymentsFired = await fireBatchLenderRepayments(sql) }
   catch (err) { result.errors.push(`repay: ${err instanceof Error ? err.message : String(err)}`) }
