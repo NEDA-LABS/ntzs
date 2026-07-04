@@ -4,6 +4,7 @@ import { merchantAccounts } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { requireServiceKey } from '@/lib/service-auth'
 import { JsonRpcProvider, Contract } from 'ethers'
+import { MIN_WITHDRAWAL_TZS, SNIPPE_FLAT_FEE_TZS, WITHDRAWAL_FEE_PCT } from '@/lib/payouts/payout-math'
 
 const NTZS_ABI = ['function balanceOf(address) view returns (uint256)']
 
@@ -41,5 +42,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ walletAddress: merchant.walletAddress, balanceTzs })
+  return NextResponse.json({
+    walletAddress: merchant.walletAddress,
+    balanceTzs,
+    // Explicit balance withdrawal (POST /api/v1/biashara/withdraw) is always
+    // available — it burns the merchant's OWN balance and needs no lender.
+    // Render the wallet card + Withdraw button whenever walletAddress exists,
+    // independent of financing state.
+    withdraw: {
+      enabled: true,
+      endpoint: '/api/v1/biashara/withdraw',
+      minReceiveTzs: MIN_WITHDRAWAL_TZS,
+      pspFlatFeeTzs: SNIPPE_FLAT_FEE_TZS,
+      platformFeePct: WITHDRAWAL_FEE_PCT,
+    },
+  })
 }
