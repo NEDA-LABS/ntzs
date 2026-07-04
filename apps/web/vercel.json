@@ -35,6 +35,14 @@
     {
       "path": "/api/cron/daily-attestation",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/settle",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/ramp-settle",
+      "schedule": "* * * * *"
     }
   ]
 }
