@@ -6,30 +6,9 @@ import { executeWithdraw, type WithdrawParams } from '@/lib/fx/withdraw';
 
 export type ApprovalAction = 'set_fx' | 'set_banking' | 'withdraw';
 
-export type ActionDisposition = 'direct' | 'queue' | 'deny';
-
-/**
- * Maker-checker + least-privilege policy for gated mutating actions
- * (withdraw, set_fx, set_banking):
- *   - owner / approver (and legacy sessions with no role) are checkers -> act directly.
- *   - operator is a maker -> the action is queued for a checker to approve.
- *   - viewer (and any unrecognized role) is read-only -> denied.
- *
- * Callers MUST treat 'deny' as a hard 403. This replaces the previous
- * `needsApproval` predicate, which only queued operators and let every other
- * non-owner role (including the read-only `viewer`) fall through to direct
- * execution — allowing a viewer to move LP funds and rewrite spreads/banking.
- */
-export function actionDisposition(role: string | undefined): ActionDisposition {
-  if (role === undefined || role === 'owner' || role === 'approver') return 'direct';
-  if (role === 'operator') return 'queue';
-  return 'deny';
-}
-
-export function canDecide(role: string | undefined): boolean {
-  // undefined = legacy session = owner.
-  return !role || role === 'owner' || role === 'approver';
-}
+// Access policy (pure, unit-tested in access-policy.test.ts) lives in its own
+// module so tests don't pull in the DB/ethers dependency graph.
+export { actionDisposition, canDecide, type ActionDisposition } from './access-policy';
 
 /** Queue a maker's gated action for approval. */
 export async function createApproval(opts: {
