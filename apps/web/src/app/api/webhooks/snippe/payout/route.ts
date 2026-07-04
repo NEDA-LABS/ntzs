@@ -12,6 +12,7 @@ import { verifyWebhookSignature, type SnippePayoutWebhookPayload } from '@/lib/p
 import { burnRequests, auditLogs, wallets, rampSettlements } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
+import { withIdempotency } from '@/lib/idempotency'
 
 /** If a burn is part of a Ramp off-ramp, advance its settlement + notify the partner. */
 async function advanceRampSettlement(
@@ -109,44 +110,63 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ status: 'acknowledged', reconcile: true })
       }
 
-      try {
-        const remintTxHash = await remintTreasury(metaAmount, treasuryWallet)
-        await db.insert(auditLogs).values({
-          action: 'treasury_withdraw_reverted',
-          entityType: 'partner',
-          entityId: partnerId,
-          metadata: {
-            amountTzs: metaAmount,
-            burnTxHash,
-            remintTxHash,
-            payoutReference: data.reference,
-            failureReason: data.failure_reason,
-            via: 'async_webhook',
-          },
-        })
-        console.log('[snippe/payout webhook] treasury_withdrawal reverted', {
-          partnerId, amountTzs: metaAmount, remintTxHash,
-        })
-        return NextResponse.json({ status: 'success', reverted: true, remintTxHash })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        console.error('[snippe/payout webhook] CRITICAL: async treasury_withdrawal remint failed — manual reconciliation required', {
-          partnerId, amountTzs: metaAmount, burnTxHash, error: message,
-        })
+      if (!data.reference) {
+        // Without a payout reference we cannot dedup a replayed webhook — refuse
+        // to auto-remint and flag for an operator rather than risk a double mint.
         await db.insert(auditLogs).values({
           action: 'treasury_withdraw_reconcile_required',
           entityType: 'partner',
           entityId: partnerId,
-          metadata: {
-            amountTzs: metaAmount,
-            burnTxHash,
-            payoutReference: data.reference,
-            failureReason: data.failure_reason,
-            remintError: message,
-          },
+          metadata: { reason: 'missing_reference_cannot_dedup', treasuryWallet, amountTzs: metaAmount, burnTxHash },
         })
-        return NextResponse.json({ status: 'error', reconcile: true }, { status: 500 })
+        return NextResponse.json({ status: 'acknowledged', reconcile: true })
       }
+
+      // Idempotent per PSP payout reference: a duplicate or replayed payout.failed
+      // for the same reference must NOT re-mint. The payload is PSP-HMAC-signed so
+      // amount/destination cannot be forged — replay is the only vector, and this
+      // closes it (a partner who captured a signed failure webhook delivered to
+      // their own webhookUrl cannot mint unbacked nTZS more than once).
+      return withIdempotency('treasury_remint', data.reference, async () => {
+        try {
+          const remintTxHash = await remintTreasury(metaAmount, treasuryWallet)
+          await db.insert(auditLogs).values({
+            action: 'treasury_withdraw_reverted',
+            entityType: 'partner',
+            entityId: partnerId,
+            metadata: {
+              amountTzs: metaAmount,
+              burnTxHash,
+              remintTxHash,
+              payoutReference: data.reference,
+              failureReason: data.failure_reason,
+              via: 'async_webhook',
+            },
+          })
+          console.log('[snippe/payout webhook] treasury_withdrawal reverted', {
+            partnerId, amountTzs: metaAmount, remintTxHash,
+          })
+          return NextResponse.json({ status: 'success', reverted: true, remintTxHash })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error('[snippe/payout webhook] CRITICAL: async treasury_withdrawal remint failed — manual reconciliation required', {
+            partnerId, amountTzs: metaAmount, burnTxHash, error: message,
+          })
+          await db.insert(auditLogs).values({
+            action: 'treasury_withdraw_reconcile_required',
+            entityType: 'partner',
+            entityId: partnerId,
+            metadata: {
+              amountTzs: metaAmount,
+              burnTxHash,
+              payoutReference: data.reference,
+              failureReason: data.failure_reason,
+              remintError: message,
+            },
+          })
+          return NextResponse.json({ status: 'error', reconcile: true }, { status: 500 })
+        }
+      })
     }
 
     // Completed — just log for traceability.
