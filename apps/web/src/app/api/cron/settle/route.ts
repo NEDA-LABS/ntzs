@@ -3,6 +3,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 
 import { getDb } from '@/lib/db'
 import { runLenderSettlement } from '@/lib/settlement'
+import { fireBatchSettlements, syncMerchantSettlementStatus } from '@/lib/payouts/settlement-payouts'
 
 export const maxDuration = 60
 
@@ -37,7 +38,20 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await runLenderSettlement(rawSql)
-    return NextResponse.json({ ok: true, ...result })
+
+    // Merchant payout phases (pot → burn request → status sync) ride the same
+    // lock, but only once the burn engine is switched on — queueing payout
+    // orders with no executor would strand pots in 'processing'.
+    let payoutBatches = 0
+    let payoutsSynced = 0
+    if (process.env.BURN_CRON_ENABLED === 'true') {
+      try { payoutBatches = await fireBatchSettlements(rawSql) }
+      catch (err) { result.errors.push(`payout-batch: ${err instanceof Error ? err.message : String(err)}`) }
+      try { payoutsSynced = await syncMerchantSettlementStatus(rawSql) }
+      catch (err) { result.errors.push(`payout-sync: ${err instanceof Error ? err.message : String(err)}`) }
+    }
+
+    return NextResponse.json({ ok: true, ...result, payoutBatches, payoutsSynced })
   } finally {
     await reserved`select pg_advisory_unlock(hashtext('lender_settlement'))`.catch(() => {})
     reserved.release()
