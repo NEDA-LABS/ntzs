@@ -1,0 +1,35 @@
+# CODEOWNERS — require review on high-risk (money / auth / contract) paths.
+#
+# TODO: create a @NEDA-LABS/security team and replace @mxsafiri below so reviews
+# do not bottleneck on one person. Enforce by enabling branch protection on
+# `main` with "Require review from Code Owners" (and ideally 2 approvals for
+# these paths). See docs/ITGC-CONTROLS-FRAMEWORK.md (Domain 2).
+
+# Smart contracts (on-chain token)
+/packages/contracts/                       @mxsafiri
+
+# Mint / burn / issuance engine + caps
+/apps/web/src/lib/minting/                 @mxsafiri
+/apps/web/src/lib/settlement.ts            @mxsafiri
+/apps/web/src/lib/sandbox/                 @mxsafiri
+
+# PSP webhooks + money-moving crons
+/apps/web/src/app/api/webhooks/            @mxsafiri
+/apps/web/src/app/api/cron/                @mxsafiri
+
+# Partner wallets, HD seeds, internal/service auth
+/apps/web/src/lib/waas/                    @mxsafiri
+/apps/web/src/lib/service-auth.ts          @mxsafiri
+/apps/web/src/app/api/internal/            @mxsafiri
+
+# Authentication, sessions & keys
+/apps/web/src/lib/auth/                    @mxsafiri
+/apps/web/src/lib/cdp-jwt.ts               @mxsafiri
+/apps/web/src/lib/cron-auth.ts             @mxsafiri
+/apps/web/src/lib/fx/auth.ts               @mxsafiri
+/apps/web/src/lib/fx/access-policy.ts      @mxsafiri
+/apps/web/src/lib/merchant/auth.ts         @mxsafiri
+/apps/web/src/lib/enterprise/auth.ts       @mxsafiri
+
+# Admin / approval console
+/apps/web/src/app/backstage/               @mxsafiri

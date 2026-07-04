@@ -6,18 +6,9 @@ import { executeWithdraw, type WithdrawParams } from '@/lib/fx/withdraw';
 
 export type ApprovalAction = 'set_fx' | 'set_banking' | 'withdraw';
 
-/**
- * Maker-checker policy. Operators are "makers": their gated actions must be approved
- * by a checker (owner or approver). Owners and approvers act directly.
- */
-export function needsApproval(role: string | undefined): boolean {
-  return role === 'operator';
-}
-
-export function canDecide(role: string | undefined): boolean {
-  // undefined = legacy session = owner.
-  return !role || role === 'owner' || role === 'approver';
-}
+// Access policy (pure, unit-tested in access-policy.test.ts) lives in its own
+// module so tests don't pull in the DB/ethers dependency graph.
+export { actionDisposition, canDecide, type ActionDisposition } from './access-policy';
 
 /** Queue a maker's gated action for approval. */
 export async function createApproval(opts: {

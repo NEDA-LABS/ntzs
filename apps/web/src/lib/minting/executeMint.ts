@@ -31,6 +31,7 @@ export type MintResult =
   | { status: 'minted'; depositId: string; txHash: string; amountTzs: number }
   | { status: 'skipped'; reason: string }
   | { status: 'cap_exceeded'; depositId: string }
+  | { status: 'unconfirmed'; depositId: string; txHash: string }
   | { status: 'failed'; depositId: string; error: string }
 
 /**
@@ -112,6 +113,13 @@ export async function executeMint(depositId: string): Promise<MintResult> {
     return { status: 'cap_exceeded', depositId: job.id }
   }
 
+  // Track how far we got so the catch can distinguish a pre-broadcast failure
+  // (no tx sent → safe to fail + retry) from a broadcast/confirmed one (tx may
+  // be mined → must NOT be marked failed, or a retry would double-mint).
+  let broadcast = false
+  let confirmed = false
+  let txHashSent: string | undefined
+
   try {
 
     const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
@@ -132,13 +140,35 @@ export async function executeMint(depositId: string): Promise<MintResult> {
 
     const amountWei = BigInt(String(job.amountTzs)) * BigInt(10) ** BigInt(18)
     const tx = await token.mint(wallet.address, amountWei)
+    broadcast = true
+    txHashSent = tx.hash
 
     await db
       .update(mintTransactions)
       .set({ txHash: tx.hash, status: 'submitted', updatedAt: new Date() })
       .where(eq(mintTransactions.depositRequestId, job.id))
 
-    await tx.wait(1)
+    // The mint tx is now BROADCAST. If we lose confirmation, it may still be
+    // mined — treat as UNKNOWN, never as failed. Leave the deposit claimed in
+    // mint_processing (reservation retained) for reconciliation; do not retry.
+    try {
+      await tx.wait(1)
+    } catch (waitErr) {
+      const waitMessage = waitErr instanceof Error ? waitErr.message : String(waitErr)
+      await db
+        .update(mintTransactions)
+        .set({ status: 'unconfirmed', error: `tx.wait failed: ${waitMessage}`, updatedAt: new Date() })
+        .where(eq(mintTransactions.depositRequestId, job.id))
+      await db.insert(auditLogs).values({
+        action: 'mint_unconfirmed',
+        entityType: 'deposit_request',
+        entityId: job.id,
+        metadata: { amountTzs: job.amountTzs, walletAddress: wallet.address, txHash: tx.hash, error: waitMessage, chain: job.chain },
+      })
+      console.error(`[executeMint] UNCONFIRMED ${job.id}: mint tx ${tx.hash} broadcast but not confirmed — left in mint_processing (not retried, reservation retained).`)
+      return { status: 'unconfirmed', depositId: job.id, txHash: tx.hash }
+    }
+    confirmed = true
 
     // Commit all post-confirmation writes in parallel
     await Promise.all([
@@ -187,6 +217,22 @@ export async function executeMint(depositId: string): Promise<MintResult> {
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
 
+    // If the mint already CONFIRMED on-chain, a post-confirmation write failed —
+    // never mark mint_failed (a retry would double-mint). Reconcile to minted.
+    if (confirmed && txHashSent) {
+      console.error(`[executeMint] POST-CONFIRM write failed for ${job.id} (tx ${txHashSent} confirmed) — reconciling to minted:`, errorMessage)
+      await db.update(depositRequests).set({ status: 'minted', mintedAt: new Date(), updatedAt: new Date() }).where(eq(depositRequests.id, job.id)).catch(() => {})
+      await db.update(mintTransactions).set({ status: 'minted', updatedAt: new Date() }).where(eq(mintTransactions.depositRequestId, job.id)).catch(() => {})
+      return { status: 'minted', depositId: job.id, txHash: txHashSent, amountTzs: job.amountTzs }
+    }
+
+    // A tx was broadcast but its final state is unknown — do NOT mark failed.
+    if (broadcast && txHashSent) {
+      console.error(`[executeMint] Post-broadcast error of unknown state for ${job.id} (tx ${txHashSent}) — left in mint_processing:`, errorMessage)
+      return { status: 'unconfirmed', depositId: job.id, txHash: txHashSent }
+    }
+
+    // Pre-broadcast failure — no tx was sent, so it is safe to fail and retry.
     await db
       .update(dailyIssuance)
       .set({ reservedTzs: sql`GREATEST(0, ${dailyIssuance.reservedTzs} - ${job.amountTzs})`, updatedAt: new Date() })

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { sendEmail, GAS_ALERT_RECIPIENTS } from '@/lib/email'
 
-const CRON_SECRET = process.env.CRON_SECRET || ''
 const FLY_API_TOKEN = process.env.FLY_API_TOKEN || ''
 const FLY_APP_NAME = 'ntzs-market-maker'
 
@@ -14,10 +14,8 @@ interface FlyMachine {
 }
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
 
-  if (CRON_SECRET && !isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

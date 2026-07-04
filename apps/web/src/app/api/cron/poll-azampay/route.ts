@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
 import { eq, and, lt, isNotNull, inArray } from 'drizzle-orm'
 import { checkPaymentStatus } from '@/lib/psp/azampay'
 
-const CRON_SECRET = process.env.CRON_SECRET || ''
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 export const maxDuration = 60
@@ -17,10 +17,8 @@ export const maxDuration = 60
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const isVercelCron = request.headers.get('x-vercel-cron') === '1'
 
-    if (CRON_SECRET && !isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+    if (!isAuthorizedCron(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

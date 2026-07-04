@@ -9,6 +9,13 @@ import {
   merchantPaymentLinks,
 } from '@ntzs/db';
 
+// Public receipt — mask the payer's phone (parity with /api/v1/receipt).
+function maskPhone(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  if (clean.length < 7) return phone;
+  return clean.slice(0, -6) + '•••' + clean.slice(-3);
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ depositId: string }> }
@@ -42,5 +49,9 @@ export async function GET(
     return NextResponse.json({ error: 'Receipt not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ depositId, ...row });
+  return NextResponse.json({
+    depositId,
+    ...row,
+    payerPhone: row.payerPhone ? maskPhone(row.payerPhone) : null,
+  });
 }

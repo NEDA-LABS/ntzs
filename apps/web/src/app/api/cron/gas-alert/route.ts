@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { ethers } from 'ethers'
 import { sendEmail, GAS_ALERT_RECIPIENTS } from '@/lib/email'
 
-const CRON_SECRET = process.env.CRON_SECRET || ''
 const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
 const MINTER_PRIVATE_KEY = process.env.MINTER_PRIVATE_KEY || ''
 const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || ''
@@ -13,10 +13,8 @@ const LOW_THRESHOLD = 0.005
 export const maxDuration = 30
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
 
-  if (CRON_SECRET && !isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

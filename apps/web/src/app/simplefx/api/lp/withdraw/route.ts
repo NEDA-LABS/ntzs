@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency';
-import { needsApproval, createApproval } from '@/lib/fx/approvals';
+import { actionDisposition, createApproval } from '@/lib/fx/approvals';
 import { executeWithdraw, validateWithdrawParams, type WithdrawParams } from '@/lib/fx/withdraw';
 import type { ChainId } from '@/lib/fx/chainConfig';
 
@@ -28,9 +28,13 @@ export async function POST(req: NextRequest) {
 
   const params = draft as WithdrawParams;
 
-  // Maker-checker: an operator's withdrawal is queued for an approver instead of
-  // moving funds. Owners and approvers withdraw directly.
-  if (needsApproval(session.role)) {
+  // Maker-checker + least-privilege: owner/approver withdraw directly, an operator's
+  // withdrawal is queued for an approver, and any other role (viewer) is denied.
+  const disposition = actionDisposition(session.role);
+  if (disposition === 'deny') {
+    return NextResponse.json({ error: 'Your role does not permit withdrawals.' }, { status: 403 });
+  }
+  if (disposition === 'queue') {
     await createApproval({ lpId: session.lpId, action: 'withdraw', payload: params, memberId: session.memberId });
     return NextResponse.json({ ok: true, pending: true, message: 'Withdrawal submitted to an approver.' });
   }

@@ -9,6 +9,11 @@ const ABI = [
 ] as const
 
 export async function GET(request: NextRequest) {
+  // Debug endpoint — must not exist in production (free RPC-proxy/amplifier).
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   try {
     const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
     const token = new ethers.Contract(NTZS_CONTRACT_ADDRESS_BASE, ABI, provider)

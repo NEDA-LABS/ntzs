@@ -259,6 +259,18 @@ async function approveDepositAction(formData: FormData) {
     throw new Error('Deposit not found')
   }
 
+  // Do not mint unbacked tokens: approval may only advance a deposit whose fiat
+  // has actually been confirmed, and only from a pre-mint state (never re-approve
+  // one already queued / processing / minted).
+  if (decision === 'approved') {
+    if (!deposit.fiatConfirmedAt) {
+      throw new Error('Cannot approve for minting: fiat has not been confirmed for this deposit')
+    }
+    if (['mint_pending', 'mint_requires_safe', 'mint_processing', 'minted'].includes(deposit.status)) {
+      throw new Error(`Deposit is already ${deposit.status}; it cannot be re-approved`)
+    }
+  }
+
   // Create platform approval
   await db.insert(depositApprovals).values({
     depositRequestId: depositId,
@@ -434,13 +446,56 @@ async function retryMintAction(formData: FormData) {
 
   const { db } = getDb()
 
-  // Reset the deposit to mint_pending so the worker picks it up again
+  // Only mint_failed deposits are retryable. executeMint now only sets
+  // mint_failed when NO tx was broadcast, so a mint_failed deposit is safe to
+  // re-mint. Guarding on status also prevents a retry from resetting a deposit
+  // that is minted, mint_processing, or left in mint_processing after an
+  // unconfirmed broadcast — any of which would double-mint.
+  const [dep] = await db
+    .select({ id: depositRequests.id })
+    .from(depositRequests)
+    .where(and(eq(depositRequests.id, depositId), eq(depositRequests.status, 'mint_failed')))
+    .limit(1)
+
+  if (!dep) {
+    revalidatePath('/backstage/minting')
+    return
+  }
+
+  // Defense in depth (esp. for legacy mint_failed rows created before the
+  // unconfirmed-broadcast fix): if a mint tx was already broadcast for this
+  // deposit, verify on-chain before re-minting. If it confirmed, reconcile to
+  // 'minted' instead of minting a second time; if we cannot check, refuse.
+  const [mtx] = await db
+    .select({ txHash: mintTransactions.txHash })
+    .from(mintTransactions)
+    .where(eq(mintTransactions.depositRequestId, depositId))
+    .limit(1)
+
+  if (mtx?.txHash && BASE_RPC_URL) {
+    try {
+      const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
+      const receipt = await provider.getTransactionReceipt(mtx.txHash)
+      if (receipt && receipt.status === 1) {
+        await db.update(depositRequests).set({ status: 'minted', updatedAt: new Date() }).where(eq(depositRequests.id, depositId))
+        await db.update(mintTransactions).set({ status: 'minted', error: null, updatedAt: new Date() }).where(eq(mintTransactions.depositRequestId, depositId))
+        await writeAuditLog('mint.retry_reconciled_confirmed', 'deposit_request', depositId, { txHash: mtx.txHash })
+        revalidatePath('/backstage/minting')
+        return
+      }
+    } catch (e) {
+      console.error('[retryMint] on-chain check failed; refusing to auto-retry to avoid double-mint', { depositId, txHash: mtx.txHash, error: e instanceof Error ? e.message : e })
+      revalidatePath('/backstage/minting')
+      return
+    }
+  }
+
+  // No prior broadcast (or the broadcast tx did not confirm) → safe to re-queue.
   await db
     .update(depositRequests)
     .set({ status: 'mint_pending', updatedAt: new Date() })
-    .where(eq(depositRequests.id, depositId))
+    .where(and(eq(depositRequests.id, depositId), eq(depositRequests.status, 'mint_failed')))
 
-  // Clear the error in mint_transactions
   await db
     .update(mintTransactions)
     .set({ status: 'pending_retry', error: null, updatedAt: new Date() })
