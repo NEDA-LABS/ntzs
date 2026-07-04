@@ -117,6 +117,7 @@ async function secondApproveBurnRequestAction(formData: FormData) {
     .select({
       id: burnRequests.id,
       status: burnRequests.status,
+      approvedByUserId: burnRequests.approvedByUserId,
     })
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
@@ -126,6 +127,12 @@ async function secondApproveBurnRequestAction(formData: FormData) {
 
   if (req.status !== 'requires_second_approval') {
     throw new Error('Burn request is not awaiting second approval')
+  }
+
+  // Separation of duties: the second approver MUST differ from the first, so a
+  // single compromised/rogue admin cannot clear both gates on a large burn.
+  if (req.approvedByUserId && req.approvedByUserId === dbUser.id) {
+    throw new Error('Second approval must be performed by a different admin than the first approver.')
   }
 
   await db

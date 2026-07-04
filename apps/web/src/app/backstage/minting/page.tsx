@@ -259,6 +259,18 @@ async function approveDepositAction(formData: FormData) {
     throw new Error('Deposit not found')
   }
 
+  // Do not mint unbacked tokens: approval may only advance a deposit whose fiat
+  // has actually been confirmed, and only from a pre-mint state (never re-approve
+  // one already queued / processing / minted).
+  if (decision === 'approved') {
+    if (!deposit.fiatConfirmedAt) {
+      throw new Error('Cannot approve for minting: fiat has not been confirmed for this deposit')
+    }
+    if (['mint_pending', 'mint_requires_safe', 'mint_processing', 'minted'].includes(deposit.status)) {
+      throw new Error(`Deposit is already ${deposit.status}; it cannot be re-approved`)
+    }
+  }
+
   // Create platform approval
   await db.insert(depositApprovals).values({
     depositRequestId: depositId,
