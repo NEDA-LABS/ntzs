@@ -6,6 +6,18 @@ import Link from 'next/link';
 import { Copy, Share2, Plus, MessageCircle, ArrowRight, Package } from 'lucide-react';
 import { OnboardingTips } from './_components/OnboardingTips';
 
+interface CapitalSummary {
+  lenderName: string | null;
+  lenderSplitPct: number;
+  loanStatus: string;
+  principalTzs: number;
+  totalOwedTzs: number;
+  repaidTzs: number;
+  outstandingTzs: number;
+  collectedTowardNextTransferTzs: number;
+  transferThresholdTzs: number;
+}
+
 interface Stats {
   totalCollected: number;
   totalSettled: number;
@@ -14,6 +26,7 @@ interface Stats {
   thisMonth: number;
   pending: number;
   activeLinks: number;
+  capital: CapitalSummary | null;
 }
 
 interface Collection {
@@ -253,20 +266,57 @@ export default function MerchantOverviewPage() {
         </div>
       </div>
 
-      {/* Settlement banner */}
-      {stats && stats.settlementPendingTzs > 0 && merchant.settlePct > 0 && (
-        <div className="anim-3 border border-amber-500/25 bg-amber-500/[0.04] px-5 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] tracking-widest text-amber-400/80 uppercase mb-1">Settlement Accumulating</p>
-            <p className="text-xs text-white/50">Building toward the 5,000 TZS payout threshold</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm font-bold text-amber-400">{formatTzs(stats.settlementPendingTzs)} TZS</p>
-            <p className="text-[10px] text-white/40 mt-0.5">
-              {Math.round((stats.settlementPendingTzs / 5000) * 100)}% of threshold
+      {/* Capital repayment (lender loan) — shown instead of the settlement
+          banner while a loan is active, so repayment progress is visible and
+          the settlement pot isn't mistaken for the loan. */}
+      {stats?.capital ? (
+        <div className="anim-3 border border-emerald-500/25 bg-emerald-500/[0.04] px-5 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] tracking-widest text-emerald-400/80 uppercase">
+              Capital Repayment{stats.capital.lenderName ? ` · ${stats.capital.lenderName}` : ''}
             </p>
+            <p className="text-[10px] text-white/40">{stats.capital.lenderSplitPct}% of each sale</p>
+          </div>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] tracking-widest text-white/40 uppercase mb-1">Outstanding</p>
+              <p className="text-lg font-bold text-white tabular-nums leading-none">
+                {stats.capital.outstandingTzs.toLocaleString()} <span className="text-xs text-white/40 font-medium">TZS</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-white/50 tabular-nums">
+                Repaid {formatTzs(stats.capital.repaidTzs)} of {formatTzs(stats.capital.totalOwedTzs)} TZS
+              </p>
+              {stats.capital.collectedTowardNextTransferTzs > 0 && (
+                <p className="text-[10px] text-emerald-400/70 mt-0.5 tabular-nums">
+                  {stats.capital.collectedTowardNextTransferTzs.toLocaleString()} TZS collected toward next transfer
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 h-1 bg-white/10">
+            <div
+              className="h-1 bg-emerald-400/70"
+              style={{ width: `${Math.min(100, Math.round((stats.capital.repaidTzs / Math.max(1, stats.capital.totalOwedTzs)) * 100))}%` }}
+            />
           </div>
         </div>
+      ) : (
+        stats && stats.settlementPendingTzs > 0 && merchant.settlePct > 0 && (
+          <div className="anim-3 border border-amber-500/25 bg-amber-500/[0.04] px-5 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] tracking-widest text-amber-400/80 uppercase mb-1">Settlement Accumulating</p>
+              <p className="text-xs text-white/50">Building toward the 5,000 TZS payout threshold</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-bold text-amber-400">{formatTzs(stats.settlementPendingTzs)} TZS</p>
+              <p className="text-[10px] text-white/40 mt-0.5">
+                {Math.round((stats.settlementPendingTzs / 5000) * 100)}% of threshold
+              </p>
+            </div>
+          </div>
+        )
       )}
 
       {/* ── PRODUCTS SHELF ── */}

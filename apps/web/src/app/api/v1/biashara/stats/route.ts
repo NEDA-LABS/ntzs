@@ -3,6 +3,7 @@ import { and, count, eq, gte, sum } from 'drizzle-orm'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts, merchantCollections, merchantPaymentLinks } from '@ntzs/db'
 import { requireServiceKey } from '@/lib/service-auth'
+import { getCapitalSummary } from '@/lib/merchant/capital'
 
 export async function GET(req: NextRequest) {
   const authError = requireServiceKey(req)
@@ -78,6 +79,10 @@ export async function GET(req: NextRequest) {
       ),
     )
 
+  // Live lender-repayment picture, so the app can show capital repayment
+  // progress instead of (mis)reading the merchant's settlement pot as the loan.
+  const capital = await getCapitalSummary(merchantId)
+
   return NextResponse.json({
     totalCollected: Number(totals?.totalCollected ?? 0),
     totalSettled: Number(totals?.totalSettled ?? 0),
@@ -86,5 +91,6 @@ export async function GET(req: NextRequest) {
     thisMonth: Number(thisMonth?.amountTzs ?? 0),
     pending: Number(pending?.amountTzs ?? 0),
     activeLinks: activeLinks?.count ?? 0,
+    capital,
   })
 }
