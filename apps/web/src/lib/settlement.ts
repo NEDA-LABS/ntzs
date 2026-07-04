@@ -39,30 +39,39 @@ async function logAudit(sql: SqlClient, action: string, entityType: string, enti
 }
 
 /**
- * Phase A — Queue collections. For each minted, pending collection add the
- * merchant's share to settlement_pending_tzs and the lender's (capped) share to
- * lender_pending_tzs. The lender share is capped at the loan's remaining balance
- * so they can never collect past principal + interest; the excess returns to the
- * merchant.
+ * Phase A — Queue the lender's split of each minted collection. Sales stay as
+ * nTZS in the merchant's wallet (there is NO automatic per-sale conversion to
+ * mobile money — cash-out is explicit, via withdrawals); the only per-sale
+ * movement is the lender's cut accruing toward the next wallet→lender
+ * transfer. The lender share is capped at the loan's remaining balance so they
+ * can never collect past principal + interest; any excess simply stays in the
+ * merchant's wallet.
+ *
+ * Keyed on the lender split itself — NOT on the merchant's settle_pct — so
+ * lender repayment works regardless of settlement settings. (The old coupling
+ * meant a merchant with settle_pct = 0 never repaid their lender.)
  */
 async function queueCollectionSettlements(sql: SqlClient): Promise<number> {
+  // Retire the legacy auto-settlement pot: collections created 'pending' by
+  // older code no longer accrue anything; mark them skipped so nothing
+  // downstream picks them up.
+  await sql`
+    update merchant_collections
+    set settlement_status = 'skipped', updated_at = now()
+    where settlement_status = 'pending'
+  `
+
   const collections = await sql<{
     collection_id: string
     merchant_id: string
-    amount_tzs: number
-    settle_pct: number
-    lender_pct: number
     lender_amount_tzs: number | null
-    lender_settlement_status: string
   }[]>`
-    select mc.id as collection_id, mc.merchant_id, mc.amount_tzs, mc.settle_pct,
-           mc.lender_pct, mc.lender_amount_tzs, mc.lender_settlement_status
+    select mc.id as collection_id, mc.merchant_id, mc.lender_amount_tzs
     from merchant_collections mc
     join merchant_accounts ma on ma.id = mc.merchant_id
     where mc.collection_status = 'minted'
-      and mc.settlement_status = 'pending'
-      and mc.settle_pct > 0
-      and ma.settlement_phone is not null
+      and mc.lender_settlement_status = 'pending'
+      and mc.lender_pct > 0
       and ma.is_active = true
     order by mc.created_at asc
     limit 50
@@ -70,63 +79,50 @@ async function queueCollectionSettlements(sql: SqlClient): Promise<number> {
 
   let processed = 0
   for (const col of collections) {
+    if (!col.lender_amount_tzs || col.lender_amount_tzs <= 0) {
+      await sql`
+        update merchant_collections
+        set lender_settlement_status = 'skipped', updated_at = now()
+        where id = ${col.collection_id} and lender_settlement_status = 'pending'
+      `
+      continue
+    }
+
+    // Cap the lender's cut at what's still owed (minus what's already accrued).
+    let lenderShareTzs = 0
+    const [loan] = await sql<{ total_owed_tzs: number; repaid_tzs: number }[]>`
+      select la.total_owed_tzs, la.repaid_tzs
+      from enterprise_loan_agreements la
+      join merchant_accounts ma on ma.id = ${col.merchant_id}
+      where la.merchant_id = ${col.merchant_id}
+        and la.partner_id = ma.lender_partner_id
+        and la.status = 'active'
+      limit 1
+    `
+    if (loan) {
+      const [pend] = await sql<{ lender_pending_tzs: number }[]>`
+        select lender_pending_tzs from merchant_accounts where id = ${col.merchant_id} limit 1
+      `
+      const remaining = Math.max(0, loan.total_owed_tzs - loan.repaid_tzs - (pend?.lender_pending_tzs ?? 0))
+      lenderShareTzs = Math.min(col.lender_amount_tzs, remaining)
+    }
+
+    // Claim the collection before crediting so concurrent runs can't double-count.
     const claimed = await sql<{ id: string }[]>`
       update merchant_collections
-      set settlement_status = 'queued', updated_at = now()
-      where id = ${col.collection_id} and settlement_status = 'pending'
+      set lender_settlement_status = ${lenderShareTzs > 0 ? 'queued' : 'skipped'},
+          lender_amount_tzs = ${lenderShareTzs},
+          updated_at = now()
+      where id = ${col.collection_id} and lender_settlement_status = 'pending'
       returning id
     `
     if (!claimed.length) continue
 
-    let merchantShareTzs = Math.floor((col.amount_tzs * col.settle_pct) / 100)
-    let lenderShareTzs = 0
-    const wantsLenderSplit = col.lender_pct > 0 && !!col.lender_amount_tzs && col.lender_settlement_status === 'pending'
-
-    if (wantsLenderSplit) {
-      const [loan] = await sql<{ total_owed_tzs: number; repaid_tzs: number }[]>`
-        select la.total_owed_tzs, la.repaid_tzs
-        from enterprise_loan_agreements la
-        join merchant_accounts ma on ma.id = ${col.merchant_id}
-        where la.merchant_id = ${col.merchant_id}
-          and la.partner_id = ma.lender_partner_id
-          and la.status = 'active'
-        limit 1
-      `
-      if (loan) {
-        const [pend] = await sql<{ lender_pending_tzs: number }[]>`
-          select lender_pending_tzs from merchant_accounts where id = ${col.merchant_id} limit 1
-        `
-        const remaining = Math.max(0, loan.total_owed_tzs - loan.repaid_tzs - (pend?.lender_pending_tzs ?? 0))
-        lenderShareTzs = Math.min(col.lender_amount_tzs!, remaining)
-      }
-      merchantShareTzs += col.lender_amount_tzs! - lenderShareTzs
-    }
-
-    await sql`
-      update merchant_accounts
-      set settlement_pending_tzs = settlement_pending_tzs + ${merchantShareTzs}, updated_at = now()
-      where id = ${col.merchant_id}
-    `
-    await sql`
-      update merchant_collections
-      set settlement_amount_tzs = ${merchantShareTzs}, updated_at = now()
-      where id = ${col.collection_id}
-    `
-
-    if (wantsLenderSplit) {
-      if (lenderShareTzs > 0) {
-        await sql`
-          update merchant_accounts
-          set lender_pending_tzs = lender_pending_tzs + ${lenderShareTzs}, updated_at = now()
-          where id = ${col.merchant_id}
-        `
-      }
+    if (lenderShareTzs > 0) {
       await sql`
-        update merchant_collections
-        set lender_settlement_status = ${lenderShareTzs > 0 ? 'queued' : 'skipped'},
-            lender_amount_tzs = ${lenderShareTzs},
-            updated_at = now()
-        where id = ${col.collection_id} and lender_settlement_status = 'pending'
+        update merchant_accounts
+        set lender_pending_tzs = lender_pending_tzs + ${lenderShareTzs}, updated_at = now()
+        where id = ${col.merchant_id}
       `
     }
     processed += 1
