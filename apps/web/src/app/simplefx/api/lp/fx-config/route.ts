@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
 import { lpAccounts } from '@ntzs/db';
-import { needsApproval, createApproval } from '@/lib/fx/approvals';
+import { actionDisposition, createApproval } from '@/lib/fx/approvals';
 
 interface Limits {
   maxInventoryNtzs?: number;
@@ -59,8 +59,13 @@ export async function PUT(req: NextRequest) {
   }
   const limits = Object.keys(clean).length ? clean : null;
 
-  // Maker-checker: an operator's change is queued for an approver.
-  if (needsApproval(session.role)) {
+  // Maker-checker + least-privilege: owner/approver save directly, an operator's
+  // change is queued for an approver, and any other role (viewer) is denied.
+  const disposition = actionDisposition(session.role);
+  if (disposition === 'deny') {
+    return NextResponse.json({ error: 'Your role does not permit changing FX configuration.' }, { status: 403 });
+  }
+  if (disposition === 'queue') {
     await createApproval({ lpId: session.lpId, action: 'set_fx', payload: { bidBps, askBps, limits }, memberId: session.memberId });
     return NextResponse.json({ ok: true, pending: true, message: 'Submitted to an approver.' });
   }
