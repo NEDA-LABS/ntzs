@@ -1,6 +1,30 @@
 import { describe, it, expect } from 'vitest'
 
-import { netPayoutTzs, SNIPPE_FLAT_FEE_TZS } from './payout-math'
+import { grossUpWithdrawal, netPayoutTzs, SNIPPE_FLAT_FEE_TZS, WITHDRAWAL_FEE_PCT } from './payout-math'
+
+describe('grossUpWithdrawal (explicit merchant/consumer withdrawal gross-up)', () => {
+  it('covers net + flat fee + platform fee exactly (invariant)', () => {
+    for (const net of [5000, 5321, 10_000, 123_456, 999_999]) {
+      const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(net)
+      expect(burnAmountTzs).toBe(net + SNIPPE_FLAT_FEE_TZS + platformFeeTzs)
+      expect(platformFeeTzs).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('matches the consumer off-ramp formula for a 5,000 net withdrawal', () => {
+    const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(5000)
+    expect(burnAmountTzs).toBe(Math.ceil(6500 / (1 - WITHDRAWAL_FEE_PCT / 100)))
+    expect(burnAmountTzs).toBe(6533)
+    expect(platformFeeTzs).toBe(33)
+  })
+
+  it('round-trips through netPayoutTzs: the recipient gets exactly the requested net', () => {
+    for (const net of [5000, 25_000, 400_000]) {
+      const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(net)
+      expect(netPayoutTzs({ amountTzs: burnAmountTzs, platformFeeTzs })).toBe(net)
+    }
+  })
+})
 
 describe('netPayoutTzs (what actually lands on the phone)', () => {
   it('backs fees out of grossed-up requests so the recipient gets the intended net', () => {
