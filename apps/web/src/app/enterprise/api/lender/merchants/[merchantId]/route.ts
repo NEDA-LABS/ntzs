@@ -42,11 +42,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mer
     .where(eq(merchantAccounts.id, merchantId))
     .limit(1)
 
-  if (!merchant || merchant.lenderPartnerId !== account.partnerId) {
-    return NextResponse.json({ error: 'Merchant not linked to this lender' }, { status: 404 })
-  }
-
-  const [loan] = await db
+  // Loan history is the source of truth for "in the lender's book": the live
+  // merchant→lender link is cleared on full repayment, and keying access on it
+  // 404'd repaid borrowers out of the portal.
+  const loans = await db
     .select({
       id: enterpriseLoanAgreements.id,
       principalTzs: enterpriseLoanAgreements.principalTzs,
@@ -65,10 +64,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mer
       and(
         eq(enterpriseLoanAgreements.merchantId, merchantId),
         eq(enterpriseLoanAgreements.partnerId, account.partnerId),
-        eq(enterpriseLoanAgreements.status, 'active'),
       ),
     )
-    .limit(1)
+    .orderBy(desc(enterpriseLoanAgreements.createdAt))
+
+  const currentlyLinked = merchant?.lenderPartnerId === account.partnerId
+  if (!merchant || (!currentlyLinked && !loans.length)) {
+    return NextResponse.json({ error: 'Merchant not linked to this lender' }, { status: 404 })
+  }
+
+  // The active loan if any, else the most recent (e.g. just-repaid) one.
+  const loan = loans.find((l) => l.status === 'active') ?? loans[0] ?? null
 
   const repayments = await db
     .select({
@@ -77,12 +83,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mer
       status: transfers.status,
       txHash: transfers.txHash,
       createdAt: transfers.createdAt,
+      reason: sql<string>`${transfers.metadata}->>'reason'`,
     })
     .from(transfers)
     .where(
       and(
         eq(transfers.partnerId, account.partnerId),
-        sql`${transfers.metadata}->>'reason' = 'lender_repayment'`,
+        sql`${transfers.metadata}->>'reason' in ('lender_repayment', 'lender_payoff')`,
         sql`${transfers.metadata}->>'merchantId' = ${merchantId}`,
       ),
     )

@@ -7,7 +7,7 @@ import {
   enterpriseLoanAgreements,
   partners,
 } from '@ntzs/db'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { requireServiceKey } from '@/lib/service-auth'
 import { MIN_LENDER_REPAYMENT_TZS } from '@/lib/settlement-payoff'
 
@@ -79,6 +79,26 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Most recent loan regardless of status or the (cleared-on-payoff) live
+  // lender link — so a fully-repaid loan leaves a visible record in the app
+  // instead of the financing section going blank.
+  const [lastLoanRow] = await db
+    .select({
+      status: enterpriseLoanAgreements.status,
+      partnerId: enterpriseLoanAgreements.partnerId,
+      principalTzs: enterpriseLoanAgreements.principalTzs,
+      totalOwedTzs: enterpriseLoanAgreements.totalOwedTzs,
+      repaidTzs: enterpriseLoanAgreements.repaidTzs,
+      interestRatePct: enterpriseLoanAgreements.interestRatePct,
+      updatedAt: enterpriseLoanAgreements.updatedAt,
+      lenderName: partners.name,
+    })
+    .from(enterpriseLoanAgreements)
+    .leftJoin(partners, eq(partners.id, enterpriseLoanAgreements.partnerId))
+    .where(eq(enterpriseLoanAgreements.merchantId, merchantId))
+    .orderBy(desc(enterpriseLoanAgreements.createdAt))
+    .limit(1)
+
   const [pendingInvite] = await db
     .select({
       id: enterpriseMerchantApplications.id,
@@ -127,6 +147,17 @@ export async function GET(req: NextRequest) {
           outstandingTzs: totalOwedTzs !== null && repaidTzs !== null ? Math.max(0, totalOwedTzs - repaidTzs) : null,
           collectedTowardNextTransferTzs: merchant.lenderPendingTzs,
           transferThresholdTzs: MIN_LENDER_REPAYMENT_TZS,
+        }
+      : null,
+    lastLoan: lastLoanRow
+      ? {
+          loanStatus: lastLoanRow.status,
+          lenderName: lastLoanRow.lenderName,
+          principalTzs: lastLoanRow.principalTzs,
+          totalOwedTzs: lastLoanRow.totalOwedTzs,
+          repaidTzs: lastLoanRow.repaidTzs,
+          interestRatePct: lastLoanRow.interestRatePct,
+          closedAt: lastLoanRow.status !== 'active' ? lastLoanRow.updatedAt : null,
         }
       : null,
     pendingInvite: pendingInvite ?? null,
