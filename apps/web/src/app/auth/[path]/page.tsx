@@ -2,6 +2,8 @@ import { AuthView } from '@neondatabase/neon-js/auth/react/ui'
 import Image from 'next/image'
 import Link from 'next/link'
 
+import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
+
 export const dynamicParams = false
 
 export default async function AuthPage({
@@ -81,6 +83,12 @@ export default async function AuthPage({
               <div className="pointer-events-none absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
 
               <div className="relative">
+                {isSignUp && WALLET_CREATION_PAUSED && (
+                  <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100">
+                    New sign-ups are temporarily paused while we finalise identity verification for the Bank of Tanzania
+                    sandbox. Existing accounts can still sign in — please check back soon.
+                  </div>
+                )}
                 <AuthView path={path} />
 
                 <div className="mt-6 flex items-center justify-between text-xs text-white/40">

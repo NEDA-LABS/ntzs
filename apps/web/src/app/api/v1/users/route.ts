@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL } from '@/lib/env'
+import { WALLET_CREATION_PAUSED, WALLET_CREATION_PAUSED_MESSAGE } from '@/lib/wallet-gating'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { users, wallets, partnerUsers, partners } from '@ntzs/db'
@@ -14,6 +15,11 @@ export async function POST(request: NextRequest) {
   try {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
+
+  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8).
+  if (WALLET_CREATION_PAUSED) {
+    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
+  }
 
   const { partner } = authResult
 
