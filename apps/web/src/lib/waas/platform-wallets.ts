@@ -14,6 +14,7 @@ import { eq, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { wallets } from '@ntzs/db'
 import { deriveAddress } from './hd-wallets'
+import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
 export async function provisionPlatformWallet(userId: string): Promise<string | null> {
   const platformSeed = process.env.PLATFORM_HD_SEED
@@ -31,6 +32,13 @@ export async function provisionPlatformWallet(userId: string): Promise<string | 
   })
 
   if (existing) return existing.address
+
+  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8). Existing
+  // users are returned above; only NEW provisioning is blocked.
+  if (WALLET_CREATION_PAUSED) {
+    console.warn('[platform-wallets] wallet creation paused — not provisioning for user', userId)
+    return null
+  }
 
   // Use the count of existing platform_hd wallets as the next index.
   // This is safe because we insert with the derived address, and the
