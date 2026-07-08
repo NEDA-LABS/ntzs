@@ -29,11 +29,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 })
   }
 
-  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8).
-  if (WALLET_CREATION_PAUSED) {
-    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
-  }
-
   if (!process.env.WAAS_ENCRYPTION_KEY) {
     return NextResponse.json({ error: 'Server configuration error: wallet encryption key not set' }, { status: 500 })
   }
@@ -98,6 +93,14 @@ export async function POST(request: NextRequest) {
       walletAddress: wallet?.address || null,
       alreadyExists: true,
     })
+  }
+
+  // Sandbox: no NEW wallet issuance until KYC is live (BoT Parameter 8).
+  // Must sit BELOW the existing-mapping return — this endpoint is called
+  // idempotently to resolve existing users; gating at the top locked existing
+  // partner users out of balances/deposits entirely.
+  if (WALLET_CREATION_PAUSED) {
+    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
   }
 
   // ── Create user ─────────────────────────────────────────────────────────────

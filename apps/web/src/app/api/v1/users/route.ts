@@ -16,11 +16,6 @@ export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
 
-  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8).
-  if (WALLET_CREATION_PAUSED) {
-    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
-  }
-
   const { partner } = authResult
 
   // Guard: encryption key must be configured before any HD wallet operations
@@ -93,6 +88,14 @@ export async function POST(request: NextRequest) {
       walletAddress: wallet?.address || null,
       balance: 0,
     })
+  }
+
+  // Sandbox: no NEW wallet issuance until KYC is live (BoT Parameter 8).
+  // This gate must sit BELOW the existing-mapping return: partner apps call
+  // this endpoint idempotently on every session to resolve existing users, and
+  // gating at the top locked existing users out of balances/deposits entirely.
+  if (WALLET_CREATION_PAUSED) {
+    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
   }
 
   // Create new user
