@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db'
 import { partners, partnerSubWallets } from '@ntzs/db'
 import { deriveSubWalletAddress } from '@/lib/waas/hd-wallets'
 import { verifySessionToken } from '@/lib/waas/auth'
+import { WALLET_CREATION_PAUSED, WALLET_CREATION_PAUSED_MESSAGE } from '@/lib/wallet-gating'
 
 /**
  * POST /api/v1/partners/sub-wallets
@@ -29,6 +30,11 @@ export async function POST(request: NextRequest) {
   const partnerId = verifySessionToken(token)
   if (!partnerId) {
     return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 })
+  }
+
+  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8).
+  if (WALLET_CREATION_PAUSED) {
+    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { invalidateWalletCache } from '@/lib/user/cachedWallet'
 import { invalidateSendsCache } from '@/lib/user/cachedQueries'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY } from '@/lib/env'
+import { WALLET_CREATION_PAUSED, WALLET_CREATION_PAUSED_MESSAGE } from '@/lib/wallet-gating'
 
 export type AliasResult =
   | { success: true; alias: string }
@@ -275,6 +276,12 @@ export async function saveEmbeddedWalletAction(formData: FormData) {
     }
 
     return
+  }
+
+  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8). Existing
+  // wallets are handled by the branch above and are unaffected.
+  if (WALLET_CREATION_PAUSED) {
+    throw new Error(WALLET_CREATION_PAUSED_MESSAGE)
   }
 
   await db.insert(wallets).values({
