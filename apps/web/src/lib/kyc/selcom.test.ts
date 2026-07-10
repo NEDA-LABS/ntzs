@@ -59,6 +59,24 @@ describe('interpretSelcomResponse (fail-closed verification)', () => {
     expect(interpretSelcomResponse(200, { result: 'SUCCESS', data: [] }).status).toBe('not_found')
   })
 
+  it('matches keys case-insensitively (Result/Data/FirstName variants)', () => {
+    const r = interpretSelcomResponse(200, {
+      Result: 'SUCCESS',
+      ResponseCode: '000',
+      Data: [{ FirstName: 'Neema', Surname: 'Kihoro' }],
+    })
+    expect(r.status).toBe('verified')
+    if (r.status === 'verified') expect(r.fullName).toBe('Neema Kihoro')
+  })
+
+  it('accepts a success:true boolean with a user_data record', () => {
+    expect(interpretSelcomResponse(200, { success: true, user_data: { first_name: 'A', last_name: 'B' } }).status).toBe('verified')
+  })
+
+  it('treats success:false as not_found', () => {
+    expect(interpretSelcomResponse(200, { success: false, message: 'no match' }).status).toBe('not_found')
+  })
+
   it('NEVER verifies on ambiguous shapes (fail closed)', () => {
     expect(interpretSelcomResponse(200, { hello: 'world' }).status).toBe('unavailable')
     expect(interpretSelcomResponse(200, null).status).toBe('unavailable')

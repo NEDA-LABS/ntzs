@@ -7,9 +7,8 @@ import { kycCases } from '@ntzs/db'
 
 import { GlassPanel } from '../../_components/GlassPanel'
 import { formatDateTimeEAT } from '@/lib/format-date'
-import { submitKycCaseAction } from './actions'
+import { NidaVerifyForm } from './NidaVerifyForm'
 import { GlassCard } from '@/components/ui/glass-card'
-import { GlassInput } from '@/components/ui/glass-input'
 
 export default async function KycPage() {
   await requireAnyRole(['end_user', 'super_admin'])
@@ -49,22 +48,12 @@ export default async function KycPage() {
           <GlassCard innerClassName="p-4">
             <div className="text-sm font-semibold text-foreground">Submit details</div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Upload will be enabled next. For now, enter your national ID number.
+              Enter your NIDA number — it is verified instantly against the national registry.
             </p>
 
-            <form action={submitKycCaseAction} className="mt-4 flex flex-col gap-3">
-              <label className="flex flex-col gap-2">
-                <span className="text-sm text-muted-foreground">National ID</span>
-                <GlassInput name="nationalId" required className="h-11" />
-              </label>
-
-              <button
-                type="submit"
-                className="inline-flex h-11 items-center justify-center rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus:ring-2 focus:ring-ring"
-              >
-                Submit
-              </button>
-            </form>
+            <div className="mt-4">
+              <NidaVerifyForm redirectTo="/app/user/deposits/new" />
+            </div>
           </GlassCard>
         </div>
 
