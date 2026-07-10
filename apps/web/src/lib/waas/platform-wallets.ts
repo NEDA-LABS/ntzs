@@ -14,7 +14,6 @@ import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { kycCases, wallets } from '@ntzs/db'
 import { deriveAddress } from './hd-wallets'
-import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
 export async function provisionPlatformWallet(userId: string): Promise<string | null> {
   const platformSeed = process.env.PLATFORM_HD_SEED
@@ -33,20 +32,18 @@ export async function provisionPlatformWallet(userId: string): Promise<string | 
 
   if (existing) return existing.address
 
-  // BoT Parameter 8: new wallets only for KYC-verified identities. While the
-  // pause is on, a user with an APPROVED kyc_case (e.g. NIDA verified via
-  // Selcom on /app/user/kyc) may still be provisioned — that's the pause's
-  // designed exit. Existing wallets are returned above regardless.
-  if (WALLET_CREATION_PAUSED) {
-    const approvedKyc = await db
-      .select({ id: kycCases.id })
-      .from(kycCases)
-      .where(and(eq(kycCases.userId, userId), eq(kycCases.status, 'approved')))
-      .limit(1)
-    if (!approvedKyc.length) {
-      console.warn('[platform-wallets] wallet creation paused and no approved KYC — not provisioning for user', userId)
-      return null
-    }
+  // STRUCTURAL PREREQUISITE (BoT Parameter 8): new wallets are issued ONLY to
+  // KYC-verified identities — always, independent of any pause flag. A user
+  // gets provisioned once they hold an approved kyc_case (NIDA verified via
+  // Selcom). Existing wallets are returned above regardless.
+  const approvedKyc = await db
+    .select({ id: kycCases.id })
+    .from(kycCases)
+    .where(and(eq(kycCases.userId, userId), eq(kycCases.status, 'approved')))
+    .limit(1)
+  if (!approvedKyc.length) {
+    console.warn('[platform-wallets] no approved KYC — not provisioning wallet for user', userId)
+    return null
   }
 
   // Use the count of existing platform_hd wallets as the next index.

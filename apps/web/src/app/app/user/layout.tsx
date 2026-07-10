@@ -5,7 +5,6 @@ import { UserTopBar } from '@/app/app/_components/UserTopBar'
 import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
 import { NidaVerifyForm } from './kyc/NidaVerifyForm'
 import { getCachedWallet, invalidateWalletCache } from '@/lib/user/cachedWallet'
-import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
 import { NotificationCenter } from '@/app/app/_components/NotificationCenter'
 import { MobileSidebar } from './_components/MobileSidebar'
@@ -25,11 +24,12 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
     }
   }
 
-  // New wallets require a KYC-verified identity (BoT Parameter 8). Wallet-less
-  // users verify their NIDA right here (this layout wraps /app/user/kyc too, so
-  // an inline form avoids a redirect loop); once approved, the next load
-  // auto-provisions their wallet. Existing users have wallets and never see this.
-  if (!wallet && WALLET_CREATION_PAUSED) {
+  // STRUCTURAL PREREQUISITE (BoT Parameter 8): wallets are issued only to
+  // KYC-verified identities, always. Wallet-less users verify their NIDA right
+  // here (this layout wraps /app/user/kyc too, so an inline form avoids a
+  // redirect loop); once approved, the next load auto-provisions their wallet.
+  // Existing users have wallets and never see this.
+  if (!wallet) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0d0d14] px-6 text-center">
         <div className="max-w-md">
