@@ -14,6 +14,10 @@ export default async function AuthPage({
   const { path } = await params
 
   const isSignUp = path === 'sign-up'
+  // With Selcom Identity configured, new accounts CAN proceed (sign up → NIDA
+  // verification → wallet); the banner switches from "paused" to "verification
+  // required". Without credentials, creation is genuinely paused.
+  const kycConfigured = Boolean(process.env.SELCOM_IDENTITY_API_KEY && process.env.SELCOM_IDENTITY_API_SECRET)
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-white">
@@ -84,10 +88,17 @@ export default async function AuthPage({
 
               <div className="relative">
                 {isSignUp && WALLET_CREATION_PAUSED && (
-                  <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100">
-                    New sign-ups are temporarily paused while we finalise identity verification for the Bank of Tanzania
-                    sandbox. Existing accounts can still sign in — please check back soon.
-                  </div>
+                  kycConfigured ? (
+                    <div className="mb-5 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-xs leading-relaxed text-emerald-100">
+                      Identity verification is required for new accounts (Bank of Tanzania sandbox). After signing up,
+                      you&apos;ll verify with your NIDA number — it takes under a minute.
+                    </div>
+                  ) : (
+                    <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100">
+                      New sign-ups are temporarily paused while we finalise identity verification for the Bank of Tanzania
+                      sandbox. Existing accounts can still sign in — please check back soon.
+                    </div>
+                  )
                 )}
                 <AuthView path={path} />
 
