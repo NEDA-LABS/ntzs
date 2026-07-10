@@ -20,6 +20,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'partnerId and decision (approved|rejected) are required' }, { status: 400 })
   }
 
+  const [current] = await db
+    .select({
+      status: partnerKyb.status,
+      certOfIncorporationUrl: partnerKyb.certOfIncorporationUrl,
+    })
+    .from(partnerKyb)
+    .where(eq(partnerKyb.partnerId, partnerId))
+    .limit(1)
+
+  if (!current) return NextResponse.json({ error: 'KYB record not found for this partner' }, { status: 404 })
+
+  // Only cases the partner actually submitted are reviewable — a draft
+  // ('not_started') can't be approved blind, and a decided case stays decided.
+  if (!['submitted', 'under_review'].includes(current.status)) {
+    return NextResponse.json(
+      { error: `Only submitted cases can be reviewed (current status: ${current.status})` },
+      { status: 409 }
+    )
+  }
+  if (decision === 'approved' && !current.certOfIncorporationUrl) {
+    return NextResponse.json(
+      { error: 'Cannot approve without a certificate of incorporation on file' },
+      { status: 400 }
+    )
+  }
+  if (decision === 'rejected' && !notes?.trim()) {
+    return NextResponse.json({ error: 'Rejection requires notes explaining the reason' }, { status: 400 })
+  }
+
   const now = new Date()
 
   const [updated] = await db

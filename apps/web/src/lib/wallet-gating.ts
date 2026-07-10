@@ -2,9 +2,9 @@
  * Legacy sandbox wallet-creation gate — now an auxiliary flag only.
  *
  * KYC is a STRUCTURAL prerequisite for wallet issuance (BoT Parameter 8):
- * end-user wallets require a Selcom-verified NIDA in the WaaS routes and the
- * direct app regardless of this flag. It still gates:
- *  - partner sub-wallets (business wallets, blocked until the KYB flow ships)
+ * end-user wallets require a Selcom-verified NIDA, and partner sub-wallets
+ * (business wallets) require approved KYB — both regardless of this flag.
+ * It still gates:
  *  - the embedded-wallet (CDP) save action
  *  - the sign-up page banner copy
  */
