@@ -9,6 +9,9 @@ import { getDb } from '@/lib/db'
 import { kycCases } from '@ntzs/db'
 import { invalidateKycCache } from '@/lib/user/cachedQueries'
 import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
+import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
+import { isValidTanzanianPhone } from '@/lib/psp'
+import { users } from '@ntzs/db'
 
 export interface NidaFormState {
   error: string | null
@@ -27,6 +30,7 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
   const dbUser = await requireDbUser()
 
   const nationalId = String(formData.get('nationalId') ?? '').trim()
+  const phoneInput = String(formData.get('phone') ?? '').trim()
   const redirectToRaw = String(formData.get('redirectTo') ?? '/app/user')
   // Only same-app paths — never an absolute URL from form data.
   const redirectTo = redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/app/user'
@@ -38,6 +42,10 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
   const normalized = normalizeNidaNumber(nationalId)
   if (!normalized) {
     return { error: 'A NIDA number is 20 digits — check it and try again.' }
+  }
+
+  if (!phoneInput || !isValidTanzanianPhone(phoneInput)) {
+    return { error: 'Enter a valid Tanzanian mobile money number (07…).' }
   }
 
   const { db, sql: rawSql } = getDb()
@@ -90,6 +98,27 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     return { error: verification.message || 'This NIDA number could not be verified. Check it and try again.' }
   }
 
+  // Tier-1 identity binding: where the PSP name-lookup answers, the
+  // telco-registered identity behind the phone must match the NIDA holder.
+  const binding = await bindPhoneToNidaIdentity({
+    phone: phoneInput,
+    nidaNumber: normalized,
+    nidaFullName: verification.fullName,
+  })
+  if (binding.outcome === 'mismatch') {
+    await db.insert(kycCases).values({
+      userId: dbUser.id,
+      nationalId: normalized,
+      status: 'rejected',
+      provider: 'selcom_nida',
+      reviewedAt: new Date(),
+      reviewReason: `Identity binding failed: ${binding.evidence}`,
+    })
+    invalidateKycCache(dbUser.id)
+    revalidatePath('/app/user/kyc')
+    return { error: 'This phone number is registered to a different person than the NIDA provided.' }
+  }
+
   await db.insert(kycCases).values({
     userId: dbUser.id,
     nationalId: normalized,
@@ -97,8 +126,10 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     provider: 'selcom_nida',
     providerReference: verification.reference,
     reviewedAt: new Date(),
-    reviewReason: verification.fullName ? `NIDA holder: ${verification.fullName}` : 'NIDA verified via Selcom Identity',
+    reviewReason: `${verification.fullName ? `NIDA holder: ${verification.fullName}` : 'NIDA verified via Selcom Identity'} · ${binding.evidence}`,
   })
+
+  await db.update(users).set({ phone: binding.phone, updatedAt: new Date() }).where(eq(users.id, dbUser.id))
 
   invalidateKycCache(dbUser.id)
   revalidatePath('/app/user/kyc')

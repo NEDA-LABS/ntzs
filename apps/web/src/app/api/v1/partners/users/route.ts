@@ -7,6 +7,8 @@ import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waa
 import { users, wallets, partnerUsers, partners, kycCases } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
+import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
+import { isValidTanzanianPhone } from '@/lib/psp'
 
 /**
  * POST /api/v1/partners/users — Create a user wallet from the partner dashboard.
@@ -146,12 +148,30 @@ export async function POST(request: NextRequest) {
   }
   const kyc = { nidaNumber: normalizedNida, reference: verification.reference, fullName: verification.fullName }
 
+  // Tier-1 identity binding: the phone must be a Tanzanian mobile-money line;
+  // where the PSP name-lookup answers, its telco-registered identity must match
+  // the NIDA holder (hard fail on mismatch). No answer => proceed, evidence
+  // recorded as unverified.
+  if (!phone || !isValidTanzanianPhone(phone)) {
+    return NextResponse.json(
+      { error: 'A valid Tanzanian phone number is required to create a wallet.', code: 'phone_required' },
+      { status: 400 }
+    )
+  }
+  const binding = await bindPhoneToNidaIdentity({ phone, nidaNumber: normalizedNida, nidaFullName: kyc.fullName })
+  if (binding.outcome === 'mismatch') {
+    return NextResponse.json(
+      { error: 'This phone number is registered to a different person than the NIDA provided.', code: 'identity_binding_failed' },
+      { status: 400 }
+    )
+  }
+
   // ── Create user ─────────────────────────────────────────────────────────────
   const neonAuthUserId = `waas_${partnerId}_${externalId}`
 
   const [newUser] = await db
     .insert(users)
-    .values({ neonAuthUserId, email, name: name || null, phone: phone || null, role: 'end_user' })
+    .values({ neonAuthUserId, email, name: name || null, phone: binding.phone, role: 'end_user' })
     .onConflictDoNothing()
     .returning({ id: users.id, email: users.email, name: users.name, phone: users.phone })
 
@@ -189,7 +209,7 @@ export async function POST(request: NextRequest) {
     provider: 'selcom_nida',
     providerReference: kyc.reference,
     reviewedAt: new Date(),
-    reviewReason: kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity',
+    reviewReason: `${kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity'} · ${binding.evidence}`,
   })
 
   // ── Ensure partner has HD seed ──────────────────────────────────────────────
