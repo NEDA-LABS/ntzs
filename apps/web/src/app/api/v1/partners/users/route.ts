@@ -4,9 +4,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL } from '@/lib/env'
 import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
-import { users, wallets, partnerUsers, partners } from '@ntzs/db'
+import { users, wallets, partnerUsers, partners, kycCases } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 import { WALLET_CREATION_PAUSED, WALLET_CREATION_PAUSED_MESSAGE } from '@/lib/wallet-gating'
+import { verifyNidaNumber } from '@/lib/kyc/selcom'
 
 /**
  * POST /api/v1/partners/users — Create a user wallet from the partner dashboard.
@@ -34,14 +35,14 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────
-  let body: { externalId: string; email: string; name?: string; phone?: string }
+  let body: { externalId: string; email: string; name?: string; phone?: string; nidaNumber?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { externalId, email, name, phone } = body
+  const { externalId, email, name, phone, nidaNumber } = body
 
   if (!externalId || !email) {
     return NextResponse.json({ error: 'externalId and email are required' }, { status: 400 })
@@ -95,11 +96,30 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Sandbox: no NEW wallet issuance until KYC is live (BoT Parameter 8).
-  // Must sit BELOW the existing-mapping return — this endpoint is called
-  // idempotently to resolve existing users; gating at the top locked existing
-  // partner users out of balances/deposits entirely.
-  if (WALLET_CREATION_PAUSED) {
+  // BoT Parameter 8: every NEW wallet must be linked to a KYC-verified identity.
+  // A NIDA number verified via Selcom Identity lifts the pause for this user;
+  // without one, new creation stays paused. (Below the existing-mapping return
+  // so existing users always resolve.)
+  let kyc: { nidaNumber: string; reference: string | null; fullName: string | null } | null = null
+  if (nidaNumber) {
+    const verification = await verifyNidaNumber(nidaNumber)
+    if (verification.status === 'unavailable') {
+      console.error('[partners/users] KYC verification unavailable:', verification.error)
+      return NextResponse.json(
+        { error: 'Identity verification is temporarily unavailable — try again shortly.', code: 'kyc_unavailable' },
+        { status: 503 }
+      )
+    }
+    if (verification.status === 'not_found') {
+      return NextResponse.json(
+        { error: verification.message || 'NIDA number could not be verified.', code: 'kyc_failed' },
+        { status: 400 }
+      )
+    }
+    kyc = { nidaNumber, reference: verification.reference, fullName: verification.fullName }
+  }
+
+  if (WALLET_CREATION_PAUSED && !kyc) {
     return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
   }
 
@@ -136,6 +156,19 @@ export async function POST(request: NextRequest) {
     userEmail = byAuthId.email
     userName = byAuthId.name
     userPhone = byAuthId.phone
+  }
+
+  // Record the verified identity link (BoT Para 8) before issuing the wallet.
+  if (kyc) {
+    await db.insert(kycCases).values({
+      userId,
+      nationalId: kyc.nidaNumber,
+      status: 'approved',
+      provider: 'selcom_nida',
+      providerReference: kyc.reference,
+      reviewedAt: new Date(),
+      reviewReason: kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity',
+    })
   }
 
   // ── Ensure partner has HD seed ──────────────────────────────────────────────
