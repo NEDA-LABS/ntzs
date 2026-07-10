@@ -2,10 +2,9 @@ import { eq, sql } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { partners, partnerSubWallets } from '@ntzs/db'
+import { partners, partnerSubWallets, partnerKyb } from '@ntzs/db'
 import { deriveSubWalletAddress } from '@/lib/waas/hd-wallets'
 import { verifySessionToken } from '@/lib/waas/auth'
-import { WALLET_CREATION_PAUSED, WALLET_CREATION_PAUSED_MESSAGE } from '@/lib/wallet-gating'
 
 /**
  * POST /api/v1/partners/sub-wallets
@@ -32,9 +31,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 })
   }
 
-  // Sandbox: no new wallet issuance until KYC is live (BoT Parameter 8).
-  if (WALLET_CREATION_PAUSED) {
-    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
+  // STRUCTURAL PREREQUISITE: sub-wallets are BUSINESS wallets — issued only to
+  // partners with approved KYB (documents reviewed by an admin), mirroring the
+  // Ramp API gate. End-user wallets are covered separately by NIDA KYC.
+  {
+    const { db } = getDb()
+    const [kyb] = await db
+      .select({ status: partnerKyb.status })
+      .from(partnerKyb)
+      .where(eq(partnerKyb.partnerId, partnerId))
+      .limit(1)
+    if (!kyb || kyb.status !== 'approved') {
+      return NextResponse.json(
+        { error: 'KYB approval is required before creating business sub-wallets. Submit your documents under Compliance in the partner dashboard.', code: 'kyb_required' },
+        { status: 403 }
+      )
+    }
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────
