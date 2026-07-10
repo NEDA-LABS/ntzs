@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { UserTopBar } from '@/app/app/_components/UserTopBar'
 import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
+import { submitKycCaseAction } from './kyc/actions'
 import { getCachedWallet, invalidateWalletCache } from '@/lib/user/cachedWallet'
 import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
@@ -24,18 +25,34 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
     }
   }
 
-  // Sandbox: new users can't be issued a wallet until KYC is live. Show a clear
-  // paused screen instead of a wallet-less dashboard. Existing users have wallets.
+  // New wallets require a KYC-verified identity (BoT Parameter 8). Wallet-less
+  // users verify their NIDA right here (this layout wraps /app/user/kyc too, so
+  // an inline form avoids a redirect loop); once approved, the next load
+  // auto-provisions their wallet. Existing users have wallets and never see this.
   if (!wallet && WALLET_CREATION_PAUSED) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0d0d14] px-6 text-center">
         <div className="max-w-md">
-          <h1 className="text-2xl font-semibold text-white">Account setup paused</h1>
+          <h1 className="text-2xl font-semibold text-white">Verify your identity</h1>
           <p className="mt-3 text-sm leading-relaxed text-white/60">
-            New wallets are temporarily paused while we finalise identity verification for the
-            Bank of Tanzania sandbox. Your account is saved — please check back soon to complete
-            setup with verified KYC.
+            To activate your nTZS account, verify your identity with your NIDA number — a Bank of
+            Tanzania sandbox requirement. It takes under a minute.
           </p>
+          <form action={submitKycCaseAction} className="mt-6 flex flex-col gap-3">
+            <input
+              name="nationalId"
+              inputMode="numeric"
+              placeholder="NIDA number (20 digits)"
+              required
+              className="rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none focus:border-emerald-500/60"
+            />
+            <button
+              type="submit"
+              className="rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-black hover:bg-emerald-400 transition-colors"
+            >
+              Verify with NIDA
+            </button>
+          </form>
         </div>
       </div>
     )
