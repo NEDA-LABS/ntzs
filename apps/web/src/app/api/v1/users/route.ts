@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL } from '@/lib/env'
-import { WALLET_CREATION_PAUSED, WALLET_CREATION_PAUSED_MESSAGE } from '@/lib/wallet-gating'
-import { verifyNidaNumber } from '@/lib/kyc/selcom'
+import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { users, wallets, partnerUsers, partners, kycCases } from '@ntzs/db'
@@ -91,34 +90,58 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // BoT Parameter 8: every NEW wallet must be linked to a KYC-verified identity.
-  // A NIDA number verified via Selcom Identity satisfies the requirement and
-  // lifts the pause for this specific user; without one, new creation stays
-  // paused. (This gate sits BELOW the existing-mapping return: partner apps
-  // call this endpoint idempotently on every session to resolve existing
-  // users, and gating at the top locked existing users out entirely.)
-  let kyc: { nidaNumber: string; reference: string | null; fullName: string | null } | null = null
-  if (nidaNumber) {
-    const verification = await verifyNidaNumber(nidaNumber)
-    if (verification.status === 'unavailable') {
-      console.error('[v1/users] KYC verification unavailable:', verification.error)
-      return NextResponse.json(
-        { error: 'Identity verification is temporarily unavailable — try again shortly.', code: 'kyc_unavailable' },
-        { status: 503 }
-      )
-    }
-    if (verification.status === 'not_found') {
-      return NextResponse.json(
-        { error: verification.message || 'NIDA number could not be verified.', code: 'kyc_failed' },
-        { status: 400 }
-      )
-    }
-    kyc = { nidaNumber, reference: verification.reference, fullName: verification.fullName }
+  // STRUCTURAL PREREQUISITE (BoT Parameter 8): no end-user wallet is ever
+  // issued without a KYC-verified identity — independent of any pause flag.
+  // Partners get compliant wallets by construction. (This gate sits BELOW the
+  // existing-mapping return: partner apps call this endpoint idempotently on
+  // every session to resolve existing users.)
+  if (!nidaNumber) {
+    return NextResponse.json(
+      { error: 'A NIDA number is required to create a wallet — identity verification is a prerequisite for holding nTZS.', code: 'kyc_required' },
+      { status: 400 }
+    )
   }
 
-  if (WALLET_CREATION_PAUSED && !kyc) {
-    return NextResponse.json({ error: WALLET_CREATION_PAUSED_MESSAGE, code: 'wallet_creation_paused' }, { status: 503 })
+  const normalizedNida = normalizeNidaNumber(nidaNumber)
+  if (!normalizedNida) {
+    return NextResponse.json({ error: 'Invalid NIDA number format (20 digits required).', code: 'kyc_failed' }, { status: 400 })
   }
+
+  // Policy: one NIDA backs at most ONE wallet per partner.
+  const [nidaTaken] = await db
+    .select({ id: kycCases.id })
+    .from(kycCases)
+    .innerJoin(partnerUsers, eq(partnerUsers.userId, kycCases.userId))
+    .where(
+      and(
+        eq(partnerUsers.partnerId, partner.id),
+        eq(kycCases.status, 'approved'),
+        sql`regexp_replace(${kycCases.nationalId}, '\\D', '', 'g') = ${normalizedNida}`
+      )
+    )
+    .limit(1)
+  if (nidaTaken) {
+    return NextResponse.json(
+      { error: 'This NIDA number is already linked to a wallet with this partner.', code: 'nida_already_registered' },
+      { status: 409 }
+    )
+  }
+
+  const verification = await verifyNidaNumber(normalizedNida)
+  if (verification.status === 'unavailable') {
+    console.error('[v1/users] KYC verification unavailable:', verification.error)
+    return NextResponse.json(
+      { error: 'Identity verification is temporarily unavailable — try again shortly.', code: 'kyc_unavailable' },
+      { status: 503 }
+    )
+  }
+  if (verification.status === 'not_found') {
+    return NextResponse.json(
+      { error: verification.message || 'NIDA number could not be verified.', code: 'kyc_failed' },
+      { status: 400 }
+    )
+  }
+  const kyc = { nidaNumber: normalizedNida, reference: verification.reference, fullName: verification.fullName }
 
   // Create new user
   // Use a generated neonAuthUserId placeholder for WaaS-created users
@@ -163,17 +186,15 @@ export async function POST(request: NextRequest) {
   }
 
   // Record the verified identity link (BoT Para 8) before issuing the wallet.
-  if (kyc) {
-    await db.insert(kycCases).values({
-      userId,
-      nationalId: kyc.nidaNumber,
-      status: 'approved',
-      provider: 'selcom_nida',
-      providerReference: kyc.reference,
-      reviewedAt: new Date(),
-      reviewReason: kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity',
-    })
-  }
+  await db.insert(kycCases).values({
+    userId,
+    nationalId: kyc.nidaNumber,
+    status: 'approved',
+    provider: 'selcom_nida',
+    providerReference: kyc.reference,
+    reviewedAt: new Date(),
+    reviewReason: kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity',
+  })
 
   // Ensure partner has an HD seed (auto-generate on first user creation)
   let encryptedSeed = partner.encryptedHdSeed

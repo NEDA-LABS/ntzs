@@ -1,16 +1,12 @@
 /**
- * Sandbox wallet-creation gate.
+ * Legacy sandbox wallet-creation gate — now an auxiliary flag only.
  *
- * BoT Testing Parameter 8 requires every nTZS wallet to be linked to a KYC-verified
- * identity — no anonymous wallets. Until the Selcom bank-grade KYC product is live,
- * both the direct consumer app and the WaaS API can issue wallets with no KYC, so we
- * pause ALL new wallet creation.
- *
- * Defaults to PAUSED so it takes effect on deploy with no env change. To re-enable
- * (once KYC gates wallet issuance), set WALLET_CREATION_PAUSED=false.
- *
- * This blocks only NEW wallet issuance — existing users, wallets, deposits,
- * transfers, and withdrawals are unaffected.
+ * KYC is a STRUCTURAL prerequisite for wallet issuance (BoT Parameter 8):
+ * end-user wallets require a Selcom-verified NIDA in the WaaS routes and the
+ * direct app regardless of this flag. It still gates:
+ *  - partner sub-wallets (business wallets, blocked until the KYB flow ships)
+ *  - the embedded-wallet (CDP) save action
+ *  - the sign-up page banner copy
  */
 export const WALLET_CREATION_PAUSED =
   (process.env.WALLET_CREATION_PAUSED ?? 'true').toLowerCase() !== 'false'

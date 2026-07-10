@@ -8,7 +8,7 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { kycCases } from '@ntzs/db'
 import { invalidateKycCache } from '@/lib/user/cachedQueries'
-import { verifyNidaNumber } from '@/lib/kyc/selcom'
+import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 
 export interface NidaFormState {
   error: string | null
@@ -35,7 +35,28 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     return { error: 'Enter your NIDA number.' }
   }
 
-  const { db } = getDb()
+  const normalized = normalizeNidaNumber(nationalId)
+  if (!normalized) {
+    return { error: 'A NIDA number is 20 digits — check it and try again.' }
+  }
+
+  const { db, sql: rawSql } = getDb()
+
+  // Policy: one NIDA backs at most one direct-app wallet. (Partner-scoped
+  // uniqueness is enforced separately in the WaaS routes.)
+  const dupes = await rawSql<{ id: string }[]>`
+    select kc.id
+    from kyc_cases kc
+    left join partner_users pu on pu.user_id = kc.user_id
+    where kc.status = 'approved'
+      and kc.user_id != ${dbUser.id}
+      and pu.user_id is null
+      and regexp_replace(kc.national_id, '\\D', '', 'g') = ${normalized}
+    limit 1
+  `
+  if (dupes.length) {
+    return { error: 'This NIDA number is already linked to another nTZS account. Contact support if this is unexpected.' }
+  }
 
   const latest = await db
     .select({ status: kycCases.status })
@@ -48,7 +69,7 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     redirect(redirectTo)
   }
 
-  const verification = await verifyNidaNumber(nationalId)
+  const verification = await verifyNidaNumber(normalized)
 
   if (verification.status === 'unavailable') {
     console.error('[kyc] verification unavailable:', verification.error)
@@ -58,7 +79,7 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
   if (verification.status === 'not_found') {
     await db.insert(kycCases).values({
       userId: dbUser.id,
-      nationalId,
+      nationalId: normalized,
       status: 'rejected',
       provider: 'selcom_nida',
       reviewedAt: new Date(),
@@ -71,7 +92,7 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
 
   await db.insert(kycCases).values({
     userId: dbUser.id,
-    nationalId,
+    nationalId: normalized,
     status: 'approved',
     provider: 'selcom_nida',
     providerReference: verification.reference,
