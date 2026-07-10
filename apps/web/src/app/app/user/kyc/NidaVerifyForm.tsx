@@ -23,6 +23,14 @@ export function NidaVerifyForm({ redirectTo = '/app/user' }: { redirectTo?: stri
         required
         className="rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none focus:border-emerald-500/60"
       />
+      <input
+        name="phone"
+        type="tel"
+        inputMode="tel"
+        placeholder="Mobile money number (07…)"
+        required
+        className="rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none focus:border-emerald-500/60"
+      />
       <button
         type="submit"
         disabled={pending}
