@@ -71,7 +71,8 @@ export function interpretSelcomResponse(httpStatus: number, body: unknown): Selc
 
   const o = lowerKeys(body as Record<string, unknown>)
   const resultRaw = String(o.result ?? o.status ?? '').toUpperCase()
-  const resultCode = String(o.resultcode ?? o.result_code ?? o.code ?? o.responsecode ?? '')
+  // Live Selcom Identity shape: { status_code: 200, message, response: [record], app_data }
+  const resultCode = String(o.resultcode ?? o.result_code ?? o.code ?? o.responsecode ?? o.status_code ?? o.statuscode ?? '')
   const succeeded =
     resultRaw === 'SUCCESS' ||
     resultRaw === 'OK' ||
@@ -85,8 +86,9 @@ export function interpretSelcomResponse(httpStatus: number, body: unknown): Selc
     o.success === false ||
     (resultCode !== '' && !succeeded)
 
-  // The record may come as data (object or array), user, record, or user_data.
-  const container = o.data ?? o.user ?? o.record ?? o.user_data ?? o.userdata ?? null
+  // The record may come as response (live Selcom Identity), data (object or
+  // array), user, record, or user_data.
+  const container = o.response ?? o.data ?? o.user ?? o.record ?? o.user_data ?? o.userdata ?? null
   const containerFirst = Array.isArray(container) ? ((container[0] as Record<string, unknown>) ?? null) : container
   const record: Record<string, unknown> | null =
     containerFirst && typeof containerFirst === 'object' ? lowerKeys(containerFirst as Record<string, unknown>) : null

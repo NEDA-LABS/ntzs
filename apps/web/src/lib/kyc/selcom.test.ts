@@ -77,6 +77,29 @@ describe('interpretSelcomResponse (fail-closed verification)', () => {
     expect(interpretSelcomResponse(200, { success: false, message: 'no match' }).status).toBe('not_found')
   })
 
+  it('verifies the LIVE Selcom Identity shape (status_code + response array)', () => {
+    const r = interpretSelcomResponse(200, {
+      status_code: 200,
+      message: 'User data fetched successful',
+      response: [{ first_name: 'Asha', middle_name: 'J', sur_name: 'Mrisho', surname: 'Mrisho' }],
+      app_data: { requestid: 'x' },
+    })
+    expect(r.status).toBe('verified')
+    if (r.status === 'verified') expect(r.fullName).toContain('Asha')
+  })
+
+  it('treats live-shape empty response as not_found', () => {
+    expect(
+      interpretSelcomResponse(200, { status_code: 200, message: 'No record found', response: [], app_data: {} }).status
+    ).toBe('not_found')
+  })
+
+  it('treats live-shape non-200 status_code as not_found', () => {
+    expect(
+      interpretSelcomResponse(200, { status_code: 404, message: 'Not found', response: [], app_data: {} }).status
+    ).toBe('not_found')
+  })
+
   it('NEVER verifies on ambiguous shapes (fail closed)', () => {
     expect(interpretSelcomResponse(200, { hello: 'world' }).status).toBe('unavailable')
     expect(interpretSelcomResponse(200, null).status).toBe('unavailable')
