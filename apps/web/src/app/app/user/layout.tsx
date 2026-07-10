@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { UserTopBar } from '@/app/app/_components/UserTopBar'
 import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
-import { submitKycCaseAction } from './kyc/actions'
+import { NidaVerifyForm } from './kyc/NidaVerifyForm'
 import { getCachedWallet, invalidateWalletCache } from '@/lib/user/cachedWallet'
 import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
@@ -38,21 +38,9 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
             To activate your nTZS account, verify your identity with your NIDA number — a Bank of
             Tanzania sandbox requirement. It takes under a minute.
           </p>
-          <form action={submitKycCaseAction} className="mt-6 flex flex-col gap-3">
-            <input
-              name="nationalId"
-              inputMode="numeric"
-              placeholder="NIDA number (20 digits)"
-              required
-              className="rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none focus:border-emerald-500/60"
-            />
-            <button
-              type="submit"
-              className="rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-black hover:bg-emerald-400 transition-colors"
-            >
-              Verify with NIDA
-            </button>
-          </form>
+          <div className="mt-6">
+            <NidaVerifyForm redirectTo="/app/user" />
+          </div>
         </div>
       </div>
     )

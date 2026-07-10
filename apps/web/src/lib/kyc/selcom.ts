@@ -32,11 +32,36 @@ export type SelcomVerification =
   | { status: 'not_found'; message: string | null; responseKeys: string[] }
   | { status: 'unavailable'; error: string }
 
+/** Shallow map with lowercased keys, so Result/RESULT/result all match. */
+function lowerKeys(o: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(o)) out[k.toLowerCase()] = v
+  return out
+}
+
+/**
+ * Replace every leaf value with a type/length placeholder — lets us log the
+ * SHAPE of an unrecognized vendor response for diagnosis without ever logging
+ * a citizen's data.
+ */
+export function maskShape(v: unknown): unknown {
+  if (Array.isArray(v)) return v.slice(0, 3).map(maskShape).concat(v.length > 3 ? ['…'] : [])
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) out[k] = maskShape(val)
+    return out
+  }
+  if (typeof v === 'string') return `<str:${v.length}>`
+  if (typeof v === 'number') return '<num>'
+  if (typeof v === 'boolean') return '<bool>'
+  return v === null ? null : `<${typeof v}>`
+}
+
 /**
  * Interpret a Selcom identity response defensively (pure, unit-tested).
  * 'verified' requires an explicit success signal AND a data record;
  * anything ambiguous is 'unavailable' (fail closed), an explicit negative is
- * 'not_found'.
+ * 'not_found'. Keys are matched case-insensitively.
  */
 export function interpretSelcomResponse(httpStatus: number, body: unknown): SelcomVerification {
   const keys = body && typeof body === 'object' ? Object.keys(body as Record<string, unknown>) : []
@@ -44,26 +69,37 @@ export function interpretSelcomResponse(httpStatus: number, body: unknown): Selc
     return { status: 'unavailable', error: `HTTP ${httpStatus}` }
   }
 
-  const o = body as Record<string, unknown>
+  const o = lowerKeys(body as Record<string, unknown>)
   const resultRaw = String(o.result ?? o.status ?? '').toUpperCase()
-  const resultCode = String(o.resultcode ?? o.result_code ?? o.code ?? '')
-  const succeeded = resultRaw === 'SUCCESS' || resultRaw === 'OK' || resultCode === '000' || resultCode === '200'
-  const failed = resultRaw === 'FAIL' || resultRaw === 'FAILED' || resultRaw === 'ERROR' || (resultCode !== '' && !succeeded)
+  const resultCode = String(o.resultcode ?? o.result_code ?? o.code ?? o.responsecode ?? '')
+  const succeeded =
+    resultRaw === 'SUCCESS' ||
+    resultRaw === 'OK' ||
+    resultCode === '000' ||
+    resultCode === '200' ||
+    o.success === true
+  const failed =
+    resultRaw === 'FAIL' ||
+    resultRaw === 'FAILED' ||
+    resultRaw === 'ERROR' ||
+    o.success === false ||
+    (resultCode !== '' && !succeeded)
 
-  // The record may come as data (object or array), user, or record.
-  const container = o.data ?? o.user ?? o.record ?? null
-  const record: Record<string, unknown> | null = Array.isArray(container)
-    ? ((container[0] as Record<string, unknown>) ?? null)
-    : container && typeof container === 'object'
-      ? (container as Record<string, unknown>)
-      : null
+  // The record may come as data (object or array), user, record, or user_data.
+  const container = o.data ?? o.user ?? o.record ?? o.user_data ?? o.userdata ?? null
+  const containerFirst = Array.isArray(container) ? ((container[0] as Record<string, unknown>) ?? null) : container
+  const record: Record<string, unknown> | null =
+    containerFirst && typeof containerFirst === 'object' ? lowerKeys(containerFirst as Record<string, unknown>) : null
 
   if (succeeded && record && Object.keys(record).length > 0) {
-    const first = record.firstname ?? record.first_name ?? record.firstName ?? ''
-    const middle = record.middlename ?? record.middle_name ?? record.othernames ?? ''
-    const last = record.surname ?? record.lastname ?? record.last_name ?? record.lastName ?? ''
+    const first = record.firstname ?? record.first_name ?? ''
+    const middle = record.middlename ?? record.middle_name ?? record.othernames ?? record.other_names ?? ''
+    const last = record.surname ?? record.lastname ?? record.last_name ?? ''
     const joined = [first, middle, last].map((p) => String(p ?? '').trim()).filter(Boolean).join(' ')
-    const fullName = joined || (typeof record.fullname === 'string' ? record.fullname : null)
+    const fullName =
+      joined ||
+      (typeof record.fullname === 'string' ? record.fullname : null) ||
+      (typeof record.full_name === 'string' ? record.full_name : null)
     const reference =
       (typeof o.reference === 'string' && o.reference) ||
       (typeof o.transid === 'string' && o.transid) ||
@@ -120,7 +156,16 @@ export async function verifyNidaNumber(nidaNumber: string): Promise<SelcomVerifi
     } catch {
       return { status: 'unavailable', error: `Non-JSON response (HTTP ${res.status})` }
     }
-    return interpretSelcomResponse(res.status, body)
+    const outcome = interpretSelcomResponse(res.status, body)
+    if (outcome.status === 'unavailable') {
+      // Shape-only diagnostic (all values masked) so an unrecognized vendor
+      // response can be fixed from logs without ever logging citizen data.
+      console.warn(
+        `[kyc] unrecognized Selcom response (HTTP ${res.status}):`,
+        JSON.stringify(maskShape(body))
+      )
+    }
+    return outcome
   } catch (err) {
     return { status: 'unavailable', error: err instanceof Error ? err.message : 'Network error' }
   }
