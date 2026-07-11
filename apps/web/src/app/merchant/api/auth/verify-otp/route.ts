@@ -27,6 +27,21 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     if (!merchant) {
+      // Merchants are NEDApay users: new stores are created through the NEDApay
+      // app (Biashara), where the owner's identity is already NIDA-verified.
+      // This portal path auto-provisioned an HD wallet on first OTP login with
+      // no KYC at all — the last unverified issuance path — so it is closed.
+      // Existing merchants sign in unchanged.
+      if (process.env.MERCHANT_SELF_SIGNUP_ENABLED !== 'true') {
+        return NextResponse.json(
+          {
+            error: 'New merchant stores are created in the NEDApay app. Download NEDApay, verify your identity, and open Biashara to set up your store.',
+            code: 'merchant_signup_moved',
+          },
+          { status: 403 }
+        );
+      }
+
       const { address, index } = await provisionMerchantWallet();
 
       // Ensure handle is unique by appending index if needed
