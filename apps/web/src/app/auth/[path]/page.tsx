@@ -2,7 +2,7 @@ import { AuthView } from '@neondatabase/neon-js/auth/react/ui'
 import Image from 'next/image'
 import Link from 'next/link'
 
-import { WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
+import { DIRECT_APP_SIGNUP_PAUSED, NEDAPAY_APP_URL, WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
 export const dynamicParams = false
 
@@ -87,20 +87,41 @@ export default async function AuthPage({
               <div className="pointer-events-none absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
 
               <div className="relative">
-                {isSignUp && WALLET_CREATION_PAUSED && (
-                  kycConfigured ? (
-                    <div className="mb-5 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-xs leading-relaxed text-emerald-100">
-                      Identity verification is required for new accounts (Bank of Tanzania sandbox). After signing up,
-                      you&apos;ll verify with your NIDA number — it takes under a minute.
-                    </div>
-                  ) : (
-                    <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100">
-                      New sign-ups are temporarily paused while we finalise identity verification for the Bank of Tanzania
-                      sandbox. Existing accounts can still sign in — please check back soon.
-                    </div>
-                  )
+                {isSignUp && DIRECT_APP_SIGNUP_PAUSED ? (
+                  <div className="py-2">
+                    <h2 className="text-xl font-semibold text-white">Sign-ups have moved to NEDApay</h2>
+                    <p className="mt-3 text-sm leading-relaxed text-white/60">
+                      Our Bank of Tanzania sandbox pilot on this app is at capacity, so new nTZS accounts
+                      are now created in the NEDApay app — same shilling, verified in minutes.
+                    </p>
+                    <a
+                      href={NEDAPAY_APP_URL}
+                      className="mt-6 flex w-full items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+                    >
+                      Continue on NEDApay →
+                    </a>
+                    <p className="mt-4 text-xs leading-relaxed text-white/40">
+                      Already have an nTZS account? Signing in works as usual.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {isSignUp && WALLET_CREATION_PAUSED && (
+                      kycConfigured ? (
+                        <div className="mb-5 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-xs leading-relaxed text-emerald-100">
+                          Identity verification is required for new accounts (Bank of Tanzania sandbox). After signing up,
+                          you&apos;ll verify with your NIDA number — it takes under a minute.
+                        </div>
+                      ) : (
+                        <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100">
+                          New sign-ups are temporarily paused while we finalise identity verification for the Bank of Tanzania
+                          sandbox. Existing accounts can still sign in — please check back soon.
+                        </div>
+                      )
+                    )}
+                    <AuthView path={path} />
+                  </>
                 )}
-                <AuthView path={path} />
 
                 <div className="mt-6 flex items-center justify-between text-xs text-white/40">
                   <Link href="/" className="hover:text-white/70 transition-colors">
