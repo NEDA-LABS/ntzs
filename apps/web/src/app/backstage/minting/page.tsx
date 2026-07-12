@@ -15,8 +15,11 @@ import {
   dailyIssuance,
   auditLogs,
   reconciliationEntries,
+  orphanPayments,
 } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
+import { suggestOrphanMatch, isPhoneMatch } from '@/lib/deposits/orphan-match'
+import { formatDateTimeEAT } from '@/lib/format-date'
 import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
 import { SafeMintActions } from './_components/SafeMintActions'
 import { SupplyReconciliationCard } from './_components/SupplyReconciliationCard'
@@ -228,6 +231,129 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     .where(eq(depositRequests.id, depositId))
 
   console.log(`[Admin] Advanced deposit ${depositId} to ${newStatus}`, { transid, channel })
+  revalidatePath('/backstage/minting')
+}
+
+async function attachOrphanAction(formData: FormData) {
+  'use server'
+
+  await requireAnyRole(['super_admin'])
+  const currentUser = await getCurrentDbUser()
+  if (!currentUser) throw new Error('User not found')
+
+  const orphanId = String(formData.get('orphanId') ?? '')
+  const depositId = String(formData.get('depositId') ?? '')
+  if (!orphanId || !depositId) throw new Error('Invalid parameters')
+
+  const { db } = getDb()
+
+  const [orphan] = await db.select().from(orphanPayments).where(eq(orphanPayments.id, orphanId)).limit(1)
+  if (!orphan || orphan.status !== 'unmatched') throw new Error('Orphan payment not found or already reviewed')
+
+  const [deposit] = await db.select().from(depositRequests).where(eq(depositRequests.id, depositId)).limit(1)
+  if (!deposit || deposit.status !== 'submitted') throw new Error('Deposit not found or not in submitted status')
+
+  // Mirror the webhook cross-checks: right currency, paid covers requested.
+  if (orphan.currency !== 'TZS') throw new Error(`Cannot attach: orphan payment currency is ${orphan.currency}, not TZS`)
+  if (orphan.amountTzs < deposit.amountTzs) throw new Error('Cannot attach: paid amount is less than the deposit request')
+
+  // Claim the orphan first (conditional update) so two concurrent attaches
+  // can never advance two deposits against one payment.
+  const claimed = await db
+    .update(orphanPayments)
+    .set({
+      status: 'matched',
+      matchedDepositRequestId: deposit.id,
+      reviewedByUserId: currentUser.id,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(orphanPayments.id, orphanId), eq(orphanPayments.status, 'unmatched')))
+    .returning({ id: orphanPayments.id })
+  if (claimed.length === 0) throw new Error('Orphan payment was just reviewed elsewhere')
+
+  const newStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
+  const advanced = await db
+    .update(depositRequests)
+    .set({
+      status: newStatus,
+      pspReference: orphan.pspReference,
+      pspChannel: orphan.channel ?? 'orphan_attach',
+      buyerPhone: deposit.buyerPhone ?? orphan.payerPhone,
+      fiatConfirmedAt: new Date(),
+      fiatConfirmedByUserId: currentUser.id,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(depositRequests.id, depositId), eq(depositRequests.status, 'submitted')))
+    .returning({ id: depositRequests.id })
+
+  if (advanced.length === 0) {
+    // Deposit changed under us — release the claim so the payment isn't stranded.
+    await db
+      .update(orphanPayments)
+      .set({ status: 'unmatched', matchedDepositRequestId: null, reviewedByUserId: null, reviewedAt: null, updatedAt: new Date() })
+      .where(and(eq(orphanPayments.id, orphanId), eq(orphanPayments.status, 'matched')))
+    throw new Error('Deposit is no longer in submitted status; attach aborted')
+  }
+
+  await writeAuditLog(
+    'deposit.orphan_attached',
+    'deposit_request',
+    deposit.id,
+    { orphanPaymentId: orphan.id, pspReference: orphan.pspReference, paidTzs: orphan.amountTzs, newStatus },
+    currentUser.id
+  )
+
+  console.log(`[Admin] Attached orphan payment ${orphan.id} (${orphan.pspReference}) to deposit ${deposit.id} -> ${newStatus}`)
+  revalidatePath('/backstage/minting')
+}
+
+async function dismissOrphanAction(formData: FormData) {
+  'use server'
+
+  await requireAnyRole(['super_admin'])
+  const currentUser = await getCurrentDbUser()
+  if (!currentUser) throw new Error('User not found')
+
+  const orphanId = String(formData.get('orphanId') ?? '')
+  const note = String(formData.get('note') ?? '').trim()
+  if (!orphanId) throw new Error('Invalid parameters')
+  // A dismissed orphan is real money written off the review queue — always say why.
+  if (!note) throw new Error('A note is required to dismiss (e.g. "refunded at PSP")')
+
+  const { db } = getDb()
+  const dismissed = await db
+    .update(orphanPayments)
+    .set({ status: 'dismissed', notes: note, reviewedByUserId: currentUser.id, reviewedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(orphanPayments.id, orphanId), eq(orphanPayments.status, 'unmatched')))
+    .returning({ id: orphanPayments.id })
+  if (dismissed.length === 0) throw new Error('Orphan payment not found or already reviewed')
+
+  await writeAuditLog('deposit.orphan_dismissed', 'orphan_payment', orphanId, { note }, currentUser.id)
+  revalidatePath('/backstage/minting')
+}
+
+async function cancelSubmittedDepositAction(formData: FormData) {
+  'use server'
+
+  await requireAnyRole(['super_admin'])
+  const currentUser = await getCurrentDbUser()
+  if (!currentUser) throw new Error('User not found')
+
+  const depositId = String(formData.get('depositId') ?? '')
+  if (!depositId) throw new Error('Invalid deposit ID')
+
+  const { db } = getDb()
+  // Only 'submitted' rows (nothing confirmed, nothing minted) can be
+  // cancelled — e.g. a duplicate attempt whose twin was paid and attached.
+  const cancelled = await db
+    .update(depositRequests)
+    .set({ status: 'cancelled', updatedAt: new Date() })
+    .where(and(eq(depositRequests.id, depositId), eq(depositRequests.status, 'submitted')))
+    .returning({ id: depositRequests.id })
+  if (cancelled.length === 0) throw new Error('Deposit not found or not in submitted status')
+
+  await writeAuditLog('deposit.cancelled_stale', 'deposit_request', depositId, undefined, currentUser.id)
   revalidatePath('/backstage/minting')
 }
 
@@ -665,6 +791,37 @@ export default async function MintingPage() {
     getSnippeBalance(),
   ])
 
+  // Orphan PSP payments awaiting review. Fail-soft: until migration
+  // 0060_orphan_payments.sql is applied the table doesn't exist — render the
+  // page without the section rather than erroring.
+  let unmatchedOrphans: (typeof orphanPayments.$inferSelect)[] = []
+  try {
+    unmatchedOrphans = await db
+      .select()
+      .from(orphanPayments)
+      .where(eq(orphanPayments.status, 'unmatched'))
+      .orderBy(desc(orphanPayments.receivedAt))
+      .limit(50)
+  } catch {
+    console.warn('[backstage/minting] orphan_payments unavailable (migration 0060 not applied yet?)')
+  }
+
+  const submittedCandidates = unmatchedOrphans.length
+    ? await db
+        .select({
+          id: depositRequests.id,
+          amountTzs: depositRequests.amountTzs,
+          buyerPhone: depositRequests.buyerPhone,
+          createdAt: depositRequests.createdAt,
+          userEmail: users.email,
+        })
+        .from(depositRequests)
+        .innerJoin(users, eq(depositRequests.userId, users.id))
+        .where(eq(depositRequests.status, 'submitted'))
+        .orderBy(desc(depositRequests.createdAt))
+        .limit(200)
+    : []
+
   const pendingApproval = allDeposits.filter(d => d.status === 'bank_approved').length
   const pendingMints = allDeposits.filter(d => d.status === 'mint_pending').length
   const totalMinted = allDeposits.filter(d => d.status === 'minted').length
@@ -897,21 +1054,32 @@ export default async function MintingPage() {
                             onConfirm={confirmSafeMintAction}
                           />
                         ) : dep.status === 'submitted' ? (
-                          <form action={verifyAndAdvanceSubmittedAction} className="flex flex-col gap-1.5">
-                            <input type="hidden" name="depositId" value={dep.id} />
-                            <input
-                              type="text"
-                              name="manualTransId"
-                              placeholder="ZenoPay Trans ID"
-                              className="rounded bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-emerald-500/50 outline-none w-32"
-                            />
-                            <SubmitButton
-                              pendingText="Verifying..."
-                              className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
-                            >
-                              Verify & Advance
-                            </SubmitButton>
-                          </form>
+                          <div className="flex flex-col gap-1.5">
+                            <form action={verifyAndAdvanceSubmittedAction} className="flex flex-col gap-1.5">
+                              <input type="hidden" name="depositId" value={dep.id} />
+                              <input
+                                type="text"
+                                name="manualTransId"
+                                placeholder="PSP Trans ID"
+                                className="rounded bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-emerald-500/50 outline-none w-32"
+                              />
+                              <SubmitButton
+                                pendingText="Verifying..."
+                                className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
+                              >
+                                Verify & Advance
+                              </SubmitButton>
+                            </form>
+                            <form action={cancelSubmittedDepositAction}>
+                              <input type="hidden" name="depositId" value={dep.id} />
+                              <SubmitButton
+                                pendingText="Cancelling..."
+                                className="rounded-lg bg-zinc-500/10 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-500/20"
+                              >
+                                Cancel
+                              </SubmitButton>
+                            </form>
+                          </div>
                         ) : (
                           <span className="text-sm text-zinc-600">—</span>
                         )}
@@ -923,6 +1091,86 @@ export default async function MintingPage() {
             </table>
           </div>
         </div>
+
+        {/* Orphan PSP payments — money at the PSP with no linked deposit */}
+        {unmatchedOrphans.length > 0 && (
+          <div className="mt-8 rounded-2xl border border-amber-500/20 bg-zinc-900/50 overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/10">
+              <h3 className="text-lg font-semibold text-white">Unmatched PSP payments ({unmatchedOrphans.length})</h3>
+              <p className="text-sm text-zinc-400">
+                Completed payments that arrived without a deposit reference (e.g. paid directly to the
+                collection till). Attach each to the matching submitted deposit to credit the user, or
+                dismiss with a note.
+              </p>
+            </div>
+            <div className="divide-y divide-white/5">
+              {unmatchedOrphans.map((orphan) => {
+                const { exact, candidates } = suggestOrphanMatch(orphan, submittedCandidates)
+                return (
+                  <div key={orphan.id} className="px-6 py-4">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <div className="font-mono text-lg font-bold text-amber-400">
+                        {orphan.amountTzs.toLocaleString()}{' '}
+                        <span className="text-xs font-normal text-zinc-500">{orphan.currency}</span>
+                      </div>
+                      <div className="text-sm text-zinc-300">
+                        {orphan.payerName || 'Unknown payer'}
+                        {orphan.payerPhone ? <span className="text-zinc-500"> · {orphan.payerPhone}</span> : null}
+                      </div>
+                      <code className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-emerald-400" title={orphan.pspReference}>
+                        {orphan.pspReference}
+                      </code>
+                      {orphan.channel && <span className="text-xs text-zinc-500">{orphan.channel}</span>}
+                      <span className="text-xs text-zinc-500">{formatDateTimeEAT(orphan.receivedAt)}</span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {candidates.length === 0 ? (
+                        <span className="text-sm text-zinc-500">
+                          No submitted deposit matches this amount — verify at the PSP, then dismiss or wait
+                          for the user to create a deposit request.
+                        </span>
+                      ) : (
+                        candidates.map((c) => (
+                          <form key={c.id} action={attachOrphanAction}>
+                            <input type="hidden" name="orphanId" value={orphan.id} />
+                            <input type="hidden" name="depositId" value={c.id} />
+                            <SubmitButton
+                              pendingText="Attaching..."
+                              className={
+                                exact?.id === c.id
+                                  ? 'rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/25'
+                                  : 'rounded-lg border border-white/10 bg-zinc-500/10 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-500/20'
+                              }
+                            >
+                              Attach to {c.userEmail}
+                              {isPhoneMatch(orphan, c) ? ' ✓ phone match' : ''}
+                            </SubmitButton>
+                          </form>
+                        ))
+                      )}
+                      <form action={dismissOrphanAction} className="ml-auto flex items-center gap-1.5">
+                        <input type="hidden" name="orphanId" value={orphan.id} />
+                        <input
+                          type="text"
+                          name="note"
+                          placeholder="Dismiss note (e.g. refunded)"
+                          className="w-44 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/50"
+                        />
+                        <SubmitButton
+                          pendingText="Dismissing..."
+                          className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20"
+                        >
+                          Dismiss
+                        </SubmitButton>
+                      </form>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Reconciliation Section — always visible */}
         <div className="mt-8 space-y-6">

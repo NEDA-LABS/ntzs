@@ -390,6 +390,45 @@ export const depositApprovals = pgTable(
   })
 )
 
+// PSP payments that arrived with no deposit_request_id in the webhook metadata
+// (e.g. a customer paying the Snippe collection till directly instead of
+// completing the in-app checkout). The money is at the PSP but unattributed;
+// rows are parked here for backstage review instead of being dropped, and an
+// admin attaches each to exactly one 'submitted' deposit before minting.
+export const orphanPayments = pgTable(
+  'orphan_payments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    provider: text('provider').notNull().default('snippe'),
+    // PSP transaction reference — unique so webhook redeliveries can't park twice.
+    pspReference: text('psp_reference').notNull(),
+    eventType: text('event_type'),
+
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull(),
+    currency: text('currency').notNull().default('TZS'),
+
+    payerPhone: varchar('payer_phone', { length: 32 }),
+    payerName: text('payer_name'),
+    channel: text('channel'),
+
+    // 'unmatched' | 'matched' | 'dismissed'
+    status: text('status').notNull().default('unmatched'),
+
+    matchedDepositRequestId: uuid('matched_deposit_request_id').references(() => depositRequests.id),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    notes: text('notes'),
+
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pspRefUq: uniqueIndex('orphan_payments_psp_reference_uq').on(t.provider, t.pspReference),
+    statusIdx: index('orphan_payments_status_idx').on(t.status),
+  })
+)
+
 export const mintTransactions = pgTable(
   'mint_transactions',
   {
