@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { verifyWebhookSignature, type SnippePaymentWebhookPayload } from '@/lib/psp/snippe'
 import { executeMint } from '@/lib/minting/executeMint'
-import { depositRequests, merchantCollections } from '@ntzs/db'
+import { depositRequests, merchantCollections, orphanPayments } from '@ntzs/db'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
@@ -36,6 +36,38 @@ export async function POST(request: NextRequest) {
   // Extract our deposit_request_id from metadata
   const depositRequestId = data?.metadata?.deposit_request_id as string
   if (!depositRequestId) {
+    // Real money can arrive unattributed — e.g. a customer paying the Snippe
+    // collection till directly instead of completing the in-app checkout.
+    // Park completed payments for backstage review + attach instead of
+    // dropping them; never guess whose money it is here.
+    const paidValue = Math.trunc(Number(data?.amount?.value ?? NaN))
+    if (type === 'payment.completed' && data?.status === 'completed' && data?.reference && Number.isFinite(paidValue) && paidValue > 0) {
+      try {
+        const { db } = getDb()
+        await db
+          .insert(orphanPayments)
+          .values({
+            provider: 'snippe',
+            pspReference: data.reference,
+            eventType: type,
+            amountTzs: paidValue,
+            currency: String(data.amount?.currency ?? 'TZS').toUpperCase(),
+            payerPhone: data.customer?.phone ?? null,
+            payerName: data.customer?.name ?? null,
+            channel: data.channel?.provider ?? null,
+          })
+          .onConflictDoNothing()
+        console.warn('[snippe/payment webhook] No deposit_request_id — parked as orphan payment', {
+          reference: data.reference,
+          amount: paidValue,
+        })
+        return NextResponse.json({ status: 'parked', reason: 'no_deposit_request_id' })
+      } catch (err) {
+        // Fail-soft (e.g. migration 0060 not applied yet): fall back to the
+        // old ignore behaviour rather than erroring the webhook.
+        console.error('[snippe/payment webhook] Failed to park orphan payment', err)
+      }
+    }
     console.warn('[snippe/payment webhook] Missing deposit_request_id in metadata')
     return NextResponse.json({ status: 'ignored', reason: 'no_deposit_request_id' })
   }
