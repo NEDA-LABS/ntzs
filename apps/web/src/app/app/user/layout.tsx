@@ -5,6 +5,7 @@ import { UserTopBar } from '@/app/app/_components/UserTopBar'
 import { provisionPlatformWallet } from '@/lib/waas/platform-wallets'
 import { NidaVerifyForm } from './kyc/NidaVerifyForm'
 import { getCachedWallet, invalidateWalletCache } from '@/lib/user/cachedWallet'
+import { DIRECT_APP_SIGNUP_PAUSED, NEDAPAY_APP_URL } from '@/lib/wallet-gating'
 
 import { NotificationCenter } from '@/app/app/_components/NotificationCenter'
 import { MobileSidebar } from './_components/MobileSidebar'
@@ -30,6 +31,30 @@ export default async function UserLayout({ children }: { children: ReactNode }) 
   // redirect loop); once approved, the next load auto-provisions their wallet.
   // Existing users have wallets and never see this.
   if (!wallet) {
+    // Pilot capacity: while direct-app sign-ups are paused, wallet-less
+    // accounts (= new sign-ups, however they got here) are handed to NEDApay
+    // instead of the NIDA form. Users with approved KYC were provisioned
+    // above; wallet holders never reach this branch.
+    if (DIRECT_APP_SIGNUP_PAUSED) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-[#0d0d14] px-6 text-center">
+          <div className="max-w-md">
+            <h1 className="text-2xl font-semibold text-white">Continue in NEDApay</h1>
+            <p className="mt-3 text-sm leading-relaxed text-white/60">
+              Our Bank of Tanzania sandbox pilot on this app is at capacity, so new nTZS accounts
+              are activated in the NEDApay app instead. Existing accounts are unaffected.
+            </p>
+            <a
+              href={NEDAPAY_APP_URL}
+              className="mt-6 inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+            >
+              Open NEDApay →
+            </a>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0d0d14] px-6 text-center">
         <div className="max-w-md">

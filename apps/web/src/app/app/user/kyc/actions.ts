@@ -12,6 +12,8 @@ import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
 import { isValidTanzanianPhone } from '@/lib/psp'
 import { users } from '@ntzs/db'
+import { getCachedWallet } from '@/lib/user/cachedWallet'
+import { DIRECT_APP_SIGNUP_PAUSED } from '@/lib/wallet-gating'
 
 export interface NidaFormState {
   error: string | null
@@ -75,6 +77,20 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
 
   if (latest[0]?.status === 'approved') {
     redirect(redirectTo)
+  }
+
+  // Pilot capacity gate (below the approved-user redirect so nobody already
+  // through is blocked): while direct-app sign-ups are paused, a wallet-less
+  // account is a new sign-up and cannot start verification here — this is the
+  // server-side belt behind the sign-up page hand-off. Existing wallet
+  // holders may still verify (retro-KYC of the live cohort).
+  if (DIRECT_APP_SIGNUP_PAUSED) {
+    const wallet = await getCachedWallet(dbUser.id)
+    if (!wallet) {
+      return {
+        error: 'New sign-ups on this app are paused — create your account in the NEDApay app at app.nedapay.xyz.',
+      }
+    }
   }
 
   const verification = await verifyNidaNumber(normalized)
