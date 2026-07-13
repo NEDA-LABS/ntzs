@@ -3,10 +3,21 @@
  *
  * POST {SELCOM_IDENTITY_URL}/neda/get_user_data_by_nida with headers
  * api_key + api_digest, where api_digest = SHA-256(api_key + api_secret) hex —
- * per Selcom's NEDA Labs Postman collection. Given a NIDA (Tanzanian National
- * ID) number it returns the registered holder's records; we treat a positive
- * match as the KYC-verified identity required by BoT Testing Parameter 8 and
- * record it as a kyc_cases row (provider 'selcom_nida').
+ * per Selcom's NEDA Labs Postman collection. As of 13 Jul 2026 the endpoint
+ * REQUIRES the pair { nida_number, mobile_number } and verifies them against
+ * Selcom's own KYC'd customer base (Selcom Pesa): a successful response means
+ * the phone is registered to that NIDA holder — identity AND binding in one
+ * call. We treat that as the KYC-verified identity required by BoT Testing
+ * Parameter 8 and record it as a kyc_cases row (provider 'selcom_nida').
+ *
+ * Probed response contract (all HTTP 200 with in-body status_code):
+ *  - pair matches:      status_code 200, response = { record incl. mobile_number echo }
+ *  - phone ≠ NIDA:      status_code 400, "Mobile number does not match with the NIDA number."
+ *  - NIDA not in base:  status_code 400, "NIDA number is not found!" (genuine
+ *    NIDAs of non–Selcom-Pesa customers land here too — coverage, not fraud)
+ *  - missing field:     status_code 400, "\"mobile_number\" is required"
+ *  - mobile_number accepts 9-digit local or 0-prefixed; 255-prefixed is
+ *    treated as a MISMATCH, so always send the 9 significant digits.
  *
  * FAIL-CLOSED by design: missing credentials, network errors, or an
  * unrecognized response shape all yield 'unavailable' — never 'verified'.
@@ -27,9 +38,23 @@ export function normalizeNidaNumber(input: string): string | null {
   return digits
 }
 
+/**
+ * Selcom's mobile_number format: the 9 significant digits of a Tanzanian
+ * mobile (probed: '744277496' and '0744277496' verify; '255744277496' is
+ * treated as a MISMATCH — so 255/+255/0 prefixes must be stripped).
+ */
+export function toSelcomMobileNumber(phone: string): string | null {
+  const digits = (phone ?? '').replace(/\D/g, '')
+  if (digits.length < 9) return null
+  const nine = digits.slice(-9)
+  return /^[67]\d{8}$/.test(nine) ? nine : null
+}
+
 export type SelcomVerification =
   | { status: 'verified'; reference: string | null; fullName: string | null; responseKeys: string[] }
   | { status: 'not_found'; message: string | null; responseKeys: string[] }
+  /** The NIDA exists in Selcom's base but the phone is registered to someone else — hard fail. */
+  | { status: 'mismatch'; message: string | null; responseKeys: string[] }
   | { status: 'unavailable'; error: string }
 
 /** Shallow map with lowercased keys, so Result/RESULT/result all match. */
@@ -112,6 +137,18 @@ export function interpretSelcomResponse(httpStatus: number, body: unknown): Selc
 
   if (failed || (succeeded && !record)) {
     const message = typeof o.message === 'string' ? o.message : null
+    // A request-validation complaint ("\"mobile_number\" is required") is OUR
+    // client/contract problem, not a verdict on the person — never surface it
+    // as an identity failure.
+    if (message && /is required/i.test(message)) {
+      return { status: 'unavailable', error: `Selcom rejected the request: ${message}` }
+    }
+    // Pair mismatch: the NIDA is known to Selcom but the phone belongs to
+    // someone else. Distinct from not_found so callers reject with the right
+    // copy and audit reason.
+    if (message && /mobile\s*number.*not\s*match/i.test(message)) {
+      return { status: 'mismatch', message, responseKeys: keys }
+    }
     return { status: 'not_found', message, responseKeys: keys }
   }
 
@@ -119,11 +156,13 @@ export function interpretSelcomResponse(httpStatus: number, body: unknown): Selc
 }
 
 /**
- * Verify a NIDA number against Selcom Identity. Fail-closed: any configuration,
- * network, or shape problem returns 'unavailable' — callers must not issue a
- * wallet on anything except 'verified'.
+ * Verify a NIDA + mobile pair against Selcom Identity (the endpoint requires
+ * both since 13 Jul 2026; success also proves the phone is registered to the
+ * NIDA holder). Fail-closed: any configuration, network, or shape problem
+ * returns 'unavailable' — callers must not issue a wallet on anything except
+ * 'verified'.
  */
-export async function verifyNidaNumber(nidaNumber: string): Promise<SelcomVerification> {
+export async function verifyNidaNumber(nidaNumber: string, phone: string): Promise<SelcomVerification> {
   const apiKey = process.env.SELCOM_IDENTITY_API_KEY
   const apiSecret = process.env.SELCOM_IDENTITY_API_SECRET
   const baseUrl = (process.env.SELCOM_IDENTITY_URL || 'https://identity.selcommobile.com/api/v2').replace(/\/$/, '')
@@ -137,6 +176,11 @@ export async function verifyNidaNumber(nidaNumber: string): Promise<SelcomVerifi
     return { status: 'not_found', message: 'Invalid NIDA number format (20 digits required)', responseKeys: [] }
   }
 
+  const mobile = toSelcomMobileNumber(phone)
+  if (!mobile) {
+    return { status: 'not_found', message: 'Invalid Tanzanian mobile number format', responseKeys: [] }
+  }
+
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 20_000)
@@ -147,7 +191,7 @@ export async function verifyNidaNumber(nidaNumber: string): Promise<SelcomVerifi
         api_digest: computeSelcomDigest(apiKey, apiSecret),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ nida_number: normalized }),
+      body: JSON.stringify({ nida_number: normalized, mobile_number: mobile }),
       signal: controller.signal,
     })
     clearTimeout(timer)

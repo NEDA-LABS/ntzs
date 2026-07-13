@@ -93,11 +93,28 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     }
   }
 
-  const verification = await verifyNidaNumber(normalized)
+  // Selcom verifies the NIDA + phone as a pair (both required since 13 Jul
+  // 2026); a success also proves the phone is registered to the NIDA holder.
+  const verification = await verifyNidaNumber(normalized, phoneInput)
 
   if (verification.status === 'unavailable') {
     console.error('[kyc] verification unavailable:', verification.error)
     return { error: 'Identity verification is temporarily unavailable. Please try again shortly.' }
+  }
+
+  if (verification.status === 'mismatch') {
+    // NIDA known to Selcom, phone registered to someone else — hard fail.
+    await db.insert(kycCases).values({
+      userId: dbUser.id,
+      nationalId: normalized,
+      status: 'rejected',
+      provider: 'selcom_nida',
+      reviewedAt: new Date(),
+      reviewReason: `Selcom pair check failed: ${verification.message || 'mobile number does not match NIDA'}`,
+    })
+    invalidateKycCache(dbUser.id)
+    revalidatePath('/app/user/kyc')
+    return { error: 'This mobile number is not registered to the holder of this NIDA number. Use the mobile money number registered in your own name.' }
   }
 
   if (verification.status === 'not_found') {
@@ -107,11 +124,12 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
       status: 'rejected',
       provider: 'selcom_nida',
       reviewedAt: new Date(),
+      // Audit keeps the vendor's exact verdict; the user sees our copy below.
       reviewReason: verification.message || 'NIDA number could not be verified',
     })
     invalidateKycCache(dbUser.id)
     revalidatePath('/app/user/kyc')
-    return { error: verification.message || 'This NIDA number could not be verified. Check it and try again.' }
+    return { error: 'We could not verify this NIDA and mobile number together. Check both are correct and try again — if it still fails, contact support and we will verify you manually.' }
   }
 
   // Tier-1 identity binding: where the PSP name-lookup answers, the
@@ -142,7 +160,7 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     provider: 'selcom_nida',
     providerReference: verification.reference,
     reviewedAt: new Date(),
-    reviewReason: `${verification.fullName ? `NIDA holder: ${verification.fullName}` : 'NIDA verified via Selcom Identity'} · ${binding.evidence}`,
+    reviewReason: `${verification.fullName ? `NIDA holder: ${verification.fullName}` : 'NIDA verified via Selcom Identity'} · Selcom NIDA+MSISDN pair verified · ${binding.evidence}`,
   })
 
   await db.update(users).set({ phone: binding.phone, updatedAt: new Date() }).where(eq(users.id, dbUser.id))
