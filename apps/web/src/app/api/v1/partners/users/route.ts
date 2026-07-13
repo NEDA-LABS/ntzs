@@ -132,7 +132,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const verification = await verifyNidaNumber(normalizedNida)
+  // Selcom verifies the NIDA + phone as a PAIR (both required since 13 Jul
+  // 2026), so the phone must be valid before verification can run.
+  if (!phone || !isValidTanzanianPhone(phone)) {
+    return NextResponse.json(
+      { error: 'A valid Tanzanian phone number is required to create a wallet.', code: 'phone_required' },
+      { status: 400 }
+    )
+  }
+
+  const verification = await verifyNidaNumber(normalizedNida, phone)
   if (verification.status === 'unavailable') {
     console.error('[partners/users] KYC verification unavailable:', verification.error)
     return NextResponse.json(
@@ -140,24 +149,25 @@ export async function POST(request: NextRequest) {
       { status: 503 }
     )
   }
+  if (verification.status === 'mismatch') {
+    // NIDA known to Selcom, phone registered to someone else — hard fail.
+    return NextResponse.json(
+      { error: 'This phone number is not registered to the holder of this NIDA number. Use the mobile money number registered in the user’s own name.', code: 'identity_binding_failed' },
+      { status: 400 }
+    )
+  }
   if (verification.status === 'not_found') {
     return NextResponse.json(
-      { error: verification.message || 'NIDA number could not be verified.', code: 'kyc_failed' },
+      { error: 'This NIDA and phone number could not be verified together. Check both are correct and try again.', code: 'kyc_failed' },
       { status: 400 }
     )
   }
   const kyc = { nidaNumber: normalizedNida, reference: verification.reference, fullName: verification.fullName }
 
-  // Tier-1 identity binding: the phone must be a Tanzanian mobile-money line;
-  // where the PSP name-lookup answers, its telco-registered identity must match
-  // the NIDA holder (hard fail on mismatch). No answer => proceed, evidence
-  // recorded as unverified.
-  if (!phone || !isValidTanzanianPhone(phone)) {
-    return NextResponse.json(
-      { error: 'A valid Tanzanian phone number is required to create a wallet.', code: 'phone_required' },
-      { status: 400 }
-    )
-  }
+  // Tier-1 identity binding (supplementary evidence): where the PSP
+  // name-lookup answers, its telco-registered identity must also match the
+  // NIDA holder (hard fail on mismatch). No answer => proceed, evidence
+  // recorded — Selcom's pair verification above is the primary binding.
   const binding = await bindPhoneToNidaIdentity({ phone, nidaNumber: normalizedNida, nidaFullName: kyc.fullName })
   if (binding.outcome === 'mismatch') {
     return NextResponse.json(
@@ -209,7 +219,7 @@ export async function POST(request: NextRequest) {
     provider: 'selcom_nida',
     providerReference: kyc.reference,
     reviewedAt: new Date(),
-    reviewReason: `${kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity'} · ${binding.evidence}`,
+    reviewReason: `${kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity'} · Selcom NIDA+MSISDN pair verified · ${binding.evidence}`,
   })
 
   // ── Ensure partner has HD seed ──────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { computeSelcomDigest, normalizeNidaNumber, interpretSelcomResponse } from './selcom'
+import { computeSelcomDigest, normalizeNidaNumber, toSelcomMobileNumber, interpretSelcomResponse } from './selcom'
 
 describe('computeSelcomDigest (Selcom api_digest scheme)', () => {
   it('is SHA-256(api_key + api_secret) as lowercase hex', () => {
@@ -27,6 +27,23 @@ describe('normalizeNidaNumber', () => {
     expect(normalizeNidaNumber('1234')).toBeNull()
     expect(normalizeNidaNumber('19990102-61401-00001-2X')).toBeNull()
     expect(normalizeNidaNumber('')).toBeNull()
+  })
+})
+
+describe('toSelcomMobileNumber (9 significant digits — probed contract)', () => {
+  it('strips local, international and formatted prefixes to 9 digits', () => {
+    expect(toSelcomMobileNumber('0744000001')).toBe('744000001')
+    expect(toSelcomMobileNumber('255744000001')).toBe('744000001')
+    expect(toSelcomMobileNumber('+255 766 000 002')).toBe('766000002')
+    expect(toSelcomMobileNumber('744000001')).toBe('744000001')
+    expect(toSelcomMobileNumber('0629-000-003')).toBe('629000003')
+  })
+
+  it('rejects short, empty, and non-mobile numbers', () => {
+    expect(toSelcomMobileNumber('12345')).toBeNull()
+    expect(toSelcomMobileNumber('')).toBeNull()
+    // Dar landline: last 9 digits start with 2, not a mobile range
+    expect(toSelcomMobileNumber('0222110110')).toBeNull()
   })
 })
 
@@ -104,5 +121,54 @@ describe('interpretSelcomResponse (fail-closed verification)', () => {
     expect(interpretSelcomResponse(200, { hello: 'world' }).status).toBe('unavailable')
     expect(interpretSelcomResponse(200, null).status).toBe('unavailable')
     expect(interpretSelcomResponse(500, { result: 'SUCCESS', data: [{ firstname: 'X' }] }).status).toBe('unavailable')
+  })
+})
+
+describe('interpretSelcomResponse — pair contract shapes probed live on 13 Jul 2026', () => {
+  it('verifies the pair-success shape (response as OBJECT, numeric mobile_number echo)', () => {
+    const r = interpretSelcomResponse(200, {
+      status_code: 200,
+      message: 'Data is fetched Successfully',
+      response: {
+        first_name: 'ASHA',
+        last_name: 'MRISHO',
+        middle_name: 'JUMA',
+        nida_number: '19990102-61401-00001-20',
+        mobile_number: 744000001,
+        country_code: '255',
+        gender: 'FEMALE',
+        nationality: 'TANZANIAN',
+      },
+      app_data: { version: {}, access_token: '' },
+    })
+    expect(r.status).toBe('verified')
+    if (r.status === 'verified') expect(r.fullName).toBe('ASHA JUMA MRISHO')
+  })
+
+  it('maps the pair-mismatch message to mismatch (phone belongs to someone else)', () => {
+    const r = interpretSelcomResponse(200, {
+      message: 'Mobile number does not match with the NIDA number.',
+      status_code: 400,
+      app_data: {},
+    })
+    expect(r.status).toBe('mismatch')
+  })
+
+  it('maps "NIDA number is not found!" to not_found (incl. genuine non-Selcom-Pesa users)', () => {
+    const r = interpretSelcomResponse(200, {
+      message: 'NIDA number is not found!',
+      status_code: 400,
+      app_data: {},
+    })
+    expect(r.status).toBe('not_found')
+  })
+
+  it('maps request-validation complaints to unavailable, never an identity verdict', () => {
+    const r = interpretSelcomResponse(200, {
+      status_code: 400,
+      message: '"mobile_number" is required',
+      app_data: {},
+    })
+    expect(r.status).toBe('unavailable')
   })
 })
