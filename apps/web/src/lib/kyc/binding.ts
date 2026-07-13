@@ -59,6 +59,10 @@ export async function bindPhoneToNidaIdentity(opts: {
     if (match.comparable) {
       return { outcome: 'mismatch', phone, evidence: `MSISDN registered name does not match NIDA holder (${match.matchedTokens} components)` }
     }
+    // Lookup answered but there is no NIDA-side name to compare against
+    // (e.g. Selcom had no record). Surface the registered name so a human
+    // reviewer can compare it manually.
+    return { outcome: 'unverified', phone, evidence: `MSISDN registered to "${lookup.name}" (telco registration; no NIDA-side name to auto-compare)` }
   }
 
   return { outcome: 'unverified', phone, evidence: 'MSISDN binding unavailable (no lookup evidence) — NIDA-only verification' }
