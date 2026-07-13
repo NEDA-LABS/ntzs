@@ -43,6 +43,11 @@ export function NidaVerifyForm({ redirectTo = '/app/user' }: { redirectTo?: stri
           {state.error}
         </p>
       )}
+      {state.notice && (
+        <p className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs leading-relaxed text-emerald-100">
+          {state.notice}
+        </p>
+      )}
     </form>
   )
 }

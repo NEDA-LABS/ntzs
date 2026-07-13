@@ -139,10 +139,21 @@ export async function lookupAccountName(
     : { name: null, phone: snippe.normalizePhone(phone) }
 }
 
+/**
+ * Telco SIM-registration evidence is PSP-independent (Tier B of the KYC
+ * ladder): attempt the AzamPay lookup whenever its credentials are configured,
+ * even while Snippe moves the money. azampay.lookupRecipientName never throws.
+ */
+function azamPayLookupConfigured(): boolean {
+  return Boolean(
+    process.env.AZAMPAY_APP_NAME && process.env.AZAMPAY_CLIENT_ID && process.env.AZAMPAY_CLIENT_SECRET
+  )
+}
+
 export async function lookupRecipientName(
   phone: string
 ): Promise<{ name: string | null; idNumber?: string }> {
-  return useAzamPay() ? azampay.lookupRecipientName(phone) : { name: null }
+  return useAzamPay() || azamPayLookupConfigured() ? azampay.lookupRecipientName(phone) : { name: null }
 }
 
 // ─── Card payments — always Snippe ───────────────────────────────────────────

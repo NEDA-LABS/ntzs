@@ -10,13 +10,16 @@ import { kycCases } from '@ntzs/db'
 import { invalidateKycCache } from '@/lib/user/cachedQueries'
 import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
-import { isValidTanzanianPhone } from '@/lib/psp'
+import { runIdentityLadder } from '@/lib/kyc/ladder'
+import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
 import { users } from '@ntzs/db'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { DIRECT_APP_SIGNUP_PAUSED } from '@/lib/wallet-gating'
 
 export interface NidaFormState {
   error: string | null
+  /** Non-error outcome that keeps the user on the form (e.g. sent to manual review). */
+  notice?: string | null
 }
 
 /**
@@ -52,13 +55,14 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
 
   const { db, sql: rawSql } = getDb()
 
-  // Policy: one NIDA backs at most one direct-app wallet. (Partner-scoped
-  // uniqueness is enforced separately in the WaaS routes.)
+  // Policy: one NIDA backs at most one direct-app wallet — 'pending' counts,
+  // so a NIDA under review can't be claimed twice. (Partner-scoped uniqueness
+  // is enforced separately in the WaaS routes.)
   const dupes = await rawSql<{ id: string }[]>`
     select kc.id
     from kyc_cases kc
     left join partner_users pu on pu.user_id = kc.user_id
-    where kc.status = 'approved'
+    where kc.status in ('approved', 'pending')
       and kc.user_id != ${dbUser.id}
       and pu.user_id is null
       and regexp_replace(kc.national_id, '\\D', '', 'g') = ${normalized}
@@ -79,6 +83,13 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     redirect(redirectTo)
   }
 
+  if (latest[0]?.status === 'pending') {
+    return {
+      error: null,
+      notice: 'Your identity verification is already under manual review — no need to resubmit. You will be able to continue once it completes.',
+    }
+  }
+
   // Pilot capacity gate (below the approved-user redirect so nobody already
   // through is blocked): while direct-app sign-ups are paused, a wallet-less
   // account is a new sign-up and cannot start verification here — this is the
@@ -93,77 +104,59 @@ export async function verifyNidaAction(_prev: NidaFormState, formData: FormData)
     }
   }
 
-  // Selcom verifies the NIDA + phone as a pair (both required since 13 Jul
-  // 2026); a success also proves the phone is registered to the NIDA holder.
-  const verification = await verifyNidaNumber(normalized, phoneInput)
+  // Risk-tiered verification ladder (see lib/kyc/ladder.ts): Selcom pair
+  // check (Tier A) → telco SIM-registration evidence (Tier B) → manual
+  // review queue (Tier C). No outcome is a dead end.
+  const verdict = await runIdentityLadder(
+    { verifyPair: verifyNidaNumber, bindPhone: bindPhoneToNidaIdentity },
+    { nidaNumber: normalized, phone: phoneInput }
+  )
 
-  if (verification.status === 'unavailable') {
-    console.error('[kyc] verification unavailable:', verification.error)
-    return { error: 'Identity verification is temporarily unavailable. Please try again shortly.' }
+  if (verdict.outcome === 'unavailable') {
+    console.error('[kyc] verification unavailable:', verdict.error)
+    return { error: verdict.userMessage }
   }
 
-  if (verification.status === 'mismatch') {
-    // NIDA known to Selcom, phone registered to someone else — hard fail.
+  if (verdict.outcome === 'rejected') {
     await db.insert(kycCases).values({
       userId: dbUser.id,
       nationalId: normalized,
       status: 'rejected',
       provider: 'selcom_nida',
       reviewedAt: new Date(),
-      reviewReason: `Selcom pair check failed: ${verification.message || 'mobile number does not match NIDA'}`,
+      reviewReason: verdict.evidence,
     })
     invalidateKycCache(dbUser.id)
     revalidatePath('/app/user/kyc')
-    return { error: 'This mobile number is not registered to the holder of this NIDA number. Use the mobile money number registered in your own name.' }
+    return { error: verdict.userMessage }
   }
 
-  if (verification.status === 'not_found') {
+  if (verdict.outcome === 'review') {
+    // Tier C: park as 'pending' for maker-checker review in Backstage → KYC.
     await db.insert(kycCases).values({
       userId: dbUser.id,
       nationalId: normalized,
-      status: 'rejected',
+      status: 'pending',
       provider: 'selcom_nida',
-      reviewedAt: new Date(),
-      // Audit keeps the vendor's exact verdict; the user sees our copy below.
-      reviewReason: verification.message || 'NIDA number could not be verified',
+      reviewReason: verdict.evidence,
     })
+    await db.update(users).set({ phone: normalizePhone(phoneInput), updatedAt: new Date() }).where(eq(users.id, dbUser.id))
     invalidateKycCache(dbUser.id)
     revalidatePath('/app/user/kyc')
-    return { error: 'We could not verify this NIDA and mobile number together. Check both are correct and try again — if it still fails, contact support and we will verify you manually.' }
-  }
-
-  // Tier-1 identity binding: where the PSP name-lookup answers, the
-  // telco-registered identity behind the phone must match the NIDA holder.
-  const binding = await bindPhoneToNidaIdentity({
-    phone: phoneInput,
-    nidaNumber: normalized,
-    nidaFullName: verification.fullName,
-  })
-  if (binding.outcome === 'mismatch') {
-    await db.insert(kycCases).values({
-      userId: dbUser.id,
-      nationalId: normalized,
-      status: 'rejected',
-      provider: 'selcom_nida',
-      reviewedAt: new Date(),
-      reviewReason: `Identity binding failed: ${binding.evidence}`,
-    })
-    invalidateKycCache(dbUser.id)
-    revalidatePath('/app/user/kyc')
-    return { error: 'This phone number is registered to a different person than the NIDA provided.' }
+    return { error: null, notice: verdict.userMessage }
   }
 
   await db.insert(kycCases).values({
     userId: dbUser.id,
     nationalId: normalized,
     status: 'approved',
-    provider: 'selcom_nida',
-    providerReference: verification.reference,
+    provider: verdict.provider,
+    providerReference: verdict.reference,
     reviewedAt: new Date(),
-    reviewReason: `${verification.fullName ? `NIDA holder: ${verification.fullName}` : 'NIDA verified via Selcom Identity'} · Selcom NIDA+MSISDN pair verified · ${binding.evidence}`,
+    reviewReason: verdict.evidence,
   })
 
-  await db.update(users).set({ phone: binding.phone, updatedAt: new Date() }).where(eq(users.id, dbUser.id))
+  await db.update(users).set({ phone: normalizePhone(phoneInput), updatedAt: new Date() }).where(eq(users.id, dbUser.id))
 
   invalidateKycCache(dbUser.id)
   revalidatePath('/app/user/kyc')

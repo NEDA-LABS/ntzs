@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 import { requireAnyRole, getCurrentDbUser } from '@/lib/auth/rbac'
@@ -17,24 +17,48 @@ async function updateKycStatusAction(formData: FormData) {
 
   const kycCaseId = String(formData.get('kycCaseId') ?? '')
   const status = String(formData.get('status') ?? '') as 'approved' | 'rejected'
-  const reason = String(formData.get('reason') ?? '')
+  const reason = String(formData.get('reason') ?? '').trim()
 
   if (!kycCaseId || !['approved', 'rejected'].includes(status)) {
     throw new Error('Invalid parameters')
   }
+  // A rejection without a reason is unauditable — the user needs to know what
+  // to fix and the BoT file needs the why.
+  if (status === 'rejected' && !reason) {
+    throw new Error('A reason is required to reject a KYC case')
+  }
 
   const { db } = getDb()
 
-  await db
+  const [existing] = await db
+    .select({ status: kycCases.status, reviewReason: kycCases.reviewReason })
+    .from(kycCases)
+    .where(eq(kycCases.id, kycCaseId))
+    .limit(1)
+  if (!existing) throw new Error('KYC case not found')
+
+  // Preserve the ladder's collected evidence — the review decision appends to
+  // it rather than overwriting the audit trail.
+  const combinedReason = reason
+    ? `${existing.reviewReason ? `${existing.reviewReason} · ` : ''}Review: ${reason}`
+    : existing.reviewReason
+
+  // Only pending cases are reviewable (claim-style condition — a decided case
+  // can never be flipped by a second click or a stale tab).
+  const updated = await db
     .update(kycCases)
     .set({
       status,
       reviewedByUserId: currentUser.id,
       reviewedAt: new Date(),
-      reviewReason: reason || null,
+      reviewReason: combinedReason,
       updatedAt: new Date(),
     })
-    .where(eq(kycCases.id, kycCaseId))
+    .where(and(eq(kycCases.id, kycCaseId), eq(kycCases.status, 'pending')))
+    .returning({ id: kycCases.id })
+  if (updated.length === 0) {
+    throw new Error('Only pending cases can be reviewed (this one may have just been decided)')
+  }
 
   await writeAuditLog(`kyc.${status}`, 'kyc_case', kycCaseId, { reason: reason || null }, currentUser.id)
 
@@ -159,7 +183,7 @@ export default async function KycPage() {
                       </td>
                       <td className="px-6 py-4">
                         {kyc.status === 'pending' ? (
-                          <div className="flex gap-2">
+                          <div className="flex flex-col gap-1.5">
                             <form action={updateKycStatusAction}>
                               <input type="hidden" name="kycCaseId" value={kyc.id} />
                               <input type="hidden" name="status" value="approved" />
@@ -170,9 +194,15 @@ export default async function KycPage() {
                                 Approve
                               </SubmitButton>
                             </form>
-                            <form action={updateKycStatusAction}>
+                            <form action={updateKycStatusAction} className="flex items-center gap-1.5">
                               <input type="hidden" name="kycCaseId" value={kyc.id} />
                               <input type="hidden" name="status" value="rejected" />
+                              <input
+                                type="text"
+                                name="reason"
+                                placeholder="Rejection reason (required)"
+                                className="w-40 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/50"
+                              />
                               <SubmitButton
                                 pendingText="Rejecting..."
                                 className="rounded-lg bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-400 hover:bg-rose-500/20"

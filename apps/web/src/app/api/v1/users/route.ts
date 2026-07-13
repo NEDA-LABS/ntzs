@@ -1,11 +1,12 @@
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, desc, inArray } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL } from '@/lib/env'
 import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
-import { isValidTanzanianPhone } from '@/lib/psp'
+import { runIdentityLadder } from '@/lib/kyc/ladder'
+import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { users, wallets, partnerUsers, partners, kycCases } from '@ntzs/db'
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
     .select({
       userId: partnerUsers.userId,
       externalId: partnerUsers.externalId,
+      walletIndex: partnerUsers.walletIndex,
     })
     .from(partnerUsers)
     .where(
@@ -75,11 +77,51 @@ export async function POST(request: NextRequest) {
       .where(eq(users.id, existing.userId))
       .limit(1)
 
-    const [wallet] = await db
+    let [wallet] = await db
       .select({ address: wallets.address })
       .from(wallets)
       .where(and(eq(wallets.userId, existing.userId), eq(wallets.chain, 'base')))
       .limit(1)
+
+    // A mapping without a wallet is a Tier-C (manual review) user: provision
+    // the wallet once the review approved, otherwise report the KYC status so
+    // the partner app can show "pending review" instead of retrying blindly.
+    if (!wallet) {
+      const [latestCase] = await db
+        .select({ status: kycCases.status })
+        .from(kycCases)
+        .where(eq(kycCases.userId, existing.userId))
+        .orderBy(desc(kycCases.createdAt))
+        .limit(1)
+
+      if (latestCase?.status === 'approved' && partner.encryptedHdSeed && existing.walletIndex !== null) {
+        const address = deriveAddress(partner.encryptedHdSeed, existing.walletIndex)
+        await db
+          .insert(wallets)
+          .values({ userId: existing.userId, chain: 'base', address, provider: 'external' })
+        ;[wallet] = await db
+          .select({ address: wallets.address })
+          .from(wallets)
+          .where(and(eq(wallets.userId, existing.userId), eq(wallets.chain, 'base')))
+          .limit(1)
+        if (BASE_RPC_URL) {
+          fundWalletWithGas({ toAddress: address, rpcUrl: BASE_RPC_URL }).catch((err) =>
+            console.error('[v1/users] Gas prefund failed for', address, err?.message)
+          )
+        }
+      } else {
+        return NextResponse.json({
+          id: existing.userId,
+          externalId: existing.externalId,
+          email: user?.email,
+          name: user?.name || null,
+          phone: user?.phone,
+          walletAddress: null,
+          balance: 0,
+          kycStatus: latestCase?.status === 'pending' ? 'pending_review' : latestCase?.status ?? 'none',
+        })
+      }
+    }
 
     return NextResponse.json({
       id: existing.userId,
@@ -109,7 +151,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid NIDA number format (20 digits required).', code: 'kyc_failed' }, { status: 400 })
   }
 
-  // Policy: one NIDA backs at most ONE wallet per partner.
+  // Policy: one NIDA backs at most ONE wallet per partner ('pending' counts —
+  // a NIDA under review must not be registrable twice).
   const [nidaTaken] = await db
     .select({ id: kycCases.id })
     .from(kycCases)
@@ -117,14 +160,14 @@ export async function POST(request: NextRequest) {
     .where(
       and(
         eq(partnerUsers.partnerId, partner.id),
-        eq(kycCases.status, 'approved'),
+        inArray(kycCases.status, ['approved', 'pending']),
         sql`regexp_replace(${kycCases.nationalId}, '\\D', '', 'g') = ${normalizedNida}`
       )
     )
     .limit(1)
   if (nidaTaken) {
     return NextResponse.json(
-      { error: 'This NIDA number is already linked to a wallet with this partner.', code: 'nida_already_registered' },
+      { error: 'This NIDA number is already linked to a wallet (or a verification under review) with this partner.', code: 'nida_already_registered' },
       { status: 409 }
     )
   }
@@ -138,52 +181,40 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const verification = await verifyNidaNumber(normalizedNida, phone)
-  if (verification.status === 'unavailable') {
-    console.error('[v1/users] KYC verification unavailable:', verification.error)
+  // Risk-tiered verification ladder (see lib/kyc/ladder.ts): Selcom pair
+  // check (Tier A) → telco SIM-registration evidence (Tier B) → manual
+  // review queue (Tier C). No outcome is a dead end.
+  const verdict = await runIdentityLadder(
+    { verifyPair: verifyNidaNumber, bindPhone: bindPhoneToNidaIdentity },
+    { nidaNumber: normalizedNida, phone }
+  )
+
+  if (verdict.outcome === 'unavailable') {
+    console.error('[v1/users] KYC verification unavailable:', verdict.error)
     return NextResponse.json(
-      { error: 'Identity verification is temporarily unavailable — try again shortly.', code: 'kyc_unavailable' },
+      { error: verdict.userMessage, code: 'kyc_unavailable' },
       { status: 503 }
     )
   }
-  if (verification.status === 'mismatch') {
-    // NIDA known to Selcom, phone registered to someone else — hard fail.
+  if (verdict.outcome === 'rejected') {
     return NextResponse.json(
-      { error: 'This phone number is not registered to the holder of this NIDA number. Use the mobile money number registered in the user’s own name.', code: 'identity_binding_failed' },
-      { status: 400 }
-    )
-  }
-  if (verification.status === 'not_found') {
-    return NextResponse.json(
-      { error: 'This NIDA and phone number could not be verified together. Check both are correct and try again.', code: 'kyc_failed' },
-      { status: 400 }
-    )
-  }
-  const kyc = { nidaNumber: normalizedNida, reference: verification.reference, fullName: verification.fullName }
-
-  // Tier-1 identity binding (supplementary evidence): where the PSP
-  // name-lookup answers, its telco-registered identity must also match the
-  // NIDA holder (hard fail on mismatch). No answer => proceed, evidence
-  // recorded — Selcom's pair verification above is the primary binding.
-  const binding = await bindPhoneToNidaIdentity({ phone, nidaNumber: normalizedNida, nidaFullName: kyc.fullName })
-  if (binding.outcome === 'mismatch') {
-    return NextResponse.json(
-      { error: 'This phone number is registered to a different person than the NIDA provided.', code: 'identity_binding_failed' },
+      { error: verdict.userMessage, code: verdict.code },
       { status: 400 }
     )
   }
 
-  // Create new user
+  // Create new user (both for instant approval and Tier-C review — a review
+  // user exists without a wallet until Backstage approves the case).
   // Use a generated neonAuthUserId placeholder for WaaS-created users
   const neonAuthUserId = `waas_${partner.id}_${externalId}`
-  
+
   const [newUser] = await db
     .insert(users)
     .values({
       neonAuthUserId,
       email,
       name: name || null,
-      phone: binding.phone,
+      phone: normalizePhone(phone),
       role: 'end_user',
     })
     .onConflictDoNothing()
@@ -215,16 +246,27 @@ export async function POST(request: NextRequest) {
     userPhone = existingUser.phone
   }
 
-  // Record the verified identity link (BoT Para 8) before issuing the wallet.
-  await db.insert(kycCases).values({
-    userId,
-    nationalId: kyc.nidaNumber,
-    status: 'approved',
-    provider: 'selcom_nida',
-    providerReference: kyc.reference,
-    reviewedAt: new Date(),
-    reviewReason: `${kyc.fullName ? `NIDA holder: ${kyc.fullName}` : 'NIDA verified via Selcom Identity'} · Selcom NIDA+MSISDN pair verified · ${binding.evidence}`,
-  })
+  // Record the identity link (BoT Para 8) before issuing the wallet:
+  // instant approval for Tier-A verdicts, 'pending' for Tier-C review.
+  await db.insert(kycCases).values(
+    verdict.outcome === 'approved'
+      ? {
+          userId,
+          nationalId: normalizedNida,
+          status: 'approved' as const,
+          provider: verdict.provider,
+          providerReference: verdict.reference,
+          reviewedAt: new Date(),
+          reviewReason: verdict.evidence,
+        }
+      : {
+          userId,
+          nationalId: normalizedNida,
+          status: 'pending' as const,
+          provider: 'selcom_nida',
+          reviewReason: verdict.evidence,
+        }
+  )
 
   // Ensure partner has an HD seed (auto-generate on first user creation)
   let encryptedSeed = partner.encryptedHdSeed
@@ -264,6 +306,28 @@ export async function POST(request: NextRequest) {
       walletIndex,
     })
     .onConflictDoNothing()
+
+  // Tier C: the user + mapping exist (walletIndex claimed so the address is
+  // deterministic), but NO wallet until Backstage approves the pending case.
+  // The partner re-calls this endpoint (idempotent) and gets the wallet once
+  // approval lands.
+  if (verdict.outcome !== 'approved') {
+    return NextResponse.json(
+      {
+        id: userId,
+        externalId,
+        email: userEmail,
+        name: userName,
+        phone: userPhone,
+        walletAddress: null,
+        balance: 0,
+        kycStatus: 'pending_review',
+        code: 'kyc_pending_review',
+        message: verdict.userMessage,
+      },
+      { status: 202 }
+    )
+  }
 
   // Check if wallet already exists for this user on Base
   let [wallet] = await db
