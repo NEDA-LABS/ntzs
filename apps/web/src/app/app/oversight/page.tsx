@@ -13,6 +13,8 @@ import {
   wallets,
   burnRequests,
   attestations,
+  partnerUsers,
+  partners,
 } from '@ntzs/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { getBalance, ACTIVE_PSP_NAME } from '@/lib/psp'
@@ -60,6 +62,13 @@ export default async function OversightDashboard() {
       approved: sql<number>`count(*) filter (where ${kycCases.status} = 'approved')`.mapWith(Number),
       pending: sql<number>`count(*) filter (where ${kycCases.status} = 'pending')`.mapWith(Number),
       rejected: sql<number>`count(*) filter (where ${kycCases.status} = 'rejected')`.mapWith(Number),
+      // Distinct PERSONS with an approved case — the number that counts
+      // toward the 100-participant pilot cap (Parameter 2).
+      verifiedIdentities: sql<number>`count(distinct ${kycCases.userId}) filter (where ${kycCases.status} = 'approved')`.mapWith(Number),
+      // Tier split: instant provider verification vs human maker-checker
+      // review (reviewed_by_user_id is set only by a human decision).
+      instantApproved: sql<number>`count(*) filter (where ${kycCases.status} = 'approved' and ${kycCases.reviewedByUserId} is null)`.mapWith(Number),
+      humanReviewed: sql<number>`count(*) filter (where ${kycCases.status} = 'approved' and ${kycCases.reviewedByUserId} is not null)`.mapWith(Number),
     })
     .from(kycCases)
 
@@ -71,6 +80,21 @@ export default async function OversightDashboard() {
     })
     .from(kycCases)
     .groupBy(kycCases.provider)
+
+  // Verification split by issuance channel: which surface issued the wallet —
+  // the direct app or a WaaS partner (NEDApay, …). Regulator-legible view of
+  // where participants come from.
+  const kycBySource = await db
+    .select({
+      source: sql<string>`coalesce(${partners.name}, 'Direct app')`,
+      total: sql<number>`count(*)`.mapWith(Number),
+      approved: sql<number>`count(*) filter (where ${kycCases.status} = 'approved')`.mapWith(Number),
+      pending: sql<number>`count(*) filter (where ${kycCases.status} = 'pending')`.mapWith(Number),
+    })
+    .from(kycCases)
+    .leftJoin(partnerUsers, eq(partnerUsers.userId, kycCases.userId))
+    .leftJoin(partners, eq(partners.id, partnerUsers.partnerId))
+    .groupBy(sql`coalesce(${partners.name}, 'Direct app')`)
 
   const today = new Date().toISOString().slice(0, 10)
   const [todayIssuance] = await db
@@ -210,11 +234,20 @@ export default async function OversightDashboard() {
       approved: kycStats?.approved ?? 0,
       pending: kycStats?.pending ?? 0,
       rejected: kycStats?.rejected ?? 0,
+      verifiedIdentities: kycStats?.verifiedIdentities ?? 0,
+      instantApproved: kycStats?.instantApproved ?? 0,
+      humanReviewed: kycStats?.humanReviewed ?? 0,
     },
     kycByProvider: kycByProvider.map(p => ({
       provider: p.provider ?? 'manual',
       count: p.count,
       approved: p.approved,
+    })),
+    kycBySource: kycBySource.map(s => ({
+      source: s.source,
+      total: s.total,
+      approved: s.approved,
+      pending: s.pending,
     })),
     todayIssuance: todayIssuance
       ? { issuedTzs: todayIssuance.issuedTzs, capTzs: todayIssuance.capTzs }
