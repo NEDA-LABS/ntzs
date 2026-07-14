@@ -6,8 +6,8 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
 import {
-  ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
-  isMobilePspConfigured,
+  ADAPTERS,
+  getPayoutRoute,
   isValidTanzanianPhone,
   normalizePhone,
   sendPayout,
@@ -15,12 +15,11 @@ import {
   lookupRecipientName,
 } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { disbursementsPausedReason } from '@/lib/disbursements'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
-// ⚠ Replace with AzamPay's actual fee once confirmed via sandbox/support
-const PSP_FLAT_FEE_TZS = 1500
 const DEFAULT_PLATFORM_FEE_PERCENT = 0.5
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
@@ -41,6 +40,10 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // Kill switch (G3): halt payouts when disbursements are paused.
+  const pausedReason = await disbursementsPausedReason()
+  if (pausedReason) return NextResponse.json({ error: pausedReason }, { status: 503 })
 
   let body: { userId: string; amountTzs: number; phoneNumber: string }
   try {
@@ -102,9 +105,13 @@ export async function POST(request: NextRequest) {
       ? PLATFORM_TREASURY_ADDRESS
       : null
 
-  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate))
-  const burnAmountTzs = Math.ceil((receiveAmountTzs + PSP_FLAT_FEE_TZS) / (1 - feePercent / 100))
-  const platformFeeTzs = burnAmountTzs - receiveAmountTzs - PSP_FLAT_FEE_TZS
+  // Resolve the payout route once (provider + fee) — stamped on the record
+  // below so execution/reconciliation always use this same route.
+  const route = await getPayoutRoute('mobile', { receiveAmountTzs, userId })
+
+  // Gross-up: burnAmount = ceil((receive + pspFee) / (1 - feeRate))
+  const burnAmountTzs = Math.ceil((receiveAmountTzs + route.pspFeeTzs) / (1 - feePercent / 100))
+  const platformFeeTzs = burnAmountTzs - receiveAmountTzs - route.pspFeeTzs
 
   // BoT Sandbox Parameter #3 — per-transaction cap (applied to nTZS burned)
   const perTxnErr = checkPerTransactionCap(burnAmountTzs)
@@ -151,7 +158,7 @@ export async function POST(request: NextRequest) {
         {
           error: 'insufficient_balance',
           message: `Insufficient balance. Available: ${balanceTzs} TZS, need ${burnAmountTzs} TZS to pay out ${receiveAmountTzs} TZS (incl. fees).`,
-          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: PSP_FLAT_FEE_TZS },
+          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: route.pspFeeTzs },
         },
         { status: 400 }
       )
@@ -176,6 +183,8 @@ export async function POST(request: NextRequest) {
         requestedByUserId: userId,
         recipientPhone: phoneNumber,
         platformFeeTzs,
+        payoutProvider: route.provider,
+        pspFeeTzs: route.pspFeeTzs,
       })
       .returning({ id: burnRequests.id, status: burnRequests.status, amountTzs: burnRequests.amountTzs })
 
@@ -190,7 +199,7 @@ export async function POST(request: NextRequest) {
         amountTzs: burn.amountTzs,
         receiveAmountTzs,
         platformFeeTzs,
-        pspFeeTzs: PSP_FLAT_FEE_TZS,
+        pspFeeTzs: route.pspFeeTzs,
         message: 'Withdrawal requires admin approval for amounts >= 1,000,000 TZS.',
       },
       { status: 201 }
@@ -217,6 +226,8 @@ export async function POST(request: NextRequest) {
       requestedByUserId: userId,
       recipientPhone: phoneNumber,
       platformFeeTzs,
+      payoutProvider: route.provider,
+      pspFeeTzs: route.pspFeeTzs,
     })
     .returning({ id: burnRequests.id, amountTzs: burnRequests.amountTzs })
 
@@ -340,10 +351,10 @@ export async function POST(request: NextRequest) {
     await finalizeRevert(reason, res.remintTxHash, res.feeBurnTxHash, res.error)
   }
 
-  // Trigger AzamPay payout
-  if (isMobilePspConfigured()) {
+  // Trigger the payout via the stamped route
+  if (ADAPTERS[route.provider].isConfigured()) {
     const phone = normalizePhone(phoneNumber)
-    const webhookUrl = `${APP_URL}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`
+    const webhookUrl = `${APP_URL}${route.payoutWebhookPath}`
 
     // Name lookup — non-fatal, result stored for audit trail
     const recipientInfo = await lookupRecipientName(phone)
@@ -352,14 +363,17 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const payoutResult = await sendPayout({
-        amountTzs: receiveAmountTzs,
-        recipientPhone: phone,
-        recipientName: recipientInfo.name || 'nTZS User',
-        narration: 'nTZS withdrawal',
-        webhookUrl,
-        metadata: { burn_request_id: burnRequestId },
-      })
+      const payoutResult = await sendPayout(
+        {
+          amountTzs: receiveAmountTzs,
+          recipientPhone: phone,
+          recipientName: recipientInfo.name || 'nTZS User',
+          narration: 'nTZS withdrawal',
+          webhookUrl,
+          metadata: { burn_request_id: burnRequestId },
+        },
+        route.provider,
+      )
 
       if (payoutResult.success && payoutResult.reference) {
         const payoutRef = payoutResult.reference
@@ -374,7 +388,7 @@ export async function POST(request: NextRequest) {
           for (const delay of delays) {
             await new Promise((r) => setTimeout(r, delay))
             try {
-              const ps = await checkPayoutStatus(payoutRef)
+              const ps = await checkPayoutStatus(payoutRef, route.provider)
               if (ps.status === 'completed') {
                 await db.update(burnRequests)
                   .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
@@ -459,7 +473,7 @@ export async function POST(request: NextRequest) {
       amountTzs: burn.amountTzs,
       receiveAmountTzs,
       platformFeeTzs,
-      pspFeeTzs: PSP_FLAT_FEE_TZS,
+      pspFeeTzs: route.pspFeeTzs,
       feeRecipient,
       message: 'Withdrawal processed successfully.',
     },

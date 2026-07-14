@@ -7,7 +7,12 @@ import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/li
 import { BASE_RPC_URL } from '@/lib/env'
 
 export const RAMP_QUOTE_TTL_MS = 60_000
-export const PSP_FLAT_FEE_TZS = 1500
+// Ramp quotes bake the Snippe flat fee in at quote time; the off-ramp executor
+// stamps 'snippe' + this fee so execution always matches what was quoted.
+// TODO(phase-2): make quoting routing-aware (resolve getPayoutRoute at quote
+// time and carry the provider on the quote) before flipping payouts_mobile.
+import { SNIPPE_FLAT_FEE_TZS as PSP_FLAT_FEE_TZS } from '@ntzs/psp/fees'
+export { PSP_FLAT_FEE_TZS }
 export const PLATFORM_FEE_PCT = 0.005 // 0.5% on the gross TZS (off-ramp)
 
 export type RampDirection = 'offramp' | 'onramp'

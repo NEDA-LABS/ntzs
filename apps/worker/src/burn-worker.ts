@@ -8,9 +8,7 @@
 
 import { ethers } from 'ethers'
 import { createDbClient } from '@ntzs/db'
-
-const SNIPPE_BASE_URL = 'https://api.snippe.sh'
-const SNIPPE_FLAT_FEE_TZS = 1500
+import { adapterForTag, SNIPPE_FLAT_FEE_TZS } from '@ntzs/psp'
 
 const NTZS_BURN_ABI = [
   'function burn(address from, uint256 amount)',
@@ -53,6 +51,30 @@ interface BurnJob {
   user_id: string
   // Explicit burn source (e.g. a lender treasury). Overrides wallet_id when set.
   burn_from_address: string | null
+  // PSP stamped at request-creation; NULL = legacy row (Snippe).
+  payout_provider: string | null
+  psp_fee_tzs: number | null
+}
+
+/**
+ * Kill switch (G3): true when disbursements are paused via env override or the
+ * `system_flags` row. When paused the worker leaves approved burns queued so
+ * they resume once unpaused. A flag-read failure is treated as NOT paused (the
+ * worker needs the DB anyway; a deliberate halt uses one of the two sources).
+ */
+async function disbursementsPaused(
+  sql: ReturnType<typeof createDbClient>['sql']
+): Promise<boolean> {
+  if (process.env.DISBURSEMENTS_PAUSED === '1') return true
+  try {
+    const rows = await sql<{ enabled: boolean }[]>`
+      select enabled from system_flags where key = 'disbursements_paused' limit 1
+    `
+    return Boolean(rows[0]?.enabled)
+  } catch (err) {
+    console.error('[burn-worker] flag read failed (treating as not paused):', err instanceof Error ? err.message : err)
+    return false
+  }
 }
 
 /**
@@ -72,59 +94,10 @@ async function claimNextBurnJob(
       for update skip locked
       limit 1
     )
-    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address
+    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address, payout_provider, psp_fee_tzs
   `
 
   return rows[0] ?? null
-}
-
-/**
- * Send a Snippe payout after a successful burn
- */
-async function triggerSnippePayout(
-  burnRequestId: string,
-  amountTzs: number,
-  recipientPhone: string,
-  webhookUrl: string,
-  apiKey: string
-): Promise<{ success: boolean; reference?: string; error?: string }> {
-  // Normalize phone: strip +, ensure 255XXXXXXXXX
-  let phone = recipientPhone.replace(/[\s\-+]/g, '')
-  if (phone.startsWith('0')) phone = '255' + phone.substring(1)
-  if (!phone.startsWith('255')) phone = '255' + phone
-
-  try {
-    const response = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        amount: amountTzs,
-        channel: 'mobile',
-        recipient_phone: phone,
-        recipient_name: 'nTZS User',
-        narration: 'nTZS withdrawal',
-        ...(webhookUrl?.startsWith('https://') ? { webhook_url: webhookUrl } : {}),
-        metadata: { burn_request_id: burnRequestId },
-      }),
-    })
-
-    const result = await response.json() as {
-      status: string
-      message?: string
-      data?: { reference: string }
-    }
-
-    if (result.status !== 'success' || !result.data?.reference) {
-      return { success: false, error: result.message || 'Payout initiation failed' }
-    }
-
-    return { success: true, reference: result.data.reference }
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Payout API error' }
-  }
 }
 
 /**
@@ -134,11 +107,16 @@ export async function processBurnJob(
   databaseUrl: string,
   rpcUrl: string,
   privateKey: string,
-  snippeApiKey: string,
   apiBaseUrl: string,
   platformTreasuryAddress: string = ''
 ): Promise<boolean> {
   const { sql } = createDbClient(databaseUrl)
+
+  // Kill switch (G3): leave approved burns queued while disbursements are paused.
+  if (await disbursementsPaused(sql)) {
+    await sql.end({ timeout: 5 })
+    return false
+  }
 
   const job = await claimNextBurnJob(sql)
   if (!job) {
@@ -254,28 +232,39 @@ export async function processBurnJob(
 
     console.log('[burn-worker] burned', { burnRequestId: job.id, txHash: tx.hash, amountTzs: job.amount_tzs })
 
-    // Trigger Snippe payout if recipient phone is set
-    if (job.recipient_phone && snippeApiKey) {
-      const webhookUrl = `${apiBaseUrl}/api/webhooks/snippe/payout`
-      // Snippe's `amount` = net amount recipient receives. If the burn request was
-      // grossed-up (platform_fee_tzs is set), back out the recipient net;
-      // otherwise fall back to the burn amount (legacy / non-grossed flows).
+    // Trigger the payout via the PSP STAMPED on the record (NULL = legacy
+    // Snippe) — never the currently-routed provider.
+    const adapter = adapterForTag(job.payout_provider)
+    if (job.recipient_phone && !adapter) {
+      await sql`
+        update burn_requests
+        set payout_status = 'failed', payout_error = ${'no live adapter for provider tag ' + job.payout_provider}, updated_at = now()
+        where id = ${job.id}
+      `
+      console.error('[burn-worker] no live adapter for stamped provider', { burnRequestId: job.id, payoutProvider: job.payout_provider })
+    } else if (job.recipient_phone && adapter) {
+      const webhookUrl = `${apiBaseUrl}${adapter.payoutWebhookPath}`
+      // The PSP's `amount` = net amount recipient receives. If the burn request
+      // was grossed-up (platform_fee_tzs set), back out the recipient net using
+      // the stamped PSP fee; otherwise pay the full burn amount (legacy flows).
       const payoutAmountTzs = job.platform_fee_tzs != null
-        ? job.amount_tzs - job.platform_fee_tzs - SNIPPE_FLAT_FEE_TZS
+        ? job.amount_tzs - job.platform_fee_tzs - (job.psp_fee_tzs ?? SNIPPE_FLAT_FEE_TZS)
         : job.amount_tzs
-      const payoutResult = await triggerSnippePayout(
-        job.id,
-        payoutAmountTzs,
-        job.recipient_phone,
+      const payoutResult = await adapter.sendPayout({
+        amountTzs: payoutAmountTzs,
+        recipientPhone: job.recipient_phone,
+        recipientName: 'nTZS User',
+        narration: 'nTZS withdrawal',
         webhookUrl,
-        snippeApiKey
-      )
+        metadata: { burn_request_id: job.id },
+      })
 
       if (payoutResult.success) {
         await sql`
           update burn_requests
           set payout_reference = ${payoutResult.reference!},
               payout_status = 'pending',
+              payout_provider = coalesce(payout_provider, ${adapter.id}),
               updated_at = now()
           where id = ${job.id}
         `

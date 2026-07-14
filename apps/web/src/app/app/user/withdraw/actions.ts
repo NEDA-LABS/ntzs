@@ -8,12 +8,23 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
-import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, sendPayout, getPayoutRoute } from '@/lib/psp'
+import { disbursementsPausedReason } from '@/lib/disbursements'
 import { writeAuditLog } from '@/lib/audit'
+
+const DUPLICATE_WITHDRAWAL_MSG =
+  'This withdrawal was already submitted — check your withdrawal history before retrying.'
+
+/** Postgres unique-violation (SQLSTATE 23505) — a duplicate idempotency key. */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && 'code' in err &&
+    (err as { code?: string }).code === '23505'
+  )
+}
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
-const SNIPPE_FLAT_FEE_TZS = 1500
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BURN_ABI = [
@@ -64,6 +75,14 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     return { success: false, error: 'Invalid Tanzanian mobile number' }
   }
 
+  // Kill switch (G3): refuse to initiate any payout while disbursements are paused.
+  const pausedReason = await disbursementsPausedReason()
+  if (pausedReason) return { success: false, error: pausedReason }
+
+  // Idempotency (G4): a client-supplied key makes the (user, key) unique index
+  // reject a double-submit before any nTZS is burned.
+  const idempotencyKey = String(formData.get('idempotencyKey') ?? '').trim() || null
+
   const { db } = getDb()
 
   const allWallets = await db.query.wallets.findMany({
@@ -91,29 +110,44 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
 
   const recipientPhone = normalizePhone(phone)
 
-  // Gross-up: user specifies receive amount, we calculate how much nTZS to burn
-  // burnAmount = ceil((receiveAmount + snippeFee) / (1 - platformFeeRate))
+  // Resolve the payout route ONCE (provider + its fee) and stamp it on the
+  // record below — the executed payout always uses this same route/fee, even
+  // if routing is flipped while the request is in flight.
   const receiveAmountTrunc = Math.trunc(receiveAmountTzs)
-  const amountTzsTrunc = Math.ceil((receiveAmountTrunc + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
-  const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - SNIPPE_FLAT_FEE_TZS
-  // Snippe's `amount` = net amount the recipient receives; Snippe debits its flat fee
-  // separately on top of this from our Snippe balance. So we pass the exact receive amount.
+  const route = await getPayoutRoute('mobile', { receiveAmountTzs: receiveAmountTrunc, userId: dbUser.id })
+
+  // Gross-up: user specifies receive amount, we calculate how much nTZS to burn
+  // burnAmount = ceil((receiveAmount + pspFee) / (1 - platformFeeRate))
+  const amountTzsTrunc = Math.ceil((receiveAmountTrunc + route.pspFeeTzs) / (1 - PLATFORM_FEE_PERCENT / 100))
+  const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - route.pspFeeTzs
+  // The PSP's `amount` = net amount the recipient receives; the PSP debits its
+  // fee separately on top from our balance. So we pass the exact receive amount.
   const payoutAmountTzs = receiveAmountTrunc
 
   // Large amounts require admin approval — queue and exit
   if (amountTzsTrunc >= SAFE_BURN_THRESHOLD_TZS) {
-    const [queuedBurn] = await db.insert(burnRequests).values({
-      userId: dbUser.id,
-      walletId: wallet.id,
-      chain: wallet.chain,
-      contractAddress,
-      amountTzs: amountTzsTrunc,
-      reason: 'User withdrawal',
-      status: 'requires_second_approval',
-      requestedByUserId: dbUser.id,
-      recipientPhone,
-      platformFeeTzs,
-    }).returning({ id: burnRequests.id })
+    let queued: { id: string }[]
+    try {
+      queued = await db.insert(burnRequests).values({
+        userId: dbUser.id,
+        walletId: wallet.id,
+        chain: wallet.chain,
+        contractAddress,
+        amountTzs: amountTzsTrunc,
+        reason: 'User withdrawal',
+        status: 'requires_second_approval',
+        requestedByUserId: dbUser.id,
+        recipientPhone,
+        platformFeeTzs,
+        idempotencyKey,
+        payoutProvider: route.provider,
+        pspFeeTzs: route.pspFeeTzs,
+      }).returning({ id: burnRequests.id })
+    } catch (err) {
+      if (isUniqueViolation(err)) return { success: false, error: DUPLICATE_WITHDRAWAL_MSG }
+      throw err
+    }
+    const queuedBurn = queued[0]!
     await writeAuditLog('burn.queued_for_approval', 'burn_request', queuedBurn.id, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs }, dbUser.id)
     return { success: true as const, requiresApproval: true }
   }
@@ -159,24 +193,35 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     return { success: false, error: `Could not verify balance: ${msg}` }
   }
 
-  // Create burn request record first (so we have an ID for the audit trail)
-  const [burnReq] = await db
-    .insert(burnRequests)
-    .values({
-      userId: dbUser.id,
-      walletId: wallet.id,
-      chain: wallet.chain,
-      contractAddress,
-      amountTzs: amountTzsTrunc,
-      reason: 'User withdrawal',
-      status: 'burn_submitted',
-      requestedByUserId: dbUser.id,
-      recipientPhone,
-      platformFeeTzs,
-    })
-    .returning({ id: burnRequests.id })
+  // Create burn request record first (so we have an ID for the audit trail).
+  // The (user, idempotencyKey) unique index rejects a duplicate submit here —
+  // before any on-chain burn — so a double-click cannot double-spend.
+  let created: { id: string }[]
+  try {
+    created = await db
+      .insert(burnRequests)
+      .values({
+        userId: dbUser.id,
+        walletId: wallet.id,
+        chain: wallet.chain,
+        contractAddress,
+        amountTzs: amountTzsTrunc,
+        reason: 'User withdrawal',
+        status: 'burn_submitted',
+        requestedByUserId: dbUser.id,
+        recipientPhone,
+        platformFeeTzs,
+        idempotencyKey,
+        payoutProvider: route.provider,
+        pspFeeTzs: route.pspFeeTzs,
+      })
+      .returning({ id: burnRequests.id })
+  } catch (err) {
+    if (isUniqueViolation(err)) return { success: false, error: DUPLICATE_WITHDRAWAL_MSG }
+    throw err
+  }
 
-  const burnRequestId = burnReq.id
+  const burnRequestId = created[0]!.id
 
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
@@ -242,15 +287,18 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     return { success: false, error: `Burn failed: ${errorMessage}` }
   }
 
-  // ── Burn confirmed — now trigger Snippe payout ───────────────────────────
-  const payoutResult = await sendPayout({
-    amountTzs: payoutAmountTzs,
-    recipientPhone,
-    recipientName: 'nTZS User',
-    narration: 'nTZS withdrawal',
-    webhookUrl: `${APP_URL}/api/webhooks/snippe/payout`,
-    metadata: { burn_request_id: burnRequestId },
-  })
+  // ── Burn confirmed — now trigger the payout via the stamped route ─────────
+  const payoutResult = await sendPayout(
+    {
+      amountTzs: payoutAmountTzs,
+      recipientPhone,
+      recipientName: 'nTZS User',
+      narration: 'nTZS withdrawal',
+      webhookUrl: `${APP_URL}${route.payoutWebhookPath}`,
+      metadata: { burn_request_id: burnRequestId },
+    },
+    route.provider,
+  )
 
   if (payoutResult.success && payoutResult.reference) {
     await db

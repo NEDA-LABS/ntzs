@@ -19,6 +19,7 @@ import { SwapHistory } from './SwapHistory'
 import { TopActions } from './_components/TopActions'
 import { ActionQueryBridge } from './ActionQueryBridge'
 import { WithdrawInline } from './WithdrawInline'
+import { getActiveProviderId } from '@/lib/psp'
 import { BalanceToggle } from '../_components/BalanceToggle'
 
 export default async function WalletPage() {
@@ -134,7 +135,7 @@ export default async function WalletPage() {
         {/* Modal instances — opened via TopActions events */}
         <SwapSection renderLauncher={false} />
         <SendModal walletAddress={wallet.address} />
-        <WithdrawInline userPhone={dbUser.phone} />
+        <WithdrawInline userPhone={dbUser.phone} pspProvider={await getActiveProviderId('payouts_mobile')} />
       </div>
     </div>
   )

@@ -7,6 +7,7 @@ import { getDb } from '@/lib/db'
 import { depositRequests, users, banks } from '@ntzs/db'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import {
+  getCollectionRoute,
   initiatePayment,
   normalizePhone,
   isValidTanzanianPhone,
@@ -69,6 +70,10 @@ export async function createPayLinkDeposit(
   const idempotencyKey = crypto.randomUUID()
   const amountTzs = Math.trunc(amount)
 
+  // Route the collection like every other deposit (this path used to hardcode
+  // Snippe, which would have silently pinned pay-link deposits after a flip).
+  const route = await getCollectionRoute('mobile', { userId: recipient.id })
+
   // Create deposit request tagged as pay_link collection
   const [deposit] = await db
     .insert(depositRequests)
@@ -80,7 +85,7 @@ export async function createPayLinkDeposit(
       amountTzs,
       idempotencyKey,
       status: 'submitted',
-      paymentProvider: 'snippe',
+      paymentProvider: route.depositTag,
       buyerPhone: normalizePhone(phone),
       source: 'pay_link',
       payerName: payerName || null,
@@ -94,7 +99,7 @@ export async function createPayLinkDeposit(
       phoneNumber: phone,
       customerEmail: recipient.email,
       customerFirstname: payerName || 'Customer',
-      webhookUrl: `${APP_URL}/api/webhooks/snippe/payment`,
+      webhookUrl: `${APP_URL}${route.paymentWebhookPath}`,
       metadata: { deposit_request_id: deposit.id },
     })
 

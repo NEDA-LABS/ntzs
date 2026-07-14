@@ -1,17 +1,37 @@
 /**
  * PSP Adapter — canonical interfaces shared across all payment providers.
  *
- * Business logic imports these types (and functions) from '@/lib/psp'.
- * Webhook handlers are PSP-specific by design and import directly from
- * their provider module (e.g. '@/lib/psp/snippe') to access payload shapes
- * and signature verification that differ per provider.
+ * Business logic imports these types (and functions) from '@/lib/psp' (web) or
+ * '@ntzs/psp' (worker). Webhook handlers are PSP-specific by design and import
+ * directly from their provider module (e.g. '@/lib/psp/snippe') to access
+ * payload shapes and signature verification that differ per provider.
  *
  * Adding a new PSP:
- *   1. Create apps/web/src/lib/psp/<provider>.ts implementing these interfaces.
- *   2. Update lib/psp/index.ts to re-export from the new provider.
+ *   1. Create packages/psp/src/<provider>.ts implementing these interfaces.
+ *   2. Register it in packages/psp/src/registry.ts (ADAPTERS) + add its PspId.
  *   3. Add the provider value to the psp_provider DB enum + migration.
- *   4. Wire up a new webhook handler at api/webhooks/<provider>/.
+ *   4. Wire up a new webhook handler at api/webhooks/<provider>/ and, if its
+ *      callbacks are unreliable/success-only, a poll cron.
  */
+
+// ─── Provider identity & routing ─────────────────────────────────────────────
+
+/** PSPs with a live adapter in the registry. */
+export type PspId = 'snippe' | 'azampay' | 'selcom'
+
+/**
+ * Every provider tag that can appear stamped on a historical record
+ * (deposit_requests.payment_provider / burn_requests.payout_provider).
+ * Superset of PspId; legacy tags have no registry adapter.
+ */
+export type ProviderTag = PspId | 'zenopay' | 'snippe_card' | 'bank_transfer'
+
+/** Money-flow capabilities that route independently (psp_routing.capability). */
+export type PspCapability =
+  | 'collections_mobile'
+  | 'collections_card'
+  | 'payouts_mobile'
+  | 'payouts_bank'
 
 // ─── On-ramp (collection / deposit) ─────────────────────────────────────────
 

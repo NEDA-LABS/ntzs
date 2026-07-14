@@ -8,6 +8,7 @@ import { getOrCreateSettlementWallet } from '@/lib/ramp/wallet'
 import { runOfframpSettlement } from '@/lib/ramp/offramp'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 import { isValidTanzanianPhone } from '@/lib/psp'
+import { disbursementsPausedReason } from '@/lib/disbursements'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
   const { quoteId, phoneNumber } = body
   if (!quoteId || !phoneNumber) return NextResponse.json({ error: 'quoteId and phoneNumber are required' }, { status: 400 })
   if (!isValidTanzanianPhone(phoneNumber)) return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
+
+  // Kill switch (G3): halt payouts (before consuming the quote) when paused.
+  const pausedReason = await disbursementsPausedReason()
+  if (pausedReason) return NextResponse.json({ error: pausedReason }, { status: 503 })
 
   return withIdempotency(`ramp_offramp:${partner.id}`, getIdempotencyKey(req), async () => {
     const { db } = getDb()

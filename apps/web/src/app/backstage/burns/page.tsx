@@ -6,13 +6,12 @@ import { requireRole, requireDbUser } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/lib/env'
 import { burnRequests, users, wallets } from '@ntzs/db'
+import { adapterForTag, sendPayout, checkPayoutStatus } from '@/lib/psp'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateTimeEAT } from '@/lib/format-date'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const NTZS_CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
-const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
-const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_ABI = ['function burn(address from, uint256 amount)', 'function paused() view returns (bool)'] as const
@@ -219,51 +218,52 @@ async function executeBurnAction(formData: FormData) {
 
     await writeAuditLog('burn.executed', 'burn_request', burnRequestId, { amountTzs: req.amountTzs, walletAddress: req.walletAddress, txHash: tx.hash })
 
-    // Trigger Snippe payout if recipient phone is set
-    if (req.recipientPhone && SNIPPE_API_KEY) {
-      let phone = req.recipientPhone.replace(/[\s\-+]/g, '')
-      if (phone.startsWith('0')) phone = '255' + phone.substring(1)
-      if (!phone.startsWith('255')) phone = '255' + phone
+    // Trigger the payout via the PSP stamped on the record (NULL = legacy Snippe)
+    if (req.recipientPhone) {
+      const [stamp] = await db
+        .select({ payoutProvider: burnRequests.payoutProvider })
+        .from(burnRequests)
+        .where(eq(burnRequests.id, burnRequestId))
+        .limit(1)
+      const adapter = adapterForTag(stamp?.payoutProvider)
 
-      const webhookUrl = `${APP_URL}/api/webhooks/snippe/payout`
-      const payoutBody = JSON.stringify({
-        amount: Number(req.amountTzs),
-        channel: 'mobile',
-        recipient_phone: phone,
-        recipient_name: 'nTZS User',
-        narration: 'nTZS withdrawal',
-        ...(webhookUrl.startsWith('https://') ? { webhook_url: webhookUrl } : {}),
-        metadata: { burn_request_id: burnRequestId },
-      })
+      if (!adapter || !adapter.isConfigured()) {
+        console.error('[backstage/burns] no configured adapter for stamped provider', { burnRequestId, provider: stamp?.payoutProvider })
+      } else {
+        try {
+          const payoutResult = await sendPayout(
+            {
+              amountTzs: Number(req.amountTzs),
+              recipientPhone: req.recipientPhone,
+              recipientName: 'nTZS User',
+              narration: 'nTZS withdrawal',
+              webhookUrl: `${APP_URL}${adapter.payoutWebhookPath}`,
+              metadata: { burn_request_id: burnRequestId },
+            },
+            adapter.id,
+          )
 
-      try {
-        const payoutResp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/send`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}`, 'Content-Type': 'application/json' },
-          body: payoutBody,
-        })
-        const payoutResult = await payoutResp.json() as { status: string; message?: string; data?: { reference: string } }
-
-        if (payoutResult.status === 'success' && payoutResult.data?.reference) {
+          if (payoutResult.success && payoutResult.reference) {
+            await db
+              .update(burnRequests)
+              .set({ payoutReference: payoutResult.reference, payoutStatus: 'pending', updatedAt: new Date() })
+              .where(eq(burnRequests.id, burnRequestId))
+            console.log('[backstage/burns] payout initiated', { burnRequestId, ref: payoutResult.reference })
+          } else {
+            await db
+              .update(burnRequests)
+              .set({ payoutStatus: 'failed', payoutError: payoutResult.error ?? 'Payout initiation failed', updatedAt: new Date() })
+              .where(eq(burnRequests.id, burnRequestId))
+            console.error('[backstage/burns] payout failed', { burnRequestId, error: payoutResult.error })
+          }
+        } catch (payoutErr) {
+          const payoutErrMsg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
           await db
             .update(burnRequests)
-            .set({ payoutReference: payoutResult.data.reference, payoutStatus: 'pending', updatedAt: new Date() })
+            .set({ payoutStatus: 'failed', payoutError: payoutErrMsg, updatedAt: new Date() })
             .where(eq(burnRequests.id, burnRequestId))
-          console.log('[backstage/burns] payout initiated', { burnRequestId, ref: payoutResult.data.reference })
-        } else {
-          await db
-            .update(burnRequests)
-            .set({ payoutStatus: 'failed', payoutError: payoutResult.message ?? 'Payout initiation failed', updatedAt: new Date() })
-            .where(eq(burnRequests.id, burnRequestId))
-          console.error('[backstage/burns] payout failed', { burnRequestId, error: payoutResult.message })
+          console.error('[backstage/burns] payout error', { burnRequestId, error: payoutErrMsg })
         }
-      } catch (payoutErr) {
-        const payoutErrMsg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
-        await db
-          .update(burnRequests)
-          .set({ payoutStatus: 'failed', payoutError: payoutErrMsg, updatedAt: new Date() })
-          .where(eq(burnRequests.id, burnRequestId))
-        console.error('[backstage/burns] payout error', { burnRequestId, error: payoutErrMsg })
       }
     }
   } catch (err) {
@@ -281,10 +281,12 @@ async function executeBurnAction(formData: FormData) {
 async function syncPendingPayouts() {
   const { db } = getDb()
 
-  if (!SNIPPE_API_KEY) return 0
-
   const pending = await db
-    .select({ id: burnRequests.id, payoutReference: burnRequests.payoutReference })
+    .select({
+      id: burnRequests.id,
+      payoutReference: burnRequests.payoutReference,
+      payoutProvider: burnRequests.payoutProvider,
+    })
     .from(burnRequests)
     .where(and(eq(burnRequests.payoutStatus, 'pending'), isNotNull(burnRequests.payoutReference)))
     .limit(50)
@@ -293,30 +295,25 @@ async function syncPendingPayouts() {
 
   for (const burn of pending) {
     if (!burn.payoutReference) continue
+    // Dispatch by the stamp (NULL = legacy Snippe); skip unconfigured providers.
+    const adapter = adapterForTag(burn.payoutProvider)
+    if (!adapter || !adapter.isConfigured()) continue
 
     try {
-      const resp = await fetch(`${SNIPPE_BASE_URL}/v1/payouts/${burn.payoutReference}`, {
-        headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` },
-        signal: AbortSignal.timeout(5000),
-      })
-      const result = await resp.json() as { status: string; data?: { status: string; failure_reason?: string } }
+      const ps = await checkPayoutStatus(burn.payoutReference, burn.payoutProvider)
 
-      if (result.status !== 'success' || !result.data) continue
-
-      const payoutStatus = result.data.status
-
-      if (payoutStatus === 'completed') {
+      if (ps.status === 'completed') {
         await db
           .update(burnRequests)
           .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
           .where(eq(burnRequests.id, burn.id))
         updated++
-      } else if (payoutStatus === 'failed' || payoutStatus === 'reversed') {
+      } else if (ps.status === 'failed' || ps.status === 'reversed') {
         await db
           .update(burnRequests)
           .set({
             payoutStatus: 'failed',
-            payoutError: result.data.failure_reason || 'Payout failed',
+            payoutError: ps.failureReason || 'Payout failed',
             updatedAt: new Date(),
           })
           .where(eq(burnRequests.id, burn.id))

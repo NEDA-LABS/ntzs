@@ -1,0 +1,22 @@
+{
+  "name": "@ntzs/psp",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fees": "./src/fees.ts",
+    "./types": "./src/types.ts",
+    "./snippe": "./src/snippe.ts",
+    "./azampay": "./src/azampay.ts",
+    "./selcom": "./src/selcom.ts",
+    "./zenopay": "./src/zenopay.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

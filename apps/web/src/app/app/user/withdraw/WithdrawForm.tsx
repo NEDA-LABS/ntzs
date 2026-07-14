@@ -4,15 +4,16 @@ import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
+import { getPayoutFeeTzs } from '@ntzs/psp/fees'
+
 import { createWithdrawRequestAction } from './actions'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
-const SNIPPE_FLAT_FEE_TZS = 1500
 
-// Gross-up: nTZS to burn = ceil((receiveAmount + snippeFee) / (1 - platformFeeRate))
-function calcBurnAmount(receiveAmount: number): number {
-  return Math.ceil((receiveAmount + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
+// Gross-up: nTZS to burn = ceil((receiveAmount + pspFee) / (1 - platformFeeRate))
+function calcBurnAmount(receiveAmount: number, pspFeeTzs: number): number {
+  return Math.ceil((receiveAmount + pspFeeTzs) / (1 - PLATFORM_FEE_PERCENT / 100))
 }
 
 function Spinner({ className = '' }: { className?: string }) {
@@ -46,18 +47,26 @@ function SubmitButton({ disabled }: { disabled?: boolean }) {
 
 interface WithdrawFormProps {
   userPhone?: string | null
+  /** Provider currently routed for mobile payouts — drives the fee quote. */
+  pspProvider: string
 }
 
-export function WithdrawForm({ userPhone }: WithdrawFormProps) {
+export function WithdrawForm({ userPhone, pspProvider }: WithdrawFormProps) {
   const [phone, setPhone] = useState(userPhone || '')
   const [amount, setAmount] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  // One idempotency key per form mount — a double-submit of this same withdrawal
+  // is rejected server-side by the (user, key) unique index before any burn.
+  const [idempotencyKey] = useState(() =>
+    typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+  )
 
   const receiveNum = Number(amount)
   const validAmount = receiveNum >= 5000
-  const burnAmount = validAmount ? calcBurnAmount(receiveNum) : 0
-  const platformFee = burnAmount > 0 ? burnAmount - receiveNum - SNIPPE_FLAT_FEE_TZS : 0
+  const pspFeeTzs = validAmount ? getPayoutFeeTzs(pspProvider, receiveNum) : 0
+  const burnAmount = validAmount ? calcBurnAmount(receiveNum, pspFeeTzs) : 0
+  const platformFee = burnAmount > 0 ? burnAmount - receiveNum - pspFeeTzs : 0
   const requiresApproval = burnAmount >= SAFE_BURN_THRESHOLD_TZS
 
   if (submitted) {
@@ -131,6 +140,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         }}
         className="space-y-4 p-6"
       >
+        <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
         <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You receive</p>
           <div className="flex items-center gap-3">
@@ -180,7 +190,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
           <div className="space-y-1.5 px-1 text-xs">
             <div className="flex items-center justify-between text-muted-foreground">
               <span>Network fee</span>
-              <span className="font-mono">+{SNIPPE_FLAT_FEE_TZS.toLocaleString()} TZS</span>
+              <span className="font-mono">+{pspFeeTzs.toLocaleString()} TZS</span>
             </div>
             <div className="flex items-center justify-between text-muted-foreground">
               <span>Platform fee ({PLATFORM_FEE_PERCENT}%)</span>

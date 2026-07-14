@@ -27,6 +27,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: repoRoot,
   },
+  // Source-shipped workspace packages that client components import
+  // (@ntzs/psp/fees powers the withdraw form's live fee quote).
+  transpilePackages: ['@ntzs/psp'],
   serverExternalPackages: [
     '@hyperbridge/sdk',
     '@substrate/connect',

@@ -5,6 +5,7 @@ import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
 import { createDbClient } from '@ntzs/db'
+import { adapterForTag, SNIPPE_FLAT_FEE_TZS } from '@ntzs/psp'
 import { sleep } from '@ntzs/shared'
 import { processBurnJob } from './burn-worker.js'
 import { processLpEarnings } from './lp-earnings-worker.js'
@@ -14,10 +15,6 @@ const repoRoot = path.resolve(__dirname, '../../..')
 
 dotenv.config({ path: path.join(repoRoot, '.env') })
 dotenv.config({ path: path.join(repoRoot, '.env.local'), override: true })
-
-// Must be after dotenv.config()
-const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
-const SNIPPE_BASE_URL = 'https://api.snippe.sh'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
@@ -110,7 +107,6 @@ async function logAudit(
   `
 }
 
-const SNIPPE_FLAT_FEE_TZS = 1500
 const PLATFORM_FEE_PCT = 0.005
 const MIN_SETTLEMENT_TZS = 5000
 const MIN_LENDER_REPAYMENT_TZS = 1000
@@ -657,16 +653,13 @@ async function syncDisbursementStatus(sql: ReturnType<typeof createDbClient>['sq
 }
 
 /**
- * Poll Snippe for payout completion on burn requests still in 'pending' payout status.
- * This is a fallback in case the payout webhook doesn't fire.
+ * Poll the stamped PSP for payout completion on burn requests still in
+ * 'pending' payout status. Fallback in case the payout webhook doesn't fire
+ * (and the primary detection path for PSPs whose callbacks are success-only).
  */
 async function pollSnippeForCompletedPayouts(sql: ReturnType<typeof createDbClient>['sql']) {
-  if (!SNIPPE_API_KEY) {
-    return
-  }
-
-  const pendingPayouts = await sql<{ id: string; payout_reference: string; amount_tzs: number }[]>`
-    select id, payout_reference, amount_tzs from burn_requests
+  const pendingPayouts = await sql<{ id: string; payout_reference: string; amount_tzs: number; payout_provider: string | null }[]>`
+    select id, payout_reference, amount_tzs, payout_provider from burn_requests
     where status = 'burned'
       and payout_status = 'pending'
       and payout_reference is not null
@@ -676,63 +669,49 @@ async function pollSnippeForCompletedPayouts(sql: ReturnType<typeof createDbClie
   `
 
   for (const row of pendingPayouts) {
+    // Dispatch by the stamp (NULL = legacy Snippe); skip unconfigured/legacy providers.
+    const adapter = adapterForTag(row.payout_provider)
+    if (!adapter || !adapter.isConfigured()) continue
+
     try {
-      const response = await fetch(
-        `${SNIPPE_BASE_URL}/v1/payouts/${row.payout_reference}`,
-        { headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` } }
-      )
+      const ps = await adapter.checkPayoutStatus(row.payout_reference)
 
-      if (!response.ok) continue
-
-      const result = await response.json() as {
-        status: string
-        data?: {
-          status: string
-          failure_reason?: string
-        }
-      }
-
-      if (result.status === 'success' && result.data?.status === 'completed') {
+      if (ps.status === 'completed') {
         await sql`
           update burn_requests
           set payout_status = 'completed', updated_at = now()
           where id = ${row.id} and payout_status = 'pending'
         `
-
-        console.log('[worker] polled Snippe, payout completed', {
+        console.log(`[worker] polled ${adapter.id}, payout completed`, {
           burnRequestId: row.id,
           reference: row.payout_reference,
         })
-      } else if (result.data?.status === 'failed' || result.data?.status === 'reversed') {
+      } else if (ps.status === 'failed' || ps.status === 'reversed') {
         await sql`
           update burn_requests
           set payout_status = 'failed',
-              payout_error = ${result.data.failure_reason ?? 'Payout failed (polled)'},
+              payout_error = ${ps.failureReason ?? 'Payout failed (polled)'},
               updated_at = now()
           where id = ${row.id} and payout_status = 'pending'
         `
-
-        console.log('[worker] polled Snippe, payout failed', {
+        console.log(`[worker] polled ${adapter.id}, payout failed`, {
           burnRequestId: row.id,
-          reason: result.data.failure_reason,
+          reason: ps.failureReason,
         })
       }
     } catch (err) {
-      console.warn('[worker] Snippe payout poll error for', row.id, err instanceof Error ? err.message : err)
+      console.warn('[worker] payout poll error for', row.id, err instanceof Error ? err.message : err)
     }
   }
 }
 
 async function pollSnippeForCompletedPayments(sql: ReturnType<typeof createDbClient>['sql']) {
-  if (!SNIPPE_API_KEY) {
-    return // Skip if no API key configured
-  }
-
-  // Find submitted Snippe deposits older than 30 seconds that have a psp_reference
-  const pendingDeposits = await sql<{ id: string; psp_reference: string; amount_tzs: number }[]>`
-    select id, psp_reference, amount_tzs from deposit_requests
+  // Find submitted deposits older than 30 seconds that have a psp_reference;
+  // dispatch each to the PSP stamped on the row.
+  const pendingDeposits = await sql<{ id: string; psp_reference: string; amount_tzs: number; payment_provider: string | null; psp_channel: string | null }[]>`
+    select id, psp_reference, amount_tzs, payment_provider, psp_channel from deposit_requests
     where status = 'submitted'
-      and payment_provider = 'snippe'
+      and payment_provider in ('snippe', 'snippe_card', 'azampay', 'selcom')
       and psp_reference is not null
       and created_at < now() - interval '30 seconds'
     order by created_at asc
@@ -740,51 +719,39 @@ async function pollSnippeForCompletedPayments(sql: ReturnType<typeof createDbCli
   `
 
   for (const deposit of pendingDeposits) {
+    const adapter = adapterForTag(deposit.payment_provider)
+    if (!adapter || !adapter.isConfigured()) continue
+
     try {
-      const response = await fetch(
-        `${SNIPPE_BASE_URL}/v1/payments/${deposit.psp_reference}`,
-        { headers: { 'Authorization': `Bearer ${SNIPPE_API_KEY}` } }
-      )
+      const ps = await adapter.checkPaymentStatus(deposit.psp_reference, deposit.psp_channel ?? undefined)
 
-      if (!response.ok) continue
-
-      const result = await response.json() as {
-        status: string
-        data?: {
-          status: string
-          reference: string
-          channel?: { provider: string }
-        }
-      }
-
-      if (result.status === 'success' && result.data?.status === 'completed') {
+      if (ps.status === 'completed') {
         const newStatus = deposit.amount_tzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
 
         await sql`
           update deposit_requests
           set status = ${newStatus},
-              psp_channel = ${result.data.channel?.provider ?? null},
               fiat_confirmed_at = now(),
               updated_at = now()
           where id = ${deposit.id} and status = 'submitted'
         `
 
-        console.log('[worker] polled Snippe, found completed payment', {
+        console.log(`[worker] polled ${adapter.id}, found completed payment`, {
           depositId: deposit.id,
           reference: deposit.psp_reference,
           newStatus,
         })
-      } else if (result.data?.status === 'failed' || result.data?.status === 'expired' || result.data?.status === 'voided') {
+      } else if (ps.status === 'failed' || ps.status === 'expired' || ps.status === 'voided') {
         await sql`
           update deposit_requests
           set status = 'rejected', updated_at = now()
           where id = ${deposit.id} and status = 'submitted'
         `
-        console.log('[worker] polled Snippe, payment failed/expired', { depositId: deposit.id })
+        console.log(`[worker] polled ${adapter.id}, payment failed/expired`, { depositId: deposit.id })
       }
     } catch (err) {
       // Silently continue on errors - will retry next poll
-      console.warn('[worker] Snippe poll error for', deposit.id, err instanceof Error ? err.message : err)
+      console.warn('[worker] payment poll error for', deposit.id, err instanceof Error ? err.message : err)
     }
   }
 }
@@ -994,13 +961,13 @@ async function main() {
       await sleep(10000)
     }
 
-    // Process burn jobs (off-ramp: burn on-chain + Snippe payout)
+    // Process burn jobs (off-ramp: burn on-chain + PSP payout by stamp)
     try {
       const rpcUrl = requiredEnv('BASE_RPC_URL')
       const privateKey = process.env.BURNER_PRIVATE_KEY || requiredEnv('MINTER_PRIVATE_KEY')
       const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
       const platformTreasury = (process.env.PLATFORM_TREASURY_ADDRESS || '').replace(/^["']|["']$/g, '')
-      await processBurnJob(databaseUrl, rpcUrl, privateKey, SNIPPE_API_KEY, apiBaseUrl, platformTreasury)
+      await processBurnJob(databaseUrl, rpcUrl, privateKey, apiBaseUrl, platformTreasury)
     } catch (err) {
       console.error('[worker] processBurnJob error:', err instanceof Error ? err.message : err)
     }

@@ -13,6 +13,7 @@ import { sendPayout, sendBankPayout } from '@/lib/psp'
 import { partners, auditLogs } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
+import { disbursementsPausedReason } from '@/lib/disbursements'
 
 const MIN_WITHDRAW_TZS = 5000
 
@@ -38,6 +39,10 @@ export async function POST(request: NextRequest) {
 
   const partnerId = verifySessionToken(token)
   if (!partnerId) return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 })
+
+  // Kill switch (G3): halt payouts when disbursements are paused.
+  const pausedReason = await disbursementsPausedReason()
+  if (pausedReason) return NextResponse.json({ error: pausedReason }, { status: 503 })
 
   let body: { amountTzs: number }
   try {

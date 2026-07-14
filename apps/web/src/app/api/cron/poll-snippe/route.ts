@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         pspReference: depositRequests.pspReference,
         buyerPhone: depositRequests.buyerPhone,
         createdAt: depositRequests.createdAt,
+        paymentProvider: depositRequests.paymentProvider,
       })
       .from(depositRequests)
       .where(
@@ -53,7 +54,9 @@ export async function GET(request: NextRequest) {
       if (!deposit.pspReference) continue
 
       try {
-        const snippeStatus = await checkPaymentStatus(deposit.pspReference)
+        // Dispatch by the provider stamped on the row (snippe_card → snippe
+        // adapter), not the currently-active routing.
+        const snippeStatus = await checkPaymentStatus(deposit.pspReference, undefined, deposit.paymentProvider)
 
         if (snippeStatus.status === 'completed') {
           const newStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS

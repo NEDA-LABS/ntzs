@@ -15,7 +15,7 @@ import {
   attestations,
 } from '@ntzs/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
-import { getBalance, ACTIVE_PSP_NAME } from '@/lib/psp'
+import { getReserveBalances } from '@/lib/psp'
 import { OversightPortal, type OversightData } from './_components/OversightPortal'
 
 const CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
@@ -42,7 +42,7 @@ export default async function OversightDashboard() {
 
   const { db } = getDb()
 
-  const [stats, pspBalanceRaw] = await Promise.all([
+  const [stats, reservePots] = await Promise.all([
     db
       .select({
         totalUsers: sql<number>`count(distinct ${users.id})`.mapWith(Number),
@@ -51,8 +51,21 @@ export default async function OversightDashboard() {
       .from(depositRequests)
       .leftJoin(users, eq(users.id, depositRequests.userId))
       .then(r => r[0]),
-    getBalance().catch(() => ({ available: 0, pending: 0, currency: 'TZS' })),
+    getReserveBalances(),
   ])
+
+  // Pooled reserve = Σ pots; failed pot fetches are surfaced in the label
+  // rather than silently zeroed.
+  const okPots = reservePots.filter((p) => !p.error)
+  const failedPots = reservePots.filter((p) => p.error)
+  const pspBalanceRaw = {
+    available: okPots.reduce((s, p) => s + (Number(p.available) || 0), 0),
+    pending: okPots.reduce((s, p) => s + (Number(p.pending) || 0), 0),
+    currency: okPots[0]?.currency ?? 'TZS',
+  }
+  const pspPotsLabel =
+    (okPots.map((p) => p.label).join(' + ') || 'No PSP configured') +
+    (failedPots.length ? ` (⚠ ${failedPots.map((p) => p.label).join(', ')} unavailable)` : '')
 
   const [kycStats] = await db
     .select({
@@ -203,7 +216,7 @@ export default async function OversightDashboard() {
       available: pspBalanceRaw.available,
       pending: pspBalanceRaw.pending,
       currency: pspBalanceRaw.currency,
-      pspName: ACTIVE_PSP_NAME,
+      pspName: pspPotsLabel,
     },
     kycStats: {
       total: kycStats?.total ?? 0,

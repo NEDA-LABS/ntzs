@@ -4,9 +4,9 @@ import { JsonRpcProvider, Contract } from 'ethers'
 import { db } from '@/lib/merchant/db'
 import { getDb } from '@/lib/db'
 import { merchantAccounts } from '@ntzs/db'
-import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, getPayoutRoute } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
-import { grossUpWithdrawal, MIN_WITHDRAWAL_TZS, SNIPPE_FLAT_FEE_TZS } from '@/lib/payouts/payout-math'
+import { grossUpWithdrawal, MIN_WITHDRAWAL_TZS } from '@/lib/payouts/payout-math'
 
 const SAFE_APPROVAL_THRESHOLD_TZS = 1000000
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
@@ -66,7 +66,10 @@ export async function requestMerchantWithdrawal(opts: {
   const rpcUrl = process.env.BASE_RPC_URL
   if (!contractAddress || !rpcUrl) return { status: 500, body: { error: 'Blockchain configuration missing' } }
 
-  const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(receiveAmountTzs)
+  // Resolve the payout route once; the fee is baked into the gross-up and
+  // stamped on the record so the executing burn engine pays the same route.
+  const route = await getPayoutRoute('mobile', { receiveAmountTzs })
+  const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(receiveAmountTzs, undefined, route.pspFeeTzs)
 
   // BoT sandbox caps (applied to the nTZS burned, like the consumer off-ramp).
   const perTxnErr = checkPerTransactionCap(burnAmountTzs)
@@ -104,7 +107,7 @@ export async function requestMerchantWithdrawal(opts: {
         body: {
           error: 'insufficient_balance',
           message: `Insufficient balance. Available: ${balanceTzs.toLocaleString()} TZS, need ${burnAmountTzs.toLocaleString()} TZS to pay out ${receiveAmountTzs.toLocaleString()} TZS (incl. fees).`,
-          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: SNIPPE_FLAT_FEE_TZS },
+          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: route.pspFeeTzs },
         },
       }
     }
@@ -122,11 +125,13 @@ export async function requestMerchantWithdrawal(opts: {
       user_id, wallet_id, chain, contract_address,
       amount_tzs, platform_fee_tzs, reason, status,
       requested_by_user_id, recipient_phone,
+      payout_provider, psp_fee_tzs,
       created_at, updated_at
     ) values (
       ${userId}, ${walletId}, 'base', ${contractAddress},
       ${burnAmountTzs}, ${platformFeeTzs}, 'merchant_balance_withdrawal', ${status},
       ${userId}, ${phone},
+      ${route.provider}, ${route.pspFeeTzs},
       now(), now()
     )
     returning id
@@ -152,7 +157,7 @@ export async function requestMerchantWithdrawal(opts: {
       receiveAmountTzs,
       burnAmountTzs,
       platformFeeTzs,
-      pspFeeTzs: SNIPPE_FLAT_FEE_TZS,
+      pspFeeTzs: route.pspFeeTzs,
       phone,
       message: status === 'requested'
         ? 'Withdrawal requires admin approval for amounts >= 1,000,000 TZS.'

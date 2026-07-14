@@ -14,7 +14,7 @@
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { sendPayout, ACTIVE_PSP_PAYOUT_WEBHOOK_PATH } from '@/lib/psp'
+import { sendPayout, adapterForTag } from '@/lib/psp'
 import { netPayoutTzs } from './payout-math'
 
 type SqlClient = ReturnType<typeof getDb>['sql']
@@ -49,6 +49,9 @@ interface BurnJob {
   recipient_phone: string | null
   user_id: string
   burn_from_address: string | null
+  // Stamped at request-creation; NULL = legacy row (Snippe).
+  payout_provider: string | null
+  psp_fee_tzs: number | null
 }
 
 /** Claim the oldest approved burn request atomically (skip-locked). */
@@ -64,7 +67,7 @@ async function claimNextBurnJob(sql: SqlClient): Promise<BurnJob | null> {
       for update skip locked
       limit 1
     )
-    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address
+    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address, payout_provider, psp_fee_tzs
   `
   return rows[0] ?? null
 }
@@ -140,25 +143,48 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
   })
   console.log('[burn-engine] burned', { burnRequestId: job.id, txHash: tx.hash, amountTzs: job.amount_tzs })
 
-  // Fiat leg: pay the recipient's phone. The payout webhook flips
-  // payout_status to 'completed' when the cash lands.
+  // Fiat leg: pay the recipient's phone via the provider STAMPED on the
+  // record (never the currently-routed one — a routing flip mid-flight must
+  // not change where in-flight money goes). NULL stamp = legacy Snippe.
   if (job.recipient_phone) {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
-    const payoutAmountTzs = netPayoutTzs({ amountTzs: job.amount_tzs, platformFeeTzs: job.platform_fee_tzs })
-
-    const payoutResult = await sendPayout({
-      amountTzs: payoutAmountTzs,
-      recipientPhone: job.recipient_phone,
-      recipientName: 'nTZS User',
-      narration: 'nTZS withdrawal',
-      webhookUrl: `${appUrl}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`,
-      metadata: { burn_request_id: job.id },
-    })
-
-    if (payoutResult.success && payoutResult.reference) {
+    const adapter = adapterForTag(job.payout_provider)
+    if (!adapter) {
       await sql`
         update burn_requests
-        set payout_reference = ${payoutResult.reference}, payout_status = 'pending', updated_at = now()
+        set payout_status = 'failed', payout_error = ${'no live adapter for provider tag ' + job.payout_provider}, updated_at = now()
+        where id = ${job.id}
+      `
+      console.error('[burn-engine] no live adapter for stamped provider', { burnRequestId: job.id, payoutProvider: job.payout_provider })
+      return
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
+    const payoutAmountTzs = netPayoutTzs({
+      amountTzs: job.amount_tzs,
+      platformFeeTzs: job.platform_fee_tzs,
+      pspFeeTzs: job.psp_fee_tzs,
+    })
+
+    const payoutResult = await sendPayout(
+      {
+        amountTzs: payoutAmountTzs,
+        recipientPhone: job.recipient_phone,
+        recipientName: 'nTZS User',
+        narration: 'nTZS withdrawal',
+        webhookUrl: `${appUrl}${adapter.payoutWebhookPath}`,
+        metadata: { burn_request_id: job.id },
+      },
+      adapter.id,
+    )
+
+    if (payoutResult.success && payoutResult.reference) {
+      // Also stamp legacy rows at execution so reconciliation dispatches right.
+      await sql`
+        update burn_requests
+        set payout_reference = ${payoutResult.reference},
+            payout_status = 'pending',
+            payout_provider = coalesce(payout_provider, ${adapter.id}),
+            updated_at = now()
         where id = ${job.id}
       `
       await logAudit(sql, 'payout_initiated', 'burn_request', job.id, { payoutReference: payoutResult.reference, amountTzs: payoutAmountTzs, recipientPhone: job.recipient_phone })

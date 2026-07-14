@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { attestations } from '@ntzs/db'
-import { getBalance } from '@/lib/psp'
+import { getReserveBalances } from '@/lib/psp'
 import { sendEmail } from '@/lib/email'
 import { POOL_ALERT_RECIPIENTS } from '@/lib/fx/alert-email'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
@@ -69,17 +69,30 @@ async function readChain(): Promise<{ supply: number; block: number | null }> {
 /** Compute the attestation figures with no persistence — used by preview + cron. */
 export async function computeAttestation(): Promise<AttestationReport> {
   const reportDate = eatDate()
-  const [{ supply, block }, bal] = await Promise.all([
-    readChain(),
-    getBalance().catch(() => ({ available: 0, pending: 0, currency: 'TZS' })),
-  ])
+  const [{ supply, block }, pots] = await Promise.all([readChain(), getReserveBalances()])
   const ntzsCirculation = supply
-  const tzsCustodialReserve = Number(bal.available) || 0
+
+  // Pooled-reserve principle: the custodial reserve is the SUM of every PSP
+  // pot (Snippe + Selcom + …). A pot whose fetch failed is UNKNOWN, not zero —
+  // it is excluded from the sum (conservative: can only under-state backing)
+  // and loudly flagged in reserveSource so a fetch outage is never mistaken
+  // for a healthy figure.
+  const okPots = pots.filter((p) => !p.error)
+  const failedPots = pots.filter((p) => p.error)
+  const tzsCustodialReserve = okPots.reduce((sum, p) => sum + (Number(p.available) || 0), 0)
   const tzsGovtSecurities = govtSecuritiesTzs()
   const reserveTotal = tzsCustodialReserve + tzsGovtSecurities
   const deviationPct = ntzsCirculation > 0 ? ((reserveTotal - ntzsCirculation) / ntzsCirculation) * 100 : 0
   const fullyBacked = reserveTotal >= ntzsCirculation
   const withinKpi = fullyBacked // peg intact while reserves cover supply; over-backing is safe
+
+  const potSummary = okPots.map((p) => `${p.label}: ${(Number(p.available) || 0).toLocaleString('en-US')} ${p.currency}`).join(' + ')
+  const failureSummary = failedPots.length
+    ? ` ⚠ UNVERIFIED POTS (fetch failed, excluded): ${failedPots.map((p) => p.label).join(', ')}`
+    : ''
+  if (failedPots.length) {
+    console.error('[attestation] reserve pot fetch failed — figure under-states backing', failedPots.map((p) => ({ provider: p.provider, error: p.error })))
+  }
 
   const core = {
     reportDate,
@@ -92,7 +105,7 @@ export async function computeAttestation(): Promise<AttestationReport> {
     withinKpi,
     blockNumber: block,
     supplySource: `Base Mainnet · ${NTZS_CONTRACT_ADDRESS_BASE ?? 'n/a'} · totalSupply()`,
-    reserveSource: `PSP settled balance (${bal.currency || 'TZS'})`,
+    reserveSource: `PSP settled balances — ${potSummary || 'none configured'}${failureSummary}`,
   }
   const reportHash = crypto.createHash('sha256').update(JSON.stringify(core)).digest('hex')
   return { ...core, reportHash, generatedAt: new Date().toISOString() }

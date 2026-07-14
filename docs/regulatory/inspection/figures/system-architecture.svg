@@ -1,0 +1,105 @@
+<svg viewBox="0 0 1160 660" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <style>
+    .box  { fill:#ffffff; stroke-width:1.6; }
+    .dom  { fill:#eff6ff; stroke:#1d4ed8; }
+    .bank { fill:#ecfdf5; stroke:#047857; }
+    .chain{ fill:#f5f3ff; stroke:#6d28d9; }
+    .obs  { fill:#fffbeb; stroke:#b45309; }
+    .tb   { font-size:14px; fill:#111827; font-weight:bold; }
+    .s    { font-size:11px; fill:#4b5563; }
+    .step { font-size:11px; fill:#111827; font-weight:bold; }
+    .flow { stroke:#374151; stroke-width:1.8; fill:none; marker-end:url(#ah); }
+    .res  { stroke:#047857; stroke-width:1.8; fill:none; marker-end:url(#ahg); stroke-dasharray:6 4; }
+    .rec  { stroke:#b45309; stroke-width:1.8; fill:none; marker-end:url(#aha); stroke-dasharray:6 4; }
+    .zone { font-size:11px; fill:#9ca3af; font-weight:bold; letter-spacing:1.5px; }
+  </style>
+  <defs>
+    <marker id="ah"  markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#374151"/></marker>
+    <marker id="ahg" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#047857"/></marker>
+    <marker id="aha" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#b45309"/></marker>
+  </defs>
+
+  <text x="40" y="38" font-size="19" font-weight="bold" fill="#111827">nTZS — System Architecture (Sandbox)</text>
+  <text x="40" y="58" class="s">1:1 TZS-backed issuance / redemption on Base · BoT Sandbox Ref. LD.170/515/02/1254</text>
+
+  <!-- zone labels -->
+  <text x="40"  y="104" class="zone">CUSTOMER</text>
+  <text x="330" y="104" class="zone">PSP / PLATFORM</text>
+  <text x="650" y="104" class="zone">RESERVE &amp; ON-CHAIN</text>
+
+  <!-- Row 1 -->
+  <rect class="box dom"  x="40"  y="120" width="200" height="88" rx="8"/>
+  <text x="60"  y="152" class="tb">Customer</text>
+  <text x="60"  y="172" class="s">Direct app / partner</text>
+  <text x="60"  y="188" class="s">(WaaS API) · KYC-linked</text>
+
+  <rect class="box dom"  x="330" y="120" width="210" height="88" rx="8"/>
+  <text x="350" y="152" class="tb">Mobile-money PSP</text>
+  <text x="350" y="172" class="s">AzamPay (primary), Snippe</text>
+  <text x="350" y="188" class="s">M-Pesa / Tigo / Airtel</text>
+
+  <rect class="box bank" x="650" y="120" width="240" height="88" rx="8"/>
+  <text x="670" y="152" class="tb">Selcom — trust account</text>
+  <text x="670" y="172" class="s">Ring-fenced TZS reserve</text>
+  <text x="670" y="188" class="s">Cash + T-bills · custody · FX</text>
+
+  <!-- Row 2 -->
+  <rect class="box dom"  x="330" y="300" width="210" height="88" rx="8"/>
+  <text x="350" y="332" class="tb">NEDApay platform</text>
+  <text x="350" y="352" class="s">Dual approval · limits</text>
+  <text x="350" y="368" class="s">Mint/burn orchestration</text>
+
+  <rect class="box chain" x="650" y="300" width="240" height="96" rx="8"/>
+  <text x="670" y="330" class="tb">nTZS contract · Base</text>
+  <text x="670" y="349" class="s">0xF476…10688 · UUPS ERC-20</text>
+  <text x="670" y="366" class="s">Roles: MINTER/BURNER</text>
+  <text x="670" y="383" class="s">Safe multisig 0xB2b8…BC503</text>
+
+  <rect class="box chain" x="960" y="300" width="160" height="88" rx="8"/>
+  <text x="980" y="332" class="tb">Customer wallet</text>
+  <text x="980" y="352" class="s">Holds nTZS</text>
+  <text x="980" y="368" class="s">on Base</text>
+
+  <!-- Row 3 -->
+  <rect class="box obs" x="330" y="486" width="560" height="86" rx="8"/>
+  <text x="350" y="516" class="tb">Oversight portal (regulator, read-only)</text>
+  <text x="350" y="536" class="s">Reserve Proof · Daily 10:00 EAT attestation · Audit trail (cash-before-mint)</text>
+  <text x="350" y="552" class="s">Continuous reconciliation: on-chain supply ↔ reserve · 1:1</text>
+
+  <!-- Flow arrows (orthogonal only) -->
+  <path class="flow" d="M240,164 L326,164"/>
+  <text x="244" y="156" class="step">1 · pay TZS</text>
+
+  <path class="flow" d="M540,164 L646,164"/>
+  <text x="548" y="156" class="step">2 · cash → trust</text>
+
+  <path class="flow" d="M435,208 L435,296"/>
+  <text x="445" y="258" class="step">3 · confirm (webhook)</text>
+
+  <path class="flow" d="M540,344 L646,344"/>
+  <text x="560" y="336" class="step">4 · mint</text>
+  <text x="543" y="364" class="s">after cash confirmed</text>
+
+  <path class="flow" d="M890,344 L956,344"/>
+  <text x="900" y="336" class="step">5 · credited</text>
+
+  <!-- Reserve backing -->
+  <path class="res" d="M770,208 L770,296"/>
+  <text x="782" y="258" fill="#047857" font-size="11" font-weight="bold">backs 1:1</text>
+
+  <!-- Reconciliation -->
+  <path class="rec" d="M435,388 L435,482"/>
+  <path class="rec" d="M770,396 L770,482"/>
+  <text x="590" y="452" fill="#b45309" font-size="11" font-weight="bold" text-anchor="middle">continuous reconciliation</text>
+
+  <!-- Legend -->
+  <line x1="700" y1="612" x2="730" y2="612" class="flow"/>
+  <text x="736" y="616" class="s">issuance flow</text>
+  <line x1="820" y1="612" x2="850" y2="612" class="res"/>
+  <text x="856" y="616" class="s">reserve backing</text>
+  <line x1="960" y1="612" x2="990" y2="612" class="rec"/>
+  <text x="996" y="616" class="s">reconciliation</text>
+
+  <text x="40" y="616" class="s">Redemption reverses steps 4–5: burn nTZS → release TZS from trust → PSP pay-out.</text>
+  <text x="40" y="634" class="s">Both mint and redemption require dual approval (maker-checker).</text>
+</svg>

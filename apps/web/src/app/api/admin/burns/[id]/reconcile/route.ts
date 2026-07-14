@@ -196,9 +196,11 @@ export async function POST(
     )
   }
 
-  const snippeState = await checkPayoutStatus(effectiveReference)
+  // Dispatch to the PSP stamped on the record (NULL = legacy Snippe) — never
+  // the currently-routed provider, which may have changed since this payout.
+  const snippeState = await checkPayoutStatus(effectiveReference, burn.payoutProvider)
 
-  // If the operator supplied a new reference and Snippe confirms it's a
+  // If the operator supplied a new reference and the PSP confirms it's a
   // real payout, persist it to the row so future audits have a complete
   // paper trail.
   const shouldPersistReference = !burn.payoutReference && body.snippeReference
@@ -323,7 +325,7 @@ export async function GET(
   }
 
   const snippeState = burn.payoutReference
-    ? await checkPayoutStatus(burn.payoutReference)
+    ? await checkPayoutStatus(burn.payoutReference, burn.payoutProvider)
     : null
 
   return NextResponse.json({

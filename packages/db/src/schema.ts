@@ -59,7 +59,7 @@ export const approvalType = pgEnum('approval_type', ['bank', 'platform'])
 
 export const approvalDecision = pgEnum('approval_decision', ['approved', 'rejected'])
 
-export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe', 'snippe_card', 'azampay'])
+export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe', 'snippe_card', 'azampay', 'selcom'])
 
 export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
 
@@ -292,6 +292,21 @@ export const burnRequests = pgTable(
     // can resume the ramp flow. Plain uuid (app-level link to ramp_settlements).
     rampSettlementId: uuid('ramp_settlement_id'),
 
+    // Client-supplied idempotency key (nullable: legacy rows / internal flows).
+    // Scoped per user via the unique index below — a duplicate form submit or
+    // retried API call cannot create a second burn + payout.
+    idempotencyKey: text('idempotency_key'),
+
+    // Which PSP the payout was routed to, stamped at request-creation time.
+    // Executors and reconcilers dispatch strictly by this stamp — never by the
+    // currently-active routing — so a routing flip can't orphan in-flight
+    // payouts. NULL = legacy row (Snippe, the only historical rail).
+    payoutProvider: pspProvider('payout_provider'),
+    // The PSP fee (TZS) baked into the gross-up at request time. Executors
+    // read this — never recompute — so a later routing/fee change can't
+    // change what the user was quoted.
+    pspFeeTzs: bigint('psp_fee_tzs', { mode: 'number' }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -300,6 +315,11 @@ export const burnRequests = pgTable(
     walletIdx: index('burn_requests_wallet_id_idx').on(t.walletId),
     statusIdx: index('burn_requests_status_idx').on(t.status),
     txHashIdx: index('burn_requests_tx_hash_idx').on(t.txHash),
+    // Postgres treats NULLs as distinct, so legacy rows (null key) are unaffected.
+    idempotencyUq: uniqueIndex('burn_requests_user_idempotency_uq').on(t.userId, t.idempotencyKey),
+    // One PSP payout can never be attached to two burn records (replayed or
+    // cross-wired webhooks/reconciliation become constraint violations).
+    payoutReferenceUq: uniqueIndex('burn_requests_payout_reference_uq').on(t.payoutReference),
   })
 )
 
@@ -433,6 +453,43 @@ export const dailyIssuance = pgTable(
     dayIdx: index('daily_issuance_day_idx').on(t.day),
   })
 )
+
+/**
+ * Operational kill switches / feature flags, toggled by ops (script or
+ * backstage) without a deploy. Known keys:
+ *   'disbursements_paused' — halts ALL payout initiation paths (withdraw
+ *   action, WaaS withdrawals, treasury withdraw, ramp off-ramp) and stops the
+ *   burn worker claiming new jobs. The env var DISBURSEMENTS_PAUSED=1 is a hard
+ *   override that forces paused even without a DB row.
+ */
+export const systemFlags = pgTable('system_flags', {
+  key: text('key').primaryKey(),
+  enabled: boolean('enabled').notNull().default(false),
+  note: text('note'),
+  updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/**
+ * PSP routing: which provider handles each money-flow capability.
+ * Capabilities: 'collections_mobile' | 'collections_card' | 'payouts_mobile' |
+ * 'payouts_bank'. `rules` (jsonb) optionally refines the base `provider`:
+ *   - payout amount bands: [{"maxAmountTzs": 150000, "provider": "azampay"}, ...]
+ *   - collections pilot allowlist: {"pilotUserIds": ["..."], "pilotProvider": "selcom"}
+ * Flipped instantly via scripts/set-psp-routing.ts — no deploy. Missing row →
+ * code falls back to the legacy ACTIVE_MOBILE_PSP env semantics.
+ * NOTE: routing is consulted only at transaction CREATION; executors dispatch
+ * by the provider stamped on the record (burn_requests.payout_provider,
+ * deposit_requests.payment_provider), so flips never affect in-flight money.
+ */
+export const pspRouting = pgTable('psp_routing', {
+  capability: text('capability').primaryKey(),
+  provider: text('provider').notNull(),
+  rules: jsonb('rules'),
+  note: text('note'),
+  updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 export const auditLogs = pgTable(
   'audit_logs',

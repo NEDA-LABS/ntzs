@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ntzs/db": "*",
+    "@ntzs/psp": "*",
     "@ntzs/shared": "*",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.44.4",

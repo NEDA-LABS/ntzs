@@ -7,7 +7,7 @@ import { rampSettlements, burnRequests, users, wallets, partners, lpAccounts, lp
 import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
 import {
   isMobilePspConfigured, normalizePhone, sendPayout, checkPayoutStatus, lookupRecipientName,
-  ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
+  getWebhookPath,
 } from '@/lib/psp'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
@@ -254,29 +254,42 @@ export async function runOfframpSettlement(args: {
     return { ok: false, status: 'failed', error: 'PSP not configured' }
   }
   const phone = normalizePhone(recipientPhone)
-  const webhookUrl = `${APP_URL}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`
+  // The quote baked in the Snippe flat fee (see lib/ramp/quote.ts) — execution
+  // must pay the SAME provider the fee was quoted for, so this path stamps
+  // 'snippe' explicitly. TODO(phase-2): routing-aware quotes carry a provider.
+  const quotedProvider = 'snippe' as const
+  const webhookUrl = `${APP_URL}${getWebhookPath(quotedProvider, 'payout')}`
   const recipientInfo = await lookupRecipientName(phone).catch(() => ({ name: undefined as string | undefined }))
 
   try {
-    const payout = await sendPayout({
-      amountTzs: args.recipientTzs,
-      recipientPhone: phone,
-      recipientName: recipientInfo.name || 'nTZS Recipient',
-      narration: 'nTZS settlement',
-      webhookUrl,
-      metadata: { burn_request_id: burnRequestId, ramp_settlement_id: settlementId },
-    })
+    const payout = await sendPayout(
+      {
+        amountTzs: args.recipientTzs,
+        recipientPhone: phone,
+        recipientName: recipientInfo.name || 'nTZS Recipient',
+        narration: 'nTZS settlement',
+        webhookUrl,
+        metadata: { burn_request_id: burnRequestId, ramp_settlement_id: settlementId },
+      },
+      quotedProvider,
+    )
 
     if (payout.success && payout.reference) {
       const ref = payout.reference
-      await db.update(burnRequests).set({ payoutReference: ref, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      await db.update(burnRequests).set({
+        payoutReference: ref,
+        payoutStatus: 'pending',
+        payoutProvider: quotedProvider,
+        pspFeeTzs: PSP_FLAT_FEE_TZS,
+        updatedAt: new Date(),
+      }).where(eq(burnRequests.id, burnRequestId))
       await setStatus(settlementId, { pspReference: ref })
 
       // Poll for quick completion; the signed webhook is the primary path.
       for (const delay of [3000, 6000, 12000]) {
         await new Promise((r) => setTimeout(r, delay))
         try {
-          const ps = await checkPayoutStatus(ref)
+          const ps = await checkPayoutStatus(ref, quotedProvider)
           if (ps.status === 'completed') {
             await db.update(burnRequests).set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
             await setStatus(settlementId, { status: 'completed' })

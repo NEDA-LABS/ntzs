@@ -9,8 +9,7 @@ import { getDb } from '@/lib/db'
 import { depositRequests, kycCases, banks } from '@ntzs/db'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import {
-  ACTIVE_PSP_PROVIDER,
-  ACTIVE_PSP_PAYMENT_WEBHOOK_PATH,
+  getCollectionRoute,
   initiatePayment,
   initiateCardPayment,
   normalizePhone,
@@ -68,6 +67,10 @@ export async function createDepositRequestAction(formData: FormData) {
 
   const idempotencyKey = crypto.randomUUID()
 
+  // Resolve the collection route once and stamp it — status polling and
+  // webhooks then key off the stamp, not the currently-active routing.
+  const route = await getCollectionRoute(paymentMethod === 'mpesa' ? 'mobile' : 'card', { userId: dbUser.id })
+
   // Create deposit request
   const [deposit] = await db
     .insert(depositRequests)
@@ -79,7 +82,7 @@ export async function createDepositRequestAction(formData: FormData) {
       amountTzs: Math.trunc(amountTzs),
       idempotencyKey,
       status: 'submitted',
-      paymentProvider: paymentMethod === 'mpesa' ? ACTIVE_PSP_PROVIDER : 'snippe_card',
+      paymentProvider: route.depositTag,
       buyerPhone: paymentMethod === 'mpesa' ? normalizePhone(buyerPhone) : null,
     })
     .returning({ id: depositRequests.id })
@@ -92,7 +95,7 @@ export async function createDepositRequestAction(formData: FormData) {
         phoneNumber: buyerPhone,
         customerEmail: dbUser.email,
         customerFirstname: dbUser.email.split('@')[0],
-        webhookUrl: `${APP_URL}${ACTIVE_PSP_PAYMENT_WEBHOOK_PATH}`,
+        webhookUrl: `${APP_URL}${route.paymentWebhookPath}`,
         metadata: { deposit_request_id: deposit.id },
       })
 
@@ -115,7 +118,7 @@ export async function createDepositRequestAction(formData: FormData) {
         })
         .where(eq(depositRequests.id, deposit.id))
 
-      console.log(`[${ACTIVE_PSP_PROVIDER}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
+      console.log(`[${route.provider}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
     } catch (error) {
       await db
         .update(depositRequests)
@@ -157,6 +160,8 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
 
   const idempotencyKey = crypto.randomUUID()
 
+  const cardRoute = await getCollectionRoute('card', { userId: dbUser.id })
+
   const [deposit] = await db
     .insert(depositRequests)
     .values({
@@ -167,7 +172,7 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
       amountTzs: Math.trunc(amountTzs),
       idempotencyKey,
       status: 'submitted',
-      paymentProvider: 'snippe_card',
+      paymentProvider: cardRoute.depositTag,
     })
     .returning({ id: depositRequests.id })
 
@@ -178,7 +183,7 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
     customerFirstname: dbUser.email.split('@')[0],
     redirectUrl: `${APP_URL}/app/user/deposits/card-return?status=success&deposit=${deposit.id}`,
     cancelUrl: `${APP_URL}/app/user/deposits/card-return?status=cancel&deposit=${deposit.id}`,
-    webhookUrl: `${APP_URL}/api/webhooks/snippe/payment`,
+    webhookUrl: `${APP_URL}${cardRoute.paymentWebhookPath}`,
     metadata: { deposit_request_id: deposit.id },
   })
 

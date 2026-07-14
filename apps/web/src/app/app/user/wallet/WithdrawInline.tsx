@@ -6,9 +6,11 @@ import { WithdrawForm } from '../withdraw/WithdrawForm'
 
 interface WithdrawInlineProps {
   userPhone?: string | null
+  /** Provider currently routed for mobile payouts — drives the fee quote. */
+  pspProvider: string
 }
 
-export function WithdrawInline({ userPhone }: WithdrawInlineProps) {
+export function WithdrawInline({ userPhone, pspProvider }: WithdrawInlineProps) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -50,7 +52,7 @@ export function WithdrawInline({ userPhone }: WithdrawInlineProps) {
                 </svg>
               </button>
             </div>
-            <WithdrawForm userPhone={userPhone} />
+            <WithdrawForm userPhone={userPhone} pspProvider={pspProvider} />
             </div>
           </motion.div>
         </>
