@@ -1,12 +1,13 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 import { requireAnyRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { SubmitButton } from '../_components/SubmitButton'
 import { getDb } from '@/lib/db'
-import { users, kycCases } from '@ntzs/db'
+import { users, kycCases, partnerUsers, partners } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateEAT } from '@/lib/format-date'
+import { kycDisplayName } from '@/lib/kyc/display'
 
 async function updateKycStatusAction(formData: FormData) {
   'use server'
@@ -81,10 +82,26 @@ function StatusBadge({ status }: { status: string }) {
 export default async function KycPage() {
   const { db } = getDb()
 
-  // Fetch all KYC cases with user info
-  const allKycCases = await db
+  // Real totals across the whole table — the list below is windowed, the
+  // numbers here must not be. verifiedIdentities counts distinct PEOPLE with
+  // an approved case: the number that counts toward the 100-participant pilot.
+  const [counts] = await db
+    .select({
+      total: sql<number>`count(*)`.mapWith(Number),
+      pending: sql<number>`count(*) filter (where ${kycCases.status} = 'pending')`.mapWith(Number),
+      approved: sql<number>`count(*) filter (where ${kycCases.status} = 'approved')`.mapWith(Number),
+      rejected: sql<number>`count(*) filter (where ${kycCases.status} = 'rejected')`.mapWith(Number),
+      verifiedIdentities: sql<number>`count(distinct ${kycCases.userId}) filter (where ${kycCases.status} = 'approved')`.mapWith(Number),
+    })
+    .from(kycCases)
+
+  // Most recent attempts with the person + issuance source attached. Grouped
+  // below to one row per person (latest case wins, attempts counted) so a
+  // user who retried eight times is one line, not eight.
+  const recent = await db
     .select({
       id: kycCases.id,
+      userId: kycCases.userId,
       nationalId: kycCases.nationalId,
       status: kycCases.status,
       provider: kycCases.provider,
@@ -92,16 +109,32 @@ export default async function KycPage() {
       createdAt: kycCases.createdAt,
       reviewedAt: kycCases.reviewedAt,
       userEmail: users.email,
-      userId: users.id,
+      userName: users.name,
+      partnerName: partners.name,
     })
     .from(kycCases)
     .innerJoin(users, eq(kycCases.userId, users.id))
+    .leftJoin(partnerUsers, eq(partnerUsers.userId, kycCases.userId))
+    .leftJoin(partners, eq(partners.id, partnerUsers.partnerId))
     .orderBy(desc(kycCases.createdAt))
-    .limit(200)
+    .limit(500)
 
-  const pendingCount = allKycCases.filter(k => k.status === 'pending').length
-  const approvedCount = allKycCases.filter(k => k.status === 'approved').length
-  const rejectedCount = allKycCases.filter(k => k.status === 'rejected').length
+  const byUser = new Map<
+    string,
+    { row: (typeof recent)[number]; caseIds: Set<string>; sources: Set<string> }
+  >()
+  for (const r of recent) {
+    const group = byUser.get(r.userId) ?? { row: r, caseIds: new Set<string>(), sources: new Set<string>() }
+    group.caseIds.add(r.id)
+    group.sources.add(r.partnerName ?? 'Direct app')
+    byUser.set(r.userId, group)
+  }
+  const rows = [...byUser.values()].map((g) => ({
+    ...g.row,
+    attempts: g.caseIds.size,
+    source: [...g.sources].join(' · '),
+    displayName: kycDisplayName({ reviewReason: g.row.reviewReason, declaredName: g.row.userName, email: g.row.userEmail }),
+  }))
 
   return (
     <div className="min-h-screen">
@@ -110,28 +143,32 @@ export default async function KycPage() {
         <div className="px-8 py-6">
           <h1 className="text-2xl font-bold text-white">KYC Verification</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Review and approve user identity verification submissions
+            One row per person (latest case, attempts counted) · verified NIDA names · issuance source
           </p>
         </div>
       </div>
 
       <div className="p-8">
         {/* Stats */}
-        <div className="mb-6 grid gap-4 sm:grid-cols-4">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
-            <p className="text-2xl font-bold text-white">{allKycCases.length}</p>
-            <p className="text-sm text-zinc-500">Total Submissions</p>
+            <p className="text-2xl font-bold text-white">{counts?.total ?? 0}</p>
+            <p className="text-sm text-zinc-500">Total Attempts</p>
           </div>
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-            <p className="text-2xl font-bold text-amber-400">{pendingCount}</p>
+            <p className="text-2xl font-bold text-amber-400">{counts?.pending ?? 0}</p>
             <p className="text-sm text-zinc-500">Pending Review</p>
           </div>
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <p className="text-2xl font-bold text-emerald-400">{approvedCount}</p>
-            <p className="text-sm text-zinc-500">Approved</p>
+            <p className="text-2xl font-bold text-emerald-400">{counts?.approved ?? 0}</p>
+            <p className="text-sm text-zinc-500">Approved Cases</p>
+          </div>
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+            <p className="text-2xl font-bold text-emerald-300">{counts?.verifiedIdentities ?? 0}</p>
+            <p className="text-sm text-zinc-500">Verified Identities <span className="text-zinc-600">· pilot counts these</span></p>
           </div>
           <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-            <p className="text-2xl font-bold text-rose-400">{rejectedCount}</p>
+            <p className="text-2xl font-bold text-rose-400">{counts?.rejected ?? 0}</p>
             <p className="text-sm text-zinc-500">Rejected</p>
           </div>
         </div>
@@ -142,41 +179,57 @@ export default async function KycPage() {
             <table className="w-full">
               <thead className="bg-zinc-900/80">
                 <tr className="text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  <th className="px-6 py-4">User</th>
+                  <th className="px-6 py-4">Person</th>
                   <th className="px-6 py-4">National ID</th>
-                  <th className="px-6 py-4">Provider</th>
+                  <th className="px-6 py-4">Source</th>
                   <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Submitted</th>
+                  <th className="px-6 py-4">Attempts</th>
+                  <th className="px-6 py-4">Latest</th>
                   <th className="px-6 py-4">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {allKycCases.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
-                      <svg className="mx-auto h-12 w-12 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                      </svg>
-                      <p className="mt-4 text-zinc-500">No KYC submissions yet</p>
+                    <td colSpan={7} className="px-6 py-12 text-center">
+                      <p className="text-zinc-500">No KYC submissions yet</p>
                     </td>
                   </tr>
                 ) : (
-                  allKycCases.map((kyc) => (
-                    <tr key={kyc.id} className="hover:bg-white/[0.02] transition-colors">
+                  rows.map((kyc) => (
+                    <tr key={kyc.userId} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-6 py-4">
-                        <div className="font-medium text-white">{kyc.userEmail}</div>
+                        <div className="font-medium text-white">{kyc.displayName}</div>
+                        <div className="text-xs text-zinc-500">{kyc.userEmail}</div>
                       </td>
                       <td className="px-6 py-4">
                         <code className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-zinc-300">
                           {kyc.nationalId}
                         </code>
                       </td>
-                      <td className="px-6 py-4 text-sm text-zinc-400">{kyc.provider}</td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                            kyc.source === 'Direct app'
+                              ? 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300'
+                              : 'border-violet-500/30 bg-violet-500/15 text-violet-300'
+                          }`}
+                          title="Where this user's wallet was issued"
+                        >
+                          {kyc.source}
+                        </span>
+                        <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-600">{kyc.provider}</div>
+                      </td>
                       <td className="px-6 py-4">
                         <StatusBadge status={kyc.status} />
                         {kyc.reviewReason && (
-                          <p className="mt-1 text-xs text-zinc-600">{kyc.reviewReason}</p>
+                          <p className="mt-1 max-w-[280px] truncate text-xs text-zinc-600" title={kyc.reviewReason}>
+                            {kyc.reviewReason}
+                          </p>
                         )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-zinc-400">
+                        {kyc.attempts > 1 ? `${kyc.attempts}×` : '—'}
                       </td>
                       <td className="px-6 py-4 text-sm text-zinc-400">
                         {formatDateEAT(kyc.createdAt)}
@@ -222,6 +275,9 @@ export default async function KycPage() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="border-t border-white/5 px-6 py-3 text-xs text-zinc-600">
+            Latest case per person from the most recent 500 attempts. Evidence trail on hover; full history in the database.
           </div>
         </div>
       </div>

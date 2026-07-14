@@ -10,8 +10,18 @@ import { formatDateTimeEAT } from '@/lib/format-date'
 export interface OversightData {
   stats: { totalUsers: number; totalDeposits: number }
   pspBalance: { available: number; pending: number; currency: string; pspName: string }
-  kycStats: { total: number; approved: number; pending: number; rejected: number }
+  kycStats: {
+    total: number; approved: number; pending: number; rejected: number
+    /** Distinct persons approved — counts toward the 100-participant pilot cap. */
+    verifiedIdentities: number
+    /** Approved instantly by the provider pair-check (no human in the loop). */
+    instantApproved: number
+    /** Approved via human maker-checker review. */
+    humanReviewed: number
+  }
   kycByProvider: Array<{ provider: string; count: number; approved: number }>
+  /** Verification split by issuance channel: Direct app vs each WaaS partner. */
+  kycBySource: Array<{ source: string; total: number; approved: number; pending: number }>
   todayIssuance: { issuedTzs: number; capTzs: number } | null
   recentDeposits: Array<{
     id: string; amountTzs: number; status: string
@@ -543,9 +553,9 @@ function KycSection({ data, d }: { data: OversightData; d: boolean }) {
   // Honest control inventory mapped to the Testing Parameters. 'live' = in place
   // today; 'partial' = limited/manual; 'planned' = not yet, via the partner bank.
   const controls: Array<{ param: string; label: string; detail: string; status: ControlStatus }> = [
-    { param: 'Para 8(a)', label: 'Government national ID verification', detail: 'Collected and reviewed for every participant', status: 'live' },
+    { param: 'Para 8(a)', label: 'Government national ID verification', detail: 'NIDA + MSISDN pair-verified via Selcom Identity; risk-tiered ladder falls back to human maker-checker review', status: 'live' },
     { param: 'Para 8(a)', label: 'Mobile OTP authentication', detail: 'Phone OTP enforced for account access', status: 'live' },
-    { param: 'Para 8(a)', label: 'Biometric selfie verification', detail: 'Via Selcom bank-ID / approved provider (Cohort 2)', status: 'planned' },
+    { param: 'Para 8(a)', label: 'Biometric selfie verification', detail: 'Biometric-by-proxy live via telco SIM registration (NIDA + fingerprints at the telco); direct selfie capture planned', status: 'partial' },
     { param: 'Para 8(b)', label: 'Source-of-funds self-declaration', detail: 'Structured capture at onboarding for Cohort 2', status: 'planned' },
     { param: 'Para 8(b)', label: 'Wallet address verification', detail: 'Every wallet bound to a verified user', status: 'live' },
     { param: 'Para 8(c)', label: 'PEP + sanctions screening (UN / BoT / OFAC)', detail: 'Via partner bank (Selcom) before wallet activation', status: 'planned' },
@@ -558,24 +568,51 @@ function KycSection({ data, d }: { data: OversightData; d: boolean }) {
   return (
     <div className="space-y-5">
       {/* KYC status */}
-      <div className={`grid gap-px md:grid-cols-3 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
-        <Metric label="KYC verified" value={n(data.kycStats.approved)} sub="Identity confirmed, can transact" d={d} valueColor={d ? 'text-emerald-400' : 'text-emerald-600'} />
-        <Metric label="Pending review" value={n(data.kycStats.pending)} sub="Submitted, awaiting manual check" d={d} valueColor={d ? 'text-amber-400' : 'text-amber-600'} />
+      <div className={`grid gap-px md:grid-cols-4 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
+        <Metric label="Verified identities" value={n(data.kycStats.verifiedIdentities)} sub="Distinct persons — pilot cap 100 (Para 2)" d={d} valueColor={d ? 'text-emerald-300' : 'text-emerald-700'} />
+        <Metric label="Approved cases" value={n(data.kycStats.approved)} sub="Identity confirmed, can transact" d={d} valueColor={d ? 'text-emerald-400' : 'text-emerald-600'} />
+        <Metric label="Pending review" value={n(data.kycStats.pending)} sub="In the maker-checker queue" d={d} valueColor={d ? 'text-amber-400' : 'text-amber-600'} />
         <Metric label="Rejected" value={n(data.kycStats.rejected)} sub="Did not pass verification" d={d} valueColor={d ? 'text-red-400' : 'text-red-600'} />
       </div>
+      <p className={`text-[10px] leading-relaxed ${t4}`}>
+        Of approved cases: {n(data.kycStats.instantApproved)} verified instantly by the identity provider (NIDA+MSISDN pair-check) ·{' '}
+        {n(data.kycStats.humanReviewed)} decided by human maker-checker review.
+      </p>
 
       {/* Honest cohort framing */}
       <div className={`border p-5 ${info}`}>
         <div className={`font-mono text-[9px] tracking-widest uppercase ${d ? 'text-blue-400' : 'text-blue-600'}`}>Verification cohorts — current state &amp; roadmap</div>
         <p className={`mt-2 text-sm leading-relaxed ${t2}`}>
           The sandbox onboards a maximum of 100 pilot users (Parameter 2). Verification is reported by method, with no
-          retroactive relabelling. Banking-grade Tier-1 KYC (biometric + PEP/sanctions) comes online for new participants
-          through the partner bank (Selcom), which also performs AML/CFT per Parameter 6 &amp; 15.
+          retroactive relabelling. New participants verify on a risk-tiered ladder: instant bank-grade NIDA+MSISDN
+          pair verification (Selcom Identity — live), telco SIM-registration evidence, and human maker-checker review.
+          No anonymous wallets; no participant dead-ends.
         </p>
       </div>
       <div className={`grid gap-px sm:grid-cols-2 border ${border} ${d ? 'bg-white/8' : 'bg-gray-200'}`}>
         <Metric label="Cohort 1 · Self-administered" value={n(manualCount)} sub="National ID + manual NEDA compliance review (interim sandbox verification)" d={d} />
-        <Metric label="Cohort 2 · Bank-grade (Selcom)" value={n(bankGradeCount)} sub="Tier-1 biometric + PEP/sanctions via partner bank — onboarding pending green-light" d={d} valueColor={bankGradeCount > 0 ? (d ? 'text-emerald-400' : 'text-emerald-600') : (d ? 'text-zinc-500' : 'text-gray-400')} />
+        <Metric label="Cohort 2 · Bank-grade (Selcom)" value={n(bankGradeCount)} sub="Selcom Identity NIDA+MSISDN pair verification — LIVE (biometric selfie + PEP/sanctions to follow)" d={d} valueColor={bankGradeCount > 0 ? (d ? 'text-emerald-400' : 'text-emerald-600') : (d ? 'text-zinc-500' : 'text-gray-400')} />
+      </div>
+
+      {/* Verification by issuance channel */}
+      <div className={`border ${border}`}>
+        <div className={`border-b px-5 py-3 ${border}`}>
+          <span className={`font-mono text-[9px] tracking-widest uppercase ${t3}`}>Verification by issuance channel — direct app vs WaaS partners</span>
+        </div>
+        <div className={`divide-y ${divider}`}>
+          {data.kycBySource.length === 0 ? (
+            <div className={`px-5 py-3 text-sm ${t2}`}>No verification cases yet</div>
+          ) : (
+            data.kycBySource.map((s) => (
+              <div key={s.source} className="flex items-center justify-between gap-4 px-5 py-2.5">
+                <span className={`text-sm font-medium ${t1}`}>{s.source}</span>
+                <span className={`text-xs ${t2}`}>
+                  {n(s.approved)} approved · {n(s.pending)} pending · {n(s.total)} total cases
+                </span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Control inventory */}
