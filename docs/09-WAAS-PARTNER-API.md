@@ -58,6 +58,23 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.5.0 (14 Jul 2026)
+
+### Identity verification (KYC) is now a structural prerequisite for user wallets
+
+Every end-user wallet must be backed by a verified national identity (Bank of Tanzania sandbox, Testing Parameter 8). Verification runs on a risk-tiered ladder — instant for most users, human review for the rest, **no user dead-ends**. See [Identity Verification (KYC)](#identity-verification-kyc) for the full contract.
+
+**Do you need to update your integration?**
+
+| Scenario | Action required |
+|----------|----------------|
+| You create user wallets | **Yes.** Send `nidaNumber` + `phone` on `POST /api/v1/users`, and handle the new `202 kyc_pending_review` response (show "verification under review", re-call later — the endpoint is idempotent). |
+| You have users created before v1.5.0 | **Yes.** They have no identity on file (`kycStatus: "none"` on `GET /api/v1/users/:id`). Prompt them in-app and verify via `POST /api/v1/users/:id/kyc`. Their wallets keep working — verification is additive, nothing is frozen. |
+| You want a treasury / business wallet | Complete KYB (business verification) from the partner dashboard — certificate of incorporation upload → compliance review → sub-wallets unlock. |
+| You only use swap / rates | **None.** No changes. |
+
+---
+
 ## What's New — v1.4.0 (27 Apr 2026)
 
 ### USDT is now live on Base and BNB Smart Chain
@@ -278,7 +295,7 @@ while (true) {
 
 ### `POST /api/v1/users`
 
-Creates a new WaaS user and provisions a dedicated HD-derived wallet on Base. Idempotent — calling with the same `externalId` returns the existing user.
+Creates a new WaaS user, verifies their identity, and provisions a dedicated HD-derived wallet on Base. Idempotent — calling with the same `externalId` returns the existing user.
 
 #### Request body
 
@@ -286,10 +303,11 @@ Creates a new WaaS user and provisions a dedicated HD-derived wallet on Base. Id
 |-------|------|----------|-------------|
 | `externalId` | string | ✓ | Your app's internal user ID — used for idempotency and lookup |
 | `email` | string | ✓ | User's email address |
+| `nidaNumber` | string | ✓ | User's 20-digit NIDA number (dashes/spaces accepted) |
+| `phone` | string | ✓ | User's **own** Tanzanian mobile money number (`07…`, `+2557…`, or `2557…`) — it must be registered in the user's name |
 | `name` | string | — | Display name |
-| `phone` | string | — | Phone number (E.164 format recommended) |
 
-#### Response `201 Created`
+#### Response `201 Created` — identity verified instantly, wallet issued
 
 ```json
 {
@@ -297,13 +315,28 @@ Creates a new WaaS user and provisions a dedicated HD-derived wallet on Base. Id
   "externalId": "your-app-user-id",
   "email": "user@example.com",
   "name": "Jane Doe",
-  "phone": "+255712345678",
+  "phone": "255712345678",
   "walletAddress": "0xABC123...",
   "balance": 0
 }
 ```
 
-If the `externalId` already exists, returns `200` with the existing record (no duplicate wallet created).
+#### Response `202 Accepted` — identity queued for manual review
+
+```json
+{
+  "id": "uuid-assigned-by-ntzs",
+  "externalId": "your-app-user-id",
+  "walletAddress": null,
+  "kycStatus": "pending_review",
+  "code": "kyc_pending_review",
+  "message": "We could not verify your identity automatically, so it has been submitted for manual review. ..."
+}
+```
+
+The user exists but has **no wallet yet**. Show a "verification under review" state (see [UX copy](#suggested-ux-copy)) and re-call this endpoint later — it is idempotent, and once our compliance team approves the review (usually within one business day) the same call returns `walletAddress`. While the review is open, the idempotent response includes `kycStatus: "pending_review"`.
+
+If the `externalId` already exists, returns `200` with the existing record (no duplicate wallet created), including `kycStatus` when the user has no wallet yet.
 
 #### How wallets are derived
 
@@ -311,16 +344,22 @@ Each partner has an encrypted HD seed (auto-generated on first `POST /api/v1/use
 
 #### Errors
 
-| Status | `error` | Cause |
-|--------|---------|-------|
-| `400` | `externalId and email are required` | Missing required fields |
-| `500` | `Server configuration error: wallet encryption key not set` | `WAAS_ENCRYPTION_KEY` env var missing on server |
+| Status | `code` | Meaning / what to show the user |
+|--------|--------|--------------------------------|
+| `400` | — (`externalId and email are required`) | Missing required fields |
+| `400` | `kyc_required` | No `nidaNumber` sent — identity is a prerequisite for holding nTZS |
+| `400` | `kyc_failed` | NIDA malformed, or the NIDA + phone pair could not be verified — ask the user to check both |
+| `400` | `phone_required` | Phone missing or not a valid Tanzanian mobile number |
+| `400` | `identity_binding_failed` | The phone is registered to a **different person** than the NIDA — the user must use the mobile money number in their own name |
+| `409` | `nida_already_registered` | This NIDA already backs a wallet (or a verification under review) with your platform |
+| `503` | `kyc_unavailable` | Verification provider temporarily unreachable — retry later; **do not show this as a rejection** |
+| `500` | — | `WAAS_ENCRYPTION_KEY` env var missing on server |
 
 ---
 
 ### `GET /api/v1/users/:id`
 
-Returns user profile and live on-chain token balances. `:id` is the nTZS-assigned UUID returned from `POST /api/v1/users`.
+Returns user profile, identity status, and live on-chain token balances. `:id` is the nTZS-assigned UUID returned from `POST /api/v1/users`.
 
 #### Response
 
@@ -329,15 +368,85 @@ Returns user profile and live on-chain token balances. `:id` is the nTZS-assigne
   "id": "uuid-assigned-by-ntzs",
   "externalId": "your-app-user-id",
   "email": "user@example.com",
-  "phone": "+255712345678",
+  "phone": "255712345678",
   "walletAddress": "0xABC123...",
   "balanceTzs": 1250.0,
   "balanceUsdc": 10.5,
-  "balanceUsdt": 0.0
+  "balanceUsdt": 0.0,
+  "kycStatus": "approved"
 }
 ```
 
 Balances are read live from Base mainnet. `walletAddress` will be `null` if wallet provisioning is still pending.
+
+`kycStatus` is one of `approved`, `pending_review`, `rejected`, or `none`. **`none` means the user was created before the KYC standard and has no identity on file** — prompt them in-app and verify via `POST /api/v1/users/:id/kyc` below. Their wallet keeps working in the meantime; verification is additive.
+
+---
+
+## Identity Verification (KYC)
+
+Every end-user wallet is backed by a verified national identity (BoT sandbox Testing Parameter 8). Verification runs on a **risk-tiered ladder** — you integrate once and never care which tier fired:
+
+| Tier | What happens | Speed |
+|------|--------------|-------|
+| A | The NIDA + phone pair is verified against a bank-grade KYC registry | instant |
+| B | The phone's telco SIM registration (NIDA + fingerprints by law) is used as supporting evidence | instant |
+| C | Our compliance team reviews the case with the collected evidence | usually < 1 business day |
+
+Rules your UX should reflect:
+
+- The phone must be the user's **own** mobile money line (a line registered to someone else is a hard fail — this is deliberate, per AML policy).
+- "Under review" is **not** a rejection — never show it as an error.
+- One NIDA backs at most one wallet on your platform.
+
+### `POST /api/v1/users/:id/kyc`
+
+Attaches a verified identity to an **existing** user — for users created before the KYC standard (retro-KYC), and for re-attempts after a rejected review. Never touches the user's wallet or balance; a user whose signup was queued for review gets their wallet issued the moment approval lands here.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `nidaNumber` | string | ✓ | User's 20-digit NIDA number |
+| `phone` | string | ✓ | User's own Tanzanian mobile money number |
+
+#### Responses
+
+| Status | Body highlights | Meaning |
+|--------|-----------------|---------|
+| `200` | `kycStatus: "approved"`, `walletAddress` | Verified instantly (or was already verified — `alreadyVerified: true`) |
+| `202` | `kycStatus: "pending_review"` | Queued for manual review (or already under review) — poll `GET /api/v1/users/:id` |
+| `400` | `code` as in the create-user error table | Rejected / invalid input |
+| `409` | `nida_already_registered` | NIDA belongs to another user on your platform |
+| `503` | `kyc_unavailable` | Retry later |
+
+#### Retro-KYC campaign pattern
+
+1. `GET /api/v1/users/:id` for your active users → collect those with `kycStatus: "none"` (or `"rejected"`).
+2. Prompt in-app: "Verify your identity to keep your nTZS wallet compliant" + NIDA + phone form.
+3. `POST /api/v1/users/:id/kyc` → handle the three outcomes exactly like signup.
+4. Nothing is frozen and no deadline is enforced by the API — the campaign is prompt-driven.
+
+### Suggested UX copy
+
+| State | English | Swahili (suggested) |
+|-------|---------|---------------------|
+| Under review | "Your identity verification is under review — you'll be notified when it completes (usually within one business day)." | "Uthibitisho wa utambulisho wako unakaguliwa — utajulishwa ukikamilika (kwa kawaida ndani ya siku moja ya kazi)." |
+| Phone/NIDA mismatch | "This mobile number is not registered to the holder of this NIDA. Use the mobile money number registered in your own name." | "Namba hii ya simu haijasajiliwa kwa jina la mmiliki wa NIDA. Tumia namba ya simu iliyosajiliwa kwa jina lako." |
+| Could not verify | "We couldn't verify this NIDA and mobile number together. Check both and try again." | "Hatukuweza kuthibitisha NIDA na namba ya simu kwa pamoja. Hakiki zote mbili kisha ujaribu tena." |
+| Service unavailable | "Verification is temporarily unavailable. Please try again shortly." | "Huduma ya uthibitisho haipatikani kwa sasa. Tafadhali jaribu tena baadaye." |
+
+### Business / treasury wallets (KYB)
+
+Sub-wallets and treasury wallets are business wallets: they unlock after **KYB** — upload your certificate of incorporation (and supporting documents) from the partner dashboard; our compliance team reviews maker-checker style. Until approval, sub-wallet creation returns `403 kyb_required`.
+
+### Integration test checklist
+
+1. Create a user with a real NIDA + their own phone → expect `201` + wallet (Tier A) **or** `202 pending_review` (Tier C) — both are success paths.
+2. Same NIDA, a phone in someone else's name → expect `400 identity_binding_failed`.
+3. Re-call `POST /api/v1/users` with the same `externalId` → expect the idempotent existing-user response.
+4. A `202` user: after our team approves the review, re-call → expect `walletAddress` populated.
+5. A legacy user: `GET /api/v1/users/:id` → `kycStatus: "none"` → `POST /api/v1/users/:id/kyc` → same outcomes as signup.
 
 ---
 
