@@ -1,11 +1,11 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { users, wallets, partnerUsers } from '@ntzs/db'
+import { users, wallets, partnerUsers, kycCases } from '@ntzs/db'
 
 const BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 
@@ -56,6 +56,17 @@ export async function GET(
     .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
     .limit(1)
 
+  // Identity status so partners can prompt legacy (pre-KYC) users to verify:
+  // 'none' means no identity on file → call POST /api/v1/users/:id/kyc.
+  const [latestCase] = await db
+    .select({ status: kycCases.status })
+    .from(kycCases)
+    .where(eq(kycCases.userId, userId))
+    .orderBy(desc(kycCases.createdAt))
+    .limit(1)
+  const kycStatus =
+    latestCase?.status === 'pending' ? 'pending_review' : latestCase?.status ?? 'none'
+
   // Read nTZS, USDC, and USDT balances in parallel
   let balanceTzs = 0
   let balanceUsdc = 0
@@ -96,5 +107,6 @@ export async function GET(
     balanceTzs,
     balanceUsdc,
     balanceUsdt,
+    kycStatus,
   })
 }
