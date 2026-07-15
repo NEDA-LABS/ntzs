@@ -95,6 +95,20 @@ export interface PayoutResponse {
   total?: number
   error?: string
   errorCode?: string
+  /**
+   * The PSP rejected this as a DUPLICATE of an earlier submission — meaning the
+   * ORIGINAL was accepted and the money is in flight or already paid.
+   *
+   * ⚠ It arrives with success:false, but it is NOT a failed payout. Callers MUST
+   * NOT revert / re-mint on it: that would hand the customer the fiat AND the
+   * tokens and mint unbacked supply, breaking the 1:1 peg. Treat it as in-flight
+   * and reconcile via status query or callback instead.
+   *
+   * Verified on AzamPay (2026-07-15): replaying an externalReferenceId returns
+   * success:false "Detected duplicate transaction: Duplicate ExternalReferenceId"
+   * and does NOT return the original pgReferenceId.
+   */
+  duplicate?: boolean
 }
 
 export interface BankPayoutRequest {
