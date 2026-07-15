@@ -51,8 +51,24 @@ function useOnChainSupply() {
   return supply
 }
 
+function useTotalVolume() {
+  const [volume, setVolume] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/stats/volume')
+      .then(r => r.json())
+      .then((data: { totalProcessedTzs?: number }) => {
+        if (typeof data.totalProcessedTzs === 'number' && data.totalProcessedTzs > 0) {
+          setVolume(data.totalProcessedTzs.toLocaleString('en-US'))
+        }
+      })
+      .catch(() => null)
+  }, [])
+  return volume
+}
+
 export default function MasterLandingPage() {
   const onChainSupply = useOnChainSupply()
+  const totalVolume = useTotalVolume()
   return (
     <div className="bg-black font-mono text-white">
 
@@ -161,6 +177,12 @@ export default function MasterLandingPage() {
               {onChainSupply && (
                 <>
                   <span className="text-blue-600 font-medium">{onChainSupply} nTZS</span>
+                  <div className="w-px h-2.5 bg-gray-200" />
+                </>
+              )}
+              {totalVolume && (
+                <>
+                  <span className="text-emerald-600 font-medium">TZS {totalVolume} processed</span>
                   <div className="w-px h-2.5 bg-gray-200" />
                 </>
               )}
