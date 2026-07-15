@@ -307,7 +307,16 @@ export async function runOfframpSettlement(args: {
     }
 
     // Ambiguous initiation failure — never auto-revert; flag for reconciliation.
-    const reason = payout.error ?? 'Payout initiation failed'
+    //
+    // `duplicate` is the sharpest case: the PSP rejected our reference because an
+    // EARLIER submission was ACCEPTED, so the money is in flight or already paid.
+    // It must never be read as "failed" (reverting would pay the customer twice
+    // and mint unbacked nTZS) — label it so the operator reconciles rather than
+    // refunds. Verified on AzamPay: replaying an externalReferenceId returns
+    // success:false "Detected duplicate transaction".
+    const reason = payout.duplicate
+      ? `duplicate_in_flight: original submission was accepted by the PSP — confirm payout before any refund (${payout.error ?? 'duplicate reference'})`
+      : payout.error ?? 'Payout initiation failed'
     await db.update(burnRequests).set({ payoutStatus: 'reconcile_required', payoutError: reason, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
     await setStatus(settlementId, { status: 'failed', error: `reconcile_required: ${reason}` })
     return { ok: false, status: 'failed', error: reason }

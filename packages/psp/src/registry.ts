@@ -8,6 +8,12 @@
  */
 import * as snippe from './snippe'
 import * as azampay from './azampay'
+// AzamPay runs DISBURSEMENT as a separate app (own host, credentials and a
+// mandatory RSA checksum). The payout surface in ./azampay targets the
+// collection/checkout host with a guessed payload and no checksum, so it can
+// never succeed — payouts route here instead. Verified against the AzamPay
+// sandbox 2026-07-15 (token, namelookup, disburse, duplicate detection).
+import * as azampayDisb from './azampay-disbursement'
 import * as selcom from './selcom'
 import type {
   PspId,
@@ -75,13 +81,14 @@ export const ADAPTERS: Record<PspId, PspAdapter> = {
     initiatePayment: (req) => azampay.initiatePayment(req),
     initiateCardPayment: () => azampay.initiateCardPayment(),
     checkPaymentStatus: (reference, channel) => azampay.checkPaymentStatus(reference, channel),
-    sendPayout: (req) => azampay.sendPayout(req),
-    sendBankPayout: (req) => azampay.sendBankPayout(req),
+    // Payout surface -> the verified disbursement adapter (separate AzamPay app).
+    sendPayout: (req) => azampayDisb.sendPayout(req),
+    sendBankPayout: (req) => azampayDisb.sendBankPayout(req),
     checkPayoutStatus: (reference) => azampay.checkPayoutStatus(reference),
     calculatePayoutFee: (amount) => azampay.calculatePayoutFee(amount),
     getBalance: () => azampay.getBalance(),
     lookupAccountName: (phone) => azampay.lookupAccountName(phone),
-    lookupRecipientName: (phone) => azampay.lookupRecipientName(phone),
+    lookupRecipientName: (phone) => azampayDisb.lookupRecipientName(phone),
   },
   selcom: {
     id: 'selcom',
