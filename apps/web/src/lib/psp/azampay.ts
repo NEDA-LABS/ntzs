@@ -14,6 +14,15 @@
 
 import crypto from 'crypto'
 
+import {
+  azamBankNameForNetwork,
+  azamPayChecksumKey,
+  buildDisbursementChecksumInput,
+  buildNameLookupChecksumInput,
+  computeAzamPayChecksum,
+} from './azampay-checksum'
+import { detectNetwork } from './routing'
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 function getAzamPayEnv(): 'sandbox' | 'production' {
@@ -325,6 +334,14 @@ export interface AzamPayRecipientInfo {
 export async function lookupRecipientName(phone: string): Promise<AzamPayRecipientInfo> {
   const normalized = normalizePhone(phone)
   const provider = detectAzamPayProvider(normalized)
+  const bankName = azamBankNameForNetwork(detectNetwork(normalized))
+
+  // Production requires a checksum over bankName + accountNumber (their
+  // sample, 16 Jul 2026); omitted when the key isn't configured (sandbox).
+  const checksumKey = azamPayChecksumKey()
+  const checksumFields = checksumKey
+    ? { checksum: computeAzamPayChecksum(buildNameLookupChecksumInput(bankName, normalized), checksumKey) }
+    : {}
 
   try {
     const token = await getAccessToken()
@@ -335,9 +352,11 @@ export async function lookupRecipientName(phone: string): Promise<AzamPayRecipie
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        bankName,
         accountNumber: normalized,
         provider,
         type: 'mno', // ⚠ verify correct value for mobile money in sandbox
+        ...checksumFields,
       }),
       signal: AbortSignal.timeout(8_000),
     })
@@ -405,6 +424,38 @@ export async function sendPayout(request: AzamPayPayoutRequest): Promise<AzamPay
   const phone = normalizePhone(request.recipientPhone)
   const provider = detectAzamPayProvider(phone)
   const bankName = getBankName()
+  const destBankName = azamBankNameForNetwork(detectNetwork(phone))
+
+  // ONE reference per logical payout, reused across retries. AzamPay rejects
+  // duplicate externalReferenceIds — that rejection is the double-pay guard,
+  // and it only protects us if a retry after a timeout carries the SAME
+  // reference as the attempt that may have landed.
+  const externalReferenceId = crypto.randomUUID()
+
+  // Production checksum (their sample, 16 Jul 2026): SHA-512 of
+  // sourceAcc+destAcc+currency+amount+epochSeconds+externalReferenceId,
+  // RSA-PKCS#1-encrypted with their public key, base64. Skipped when the key
+  // isn't configured (sandbox accepts requests without it).
+  const checksumKey = azamPayChecksumKey()
+  const sourceAcc = process.env.AZAMPAY_SOURCE_ACCOUNT || ''
+  const epochSeconds = Math.floor(Date.now() / 1000)
+  const checksumFields =
+    checksumKey && sourceAcc
+      ? {
+          epochDate: epochSeconds,
+          checksum: computeAzamPayChecksum(
+            buildDisbursementChecksumInput({
+              sourceAcc,
+              destAcc: phone,
+              currency: 'TZS',
+              amount: String(Math.trunc(request.amountTzs)),
+              epochSeconds,
+              externalReferenceId,
+            }),
+            checksumKey
+          ),
+        }
+      : {}
 
   const MAX_ATTEMPTS = 3
   const BACKOFF_MS = [0, 1000, 3000]
@@ -424,13 +475,15 @@ export async function sendPayout(request: AzamPayPayoutRequest): Promise<AzamPay
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        // ⚠ source/destination/transferDetails exact shape must be verified in sandbox
+        // ⚠ exact field names for checksum/epochDate to be confirmed against
+        // AzamPay's production schema before enabling disbursements.
         body: JSON.stringify({
           source: { bankName },
-          destination: { phone, provider },
+          destination: { phone, provider, bankName: destBankName },
           transferDetails: { amount: request.amountTzs, currency: 'TZS' },
-          externalReferenceId: crypto.randomUUID(),
+          externalReferenceId,
           remarks: request.narration || 'nTZS withdrawal',
+          ...checksumFields,
           additionalProperties: {
             ...request.metadata,
             ...(request.webhookUrl?.startsWith('https://') ? { webhookUrl: request.webhookUrl } : {}),
