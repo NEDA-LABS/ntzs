@@ -1,7 +1,7 @@
 # 09 — WaaS Partner API Reference
 
 **Document owner**: NEDA Labs Limited  
-**Last updated**: May 2026  
+**Last updated**: July 2026  
 **Classification**: Regulatory — Bank of Tanzania Sandbox Submission
 
 ---
@@ -45,6 +45,7 @@ sequenceDiagram
 | Execute swap | `POST /api/v1/swap` (SSE) |
 | Create user + wallet | `POST /api/v1/users` |
 | Get user profile + balances | `GET /api/v1/users/:id` |
+| Recipient name check before withdrawal | `POST /api/v1/lookup/recipient-name` |
 | Create org/treasury sub-wallet | `POST /api/v1/partners/sub-wallets` |
 | List sub-wallets | `GET /api/v1/partners/sub-wallets` |
 | LP pool balances | `GET /api/v1/mm/balances` |
@@ -55,6 +56,16 @@ sequenceDiagram
 ---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
+
+---
+
+## What's New — v1.6.0 (16 Jul 2026)
+
+### Recipient name lookup before withdrawals
+
+`POST /api/v1/lookup/recipient-name` resolves the registered name behind a mobile money number so your withdrawal confirm screen can show **"Sending to: JOHN DOE"** — catching wrong-number typos before money moves. Fail-soft contract: `name: null` means "no confirmation available", never "invalid recipient" — proceed without the name line, never block. See [Recipient Name Lookup](#recipient-name-lookup).
+
+**Do you need to update your integration?** No — the endpoint is additive and optional (strongly recommended for withdrawal UX).
 
 ---
 
@@ -447,6 +458,47 @@ Sub-wallets and treasury wallets are business wallets: they unlock after **KYB**
 3. Re-call `POST /api/v1/users` with the same `externalId` → expect the idempotent existing-user response.
 4. A `202` user: after our team approves the review, re-call → expect `walletAddress` populated.
 5. A legacy user: `GET /api/v1/users/:id` → `kycStatus: "none"` → `POST /api/v1/users/:id/kyc` → same outcomes as signup.
+
+---
+
+## Recipient Name Lookup
+
+### `POST /api/v1/lookup/recipient-name`
+
+Resolves the mobile-money-registered name for a Tanzanian number so your app can show **"Sending to: JOHN DOE"** on the withdrawal confirm screen.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `phoneNumber` | string | ✓ | Recipient mobile money number (`07XXXXXXXX` / `06XXXXXXXX` or `255…`) |
+
+#### Response — `200`
+
+```json
+{ "phone": "255689123456", "network": "airtel", "name": "JOHN JOSEPH DOE" }
+```
+
+`name` is `null` whenever no verified name is available — number not registered, the enquiry service unavailable, or the capability not yet enabled for the environment.
+
+**The null contract (important):** `null` means "no confirmation available", **not** "invalid recipient". Show your normal confirm screen without the name line and let the withdrawal proceed. Never block or warn on `null`.
+
+#### Other responses
+
+| Status | Meaning |
+|--------|---------|
+| `400 invalid_phone` | Not a valid Tanzanian mobile number |
+| `401` | Bad/missing bearer token |
+| `429` | Rate limited (30 lookups/min per partner) — honor `Retry-After` |
+
+#### Suggested UX copy
+
+| State | English | Swahili (suggested) |
+|-------|---------|---------------------|
+| Name found | "Sending to: {NAME} ({phone}). Confirm?" | "Unamtumia: {NAME} ({phone}). Thibitisha?" |
+| Name unavailable | "Confirm the number {phone} is correct before continuing." | "Hakikisha namba {phone} ni sahihi kabla ya kuendelea." |
+
+Lookups are rate-limited and audit-logged: the endpoint resolves registered names (PII) and must only be called from user-initiated withdrawal flows — bulk or speculative querying will trip the limiter and our audit review.
 
 ---
 
