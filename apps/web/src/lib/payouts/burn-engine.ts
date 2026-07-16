@@ -14,7 +14,7 @@
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
-import { sendPayout, ACTIVE_PSP_PAYOUT_WEBHOOK_PATH } from '@/lib/psp'
+import { sendPayoutRouted, firstHealthyDisbursementRail } from '@/lib/psp'
 import { netPayoutTzs } from './payout-math'
 
 type SqlClient = ReturnType<typeof getDb>['sql']
@@ -146,14 +146,15 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
     const payoutAmountTzs = netPayoutTzs({ amountTzs: job.amount_tzs, platformFeeTzs: job.platform_fee_tzs })
 
-    const payoutResult = await sendPayout({
+    const routed = await sendPayoutRouted({
       amountTzs: payoutAmountTzs,
       recipientPhone: job.recipient_phone,
       recipientName: 'nTZS User',
       narration: 'nTZS withdrawal',
-      webhookUrl: `${appUrl}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`,
+      webhookBaseUrl: appUrl,
       metadata: { burn_request_id: job.id },
     })
+    const payoutResult = routed.payout
 
     if (payoutResult.success && payoutResult.reference) {
       await sql`
@@ -161,7 +162,7 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
         set payout_reference = ${payoutResult.reference}, payout_status = 'pending', updated_at = now()
         where id = ${job.id}
       `
-      await logAudit(sql, 'payout_initiated', 'burn_request', job.id, { payoutReference: payoutResult.reference, amountTzs: payoutAmountTzs, recipientPhone: job.recipient_phone })
+      await logAudit(sql, 'payout_initiated', 'burn_request', job.id, { payoutReference: payoutResult.reference, amountTzs: payoutAmountTzs, recipientPhone: job.recipient_phone, rail: routed.provider })
       console.log('[burn-engine] payout initiated', { burnRequestId: job.id, payoutReference: payoutResult.reference })
     } else {
       await sql`
@@ -184,6 +185,21 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
  * and does not block the rest.
  */
 export async function processApprovedBurns(sql: SqlClient, limit: number): Promise<number> {
+  // BURN GATE: burning is irreversible, so never burn while no disbursement
+  // rail can complete the cash leg — approved requests simply stay queued
+  // (users keep their nTZS and see "processing") until a rail is healthy.
+  // BURN_GATE_DISABLED=true is the operational escape hatch.
+  if (process.env.BURN_GATE_DISABLED !== 'true') {
+    const healthyRail = await firstHealthyDisbursementRail()
+    if (!healthyRail) {
+      console.error('[burn-engine] burn gate CLOSED — no healthy disbursement rail; leaving approved burns queued')
+      await logAudit(sql, 'payout_gate_closed', 'burn_engine', 'burn_engine', {
+        reason: 'no_healthy_disbursement_rail',
+      }).catch(() => {})
+      return 0
+    }
+  }
+
   let processed = 0
   for (let i = 0; i < limit; i++) {
     const job = await claimNextBurnJob(sql)

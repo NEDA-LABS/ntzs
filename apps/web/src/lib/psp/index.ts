@@ -159,3 +159,168 @@ export async function lookupRecipientName(
 // ─── Card payments — always Snippe ───────────────────────────────────────────
 
 export const initiateCardPayment = snippe.initiateCardPayment
+
+// ─── Multi-rail routing (collections + disbursements) ────────────────────────
+//
+// Per-network, priority-ordered rail plans with initiation failover, so one
+// PSP being down never strands a user. Plans come from lib/psp/routing.ts
+// (pure, tested); with no routing env vars set every plan is exactly
+// [ACTIVE_MOBILE_PSP] — the legacy single-rail behaviour.
+
+import {
+  detectNetwork,
+  planCollectionRails,
+  planDisbursementRails,
+  readRailEnv,
+  type RailId,
+} from './routing'
+
+export { detectNetwork } from './routing'
+
+/** Rails with a live adapter (Selcom joins when its Push USSD API lands). */
+type LiveRail = 'snippe' | 'azampay'
+const RAIL_IMPL = { snippe, azampay } as const
+
+export const PAYMENT_WEBHOOK_PATHS: Record<LiveRail, string> = {
+  snippe: '/api/webhooks/snippe/payment',
+  azampay: '/api/webhooks/azampay/payment',
+}
+export const PAYOUT_WEBHOOK_PATHS: Record<LiveRail, string> = {
+  snippe: '/api/webhooks/snippe/payout',
+  azampay: '/api/webhooks/azampay/payout',
+}
+
+const liveRails = (plan: RailId[]): LiveRail[] =>
+  plan.filter((r): r is LiveRail => r === 'snippe' || r === 'azampay')
+
+import type { PaymentRequest as PaymentRequestT, PaymentResponse as PaymentResponseT, PayoutRequest as PayoutRequestT, PayoutResponse as PayoutResponseT } from './types'
+
+export interface RoutedCollectionResult {
+  payment: PaymentResponseT
+  /** The rail that actually served (or last attempted) — callers MUST persist
+   * this on the deposit row: webhooks and pollers are provider-scoped. */
+  provider: LiveRail
+  attempted: LiveRail[]
+}
+
+/**
+ * Initiate a mobile-money collection with rail failover. Each attempt sends
+ * the serving rail's OWN payment-webhook URL, so confirmation always lands on
+ * the right handler regardless of which rail won.
+ */
+export async function initiateCollection(
+  req: Omit<PaymentRequestT, 'webhookUrl'> & { webhookBaseUrl: string }
+): Promise<RoutedCollectionResult> {
+  const { webhookBaseUrl, ...payment } = req
+  const plan = liveRails(planCollectionRails(detectNetwork(req.phoneNumber), readRailEnv()))
+  const attempted: LiveRail[] = []
+  let last: PaymentResponseT = { success: false, error: 'No collection rail is configured for this network' }
+
+  for (const rail of plan) {
+    attempted.push(rail)
+    try {
+      const result = await RAIL_IMPL[rail].initiatePayment({
+        ...payment,
+        webhookUrl: `${webhookBaseUrl}${PAYMENT_WEBHOOK_PATHS[rail]}`,
+      })
+      if (result.success) {
+        if (attempted.length > 1) {
+          console.warn(`[psp] collection failed over: ${attempted.join(' → ')}`)
+        }
+        return { payment: result, provider: rail, attempted }
+      }
+      last = result
+      console.warn(`[psp] collection initiation failed on ${rail}: ${result.error}`)
+    } catch (err) {
+      last = { success: false, error: err instanceof Error ? err.message : 'rail error' }
+      console.warn(`[psp] collection initiation threw on ${rail}: ${last.error}`)
+    }
+  }
+
+  return { payment: last, provider: attempted[attempted.length - 1] ?? ACTIVE_PSP_PROVIDER, attempted }
+}
+
+export interface RoutedPayoutResult {
+  payout: PayoutResponseT
+  provider: LiveRail
+  attempted: LiveRail[]
+}
+
+/** Disburse with rail failover (same contract as initiateCollection). */
+export async function sendPayoutRouted(
+  req: Omit<PayoutRequestT, 'webhookUrl'> & { webhookBaseUrl: string }
+): Promise<RoutedPayoutResult> {
+  const { webhookBaseUrl, ...payout } = req
+  const plan = liveRails(planDisbursementRails(readRailEnv()))
+  const attempted: LiveRail[] = []
+  let last: PayoutResponseT = { success: false, error: 'No disbursement rail is configured' }
+
+  for (const rail of plan) {
+    attempted.push(rail)
+    try {
+      const result = await RAIL_IMPL[rail].sendPayout({
+        ...payout,
+        webhookUrl: `${webhookBaseUrl}${PAYOUT_WEBHOOK_PATHS[rail]}`,
+      })
+      if (result.success) {
+        if (attempted.length > 1) {
+          console.warn(`[psp] payout failed over: ${attempted.join(' → ')}`)
+        }
+        return { payout: result, provider: rail, attempted }
+      }
+      last = result
+      console.warn(`[psp] payout failed on ${rail}: ${result.error}`)
+    } catch (err) {
+      last = { success: false, error: err instanceof Error ? err.message : 'rail error' }
+      console.warn(`[psp] payout threw on ${rail}: ${last.error}`)
+    }
+  }
+
+  return { payout: last, provider: attempted[attempted.length - 1] ?? ACTIVE_PSP_PROVIDER, attempted }
+}
+
+// ─── Rail health (burn gate + monitoring cron) ───────────────────────────────
+
+export interface RailHealth {
+  rail: LiveRail
+  healthy: boolean
+  error?: string
+}
+
+/** Probe one rail with a cheap authenticated read (balance), bounded to 8s. */
+export async function probeRail(rail: LiveRail): Promise<RailHealth> {
+  try {
+    await Promise.race([
+      RAIL_IMPL[rail].getBalance(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('probe timeout (8s)')), 8_000)),
+    ])
+    return { rail, healthy: true }
+  } catch (err) {
+    return { rail, healthy: false, error: err instanceof Error ? err.message : 'probe failed' }
+  }
+}
+
+/** Every rail that any current plan could use — what the health cron watches. */
+export function railsToMonitor(): LiveRail[] {
+  const env = readRailEnv()
+  const rails = new Set<LiveRail>()
+  for (const network of ['vodacom', 'airtel', 'tigo', 'halotel', 'ttcl', 'unknown'] as const) {
+    for (const r of liveRails(planCollectionRails(network, env))) rails.add(r)
+  }
+  for (const r of liveRails(planDisbursementRails(env))) rails.add(r)
+  return [...rails]
+}
+
+/**
+ * First disbursement rail that answers a live probe, or null when none do.
+ * The burn engine uses this as its gate: burning is irreversible, so it must
+ * not run ahead of a cash leg that cannot complete.
+ */
+export async function firstHealthyDisbursementRail(): Promise<LiveRail | null> {
+  for (const rail of liveRails(planDisbursementRails(readRailEnv()))) {
+    const probe = await probeRail(rail)
+    if (probe.healthy) return rail
+    console.warn(`[psp] disbursement rail ${rail} unhealthy: ${probe.error}`)
+  }
+  return null
+}

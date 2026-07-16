@@ -4,7 +4,7 @@ import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { initiatePayment, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp'
+import { initiateCollection, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
@@ -287,29 +287,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 })
     }
 
-    const snippeResult = await initiatePayment({
+    // Rail failover: one PSP being down no longer blocks partner deposits.
+    const routed = await initiateCollection({
       amountTzs,
       phoneNumber: phoneNumber!,
       customerEmail: user.email,
-      webhookUrl,
+      webhookBaseUrl: apiBaseUrl,
       metadata: { deposit_request_id: deposit.id },
     })
 
-    if (!snippeResult.success) {
+    if (!routed.payment.success) {
       await db
         .update(depositRequests)
         .set({ status: 'rejected', updatedAt: new Date() })
         .where(eq(depositRequests.id, deposit.id))
 
       return NextResponse.json(
-        { error: snippeResult.error || 'Failed to initiate payment' },
+        { error: routed.payment.error || 'Failed to initiate payment' },
         { status: 502 }
       )
     }
 
+    // Record the rail that actually served — reconciliation is provider-scoped.
     await db
       .update(depositRequests)
-      .set({ pspReference: snippeResult.reference, updatedAt: new Date() })
+      .set({ paymentProvider: routed.provider, pspReference: routed.payment.reference, updatedAt: new Date() })
       .where(eq(depositRequests.id, deposit.id))
 
     return NextResponse.json(
