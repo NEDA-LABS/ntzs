@@ -103,8 +103,10 @@ export function normalizePhone(phone: string): string {
 export function isValidTanzanianPhone(phone: string): boolean {
   const normalized = normalizePhone(phone)
   if (!/^255\d{9}$/.test(normalized)) return false
+  // 61/62 Halotel (Halopesa), 73 TTCL (T-Pesa) — routable networks; keep in
+  // sync with the copy in snippe.ts (the one re-exported from lib/psp).
   const prefix = normalized.slice(3, 5)
-  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67']
+  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
   return validPrefixes.includes(prefix)
 }
 

@@ -43,9 +43,12 @@ export function isValidTanzanianPhone(phone: string): boolean {
   const normalized = normalizePhone(phone)
   // Must be 12 digits: 255 + 9 digits
   if (!/^255\d{9}$/.test(normalized)) return false
-  // Valid mobile prefixes after 255
+  // Valid mobile prefixes after 255.
+  // 61/62 Halotel (Halopesa) and 73 TTCL (T-Pesa) are routable networks
+  // (see routing.ts / the AzamPay destination vocabulary) — keep in sync
+  // with the copy in azampay.ts.
   const prefix = normalized.slice(3, 5)
-  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67']
+  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
   return validPrefixes.includes(prefix)
 }
 
