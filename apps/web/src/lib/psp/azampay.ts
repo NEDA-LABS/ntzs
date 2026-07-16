@@ -218,7 +218,9 @@ export async function initiatePayment(
           return { additionalProperties: request.metadata }
         })()
 
-    const response = await fetch(`${getCheckoutBase()}/api/v1/checkout/checkoutmno`, {
+    // Path confirmed by AzamPay with production credentials (16 Jul 2026):
+    // https://checkout.azampay.co.tz/azampay/mno/checkout — same path on sandbox.
+    const response = await fetch(`${getCheckoutBase()}/azampay/mno/checkout`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
