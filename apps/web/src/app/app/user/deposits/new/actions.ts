@@ -10,8 +10,7 @@ import { depositRequests, kycCases, banks } from '@ntzs/db'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
 import {
   ACTIVE_PSP_PROVIDER,
-  ACTIVE_PSP_PAYMENT_WEBHOOK_PATH,
-  initiatePayment,
+  initiateCollection,
   initiateCardPayment,
   normalizePhone,
   isValidTanzanianPhone,
@@ -84,17 +83,19 @@ export async function createDepositRequestAction(formData: FormData) {
     })
     .returning({ id: depositRequests.id })
 
-  // If mobile money, trigger AzamPay MNO checkout
+  // If mobile money, initiate the collection with per-network rail failover
+  // (one PSP being down no longer blocks deposits — see lib/psp/routing.ts).
   if (paymentMethod === 'mpesa') {
     try {
-      const response = await initiatePayment({
+      const routed = await initiateCollection({
         amountTzs: Math.trunc(amountTzs),
         phoneNumber: buyerPhone,
         customerEmail: dbUser.email,
         customerFirstname: dbUser.email.split('@')[0],
-        webhookUrl: `${APP_URL}${ACTIVE_PSP_PAYMENT_WEBHOOK_PATH}`,
+        webhookBaseUrl: APP_URL,
         metadata: { deposit_request_id: deposit.id },
       })
+      const response = routed.payment
 
       if (!response.success) {
         await db
@@ -104,18 +105,21 @@ export async function createDepositRequestAction(formData: FormData) {
         throw new Error(response.error || 'Failed to initiate mobile money payment')
       }
 
-      // Store AzamPay externalId as pspReference + detected MNO as pspChannel
-      // pspChannel is required for status polling (AzamPay needs provider enum)
+      // Persist the rail that ACTUALLY served (failover may differ from the
+      // default) — webhooks and pollers are provider-scoped. pspChannel keeps
+      // the detected MNO where the rail reports one (AzamPay status polling
+      // needs it).
       await db
         .update(depositRequests)
         .set({
+          paymentProvider: routed.provider,
           pspReference: response.reference,
           pspChannel: (response as { provider?: string }).provider ?? null,
           updatedAt: new Date(),
         })
         .where(eq(depositRequests.id, deposit.id))
 
-      console.log(`[${ACTIVE_PSP_PROVIDER}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
+      console.log(`[${routed.provider}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
     } catch (error) {
       await db
         .update(depositRequests)
