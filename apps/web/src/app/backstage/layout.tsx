@@ -14,6 +14,15 @@ const navItems = [
     ),
   },
   {
+    name: 'Activity & Logs',
+    href: '/backstage/activity',
+    icon: (
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h3l2.25-6 4.5 12 2.25-6h4.5" />
+      </svg>
+    ),
+  },
+  {
     name: 'Users',
     href: '/backstage/users',
     icon: (
