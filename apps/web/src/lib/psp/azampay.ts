@@ -303,16 +303,32 @@ export async function checkPaymentStatus(
 
     const result = await response.json() as {
       success?: boolean
-      data?: string
+      data?: unknown
       statusCode?: number
     }
 
-    if (!result.success) return { status: 'pending' }
+    if (!result.success) {
+      console.warn('[azampay] TQS returned success=false:', JSON.stringify(result).slice(0, 300))
+      return { status: 'pending' }
+    }
 
-    const s = String(result.data ?? '').toLowerCase()
+    // Production TQS `data` may be the status string OR an object wrapping it —
+    // tolerate both, and log any shape we fail to map so it can't stall silently.
+    const raw = result.data
+    const nested =
+      raw && typeof raw === 'object'
+        ? ((raw as Record<string, unknown>).transactionstatus ??
+           (raw as Record<string, unknown>).transactionStatus ??
+           (raw as Record<string, unknown>).status ??
+           (raw as Record<string, unknown>).message)
+        : raw
+    const s = String(nested ?? '').toLowerCase()
     if (s === 'success' || s === 'completed') return { status: 'completed' }
     if (s === 'failed' || s === 'failure' || s === 'reversed') return { status: 'failed' }
     if (s === 'expired') return { status: 'expired' }
+    if (s !== 'pending') {
+      console.warn('[azampay] TQS unmapped status value:', JSON.stringify(result).slice(0, 300))
+    }
     return { status: 'pending' }
   } catch (err) {
     console.error('[azampay] status check error:', err instanceof Error ? err.message : err)

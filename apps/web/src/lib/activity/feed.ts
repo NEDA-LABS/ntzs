@@ -93,7 +93,13 @@ export function categorizeEvent(
 }
 
 interface RawRow {
-  ts: Date
+  /**
+   * Date for timestamptz columns — but tables created by early manual
+   * migrations can be plain `timestamp`, which the driver returns as a
+   * STRING. Production proof: `b.ts.getTime is not a function` in the sort.
+   * Always coerce via toEvent.
+   */
+  ts: Date | string
   source: string
   action: string
   entity_type: string | null
@@ -104,7 +110,7 @@ interface RawRow {
 
 function toEvent(r: RawRow): ActivityEvent {
   return {
-    ts: r.ts,
+    ts: r.ts instanceof Date ? r.ts : new Date(r.ts),
     source: r.source,
     action: r.action,
     entityType: r.entity_type,
@@ -249,13 +255,17 @@ export interface RailHealth {
 export async function fetchRailHealth(): Promise<RailHealth> {
   const { sql } = getDb()
   try {
-    const rows = await sql<Array<{ metadata: { detail?: Array<{ rail: string; healthy: boolean; error?: string }> } | null; created_at: Date }>>`
+    const rows = await sql<Array<{ metadata: { detail?: Array<{ rail: string; healthy: boolean; error?: string }> } | null; created_at: Date | string }>>`
       select metadata, created_at from audit_logs
        where action = 'psp.health' and entity_type = 'psp_rail'
        order by created_at desc limit 1
     `
     if (!rows[0]) return { checkedAt: null, rails: [] }
-    return { checkedAt: rows[0].created_at, rails: rows[0].metadata?.detail ?? [] }
+    const at = rows[0].created_at
+    return {
+      checkedAt: at instanceof Date ? at : new Date(at),
+      rails: rows[0].metadata?.detail ?? [],
+    }
   } catch {
     return { checkedAt: null, rails: [] }
   }
