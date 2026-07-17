@@ -116,88 +116,128 @@ function toEvent(r: RawRow): ActivityEvent {
   }
 }
 
-const FETCH_CAP = 1000
+const PER_SOURCE_CAP = 500
 
 /**
- * Everything in range, newest first, capped at {@link FETCH_CAP} rows.
- * Orphan payments are fetched separately and fail-soft: their table ships as
- * a manually-applied migration and must not take the whole page down.
+ * Everything in range, newest first. Each source is queried INDEPENDENTLY and
+ * fail-soft: this page is the debugging tool, so one missing table or drifted
+ * column (migrations are applied manually here) must never 500 the whole tab —
+ * it becomes a named error in `sourceErrors`, rendered as a banner instead.
  */
 export async function fetchActivity(opts: { hours: number; q?: string }): Promise<{
   events: ActivityEvent[]
   truncated: boolean
+  sourceErrors: string[]
 }> {
   const { sql } = getDb()
   const { hours } = opts
   const q = opts.q?.trim() ? `%${opts.q.trim()}%` : null
 
-  const main = await sql<RawRow[]>`
-    with events as (
+  const sourceErrors: string[] = []
+  const guarded = async (name: string, run: () => Promise<RawRow[]>): Promise<RawRow[]> => {
+    try {
+      return await run()
+    } catch (err) {
+      sourceErrors.push(`${name}: ${err instanceof Error ? err.message : 'query failed'}`)
+      return []
+    }
+  }
+
+  const [audit, deposits, burns, kyc, orphans] = await Promise.all([
+    guarded('audit log', () => sql<RawRow[]>`
       select al.created_at as ts, 'audit' as source, al.action,
              al.entity_type, al.entity_id, u.email as actor, al.metadata as detail
         from audit_logs al
         left join users u on u.id = al.actor_user_id
        where al.created_at > now() - ${hours} * interval '1 hour'
-      union all
-      select greatest(d.created_at, d.updated_at), 'deposit', 'deposit.' || d.status,
-             'deposit_request', d.id::text, null,
+         and (${q}::text is null
+              or al.action ilike ${q}
+              or coalesce(al.entity_id, '') ilike ${q}
+              or coalesce(al.metadata::text, '') ilike ${q}
+              or coalesce(u.email, '') ilike ${q})
+       order by al.created_at desc
+       limit ${PER_SOURCE_CAP}
+    `),
+    guarded('deposits', () => sql<RawRow[]>`
+      select greatest(d.created_at, d.updated_at) as ts, 'deposit' as source,
+             'deposit.' || d.status::text as action, 'deposit_request' as entity_type,
+             d.id::text as entity_id, null as actor,
              jsonb_build_object('amountTzs', d.amount_tzs, 'provider', d.payment_provider,
                                 'pspReference', d.psp_reference, 'channel', d.psp_channel,
-                                'phone', d.buyer_phone, 'origin', d.source)
+                                'phone', d.buyer_phone, 'origin', d.source) as detail
         from deposit_requests d
        where greatest(d.created_at, d.updated_at) > now() - ${hours} * interval '1 hour'
-      union all
-      select greatest(b.created_at, b.updated_at), 'burn', 'burn.' || b.status,
-             'burn_request', b.id::text, null,
+         and (${q}::text is null
+              or d.id::text ilike ${q}
+              or coalesce(d.psp_reference, '') ilike ${q}
+              or coalesce(d.buyer_phone, '') ilike ${q}
+              or d.status::text ilike ${q})
+       order by 1 desc
+       limit ${PER_SOURCE_CAP}
+    `),
+    guarded('burns', () => sql<RawRow[]>`
+      select greatest(b.created_at, b.updated_at) as ts, 'burn' as source,
+             'burn.' || b.status::text as action, 'burn_request' as entity_type,
+             b.id::text as entity_id, null as actor,
              jsonb_build_object('amountTzs', b.amount_tzs, 'payoutStatus', b.payout_status,
                                 'payoutError', b.payout_error, 'error', b.error,
-                                'phone', b.recipient_phone, 'txHash', b.tx_hash)
+                                'phone', b.recipient_phone, 'txHash', b.tx_hash) as detail
         from burn_requests b
        where greatest(b.created_at, b.updated_at) > now() - ${hours} * interval '1 hour'
-      union all
-      select greatest(k.created_at, k.updated_at), 'kyc', 'kyc.' || k.status,
-             'kyc_case', k.id::text, null,
-             jsonb_build_object('provider', k.provider, 'reason', k.review_reason)
+         and (${q}::text is null
+              or b.id::text ilike ${q}
+              or coalesce(b.payout_reference, '') ilike ${q}
+              or coalesce(b.recipient_phone, '') ilike ${q}
+              or coalesce(b.payout_error, '') ilike ${q}
+              or coalesce(b.error, '') ilike ${q})
+       order by 1 desc
+       limit ${PER_SOURCE_CAP}
+    `),
+    guarded('kyc cases', () => sql<RawRow[]>`
+      select greatest(k.created_at, k.updated_at) as ts, 'kyc' as source,
+             'kyc.' || k.status as action, 'kyc_case' as entity_type,
+             k.id::text as entity_id, null as actor,
+             jsonb_build_object('provider', k.provider, 'reason', k.review_reason) as detail
         from kyc_cases k
        where greatest(k.created_at, k.updated_at) > now() - ${hours} * interval '1 hour'
-    )
-    select * from events
-     where ${q}::text is null
-        or action ilike ${q}
-        or coalesce(entity_id, '') ilike ${q}
-        or coalesce(detail::text, '') ilike ${q}
-        or coalesce(actor, '') ilike ${q}
-     order by ts desc
-     limit ${FETCH_CAP}
-  `
-
-  let orphans: RawRow[] = []
-  try {
-    orphans = await sql<RawRow[]>`
-      select greatest(o.received_at, o.updated_at) as ts, 'orphan' as source,
-             'orphan.' || o.status as action, 'orphan_payment' as entity_type,
-             o.id::text as entity_id, null as actor,
-             jsonb_build_object('amountTzs', o.amount_tzs, 'provider', o.provider,
-                                'pspReference', o.psp_reference, 'phone', o.payer_phone,
-                                'payerName', o.payer_name, 'notes', o.notes) as detail
-        from orphan_payments o
-       where greatest(o.received_at, o.updated_at) > now() - ${hours} * interval '1 hour'
          and (${q}::text is null
-              or o.psp_reference ilike ${q}
-              or coalesce(o.payer_phone, '') ilike ${q}
-              or coalesce(o.payer_name, '') ilike ${q})
+              or k.id::text ilike ${q}
+              or coalesce(k.review_reason, '') ilike ${q})
        order by 1 desc
-       limit 200
-    `
-  } catch {
-    // table not migrated yet — the feed simply has no orphan rows
-  }
+       limit ${PER_SOURCE_CAP}
+    `),
+    // Orphans ship as a manually-applied migration — absent table is expected,
+    // so it reports no error, just zero rows.
+    (async () => {
+      try {
+        return await sql<RawRow[]>`
+          select greatest(o.received_at, o.updated_at) as ts, 'orphan' as source,
+                 'orphan.' || o.status as action, 'orphan_payment' as entity_type,
+                 o.id::text as entity_id, null as actor,
+                 jsonb_build_object('amountTzs', o.amount_tzs, 'provider', o.provider,
+                                    'pspReference', o.psp_reference, 'phone', o.payer_phone,
+                                    'payerName', o.payer_name, 'notes', o.notes) as detail
+            from orphan_payments o
+           where greatest(o.received_at, o.updated_at) > now() - ${hours} * interval '1 hour'
+             and (${q}::text is null
+                  or o.psp_reference ilike ${q}
+                  or coalesce(o.payer_phone, '') ilike ${q}
+                  or coalesce(o.payer_name, '') ilike ${q})
+           order by 1 desc
+           limit 200
+        `
+      } catch {
+        return []
+      }
+    })(),
+  ])
 
-  const events = [...main, ...orphans]
+  const events = [...audit, ...deposits, ...burns, ...kyc, ...orphans]
     .map(toEvent)
     .sort((a, b) => b.ts.getTime() - a.ts.getTime())
 
-  return { events, truncated: main.length >= FETCH_CAP }
+  const truncated = [audit, deposits, burns, kyc].some((rows) => rows.length >= PER_SOURCE_CAP)
+  return { events, truncated, sourceErrors }
 }
 
 export interface RailHealth {
@@ -231,27 +271,46 @@ export interface StuckWork {
   burnsInFlight: number
   orphansUnmatched: number
   kycPending: number
+  errors: string[]
 }
 
-/** Current queue depths — things an operator may need to act on right now. */
+/**
+ * Current queue depths — things an operator may need to act on right now.
+ * Each counter query is individually guarded; a failure zeroes its counters
+ * and reports a named error instead of taking the page down.
+ */
 export async function fetchStuckWork(): Promise<StuckWork> {
   const { sql } = getDb()
-  const [dep] = await sql<Array<{ submitted: number; stuck: number; mint_failed: number; requires_safe: number }>>`
+  const errors: string[] = []
+
+  const dep = await sql<Array<{ submitted: number; stuck: number; mint_failed: number; requires_safe: number }>>`
     select count(*) filter (where status = 'submitted')::int as submitted,
            count(*) filter (where status = 'submitted' and created_at < now() - interval '10 minutes')::int as stuck,
            count(*) filter (where status = 'mint_failed')::int as mint_failed,
            count(*) filter (where status = 'mint_requires_safe')::int as requires_safe
       from deposit_requests
-  `
-  const [brn] = await sql<Array<{ payout_failed: number; burn_failed: number; in_flight: number }>>`
+  `.then((r) => r[0]).catch((err) => {
+    errors.push(`deposit counters: ${err instanceof Error ? err.message : 'query failed'}`)
+    return undefined
+  })
+
+  const brn = await sql<Array<{ payout_failed: number; burn_failed: number; in_flight: number }>>`
     select count(*) filter (where payout_status = 'failed')::int as payout_failed,
            count(*) filter (where status = 'failed')::int as burn_failed,
            count(*) filter (where status in ('approved', 'burn_submitted'))::int as in_flight
       from burn_requests
-  `
-  const [kyc] = await sql<Array<{ pending: number }>>`
+  `.then((r) => r[0]).catch((err) => {
+    errors.push(`burn counters: ${err instanceof Error ? err.message : 'query failed'}`)
+    return undefined
+  })
+
+  const kyc = await sql<Array<{ pending: number }>>`
     select count(*) filter (where status = 'pending')::int as pending from kyc_cases
-  `
+  `.then((r) => r[0]).catch((err) => {
+    errors.push(`kyc counters: ${err instanceof Error ? err.message : 'query failed'}`)
+    return undefined
+  })
+
   let orphansUnmatched = 0
   try {
     const [o] = await sql<Array<{ unmatched: number }>>`
@@ -259,8 +318,9 @@ export async function fetchStuckWork(): Promise<StuckWork> {
     `
     orphansUnmatched = o?.unmatched ?? 0
   } catch {
-    // table not migrated yet
+    // table ships as a manual migration — absence is expected, not an error
   }
+
   return {
     depositsSubmitted: dep?.submitted ?? 0,
     depositsStuck: dep?.stuck ?? 0,
@@ -271,5 +331,6 @@ export async function fetchStuckWork(): Promise<StuckWork> {
     burnsInFlight: brn?.in_flight ?? 0,
     orphansUnmatched,
     kycPending: kyc?.pending ?? 0,
+    errors,
   }
 }
