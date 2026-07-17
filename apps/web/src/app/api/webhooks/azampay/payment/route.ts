@@ -19,7 +19,13 @@ export async function POST(request: NextRequest) {
   const timestamp = request.headers.get('x-webhook-timestamp') || undefined
 
   if (!verifyWebhookSignature(rawBody, signature, timestamp)) {
-    console.error('[azampay/payment webhook] Invalid signature or misconfigured secret')
+    // Header NAMES only (never values) — AzamPay's production signature scheme
+    // is undocumented to us; the names on their real callback tell us what to
+    // verify so this path can graduate from 401 to instant-mint.
+    console.error('[azampay/payment webhook] Invalid signature or misconfigured secret', {
+      headerNames: [...request.headers.keys()].sort(),
+      bodyBytes: rawBody.length,
+    })
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
