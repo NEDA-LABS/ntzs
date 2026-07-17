@@ -84,11 +84,12 @@ export default async function ActivityPage({
     : null
   const q = (params.q ?? '').trim()
 
-  const [health, stuck, { events, truncated }] = await Promise.all([
+  const [health, stuck, { events, truncated, sourceErrors }] = await Promise.all([
     fetchRailHealth(),
     fetchStuckWork(),
     fetchActivity({ hours: range.hours, q: q || undefined }),
   ])
+  const dataProblems = [...sourceErrors, ...stuck.errors]
 
   const counts = {
     error: events.filter((e) => e.severity === 'error').length,
@@ -135,6 +136,19 @@ export default async function ActivityPage({
           Refresh
         </Link>
       </div>
+
+      {dataProblems.length > 0 ? (
+        <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+          <p className="text-sm font-medium text-rose-400">
+            Some data sources failed — the rest of the page is still live:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-xs text-rose-300/90">
+            {dataProblems.map((e, i) => (
+              <li key={i} className="font-mono">{e}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Rail health strip */}
       <div className="mb-6 rounded-xl border border-white/10 bg-zinc-900/60 p-4">
