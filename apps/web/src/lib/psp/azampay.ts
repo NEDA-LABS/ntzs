@@ -639,6 +639,16 @@ export interface AzamPayBalanceResponse {
 }
 
 /**
+ * Cheapest meaningful liveness check while disbursements are gated off:
+ * production token generation (the collection path's only prerequisite).
+ * The balance API below rides the IP-whitelisted disbursement surface and
+ * would read DOWN forever from non-whitelisted egress.
+ */
+export async function probeAuth(): Promise<void> {
+  await getAccessToken()
+}
+
+/**
  * Fetch AzamPay float balance for the configured bank (AZAMPAY_BANK_NAME).
  * GET /api/v1/disbursement/checkbalance?bankName=
  * ⚠ Verify response field names (availableBalance vs balance) in sandbox.

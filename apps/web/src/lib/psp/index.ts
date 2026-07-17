@@ -287,11 +287,22 @@ export interface RailHealth {
   error?: string
 }
 
-/** Probe one rail with a cheap authenticated read (balance), bounded to 8s. */
+/**
+ * Probe one rail with a cheap authenticated call, bounded to 8s.
+ *
+ * Probe what the rail is actually asked to do: while AzamPay disbursements
+ * are gated off (IP whitelisting pending), it serves collections only — so
+ * probe token auth, not the balance API, which lives on the IP-whitelisted
+ * disbursement surface and would read DOWN forever from Vercel egress. Once
+ * AZAMPAY_DISBURSEMENT_ENABLED flips, the balance read becomes the probe
+ * again (full disbursement health, which the burn gate relies on).
+ */
 export async function probeRail(rail: LiveRail): Promise<RailHealth> {
+  const collectionsOnlyAzam =
+    rail === 'azampay' && process.env.AZAMPAY_DISBURSEMENT_ENABLED !== 'true'
   try {
     await Promise.race([
-      RAIL_IMPL[rail].getBalance(),
+      collectionsOnlyAzam ? azampay.probeAuth() : RAIL_IMPL[rail].getBalance(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('probe timeout (8s)')), 8_000)),
     ])
     return { rail, healthy: true }
