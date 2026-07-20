@@ -22,10 +22,26 @@ export async function POST(request: NextRequest) {
     // Header NAMES only (never values) — AzamPay's production signature scheme
     // is undocumented to us; the names on their real callback tell us what to
     // verify so this path can graduate from 401 to instant-mint.
+    const headerNames = [...request.headers.keys()].sort()
     console.error('[azampay/payment webhook] Invalid signature or misconfigured secret', {
-      headerNames: [...request.headers.keys()].sort(),
+      headerNames,
       bodyBytes: rawBody.length,
     })
+    // Persist the evidence where the team actually looks (backstage Activity
+    // tab) — Vercel console logs rotate and need dashboard access.
+    try {
+      const { sql } = getDb()
+      await sql`
+        insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
+        values ('psp.webhook_rejected', 'psp_webhook', 'azampay/payment', ${JSON.stringify({
+          headerNames,
+          bodyBytes: rawBody.length,
+          reason: 'signature_verification_failed',
+        })}::jsonb, now())
+      `
+    } catch (err) {
+      console.warn('[azampay/payment webhook] audit insert failed:', err instanceof Error ? err.message : err)
+    }
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
