@@ -2,40 +2,8 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import LandingSections from './LandingSections'
-
-const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-
-function MoneyCounterText({ text, className = '', delay = 0 }: { text: string; className?: string; delay?: number }) {
-  const chars = text.split('')
-  const [display, setDisplay] = useState<string[]>(() =>
-    chars.map(c => (' .,\'/&-'.includes(c)) ? c : SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
-  ))
-  const idRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    const FRAME_MS = 48, STAGGER = 38, DURATION = 620
-    let elapsed = -delay
-    idRef.current = setInterval(() => {
-      elapsed += FRAME_MS
-      let allDone = true
-      setDisplay(chars.map((char, i) => {
-        if (' .,\'/&-'.includes(char)) return char
-        const t = elapsed - i * STAGGER
-        if (t < 0) { allDone = false; return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)] }
-        if (t >= DURATION) return char
-        allDone = false
-        return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
-      }))
-      if (allDone && idRef.current) clearInterval(idRef.current)
-    }, FRAME_MS)
-    return () => { if (idRef.current) clearInterval(idRef.current) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  return <span className={className}>{display.join('')}</span>
-}
 
 function useOnChainSupply() {
   const [supply, setSupply] = useState<string | null>(null)
@@ -199,7 +167,7 @@ export default function MasterLandingPage() {
         {/* ── Hero content ── */}
         <div className="relative z-10 flex min-h-[calc(100vh-theme(spacing.20))] flex-col">
           <main className="flex flex-1 flex-col justify-center px-6 lg:px-16 lg:ml-[6%] pt-8 lg:pt-0">
-            <div className="max-w-xl">
+            <div className="max-w-3xl">
 
               {/* Section label */}
               <div className="flex items-center gap-2 mb-4 opacity-60">
@@ -215,11 +183,10 @@ export default function MasterLandingPage() {
                     background: 'repeating-linear-gradient(180deg, rgba(96,165,250,0.4) 0px, rgba(96,165,250,0.4) 2px, transparent 2px, transparent 5px)'
                   }}
                 />
-                <h1 className="text-3xl lg:text-6xl font-bold text-white leading-tight tracking-wider uppercase">
-                  <MoneyCounterText text="Tanzania's" delay={0} />
+                <h1 className="font-sans text-4xl lg:text-6xl font-extralight text-white leading-[1.12] lg:leading-[1.06] tracking-tight">
+                  Tanzania&apos;s programmable
                   <span className="block mt-1">
-                    <MoneyCounterText text="Programmable Payment " delay={500} />
-                    <MoneyCounterText text="Infrastructure" className="text-blue-400" delay={900} />
+                    payment <span className="text-blue-400">infrastructure</span>
                   </span>
                 </h1>
               </div>
@@ -232,23 +199,23 @@ export default function MasterLandingPage() {
               </div>
 
               {/* Description */}
-              <p className="text-sm lg:text-base text-zinc-300 mb-6 leading-relaxed opacity-80">
-                <MoneyCounterText text="Built for instant settlement, digital wallets, stable-value payments & next-gen financial applications." delay={1000} />
+              <p className="max-w-xl font-sans text-base lg:text-lg text-zinc-300 mb-6 leading-relaxed opacity-90">
+                Built for instant settlement, digital wallets, stable-value payments &amp; next-gen financial applications.
               </p>
 
               {/* CTA Buttons */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link
                   href="/app"
-                  className="inline-flex items-center justify-center border border-blue-500/50 bg-blue-500/10 px-6 py-2.5 text-[11px] tracking-widest text-blue-300 uppercase hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors"
+                  className="inline-flex items-center justify-center border border-blue-500/50 bg-blue-500/10 px-6 py-2.5 font-sans text-sm font-medium text-blue-300 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors"
                 >
-                  Create Wallet
+                  Create wallet
                 </Link>
                 <Link
                   href="/landing"
-                  className="inline-flex items-center justify-center border border-white/20 bg-white/5 px-6 py-2.5 text-[11px] tracking-widest text-white/50 uppercase hover:bg-gray-600 hover:text-white hover:border-gray-600 transition-colors"
+                  className="inline-flex items-center justify-center border border-white/20 bg-white/5 px-6 py-2.5 font-sans text-sm font-medium text-white/60 hover:bg-gray-600 hover:text-white hover:border-gray-600 transition-colors"
                 >
-                  Explore Infrastructure
+                  Explore infrastructure
                 </Link>
               </div>
 
