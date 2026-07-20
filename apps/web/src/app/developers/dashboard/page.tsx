@@ -1088,7 +1088,7 @@ function KybSection({ partner: _partner }: { partner: PartnerInfo }) {
       <label className="block text-xs font-medium text-white/40 mb-1.5">{label}</label>
       {(form[urlKey] as string) ? (
         <div className="flex items-center gap-2">
-          <a href={form[urlKey] as string} target="_blank" rel="noopener noreferrer"
+          <a href={`/api/kyb-docs/self/${docType}`} target="_blank" rel="noopener noreferrer"
             className="flex-1 truncate rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs font-mono text-white/60 hover:text-white/80 transition-colors">
             {(form[urlKey] as string).split('/').pop()}
           </a>
