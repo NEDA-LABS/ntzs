@@ -273,7 +273,7 @@ export default function LandingSections() {
                 </svg>
               </Link>
               <Link
-                href="/auth/sign-up"
+                href="https://app.nedapay.xyz"
                 className="inline-flex items-center gap-2 border border-white/15 px-8 py-3 text-[11px] tracking-widest text-white/50 uppercase hover:bg-white/[0.04] hover:text-white/80 transition-colors"
               >
                 Create Account

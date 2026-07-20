@@ -1,6 +1,7 @@
 import { AuthView } from '@neondatabase/neon-js/auth/react/ui'
 import Image from 'next/image'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import { DIRECT_APP_SIGNUP_PAUSED, NEDAPAY_APP_URL, WALLET_CREATION_PAUSED } from '@/lib/wallet-gating'
 
@@ -12,6 +13,11 @@ export default async function AuthPage({
   params: Promise<{ path: string }>
 }) {
   const { path } = await params
+
+  // No direct sign-ups at all: every sign-up path hands off to NEDApay.
+  // (The in-page hand-off card below is kept for easy rollback but is
+  // unreachable while this redirect stands.)
+  if (path === 'sign-up') redirect(NEDAPAY_APP_URL)
 
   const isSignUp = path === 'sign-up'
   // With Selcom Identity configured, new accounts CAN proceed (sign up → NIDA

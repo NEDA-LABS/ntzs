@@ -121,7 +121,7 @@ export default function Home() {
           </a>
           <a
             className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-white/90"
-            href="/auth/sign-up"
+            href="https://app.nedapay.xyz"
           >
             Get started
           </a>
@@ -164,7 +164,7 @@ export default function Home() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Link
-                    href="/auth/sign-up"
+                    href="https://app.nedapay.xyz"
                     className="inline-flex h-14 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
                   >
                     Create account
@@ -432,7 +432,7 @@ export default function Home() {
                 </a>
                 <a
                   className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90"
-                  href="/auth/sign-up"
+                  href="https://app.nedapay.xyz"
                 >
                   Start now
                 </a>
