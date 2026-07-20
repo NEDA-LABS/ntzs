@@ -30,6 +30,8 @@ export interface PaymentResponse {
   reference?: string
   /** Our own idempotency reference sent to the PSP (AzamPay externalId) — persisted for callback matching. */
   externalId?: string
+  /** Truncated PSP acknowledgment body, when the adapter surfaces it — audit evidence. */
+  ack?: string
   error?: string
 }
 

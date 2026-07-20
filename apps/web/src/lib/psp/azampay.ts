@@ -190,7 +190,32 @@ export interface AzamPayPaymentResponse {
   provider?: string // detected MNO — caller stores as pspChannel
   /** Our externalId sent at checkout — callbacks echo it as utilityref. */
   externalId?: string
+  /** Truncated checkout acknowledgment body — audit evidence of what they returned. */
+  ack?: string
   error?: string
+}
+
+/**
+ * Find a transaction id anywhere in the checkout acknowledgment (top level or
+ * nested, any casing). AzamPay confirmed TQS requires "the id from the
+ * acknowledgment" — but production acks have carried it where our strict
+ * parse missed it, leaving deposits stored under ids TQS can't resolve.
+ */
+export function extractAzamTransactionId(obj: unknown, depth = 0): string | undefined {
+  if (!obj || typeof obj !== 'object' || depth > 3) return undefined
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (/^transaction_?id$/i.test(k) && typeof v === 'string') {
+      const t = v.trim()
+      if (t && t.toLowerCase() !== 'null') return t
+    }
+  }
+  for (const v of Object.values(obj as Record<string, unknown>)) {
+    if (v && typeof v === 'object') {
+      const found = extractAzamTransactionId(v, depth + 1)
+      if (found) return found
+    }
+  }
+  return undefined
 }
 
 /**
@@ -253,10 +278,20 @@ export async function initiatePayment(
       return { success: false, error: result.message || 'Payment initiation failed' }
     }
 
-    // Store AzamPay's transactionId as reference (used for status checks), fall back to externalId
-    const reference = result.transactionId && result.transactionId !== 'null' ? result.transactionId : externalId
-    console.log('[azampay] payment initiated:', { reference, externalId, amount: request.amountTzs, phone, provider })
-    return { success: true, reference, provider, externalId }
+    // Store AzamPay's transactionId as reference (TQS resolves only this id),
+    // fall back to externalId when the ack genuinely carries none.
+    const providerTxId = extractAzamTransactionId(result)
+    const ack = JSON.stringify(result).slice(0, 300)
+    const reference = providerTxId ?? externalId
+    console.log('[azampay] payment initiated:', {
+      reference,
+      externalId,
+      providerTxId: providerTxId ?? null,
+      amount: request.amountTzs,
+      phone,
+      provider,
+    })
+    return { success: true, reference, provider, externalId, ack }
   } catch (err) {
     console.error('[azampay] payment API error:', err)
     return { success: false, error: 'Failed to connect to payment provider' }

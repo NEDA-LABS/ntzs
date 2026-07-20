@@ -127,6 +127,7 @@ export async function createDepositRequestAction(formData: FormData) {
           provider: routed.provider,
           reference: response.reference ?? null,
           externalId: response.externalId,
+          ack: response.ack ?? null,
         }, dbUser.id)
       }
 
