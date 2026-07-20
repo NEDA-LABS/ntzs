@@ -322,6 +322,7 @@ export async function POST(request: NextRequest) {
         provider: routed.provider,
         reference: routed.payment.reference ?? null,
         externalId: routed.payment.externalId,
+        ack: routed.payment.ack ?? null,
       })
     }
 
