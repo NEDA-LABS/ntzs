@@ -168,7 +168,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
   const manualTransId = String(formData.get('manualTransId') ?? '').trim()
 
   if (!depositId) {
-    throw new Error('Invalid deposit ID')
+    fail('Invalid deposit ID')
   }
 
   const { db } = getDb()
@@ -180,7 +180,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     .limit(1)
 
   if (!deposit || deposit.status !== 'submitted') {
-    throw new Error('Deposit not found or not in submitted status')
+    fail('Deposit not found or not in submitted status')
   }
 
   // AzamPay deposits: the pasted reference is VERIFIED against AzamPay's own
@@ -190,12 +190,12 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
   if (deposit.paymentProvider === 'azampay') {
     const ref = manualTransId || deposit.pspReference || ''
     if (!ref) {
-      throw new Error('Enter the AzamPay transaction reference from their dashboard')
+      fail('Enter the AzamPay transaction reference from their dashboard')
     }
     const azamStatus = await azamCheckPaymentStatus(ref, deposit.pspChannel ?? undefined)
     if (azamStatus.status !== 'completed') {
-      throw new Error(
-        `AzamPay did not confirm this reference (status: ${azamStatus.status}${azamStatus.raw ? ` — ${azamStatus.raw}` : ''})`
+      fail(
+        `AzamPay did not confirm reference ${ref} (status: ${azamStatus.status}${azamStatus.raw ? ` — ${azamStatus.raw}` : ''})`
       )
     }
     if (ref !== deposit.pspReference) {
@@ -205,7 +205,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
         .where(and(eq(depositRequests.pspReference, ref), ne(depositRequests.id, depositId)))
         .limit(1)
       if (taken) {
-        throw new Error(`This AzamPay reference already credits deposit ${taken.id}`)
+        fail(`This AzamPay reference already credits deposit ${taken.id}`)
       }
     }
     const currentUser = await getCurrentDbUser()
@@ -221,7 +221,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
       .where(and(eq(depositRequests.id, depositId), eq(depositRequests.status, 'submitted')))
       .returning({ id: depositRequests.id })
     if (claimed.length === 0) {
-      throw new Error('Deposit was just processed by another path — refresh')
+      fail('Deposit was just processed by another path — refresh')
     }
     await writeAuditLog(
       'deposit.reconciled_manual',
@@ -231,8 +231,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
       currentUser?.id
     )
     console.log(`[Admin] AzamPay-verified deposit ${depositId} -> ${azamNewStatus}`, { ref })
-    revalidatePath('/backstage/minting')
-    return
+    succeed(`AzamPay confirmed ${ref} — deposit queued to mint (${azamNewStatus.replace(/_/g, ' ')})`)
   }
 
   let transid = manualTransId
@@ -264,7 +263,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
 
   // Require either API confirmation or manual transaction ID
   if (!transid) {
-    throw new Error('Could not verify with ZenoPay API. Enter the ZenoPay Transaction ID from your dashboard to proceed.')
+    fail('Could not verify automatically. Enter the PSP transaction ID from the dashboard to proceed.')
   }
 
   // Route to Safe approval if amount >= threshold
@@ -284,7 +283,7 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     .where(eq(depositRequests.id, depositId))
 
   console.log(`[Admin] Advanced deposit ${depositId} to ${newStatus}`, { transid, channel })
-  revalidatePath('/backstage/minting')
+  succeed(`Deposit advanced to ${newStatus.replace(/_/g, ' ')} (ref ${transid})`)
 }
 
 async function attachOrphanAction(formData: FormData) {
@@ -796,6 +795,20 @@ const PROVIDER_BADGE: Record<string, string> = {
 const MOBILE_PROVIDERS = ['azampay', 'snippe', 'snippe_card', 'zenopay'] as const
 const STALE_ATTEMPT_HOURS = 72
 
+/**
+ * Server-action refusals must surface as an inline banner — a thrown error in
+ * a production server action takes down the whole page render (the black
+ * "Application error" screen). Expected outcomes are never exceptions.
+ */
+function fail(message: string): never {
+  redirect(`/backstage/minting?actionError=${encodeURIComponent(message)}`)
+}
+
+function succeed(message: string): never {
+  revalidatePath('/backstage/minting')
+  redirect(`/backstage/minting?actionOk=${encodeURIComponent(message)}`)
+}
+
 function timeAgo(d: Date | string): string {
   const ms = Date.now() - new Date(d as unknown as string).getTime()
   const m = Math.floor(ms / 60_000)
@@ -845,7 +858,7 @@ async function cancelStaleMobileAttemptsAction() {
   }, currentUser?.id)
 
   console.log(`[Admin] cancelled ${cancelled.length} stale mobile-money attempts (> ${STALE_ATTEMPT_HOURS}h)`)
-  revalidatePath('/backstage/minting')
+  succeed(`Cancelled ${cancelled.length} stale mobile-money attempt${cancelled.length === 1 ? '' : 's'} (>${STALE_ATTEMPT_HOURS}h)`)
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -873,7 +886,12 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-export default async function MintingPage() {
+export default async function MintingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ actionError?: string; actionOk?: string }>
+}) {
+  const { actionError, actionOk } = await searchParams
   const { db } = getDb()
 
   // Fetch all deposit requests with related data including mint transaction info
@@ -1038,6 +1056,18 @@ export default async function MintingPage() {
       </div>
 
       <div className="p-8">
+        {actionError ? (
+          <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+            <p className="text-sm font-medium text-rose-400">Action refused</p>
+            <p className="mt-1 break-all font-mono text-xs text-rose-300/90">{actionError}</p>
+          </div>
+        ) : null}
+        {actionOk ? (
+          <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">
+            {actionOk}
+          </div>
+        ) : null}
+
         {/* Supply Reconciliation */}
         <div className="mb-6">
           <SupplyReconciliationCard
