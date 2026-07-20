@@ -34,11 +34,18 @@ export async function POST(request: NextRequest) {
   }
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    // put() would throw an opaque 500 — say what is actually wrong: the
-    // Vercel Blob store isn't connected to this project.
-    console.error('[kyb/upload] BLOB_READ_WRITE_TOKEN not configured — connect a Blob store to the Vercel project')
+    // put() would throw an opaque 500 — say what is actually wrong, and say
+    // exactly which storage variables THIS runtime can see: distinguishes a
+    // deployment that predates the store connection (sees none) from a
+    // connection missing its read-write token (sees the id but not the token).
+    const visible = ['BLOB_READ_WRITE_TOKEN', 'BLOB_STORE_ID', 'BLOB_WEBHOOK_PUBLIC_KEY'].filter((k) =>
+      Boolean(process.env[k])
+    )
+    console.error('[kyb/upload] BLOB_READ_WRITE_TOKEN not configured', { visible })
     return NextResponse.json(
-      { error: 'Document storage is not configured yet — our team has been notified. Please try again later.' },
+      {
+        error: `Document storage is not configured yet (this deployment sees: ${visible.length ? visible.join(', ') : 'no BLOB_* variables'}). If the variables were just added, redeploy and try again.`,
+      },
       { status: 503 }
     )
   }
