@@ -1,4 +1,4 @@
-import { desc, eq, sql, and, ne } from 'drizzle-orm'
+import { desc, eq, sql, and, ne, inArray, lt } from 'drizzle-orm'
 import { ethers } from 'ethers'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -780,6 +780,74 @@ async function getSnippeBalance(): Promise<number | null> {
   }
 }
 
+const PROVIDER_LABEL: Record<string, string> = {
+  azampay: 'AzamPay',
+  snippe: 'Snippe',
+  snippe_card: 'Snippe Card',
+  zenopay: 'ZenoPay',
+  bank_transfer: 'Bank',
+}
+const PROVIDER_BADGE: Record<string, string> = {
+  azampay: 'bg-sky-500/20 text-sky-400',
+  snippe: 'bg-emerald-500/20 text-emerald-400',
+  snippe_card: 'bg-teal-500/20 text-teal-400',
+  zenopay: 'bg-violet-500/20 text-violet-400',
+}
+const MOBILE_PROVIDERS = ['azampay', 'snippe', 'snippe_card', 'zenopay'] as const
+const STALE_ATTEMPT_HOURS = 72
+
+function timeAgo(d: Date | string): string {
+  const ms = Date.now() - new Date(d as unknown as string).getTime()
+  const m = Math.floor(ms / 60_000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+/**
+ * What "submitted" actually means for this row when no PSP evidence exists:
+ * fresh mobile pushes are normal; old ones without any confirmation are
+ * abandonment candidates; bank transfers legitimately wait for manual review.
+ */
+function defaultSubmittedNote(provider: string | null, createdAt: Date | string): string {
+  if (!provider || provider === 'bank_transfer') return 'awaiting bank confirmation'
+  const ageMin = (Date.now() - new Date(createdAt as unknown as string).getTime()) / 60_000
+  return ageMin < 15 ? 'awaiting payment (push sent)' : 'no PSP confirmation yet'
+}
+
+/** Bulk-clear abandoned mobile-money attempts — provider-agnostic. */
+async function cancelStaleMobileAttemptsAction() {
+  'use server'
+
+  await requireAnyRole(['super_admin'])
+  const currentUser = await getCurrentDbUser()
+
+  const { db } = getDb()
+  const cutoff = new Date(Date.now() - STALE_ATTEMPT_HOURS * 3600_000)
+  const cancelled = await db
+    .update(depositRequests)
+    .set({ status: 'cancelled', updatedAt: new Date() })
+    .where(
+      and(
+        eq(depositRequests.status, 'submitted'),
+        inArray(depositRequests.paymentProvider, [...MOBILE_PROVIDERS]),
+        lt(depositRequests.createdAt, cutoff)
+      )
+    )
+    .returning({ id: depositRequests.id })
+
+  await writeAuditLog('deposit.stale_attempts_cancelled', 'deposit_request', 'bulk', {
+    count: cancelled.length,
+    olderThanHours: STALE_ATTEMPT_HOURS,
+    scope: 'mobile_money',
+  }, currentUser?.id)
+
+  console.log(`[Admin] cancelled ${cancelled.length} stale mobile-money attempts (> ${STALE_ATTEMPT_HOURS}h)`)
+  revalidatePath('/backstage/minting')
+}
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     submitted: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
@@ -828,6 +896,8 @@ export default async function MintingPage() {
         paymentProvider: depositRequests.paymentProvider,
         pspReference: depositRequests.pspReference,
         pspChannel: depositRequests.pspChannel,
+        buyerPhone: depositRequests.buyerPhone,
+        source: depositRequests.source,
       })
       .from(depositRequests)
       .innerJoin(users, eq(depositRequests.userId, users.id))
@@ -874,6 +944,44 @@ export default async function MintingPage() {
         .orderBy(desc(depositRequests.createdAt))
         .limit(200)
     : []
+
+  // The PSP's own last answer per submitted deposit (recorded as audit
+  // evidence by the poll/webhook) — turns "submitted" into an honest signal:
+  // attempt vs paid-but-unresolved is visible per row, no exports needed.
+  const pspAnswers = new Map<string, string>()
+  try {
+    const submittedIds = allDeposits.filter((d) => d.status === 'submitted').map((d) => d.id)
+    if (submittedIds.length > 0) {
+      const { sql: pgSql } = getDb()
+      const evidenceRows = await pgSql<Array<{ entity_id: string; action: string; metadata: { raw?: string } | null }>>`
+        select distinct on (entity_id) entity_id, action, metadata
+          from audit_logs
+         where entity_id = any(${submittedIds})
+           and action in ('psp.tqs_unmapped', 'psp.webhook_unconfirmed', 'psp.webhook_ref_conflict')
+         order by entity_id, created_at desc
+      `
+      for (const r of evidenceRows) {
+        if (r.action === 'psp.tqs_unmapped') {
+          pspAnswers.set(r.entity_id, `PSP can't resolve ref${r.metadata?.raw ? ` — ${r.metadata.raw.slice(0, 90)}` : ''}`)
+        } else if (r.action === 'psp.webhook_unconfirmed') {
+          pspAnswers.set(r.entity_id, 'callback received — unconfirmed, still verifying')
+        } else if (r.action === 'psp.webhook_ref_conflict') {
+          pspAnswers.set(r.entity_id, 'reference conflict — see Activity log')
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[backstage/minting] PSP evidence lookup failed:', err instanceof Error ? err.message : err)
+  }
+
+  const staleCutoff = Date.now() - STALE_ATTEMPT_HOURS * 3600_000
+  const staleAttempts = allDeposits.filter(
+    (d) =>
+      d.status === 'submitted' &&
+      d.paymentProvider &&
+      (MOBILE_PROVIDERS as readonly string[]).includes(d.paymentProvider) &&
+      new Date(d.createdAt as unknown as string).getTime() < staleCutoff
+  ).length
 
   const pendingApproval = allDeposits.filter(d => d.status === 'bank_approved').length
   const pendingMints = allDeposits.filter(d => d.status === 'mint_pending').length
@@ -961,6 +1069,20 @@ export default async function MintingPage() {
         </div>
 
         {/* Deposits Table */}
+        {staleAttempts > 0 && (
+          <div className="mb-3 flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+            <p className="text-sm text-zinc-400">
+              <span className="font-medium text-amber-400">{staleAttempts}</span> mobile-money attempts have sat
+              in <span className="text-zinc-300">submitted</span> for over {STALE_ATTEMPT_HOURS}h with no payment —
+              abandonment noise. Verify any you believe were paid first; then clear the rest.
+            </p>
+            <form action={cancelStaleMobileAttemptsAction}>
+              <SubmitButton className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-300 hover:bg-amber-500/20">
+                Cancel {staleAttempts} stale attempt{staleAttempts !== 1 ? 's' : ''}
+              </SubmitButton>
+            </form>
+          </div>
+        )}
         <div className="rounded-2xl border border-white/10 bg-zinc-900/50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -990,6 +1112,9 @@ export default async function MintingPage() {
                     <tr key={dep.id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-6 py-4">
                         <div className="font-medium text-white">{dep.userEmail}</div>
+                        <div className="mt-0.5 whitespace-nowrap text-xs text-zinc-500">
+                          {formatDateTimeEAT(dep.createdAt)} · {timeAgo(dep.createdAt)}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-mono text-lg font-bold text-emerald-400">
@@ -998,24 +1123,37 @@ export default async function MintingPage() {
                         <div className="text-xs text-zinc-500">TZS</div>
                       </td>
                       <td className="px-6 py-4">
-                        {dep.paymentProvider === 'zenopay' ? (
+                        {dep.paymentProvider && dep.paymentProvider !== 'bank_transfer' ? (
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-xs font-medium text-violet-400">
-                                ZenoPay
+                              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${PROVIDER_BADGE[dep.paymentProvider] ?? 'bg-zinc-500/20 text-zinc-300'}`}>
+                                {PROVIDER_LABEL[dep.paymentProvider] ?? dep.paymentProvider}
                               </span>
                               {dep.pspChannel && (
                                 <span className="text-xs text-zinc-500">{dep.pspChannel}</span>
                               )}
+                              {dep.source && dep.source !== 'self' && (
+                                <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                                  {dep.source.replace(/_/g, ' ')}
+                                </span>
+                              )}
                             </div>
+                            {dep.buyerPhone && (
+                              <div className="mt-1 font-mono text-xs text-zinc-400">{dep.buyerPhone}</div>
+                            )}
                             {dep.pspReference && (
-                              <code className="mt-1 block rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-emerald-400" title={dep.pspReference}>
+                              <code className="mt-1 block max-w-[210px] truncate rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-emerald-400" title={dep.pspReference}>
                                 {dep.pspReference}
                               </code>
                             )}
                           </div>
                         ) : (
-                          <span className="text-sm text-zinc-400">{dep.bankName}</span>
+                          <div>
+                            <span className="text-sm text-zinc-400">{dep.bankName}</span>
+                            {dep.source && dep.source !== 'self' && (
+                              <div className="mt-1 text-[10px] uppercase tracking-wide text-zinc-500">{dep.source.replace(/_/g, ' ')}</div>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4">
@@ -1026,6 +1164,14 @@ export default async function MintingPage() {
                       </td>
                       <td className="px-6 py-4">
                         <StatusBadge status={dep.status} />
+                        {dep.status === 'submitted' && (
+                          <p
+                            className="mt-1 max-w-[190px] truncate text-xs text-zinc-500"
+                            title={pspAnswers.get(dep.id) ?? defaultSubmittedNote(dep.paymentProvider, dep.createdAt)}
+                          >
+                            {pspAnswers.get(dep.id) ?? defaultSubmittedNote(dep.paymentProvider, dep.createdAt)}
+                          </p>
+                        )}
                         {dep.mintError && (
                           <p className="mt-1 text-xs text-rose-400 max-w-[150px] truncate" title={dep.mintError}>
                             {dep.mintError}
