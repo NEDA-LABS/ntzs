@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
-import { eq, and, lt, isNotNull, inArray } from 'drizzle-orm'
+import { eq, and, lt, isNotNull, inArray, desc } from 'drizzle-orm'
 import { checkPaymentStatus } from '@/lib/psp/azampay'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
@@ -47,8 +47,11 @@ export async function GET(request: NextRequest) {
           isNotNull(depositRequests.pspReference),
         )
       )
-      .orderBy(depositRequests.createdAt)
-      .limit(10)
+      // NEWEST first — oldest-first let a stuck unresolvable backlog occupy
+      // every slot each minute and starve fresh deposits of polling entirely.
+      // Stale rows are cleared by the reconcile sweep + bulk cancel instead.
+      .orderBy(desc(depositRequests.createdAt))
+      .limit(25)
 
     const results: Array<{ depositId: string; status: string; reference?: string }> = []
 
