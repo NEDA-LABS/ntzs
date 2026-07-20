@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: 'skipped', reason: 'AZAMPAY_CLIENT_ID not configured' })
     }
 
-    const { db } = getDb()
+    const { db, sql } = getDb()
 
     const thirtySecondsAgo = new Date(Date.now() - 30 * 1000)
 
@@ -87,6 +87,35 @@ export async function GET(request: NextRequest) {
           console.log(`[cron/poll-azampay] Deposit ${deposit.id} -> rejected (${azamStatus.status})`)
         } else {
           results.push({ depositId: deposit.id, status: 'pending' })
+        }
+
+        // TQS answered something we couldn't map (or threw): pin AzamPay's own
+        // answer to the deposit as audit evidence — visible in the backstage
+        // Activity tab. Deduped: skip when the latest evidence row for this
+        // deposit already carries the same raw value and is < 6h old.
+        if (azamStatus.raw) {
+          try {
+            const [prior] = await sql<Array<{ raw: string | null; created_at: Date | string }>>`
+              select metadata->>'raw' as raw, created_at from audit_logs
+               where action = 'psp.tqs_unmapped' and entity_type = 'deposit_request'
+                 and entity_id = ${deposit.id}
+               order by created_at desc limit 1
+            `
+            const priorAt = prior ? new Date(prior.created_at as unknown as string).getTime() : 0
+            const fresh = prior && prior.raw === azamStatus.raw && Date.now() - priorAt < 6 * 3600_000
+            if (!fresh) {
+              await sql`
+                insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
+                values ('psp.tqs_unmapped', 'deposit_request', ${deposit.id}, ${JSON.stringify({
+                  raw: azamStatus.raw,
+                  reference: deposit.pspReference,
+                  channel: deposit.pspChannel,
+                })}::jsonb, now())
+              `
+            }
+          } catch (auditErr) {
+            console.warn('[cron/poll-azampay] evidence insert failed:', auditErr instanceof Error ? auditErr.message : auditErr)
+          }
         }
       } catch (err) {
         console.error(`[cron/poll-azampay] Error polling ${deposit.id}:`, err instanceof Error ? err.message : err)
