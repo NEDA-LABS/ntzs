@@ -16,6 +16,7 @@ import {
   isValidTanzanianPhone,
   lookupAccountName,
 } from '@/lib/psp'
+import { writeAuditLog } from '@/lib/audit'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
 
@@ -118,6 +119,16 @@ export async function createDepositRequestAction(formData: FormData) {
           updatedAt: new Date(),
         })
         .where(eq(depositRequests.id, deposit.id))
+
+      // Both ids on record: PSP callbacks may echo only OUR externalId
+      // (AzamPay names it utilityref) — the webhook matches through this row.
+      if (response.externalId) {
+        await writeAuditLog('deposit.psp_initiated', 'deposit_request', deposit.id, {
+          provider: routed.provider,
+          reference: response.reference ?? null,
+          externalId: response.externalId,
+        }, dbUser.id)
+      }
 
       console.log(`[${routed.provider}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
     } catch (error) {
