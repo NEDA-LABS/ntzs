@@ -357,11 +357,19 @@ function mapTqsResult(result: { success?: boolean; data?: unknown }): AzamPayPay
 }
 
 /**
- * Check payment status via AzamPay.
- * GET /api/v1/partner/gettransactionstatus?transactionId=&provider=
- * Response: { data: "success"|"pending"|"failed"|..., success: boolean }
+ * Check payment status via AzamPay TQS — the endpoint their team confirmed
+ * working (20 Jul 2026):
  *
- * `provider` is the AzamPay provider enum stored at initiation as pspChannel.
+ *   GET /azam/v1/gettransactionstatus?pgReferenceId=&operator=
+ *   → { data: { status: 'Success'|'Failure'|'Pending', pgReferenceId,
+ *       operator, timeStamp, reasonOfTransactionFailure }, success, ... }
+ *
+ * Do NOT use the legacy /api/v1/partner/gettransactionstatus path: it answers
+ * with STALE statuses (payments their dashboard shows SUCCESS reported as
+ * "pending" / "Transaction not found") — the root cause of days of stuck
+ * deposits and the dashboard-vs-API contradiction.
+ *
+ * `provider` is the operator stored at initiation as pspChannel.
  */
 export async function checkPaymentStatus(
   reference: string,
@@ -369,9 +377,9 @@ export async function checkPaymentStatus(
 ): Promise<AzamPayPaymentStatusResponse> {
   try {
     const token = await getAccessToken()
-    const url = new URL(`${getCheckoutBase()}/api/v1/partner/gettransactionstatus`)
-    url.searchParams.set('transactionId', reference)
-    url.searchParams.set('provider', provider || 'azampesa')
+    const url = new URL(`${getCheckoutBase()}/azam/v1/gettransactionstatus`)
+    url.searchParams.set('pgReferenceId', reference)
+    url.searchParams.set('operator', provider || 'azampesa')
 
     const response = await fetch(url.toString(), {
       headers: { 'Authorization': `Bearer ${token}` },
@@ -399,12 +407,12 @@ export interface TqsProbeAttempt {
 }
 
 /**
- * TQS query-shape probe: production returns "Transaction not found" even for
- * ids copied verbatim from their dashboard in the acknowledgment format —
- * meaning the id is right and OUR QUERY SHAPE is wrong (param name and/or
- * the provider filter). Try the sensible variants in parallel; the first
- * confirming variant is returned so callers can credit AND learn the shape
- * (recorded in audit) to make canonical.
+ * TQS operator-variant probe on the CONFIRMED endpoint
+ * (/azam/v1/gettransactionstatus). The path and pgReferenceId param are
+ * settled — the remaining unknown is the operator vocabulary for networks
+ * other than airtel/azampesa (tigo? yas? halotel? halopesa?). Try the
+ * stored channel plus sensible alternates in parallel; a confirming variant
+ * credits AND records the working operator value in the audit trail.
  */
 export async function probeTransactionStatus(
   reference: string,
@@ -414,34 +422,40 @@ export async function probeTransactionStatus(
   variant: TqsProbeAttempt | null
   attempts: TqsProbeAttempt[]
 }> {
-  const params = ['transactionId', 'pgReferenceId', 'referenceId'] as const
-  const providers = [...new Set<string | null>([channel ?? null, 'azampesa', null])]
+  const operators = [
+    ...new Set<string | null>([
+      channel ?? null,
+      'azampesa',
+      'airtel',
+      channel === 'tigo' ? 'yas' : null,
+      channel === 'halopesa' ? 'halotel' : null,
+      null, // omitted entirely — operator may be optional
+    ]),
+  ]
   const token = await getAccessToken()
 
   const attempts = await Promise.all(
-    params.flatMap((param) =>
-      providers.map(async (provider): Promise<TqsProbeAttempt> => {
-        try {
-          const url = new URL(`${getCheckoutBase()}/api/v1/partner/gettransactionstatus`)
-          url.searchParams.set(param, reference)
-          if (provider) url.searchParams.set('provider', provider)
-          const response = await fetch(url.toString(), {
-            headers: { 'Authorization': `Bearer ${token}` },
-            signal: AbortSignal.timeout(8_000),
-          })
-          const result = await response.json() as { success?: boolean; data?: unknown }
-          const mapped = mapTqsResult(result)
-          return { param, provider, status: mapped.status, raw: mapped.raw?.slice(0, 120) }
-        } catch (err) {
-          return {
-            param,
-            provider,
-            status: 'pending',
-            raw: `exception: ${err instanceof Error ? err.message.slice(0, 80) : 'failed'}`,
-          }
+    operators.map(async (operator): Promise<TqsProbeAttempt> => {
+      try {
+        const url = new URL(`${getCheckoutBase()}/azam/v1/gettransactionstatus`)
+        url.searchParams.set('pgReferenceId', reference)
+        if (operator) url.searchParams.set('operator', operator)
+        const response = await fetch(url.toString(), {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(8_000),
+        })
+        const result = await response.json() as { success?: boolean; data?: unknown }
+        const mapped = mapTqsResult(result)
+        return { param: 'pgReferenceId', provider: operator, status: mapped.status, raw: mapped.raw?.slice(0, 120) }
+      } catch (err) {
+        return {
+          param: 'pgReferenceId',
+          provider: operator,
+          status: 'pending',
+          raw: `exception: ${err instanceof Error ? err.message.slice(0, 80) : 'failed'}`,
         }
-      })
-    )
+      }
+    })
   )
 
   const winner = attempts.find((a) => a.status === 'completed' || a.status === 'failed' || a.status === 'expired')
