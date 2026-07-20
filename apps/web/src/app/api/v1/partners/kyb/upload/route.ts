@@ -47,11 +47,11 @@ export async function POST(request: NextRequest) {
   const pathname = `kyb/${partnerId}/${docType as DocKey}.${ext}`
 
   try {
-    // addRandomSuffix makes the URL unguessable — Vercel Blob is public-access,
-    // and a deterministic kyb/{partnerId}/{docType} path would leave compliance
-    // documents (licences, AML policies) readable by anyone who derives the URL.
+    // PRIVATE store: compliance documents are never publicly reachable — the
+    // only read path is /api/kyb-docs/:partnerId/:docType, which authorizes
+    // (owning partner or backstage staff) and streams the blob server-side.
     const blob = await put(pathname, file, {
-      access: 'public',
+      access: 'private',
       addRandomSuffix: true,
     })
     return NextResponse.json({ url: blob.url })

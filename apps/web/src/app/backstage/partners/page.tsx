@@ -491,19 +491,19 @@ export default async function PartnersPage() {
                         </span>
                       )}
                       {kyb.certOfIncorporationUrl && (
-                        <a href={kyb.certOfIncorporationUrl} target="_blank" rel="noopener noreferrer"
+                        <a href={`/api/kyb-docs/${kyb.partnerId}/cert_of_incorporation`} target="_blank" rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">
                           📄 Certificate of Incorporation
                         </a>
                       )}
                       {kyb.regulatoryLicenseUrl && (
-                        <a href={kyb.regulatoryLicenseUrl} target="_blank" rel="noopener noreferrer"
+                        <a href={`/api/kyb-docs/${kyb.partnerId}/regulatory_license`} target="_blank" rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">
                           📄 Regulatory License
                         </a>
                       )}
                       {kyb.amlPolicyUrl && (
-                        <a href={kyb.amlPolicyUrl} target="_blank" rel="noopener noreferrer"
+                        <a href={`/api/kyb-docs/${kyb.partnerId}/aml_policy`} target="_blank" rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">
                           📄 AML / CFT Policy
                         </a>
