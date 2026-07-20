@@ -28,6 +28,8 @@ export interface PaymentRequest {
 export interface PaymentResponse {
   success: boolean
   reference?: string
+  /** Our own idempotency reference sent to the PSP (AzamPay externalId) — persisted for callback matching. */
+  externalId?: string
   error?: string
 }
 

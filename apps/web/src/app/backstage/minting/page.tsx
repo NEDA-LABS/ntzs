@@ -1,4 +1,4 @@
-import { desc, eq, sql, and } from 'drizzle-orm'
+import { desc, eq, sql, and, ne } from 'drizzle-orm'
 import { ethers } from 'ethers'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -18,6 +18,7 @@ import {
   orphanPayments,
 } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
+import { checkPaymentStatus as azamCheckPaymentStatus } from '@/lib/psp/azampay'
 import { suggestOrphanMatch, isPhoneMatch } from '@/lib/deposits/orphan-match'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
@@ -180,6 +181,58 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
 
   if (!deposit || deposit.status !== 'submitted') {
     throw new Error('Deposit not found or not in submitted status')
+  }
+
+  // AzamPay deposits: the pasted reference is VERIFIED against AzamPay's own
+  // status API (our bearer credentials) before crediting — the admin's copy
+  // from their dashboard is a claim, TQS is the oracle. A reference can credit
+  // at most one deposit.
+  if (deposit.paymentProvider === 'azampay') {
+    const ref = manualTransId || deposit.pspReference || ''
+    if (!ref) {
+      throw new Error('Enter the AzamPay transaction reference from their dashboard')
+    }
+    const azamStatus = await azamCheckPaymentStatus(ref, deposit.pspChannel ?? undefined)
+    if (azamStatus.status !== 'completed') {
+      throw new Error(
+        `AzamPay did not confirm this reference (status: ${azamStatus.status}${azamStatus.raw ? ` — ${azamStatus.raw}` : ''})`
+      )
+    }
+    if (ref !== deposit.pspReference) {
+      const [taken] = await db
+        .select({ id: depositRequests.id })
+        .from(depositRequests)
+        .where(and(eq(depositRequests.pspReference, ref), ne(depositRequests.id, depositId)))
+        .limit(1)
+      if (taken) {
+        throw new Error(`This AzamPay reference already credits deposit ${taken.id}`)
+      }
+    }
+    const currentUser = await getCurrentDbUser()
+    const azamNewStatus = deposit.amountTzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
+    const claimed = await db
+      .update(depositRequests)
+      .set({
+        status: azamNewStatus,
+        pspReference: ref,
+        fiatConfirmedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(depositRequests.id, depositId), eq(depositRequests.status, 'submitted')))
+      .returning({ id: depositRequests.id })
+    if (claimed.length === 0) {
+      throw new Error('Deposit was just processed by another path — refresh')
+    }
+    await writeAuditLog(
+      'deposit.reconciled_manual',
+      'deposit_request',
+      depositId,
+      { reference: ref, verifiedVia: 'tqs', provider: 'azampay' },
+      currentUser?.id
+    )
+    console.log(`[Admin] AzamPay-verified deposit ${depositId} -> ${azamNewStatus}`, { ref })
+    revalidatePath('/backstage/minting')
+    return
   }
 
   let transid = manualTransId

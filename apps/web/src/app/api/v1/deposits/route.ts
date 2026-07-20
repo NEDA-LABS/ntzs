@@ -4,6 +4,7 @@ import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
+import { writeAuditLog } from '@/lib/audit'
 import { initiateCollection, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
@@ -313,6 +314,16 @@ export async function POST(request: NextRequest) {
       .update(depositRequests)
       .set({ paymentProvider: routed.provider, pspReference: routed.payment.reference, updatedAt: new Date() })
       .where(eq(depositRequests.id, deposit.id))
+
+    // Both ids on record: PSP callbacks may echo only OUR externalId (AzamPay
+    // names it utilityref) — the webhook matches through this row.
+    if (routed.payment.externalId) {
+      await writeAuditLog('deposit.psp_initiated', 'deposit_request', deposit.id, {
+        provider: routed.provider,
+        reference: routed.payment.reference ?? null,
+        externalId: routed.payment.externalId,
+      })
+    }
 
     return NextResponse.json(
       {

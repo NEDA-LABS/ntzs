@@ -188,6 +188,8 @@ export interface AzamPayPaymentResponse {
   success: boolean
   reference?: string
   provider?: string // detected MNO — caller stores as pspChannel
+  /** Our externalId sent at checkout — callbacks echo it as utilityref. */
+  externalId?: string
   error?: string
 }
 
@@ -254,7 +256,7 @@ export async function initiatePayment(
     // Store AzamPay's transactionId as reference (used for status checks), fall back to externalId
     const reference = result.transactionId && result.transactionId !== 'null' ? result.transactionId : externalId
     console.log('[azampay] payment initiated:', { reference, externalId, amount: request.amountTzs, phone, provider })
-    return { success: true, reference, provider }
+    return { success: true, reference, provider, externalId }
   } catch (err) {
     console.error('[azampay] payment API error:', err)
     return { success: false, error: 'Failed to connect to payment provider' }
@@ -740,6 +742,16 @@ export interface AzamPayPaymentWebhookPayload {
   additionalProperties?: Record<string, unknown>
   failureReason?: string
   transactionDate?: string
+  // Fields observed in AzamPay's public callback documentation — the checkout
+  // callback names our externalId `utilityref` and carries their own ids as
+  // reference/fspReferenceId, with transactionstatus 'success'|'failure'.
+  utilityref?: string
+  reference?: string
+  fspReferenceId?: string
+  transactionstatus?: string
+  operator?: string
+  msisdn?: string
+  message?: string
 }
 
 export interface AzamPayPayoutWebhookPayload {
