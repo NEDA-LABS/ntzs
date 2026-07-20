@@ -484,6 +484,12 @@ export default async function PartnersPage() {
 
                     {/* Documents */}
                     <div className="flex flex-wrap gap-2">
+                      {!kyb.certOfIncorporationUrl && !kyb.regulatoryLicenseUrl && !kyb.amlPolicyUrl && (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-400">
+                          ⚠ No documents uploaded — the partner must upload the Certificate of
+                          Incorporation before this can be approved
+                        </span>
+                      )}
                       {kyb.certOfIncorporationUrl && (
                         <a href={kyb.certOfIncorporationUrl} target="_blank" rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:text-white">

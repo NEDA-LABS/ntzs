@@ -33,16 +33,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'File exceeds 10 MB limit' }, { status: 400 })
   }
 
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    // put() would throw an opaque 500 — say what is actually wrong: the
+    // Vercel Blob store isn't connected to this project.
+    console.error('[kyb/upload] BLOB_READ_WRITE_TOKEN not configured — connect a Blob store to the Vercel project')
+    return NextResponse.json(
+      { error: 'Document storage is not configured yet — our team has been notified. Please try again later.' },
+      { status: 503 }
+    )
+  }
+
   const ext = file.name.split('.').pop() ?? 'bin'
   const pathname = `kyb/${partnerId}/${docType as DocKey}.${ext}`
 
-  // addRandomSuffix makes the URL unguessable — Vercel Blob is public-access,
-  // and a deterministic kyb/{partnerId}/{docType} path would leave compliance
-  // documents (licences, AML policies) readable by anyone who derives the URL.
-  const blob = await put(pathname, file, {
-    access: 'public',
-    addRandomSuffix: true,
-  })
-
-  return NextResponse.json({ url: blob.url })
+  try {
+    // addRandomSuffix makes the URL unguessable — Vercel Blob is public-access,
+    // and a deterministic kyb/{partnerId}/{docType} path would leave compliance
+    // documents (licences, AML policies) readable by anyone who derives the URL.
+    const blob = await put(pathname, file, {
+      access: 'public',
+      addRandomSuffix: true,
+    })
+    return NextResponse.json({ url: blob.url })
+  } catch (err) {
+    console.error('[kyb/upload] blob upload failed:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: 'Document upload failed — please try again.' }, { status: 502 })
+  }
 }

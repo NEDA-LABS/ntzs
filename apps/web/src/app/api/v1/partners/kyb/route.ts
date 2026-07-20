@@ -50,13 +50,30 @@ export async function POST(request: NextRequest) {
   const { db } = getDb()
 
   const [existing] = await db
-    .select({ id: partnerKyb.id, status: partnerKyb.status })
+    .select({
+      id: partnerKyb.id,
+      status: partnerKyb.status,
+      certOfIncorporationUrl: partnerKyb.certOfIncorporationUrl,
+    })
     .from(partnerKyb)
     .where(eq(partnerKyb.partnerId, partnerId))
     .limit(1)
 
   const isSubmit = body.submit === 'true'
   const now = new Date()
+
+  // Approval already requires the Certificate of Incorporation — fail at
+  // submit time instead of letting a doc-less submission sit in the review
+  // queue looking complete.
+  if (isSubmit) {
+    const certUrl = update.certOfIncorporationUrl ?? existing?.certOfIncorporationUrl ?? null
+    if (!certUrl) {
+      return NextResponse.json(
+        { error: 'Upload the Certificate of Incorporation before submitting for review' },
+        { status: 400 }
+      )
+    }
+  }
 
   if (existing) {
     if (['approved', 'under_review'].includes(existing.status)) {
