@@ -277,6 +277,12 @@ export interface AzamPayPaymentStatusResponse {
   status: 'completed' | 'pending' | 'failed' | 'expired' | 'voided'
   amount?: number
   completedAt?: string
+  /**
+   * Truncated raw TQS body (or exception text) when the response did NOT map
+   * cleanly — the poll cron persists this as audit evidence so a stuck
+   * deposit carries AzamPay's own answer with it.
+   */
+  raw?: string
 }
 
 /**
@@ -308,8 +314,9 @@ export async function checkPaymentStatus(
     }
 
     if (!result.success) {
-      console.warn('[azampay] TQS returned success=false:', JSON.stringify(result).slice(0, 300))
-      return { status: 'pending' }
+      const raw = JSON.stringify(result).slice(0, 400)
+      console.warn('[azampay] TQS returned success=false:', raw)
+      return { status: 'pending', raw }
     }
 
     // Production TQS `data` may be the status string OR an object wrapping it —
@@ -327,12 +334,17 @@ export async function checkPaymentStatus(
     if (s === 'failed' || s === 'failure' || s === 'reversed') return { status: 'failed' }
     if (s === 'expired') return { status: 'expired' }
     if (s !== 'pending') {
-      console.warn('[azampay] TQS unmapped status value:', JSON.stringify(result).slice(0, 300))
+      const raw = JSON.stringify(result).slice(0, 400)
+      console.warn('[azampay] TQS unmapped status value:', raw)
+      return { status: 'pending', raw }
     }
     return { status: 'pending' }
   } catch (err) {
-    console.error('[azampay] status check error:', err instanceof Error ? err.message : err)
-    return { status: 'pending' }
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[azampay] status check error:', message)
+    // Exceptions here are systemic (auth, network, non-JSON body) — surface
+    // them as evidence too, not just a rotating console line.
+    return { status: 'pending', raw: `exception: ${message.slice(0, 300)}` }
   }
 }
 
