@@ -18,7 +18,10 @@ import {
   orphanPayments,
 } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
-import { checkPaymentStatus as azamCheckPaymentStatus } from '@/lib/psp/azampay'
+import {
+  checkPaymentStatus as azamCheckPaymentStatus,
+  probeTransactionStatus as azamProbeTransactionStatus,
+} from '@/lib/psp/azampay'
 import { suggestOrphanMatch, isPhoneMatch } from '@/lib/deposits/orphan-match'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
@@ -192,11 +195,28 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     if (!ref) {
       fail('Enter the AzamPay transaction reference from their dashboard')
     }
-    const azamStatus = await azamCheckPaymentStatus(ref, deposit.pspChannel ?? undefined)
+    let azamStatus = await azamCheckPaymentStatus(ref, deposit.pspChannel ?? undefined)
+    let verifiedVariant: string | null = null
     if (azamStatus.status !== 'completed') {
-      fail(
-        `AzamPay did not confirm reference ${ref} (status: ${azamStatus.status}${azamStatus.raw ? ` — ${azamStatus.raw}` : ''})`
-      )
+      // Their TQS 404s even on dashboard-verbatim ids — the query SHAPE (param
+      // name / provider filter) is suspect, not the id. Probe the variants in
+      // parallel; a confirming variant both credits this deposit and teaches
+      // us the canonical shape (recorded in the audit row).
+      const probe = await azamProbeTransactionStatus(ref, deposit.pspChannel ?? undefined).catch(() => null)
+      if (probe?.confirmed?.status === 'completed' && probe.variant) {
+        azamStatus = probe.confirmed
+        verifiedVariant = `${probe.variant.param}${probe.variant.provider ? `+provider=${probe.variant.provider}` : ' (no provider)'}`
+      } else if (probe) {
+        fail(
+          `AzamPay did not confirm ${ref} under any query shape — tried: ${probe.attempts
+            .map((a) => `${a.param}${a.provider ? `/${a.provider}` : ''}→${a.status}`)
+            .join(' · ')}. Last raw: ${probe.attempts.find((a) => a.raw)?.raw ?? 'n/a'}`
+        )
+      } else {
+        fail(
+          `AzamPay did not confirm reference ${ref} (status: ${azamStatus.status}${azamStatus.raw ? ` — ${azamStatus.raw}` : ''})`
+        )
+      }
     }
     if (ref !== deposit.pspReference) {
       const [taken] = await db
@@ -227,11 +247,13 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
       'deposit.reconciled_manual',
       'deposit_request',
       depositId,
-      { reference: ref, verifiedVia: 'tqs', provider: 'azampay' },
+      { reference: ref, verifiedVia: 'tqs', provider: 'azampay', queryVariant: verifiedVariant },
       currentUser?.id
     )
-    console.log(`[Admin] AzamPay-verified deposit ${depositId} -> ${azamNewStatus}`, { ref })
-    succeed(`AzamPay confirmed ${ref} — deposit queued to mint (${azamNewStatus.replace(/_/g, ' ')})`)
+    console.log(`[Admin] AzamPay-verified deposit ${depositId} -> ${azamNewStatus}`, { ref, verifiedVariant })
+    succeed(
+      `AzamPay confirmed ${ref} — deposit queued to mint (${azamNewStatus.replace(/_/g, ' ')})${verifiedVariant ? ` · working query shape: ${verifiedVariant}` : ''}`
+    )
   }
 
   let transid = manualTransId

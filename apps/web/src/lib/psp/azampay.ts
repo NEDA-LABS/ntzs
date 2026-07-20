@@ -322,6 +322,31 @@ export interface AzamPayPaymentStatusResponse {
   raw?: string
 }
 
+/** Map a TQS response body to our status enum — shared by the canonical query and the probe. */
+function mapTqsResult(result: { success?: boolean; data?: unknown }): AzamPayPaymentStatusResponse {
+  if (!result.success) {
+    return { status: 'pending', raw: JSON.stringify(result).slice(0, 400) }
+  }
+  // Production TQS `data` may be the status string OR an object wrapping it —
+  // tolerate both, and surface any shape we fail to map.
+  const raw = result.data
+  const nested =
+    raw && typeof raw === 'object'
+      ? ((raw as Record<string, unknown>).transactionstatus ??
+         (raw as Record<string, unknown>).transactionStatus ??
+         (raw as Record<string, unknown>).status ??
+         (raw as Record<string, unknown>).message)
+      : raw
+  const s = String(nested ?? '').toLowerCase()
+  if (s === 'success' || s === 'completed') return { status: 'completed' }
+  if (s === 'failed' || s === 'failure' || s === 'reversed') return { status: 'failed' }
+  if (s === 'expired') return { status: 'expired' }
+  if (s !== 'pending') {
+    return { status: 'pending', raw: JSON.stringify(result).slice(0, 400) }
+  }
+  return { status: 'pending' }
+}
+
 /**
  * Check payment status via AzamPay.
  * GET /api/v1/partner/gettransactionstatus?transactionId=&provider=
@@ -344,44 +369,77 @@ export async function checkPaymentStatus(
       signal: AbortSignal.timeout(10_000),
     })
 
-    const result = await response.json() as {
-      success?: boolean
-      data?: unknown
-      statusCode?: number
-    }
-
-    if (!result.success) {
-      const raw = JSON.stringify(result).slice(0, 400)
-      console.warn('[azampay] TQS returned success=false:', raw)
-      return { status: 'pending', raw }
-    }
-
-    // Production TQS `data` may be the status string OR an object wrapping it —
-    // tolerate both, and log any shape we fail to map so it can't stall silently.
-    const raw = result.data
-    const nested =
-      raw && typeof raw === 'object'
-        ? ((raw as Record<string, unknown>).transactionstatus ??
-           (raw as Record<string, unknown>).transactionStatus ??
-           (raw as Record<string, unknown>).status ??
-           (raw as Record<string, unknown>).message)
-        : raw
-    const s = String(nested ?? '').toLowerCase()
-    if (s === 'success' || s === 'completed') return { status: 'completed' }
-    if (s === 'failed' || s === 'failure' || s === 'reversed') return { status: 'failed' }
-    if (s === 'expired') return { status: 'expired' }
-    if (s !== 'pending') {
-      const raw = JSON.stringify(result).slice(0, 400)
-      console.warn('[azampay] TQS unmapped status value:', raw)
-      return { status: 'pending', raw }
-    }
-    return { status: 'pending' }
+    const result = await response.json() as { success?: boolean; data?: unknown; statusCode?: number }
+    const mapped = mapTqsResult(result)
+    if (mapped.raw) console.warn('[azampay] TQS did not map cleanly:', mapped.raw)
+    return mapped
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[azampay] status check error:', message)
     // Exceptions here are systemic (auth, network, non-JSON body) — surface
     // them as evidence too, not just a rotating console line.
     return { status: 'pending', raw: `exception: ${message.slice(0, 300)}` }
+  }
+}
+
+export interface TqsProbeAttempt {
+  param: string
+  provider: string | null
+  status: AzamPayPaymentStatusResponse['status']
+  raw?: string
+}
+
+/**
+ * TQS query-shape probe: production returns "Transaction not found" even for
+ * ids copied verbatim from their dashboard in the acknowledgment format —
+ * meaning the id is right and OUR QUERY SHAPE is wrong (param name and/or
+ * the provider filter). Try the sensible variants in parallel; the first
+ * confirming variant is returned so callers can credit AND learn the shape
+ * (recorded in audit) to make canonical.
+ */
+export async function probeTransactionStatus(
+  reference: string,
+  channel?: string
+): Promise<{
+  confirmed: AzamPayPaymentStatusResponse | null
+  variant: TqsProbeAttempt | null
+  attempts: TqsProbeAttempt[]
+}> {
+  const params = ['transactionId', 'pgReferenceId', 'referenceId'] as const
+  const providers = [...new Set<string | null>([channel ?? null, 'azampesa', null])]
+  const token = await getAccessToken()
+
+  const attempts = await Promise.all(
+    params.flatMap((param) =>
+      providers.map(async (provider): Promise<TqsProbeAttempt> => {
+        try {
+          const url = new URL(`${getCheckoutBase()}/api/v1/partner/gettransactionstatus`)
+          url.searchParams.set(param, reference)
+          if (provider) url.searchParams.set('provider', provider)
+          const response = await fetch(url.toString(), {
+            headers: { 'Authorization': `Bearer ${token}` },
+            signal: AbortSignal.timeout(8_000),
+          })
+          const result = await response.json() as { success?: boolean; data?: unknown }
+          const mapped = mapTqsResult(result)
+          return { param, provider, status: mapped.status, raw: mapped.raw?.slice(0, 120) }
+        } catch (err) {
+          return {
+            param,
+            provider,
+            status: 'pending',
+            raw: `exception: ${err instanceof Error ? err.message.slice(0, 80) : 'failed'}`,
+          }
+        }
+      })
+    )
+  )
+
+  const winner = attempts.find((a) => a.status === 'completed' || a.status === 'failed' || a.status === 'expired')
+  return {
+    confirmed: winner ? { status: winner.status } : null,
+    variant: winner ?? null,
+    attempts,
   }
 }
 
