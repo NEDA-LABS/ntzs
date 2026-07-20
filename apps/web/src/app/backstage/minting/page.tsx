@@ -195,26 +195,39 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     if (!ref) {
       fail('Enter the AzamPay transaction reference from their dashboard')
     }
+    const overrideReason = String(formData.get('overrideReason') ?? '').trim()
     let azamStatus = await azamCheckPaymentStatus(ref, deposit.pspChannel ?? undefined)
     let verifiedVariant: string | null = null
+    let overrideEvidence: unknown = null
     if (azamStatus.status !== 'completed') {
-      // Their TQS 404s even on dashboard-verbatim ids — the query SHAPE (param
-      // name / provider filter) is suspect, not the id. Probe the variants in
-      // parallel; a confirming variant both credits this deposit and teaches
-      // us the canonical shape (recorded in the audit row).
+      // A definitive negative can never be overridden — a FAILED payment on
+      // their API contradicting an admin attestation is an escalation, not a
+      // credit.
+      if (azamStatus.status === 'failed' || azamStatus.status === 'expired') {
+        fail(`AzamPay reports this reference as ${azamStatus.status} — cannot credit${azamStatus.raw ? ` (${azamStatus.raw})` : ''}`)
+      }
+      // Query-shape probe: their TQS has refused dashboard-verbatim ids.
       const probe = await azamProbeTransactionStatus(ref, deposit.pspChannel ?? undefined).catch(() => null)
       if (probe?.confirmed?.status === 'completed' && probe.variant) {
         azamStatus = probe.confirmed
         verifiedVariant = `${probe.variant.param}${probe.variant.provider ? `+provider=${probe.variant.provider}` : ' (no provider)'}`
-      } else if (probe) {
-        fail(
-          `AzamPay did not confirm ${ref} under any query shape — tried: ${probe.attempts
-            .map((a) => `${a.param}${a.provider ? `/${a.provider}` : ''}→${a.status}`)
-            .join(' · ')}. Last raw: ${probe.attempts.find((a) => a.raw)?.raw ?? 'n/a'}`
-        )
+      } else if (probe?.confirmed && (probe.confirmed.status === 'failed' || probe.confirmed.status === 'expired')) {
+        fail(`AzamPay reports this reference as ${probe.confirmed.status} — cannot credit`)
+      } else if (overrideReason.length >= 15) {
+        // ATTESTATION OVERRIDE: production-proven case — their dashboard says
+        // SUCCESS while their status API answers pending/not-found for the
+        // same id. Super-admin attests to the dashboard record; the full probe
+        // matrix is stored as evidence that verification was attempted and
+        // their API could not confirm. Failed/expired verdicts above still
+        // block this path.
+        verifiedVariant = 'override'
+        overrideEvidence = probe?.attempts ?? [{ canonical: azamStatus }]
       } else {
+        const matrix = probe
+          ? probe.attempts.map((a) => `${a.param}${a.provider ? `/${a.provider}` : ''}→${a.status}`).join(' · ')
+          : `canonical→${azamStatus.status}`
         fail(
-          `AzamPay did not confirm reference ${ref} (status: ${azamStatus.status}${azamStatus.raw ? ` — ${azamStatus.raw}` : ''})`
+          `AzamPay did not confirm ${ref} — tried: ${matrix}. Last raw: ${(probe?.attempts.find((a) => a.raw)?.raw ?? azamStatus.raw) ?? 'n/a'}. If their dashboard shows SUCCESS, credit by attestation: keep the reference AND type an override reason of at least 15 characters (amount, date, operator ref), then Verify again.`
         )
       }
     }
@@ -243,16 +256,25 @@ async function verifyAndAdvanceSubmittedAction(formData: FormData) {
     if (claimed.length === 0) {
       fail('Deposit was just processed by another path — refresh')
     }
+    const isOverride = verifiedVariant === 'override'
     await writeAuditLog(
-      'deposit.reconciled_manual',
+      isOverride ? 'deposit.reconciled_override' : 'deposit.reconciled_manual',
       'deposit_request',
       depositId,
-      { reference: ref, verifiedVia: 'tqs', provider: 'azampay', queryVariant: verifiedVariant },
+      {
+        reference: ref,
+        provider: 'azampay',
+        verifiedVia: isOverride ? 'admin_attestation' : 'tqs',
+        queryVariant: verifiedVariant,
+        ...(isOverride ? { reason: overrideReason, tqsEvidence: overrideEvidence } : {}),
+      },
       currentUser?.id
     )
-    console.log(`[Admin] AzamPay-verified deposit ${depositId} -> ${azamNewStatus}`, { ref, verifiedVariant })
+    console.log(`[Admin] AzamPay ${isOverride ? 'OVERRIDE' : 'verified'} deposit ${depositId} -> ${azamNewStatus}`, { ref, verifiedVariant })
     succeed(
-      `AzamPay confirmed ${ref} — deposit queued to mint (${azamNewStatus.replace(/_/g, ' ')})${verifiedVariant ? ` · working query shape: ${verifiedVariant}` : ''}`
+      isOverride
+        ? `OVERRIDE — credited by attestation (${ref}). AzamPay's API could not confirm; the probe evidence and your reason are stored in the audit log.`
+        : `AzamPay confirmed ${ref} — deposit queued to mint (${azamNewStatus.replace(/_/g, ' ')})${verifiedVariant ? ` · working query shape: ${verifiedVariant}` : ''}`
     )
   }
 
@@ -1314,6 +1336,15 @@ export default async function MintingPage({
                                 placeholder="PSP Trans ID"
                                 className="rounded bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 border border-zinc-700 focus:border-emerald-500/50 outline-none w-32"
                               />
+                              {dep.paymentProvider === 'azampay' && (
+                                <input
+                                  type="text"
+                                  name="overrideReason"
+                                  placeholder="Override reason (only if their dashboard says SUCCESS)"
+                                  title="Attestation override: used only when AzamPay's status API cannot confirm a payment their dashboard shows as SUCCESS. Min 15 characters — include amount, date, operator ref."
+                                  className="rounded bg-zinc-800 px-2 py-1 text-xs text-white placeholder:text-zinc-600 border border-amber-700/40 focus:border-amber-500/60 outline-none w-48"
+                                />
+                              )}
                               <SubmitButton
                                 pendingText="Verifying..."
                                 className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"

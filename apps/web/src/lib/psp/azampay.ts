@@ -325,6 +325,15 @@ export interface AzamPayPaymentStatusResponse {
 /** Map a TQS response body to our status enum — shared by the canonical query and the probe. */
 function mapTqsResult(result: { success?: boolean; data?: unknown }): AzamPayPaymentStatusResponse {
   if (!result.success) {
+    // Their envelope sets success=false for ANY non-successful payment state —
+    // including a FOUND transaction that is still pending: {"data":"pending",
+    // "success":false,"statusCode":200} observed in production. Map the
+    // negative/neutral states; never accept "completed" from a success=false
+    // envelope (crediting requires the positive flag).
+    const s = String(result.data ?? '').toLowerCase()
+    if (s === 'failed' || s === 'failure' || s === 'reversed') return { status: 'failed' }
+    if (s === 'expired') return { status: 'expired' }
+    if (s === 'pending') return { status: 'pending' }
     return { status: 'pending', raw: JSON.stringify(result).slice(0, 400) }
   }
   // Production TQS `data` may be the status string OR an object wrapping it —
