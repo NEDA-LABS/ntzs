@@ -2,7 +2,8 @@
 
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDownUp, CheckCircle2, Loader2, XCircle, AlertCircle, ChevronRight } from 'lucide-react';
+import { ArrowDownUp, CheckCircle2, Loader2, XCircle, AlertCircle, Info } from 'lucide-react';
+import { useLp } from '../layout';
 
 type TokenSymbol = 'USDC' | 'NTZS';
 
@@ -36,6 +37,8 @@ function StatusIcon({ status }: { status: string }) {
 }
 
 export default function SwapTestPage() {
+  const { lp } = useLp();
+  const isPooled = lp?.isActive ?? false;
   const [fromToken, setFromToken] = useState<TokenSymbol>('USDC');
   const [toToken, setToToken] = useState<TokenSymbol>('NTZS');
   const [amount, setAmount] = useState('');
@@ -93,7 +96,7 @@ export default function SwapTestPage() {
 
       if (!res.ok) {
         const text = await res.text();
-        setLogs([{ status: 'FAILED', message: text }]);
+        setLogs([{ status: 'FAILED', message: text || `Swap failed (HTTP ${res.status}). Please try again.` }]);
         setSwapping(false);
         setDone(true);
         return;
@@ -231,18 +234,29 @@ export default function SwapTestPage() {
             </div>
           </div>
 
-          {/* Warning for LP using their own wallet */}
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/15">
-            <AlertCircle size={14} className="text-yellow-500 flex-none mt-0.5" />
-            <p className="text-xs text-yellow-500/80 leading-relaxed">
-              This swaps from your LP wallet. Ensure it has tokens before activating. Funds in the solver pool are separate.
-            </p>
-          </div>
+          {/* Context banner: pooled capital vs own-wallet testing */}
+          {isPooled ? (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/15">
+              <Info size={14} className="text-blue-400 flex-none mt-0.5" />
+              <p className="text-xs text-blue-300/80 leading-relaxed">
+                Your capital is active in the shared pool, so your LP wallet is empty — taker swaps
+                fill you automatically (see Transactions). To place a test swap from your own wallet,
+                deactivate from the Rebalance page first.
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/15">
+              <AlertCircle size={14} className="text-yellow-500 flex-none mt-0.5" />
+              <p className="text-xs text-yellow-500/80 leading-relaxed">
+                This swaps from your LP wallet. Ensure it has tokens before activating. Funds in the solver pool are separate.
+              </p>
+            </div>
+          )}
 
           {/* Swap button */}
           <button
             onClick={swapping ? cancel : startSwap}
-            disabled={!amount || !rate || rateLoading}
+            disabled={isPooled || !amount || !rate || rateLoading}
             className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${
               swapping
                 ? 'bg-red-600/10 text-red-400 border border-red-500/20 hover:bg-red-600/20'
@@ -251,7 +265,7 @@ export default function SwapTestPage() {
                 : 'bg-blue-600/15 text-blue-400 border border-blue-500/25 hover:bg-blue-600/25 disabled:opacity-40 disabled:cursor-not-allowed'
             }`}
           >
-            {swapping ? 'Cancel swap' : isFilled ? 'Swap complete' : 'Swap via HyperBridge'}
+            {swapping ? 'Cancel swap' : isFilled ? 'Swap complete' : isPooled ? 'Capital active in pool' : 'Swap'}
           </button>
         </div>
 

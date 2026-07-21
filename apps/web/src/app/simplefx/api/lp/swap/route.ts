@@ -84,19 +84,21 @@ export async function POST(req: NextRequest) {
     slippageBps,
   })
 
-  // When LP is active, tokens are in the solver wallet (swept on activation).
-  // Use solver wallet to place the test order so it has the balance to escrow.
-  // When inactive, LP wallet still holds the tokens.
-  let signerKey: `0x${string}`
-
+  // Active LPs have no funds to test with: activation sweeps their wallet into
+  // the shared pool, so the balance check below can never pass — and signing
+  // with the pool key instead would let any active LP move pooled funds (the
+  // hole this endpoint was originally gated off for). Taker swaps via
+  // /api/v1/swap fill active LPs automatically; testing from this page requires
+  // deactivating first so funds return to the LP's own wallet.
   if (lp.isActive) {
-    const solverKey = process.env.SOLVER_PRIVATE_KEY
-    if (!solverKey) return new Response('SOLVER_PRIVATE_KEY not configured', { status: 503 })
-    signerKey = solverKey as `0x${string}`
-  } else {
-    const { privateKey } = deriveWallet(lp.walletIndex)
-    signerKey = privateKey as `0x${string}`
+    return new Response(
+      'Your capital is active in the shared pool, so there is nothing in your LP wallet to swap. Taker swaps fill you automatically — watch the Transactions page. To place a test swap from your own wallet, deactivate from the Rebalance page first.',
+      { status: 409 }
+    )
   }
+
+  const { privateKey } = deriveWallet(lp.walletIndex)
+  const signerKey: `0x${string}` = privateKey as `0x${string}`
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
