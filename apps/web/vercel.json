@@ -9,6 +9,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/poll-selcom",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-mints",
       "schedule": "* * * * *"
     },

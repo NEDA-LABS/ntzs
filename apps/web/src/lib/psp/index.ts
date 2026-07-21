@@ -14,6 +14,7 @@
  */
 
 import * as azampay from './azampay'
+import * as selcom from './selcom'
 import * as snippe from './snippe'
 
 // ─── PSP selection ────────────────────────────────────────────────────────────
@@ -177,21 +178,23 @@ import {
 
 export { detectNetwork } from './routing'
 
-/** Rails with a live adapter (Selcom joins when its Push USSD API lands). */
-type LiveRail = 'snippe' | 'azampay'
-const RAIL_IMPL = { snippe, azampay } as const
+/** Rails with a live adapter. Selcom is capability-gated in routing.ts. */
+type LiveRail = 'snippe' | 'azampay' | 'selcom'
+const RAIL_IMPL = { snippe, azampay, selcom } as const
 
 export const PAYMENT_WEBHOOK_PATHS: Record<LiveRail, string> = {
   snippe: '/api/webhooks/snippe/payment',
   azampay: '/api/webhooks/azampay/payment',
+  selcom: '/api/webhooks/selcom/payment',
 }
 export const PAYOUT_WEBHOOK_PATHS: Record<LiveRail, string> = {
   snippe: '/api/webhooks/snippe/payout',
   azampay: '/api/webhooks/azampay/payout',
+  selcom: '/api/webhooks/selcom/payout',
 }
 
 const liveRails = (plan: RailId[]): LiveRail[] =>
-  plan.filter((r): r is LiveRail => r === 'snippe' || r === 'azampay')
+  plan.filter((r): r is LiveRail => r === 'snippe' || r === 'azampay' || r === 'selcom')
 
 import type { PaymentRequest as PaymentRequestT, PaymentResponse as PaymentResponseT, PayoutRequest as PayoutRequestT, PayoutResponse as PayoutResponseT } from './types'
 
