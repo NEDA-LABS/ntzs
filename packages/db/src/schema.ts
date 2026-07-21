@@ -59,7 +59,9 @@ export const approvalType = pgEnum('approval_type', ['bank', 'platform'])
 
 export const approvalDecision = pgEnum('approval_decision', ['approved', 'rejected'])
 
-export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe', 'snippe_card', 'azampay'])
+// 'selcom' requires drizzle/0061_selcom_provider.sql applied manually before
+// any code writes it — all Selcom paths are env-gated off until then.
+export const pspProvider = pgEnum('psp_provider', ['bank_transfer', 'zenopay', 'snippe', 'snippe_card', 'azampay', 'selcom'])
 
 export const transferStatus = pgEnum('transfer_status', ['pending', 'submitted', 'completed', 'failed'])
 

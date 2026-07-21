@@ -11,6 +11,9 @@ function env(overrides: Partial<RailEnv> = {}): RailEnv {
     snippeConfigured: true,
     azampayConfigured: true,
     azampayDisbursementEnabled: false,
+    selcomConfigured: false,
+    selcomCollectionsEnabled: false,
+    selcomDisbursementsEnabled: false,
     ...overrides,
   }
 }
@@ -57,9 +60,22 @@ describe('planCollectionRails — multi-rail', () => {
     expect(planCollectionRails('tigo', e)).toEqual(['snippe'])
   })
 
-  it('drops unconfigured rails and never plans selcom (adapter pending)', () => {
+  it('drops unconfigured rails; selcom stays out until configured AND flag-enabled', () => {
     const e = env({ collectionPriority: 'selcom,azampay,snippe', azampayConfigured: false })
     expect(planCollectionRails('tigo', e)).toEqual(['snippe'])
+    // Credentials alone are not enough — the explicit flag must also be on.
+    const configuredOnly = env({ collectionPriority: 'selcom,snippe', selcomConfigured: true })
+    expect(planCollectionRails('tigo', configuredOnly)).toEqual(['snippe'])
+  })
+
+  it('plans selcom (incl. Vodacom M-Pesa) when configured and enabled', () => {
+    const e = env({
+      collectionPriority: 'selcom,snippe',
+      selcomConfigured: true,
+      selcomCollectionsEnabled: true,
+    })
+    expect(planCollectionRails('vodacom', e)).toEqual(['selcom', 'snippe'])
+    expect(planCollectionRails('airtel', e)).toEqual(['selcom', 'snippe'])
   })
 
   it('falls back to the legacy default when a priority list filters to nothing', () => {

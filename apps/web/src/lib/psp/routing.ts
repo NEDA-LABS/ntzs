@@ -13,8 +13,12 @@
  *   azampay — collections (Yas/Airtel/Halo/AzamPesa; M-Pesa pending Vodacom
  *             onboarding); disbursements gated behind
  *             AZAMPAY_DISBURSEMENT_ENABLED until IP whitelisting is resolved
- *   selcom  — registered, disabled: adapter pending their Push USSD API
- *             (see docs/selcom-integration-spec.md §4)
+ *   selcom  — adapter ported (push-USSD collections, disbursements, balance,
+ *             statement); BOTH sides gated behind explicit env flags
+ *             (SELCOM_COLLECTIONS_ENABLED / SELCOM_DISBURSEMENTS_ENABLED)
+ *             until Selcom's pre-live details + rotated credentials land.
+ *             Note: Selcom also IP-whitelists (error 611) — production needs
+ *             the static-egress relay, same as AzamPay disbursements.
  *
  * BACKWARDS COMPATIBLE BY DEFAULT: with none of the routing env vars set,
  * every plan is exactly [ACTIVE_MOBILE_PSP] — identical to the single-rail
@@ -56,6 +60,10 @@ export interface RailEnv {
   azampayConfigured: boolean
   /** AzamPay payouts stay off until IP whitelisting is resolved. */
   azampayDisbursementEnabled: boolean
+  selcomConfigured: boolean
+  /** Selcom sides are individually flag-gated until pre-live sign-off. */
+  selcomCollectionsEnabled: boolean
+  selcomDisbursementsEnabled: boolean
 }
 
 const ALL_RAILS: RailId[] = ['snippe', 'azampay', 'selcom']
@@ -80,7 +88,9 @@ function collectionCapable(rail: RailId, network: Network, env: RailEnv): boolea
       // completes — routing a M-Pesa user there would hard-fail every time.
       return env.azampayConfigured && network !== 'vodacom'
     case 'selcom':
-      return false // adapter pending (Push USSD API awaited)
+      // Push-USSD covers every network incl. M-Pesa; explicit flag until
+      // Selcom's pre-live sign-off + rotated credentials.
+      return env.selcomConfigured && env.selcomCollectionsEnabled
   }
 }
 
@@ -91,7 +101,7 @@ function disbursementCapable(rail: RailId, env: RailEnv): boolean {
     case 'azampay':
       return env.azampayConfigured && env.azampayDisbursementEnabled
     case 'selcom':
-      return false // adapter pending
+      return env.selcomConfigured && env.selcomDisbursementsEnabled
   }
 }
 
@@ -140,5 +150,8 @@ export function readRailEnv(env: NodeJS.ProcessEnv = process.env): RailEnv {
     snippeConfigured: Boolean(env.SNIPPE_API_KEY),
     azampayConfigured: Boolean(env.AZAMPAY_APP_NAME && env.AZAMPAY_CLIENT_ID && env.AZAMPAY_CLIENT_SECRET),
     azampayDisbursementEnabled: env.AZAMPAY_DISBURSEMENT_ENABLED === 'true',
+    selcomConfigured: Boolean(env.SELCOM_API_KEY && env.SELCOM_PRIVATE_KEY && env.SELCOM_ACCOUNT_NUMBER),
+    selcomCollectionsEnabled: env.SELCOM_COLLECTIONS_ENABLED === 'true',
+    selcomDisbursementsEnabled: env.SELCOM_DISBURSEMENTS_ENABLED === 'true',
   }
 }
