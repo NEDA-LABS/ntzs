@@ -827,6 +827,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   azampay: 'AzamPay',
   snippe: 'Snippe',
   snippe_card: 'Snippe Card',
+  selcom: 'Selcom',
   zenopay: 'ZenoPay',
   bank_transfer: 'Bank',
 }
@@ -834,10 +835,20 @@ const PROVIDER_BADGE: Record<string, string> = {
   azampay: 'bg-sky-500/20 text-sky-400',
   snippe: 'bg-emerald-500/20 text-emerald-400',
   snippe_card: 'bg-teal-500/20 text-teal-400',
+  selcom: 'bg-orange-500/20 text-orange-400',
   zenopay: 'bg-violet-500/20 text-violet-400',
 }
 const MOBILE_PROVIDERS = ['azampay', 'snippe', 'snippe_card', 'zenopay'] as const
 const STALE_ATTEMPT_HOURS = 72
+
+/** 'selcom' joins the stale-cancel scope only when a Selcom rail is enabled —
+ * before drizzle/0061 the enum value doesn't exist in the DB and a WHERE
+ * literal referencing it would error the whole action. */
+function mobileProviderScope(): ('azampay' | 'snippe' | 'snippe_card' | 'zenopay' | 'selcom')[] {
+  const selcomOn =
+    process.env.SELCOM_COLLECTIONS_ENABLED === 'true' || process.env.SELCOM_W2B_ENABLED === 'true'
+  return selcomOn ? [...MOBILE_PROVIDERS, 'selcom'] : [...MOBILE_PROVIDERS]
+}
 
 /**
  * Server-action refusals must surface as an inline banner — a thrown error in
@@ -889,7 +900,7 @@ async function cancelStaleMobileAttemptsAction() {
     .where(
       and(
         eq(depositRequests.status, 'submitted'),
-        inArray(depositRequests.paymentProvider, [...MOBILE_PROVIDERS]),
+        inArray(depositRequests.paymentProvider, mobileProviderScope()),
         lt(depositRequests.createdAt, cutoff)
       )
     )

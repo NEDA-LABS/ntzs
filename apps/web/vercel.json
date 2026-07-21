@@ -13,6 +13,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/selcom-statement-sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/process-mints",
       "schedule": "* * * * *"
     },
