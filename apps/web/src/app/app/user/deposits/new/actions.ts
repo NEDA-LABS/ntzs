@@ -16,6 +16,8 @@ import {
   isValidTanzanianPhone,
   lookupAccountName,
 } from '@/lib/psp'
+import { W2B_CHANNEL } from '@/lib/psp/selcom-statement'
+import { getW2bConfig } from '@/lib/psp/selcom-w2b'
 import { writeAuditLog } from '@/lib/audit'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
@@ -145,6 +147,76 @@ export async function createDepositRequestAction(formData: FormData) {
   revalidatePath('/app/user/activity')
 
   return { depositId: deposit.id }
+}
+
+/**
+ * Create a w2b (Lipa Namba) deposit intent — no push is sent. The user pays
+ * our Selcom Lipa Namba from their own mobile-money menu; the
+ * selcom-statement-sync cron matches the incoming credit to this row by
+ * amount + payer phone and advances it to mint. The phone entered here MUST
+ * be the line the money is sent from, or the payment lands in the manual
+ * orphan queue instead of auto-crediting.
+ */
+export async function createW2bDepositIntentAction(
+  formData: FormData
+): Promise<{ depositId: string; lipaNamba: string; accountName: string | null }> {
+  await requireAnyRole(['end_user', 'super_admin'])
+  const dbUser = await requireDbUser()
+
+  const w2b = getW2bConfig()
+  if (!w2b) {
+    throw new Error('Lipa Namba deposits are not available right now')
+  }
+
+  const bankId = String(formData.get('bankId') ?? '').trim()
+  const amountTzsRaw = String(formData.get('amountTzs') ?? '').trim()
+  const buyerPhone = String(formData.get('buyerPhone') ?? '').trim()
+
+  if (!bankId) throw new Error('Missing bank')
+
+  const amountTzs = Number(amountTzsRaw)
+  if (!Number.isFinite(amountTzs) || amountTzs <= 0) throw new Error('Invalid amount')
+
+  if (!buyerPhone) throw new Error('Phone number required — we match your payment by the number it is sent from')
+  if (!isValidTanzanianPhone(buyerPhone)) throw new Error('Invalid Tanzanian mobile number')
+
+  const { db } = getDb()
+
+  const wallet = await getUserPrimaryWallet(dbUser.id)
+  if (!wallet) redirect('/app/user/wallet')
+
+  const approvedKyc = await db
+    .select({ id: kycCases.id })
+    .from(kycCases)
+    .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
+    .limit(1)
+  if (!approvedKyc.length) redirect('/app/user/kyc')
+
+  const [deposit] = await db
+    .insert(depositRequests)
+    .values({
+      userId: dbUser.id,
+      bankId,
+      walletId: wallet.id,
+      chain: wallet.chain,
+      amountTzs: Math.trunc(amountTzs),
+      idempotencyKey: crypto.randomUUID(),
+      status: 'submitted',
+      paymentProvider: 'selcom',
+      pspChannel: W2B_CHANNEL,
+      buyerPhone: normalizePhone(buyerPhone),
+    })
+    .returning({ id: depositRequests.id })
+
+  await writeAuditLog('deposit.w2b_intent_created', 'deposit_request', deposit.id, {
+    lipaNamba: w2b.lipaNamba,
+    amountTzs: Math.trunc(amountTzs),
+  }, dbUser.id)
+
+  revalidatePath('/app/user')
+  revalidatePath('/app/user/activity')
+
+  return { depositId: deposit.id, lipaNamba: w2b.lipaNamba, accountName: w2b.accountName }
 }
 
 export async function createCardDepositRequestAction(formData: FormData): Promise<{ paymentUrl: string }> {

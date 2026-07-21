@@ -5,17 +5,19 @@ import crypto from 'crypto'
 import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { writeAuditLog } from '@/lib/audit'
-import { initiateCollection, initiateCardPayment, isValidTanzanianPhone } from '@/lib/psp'
+import { initiateCollection, initiateCardPayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
+import { W2B_CHANNEL } from '@/lib/psp/selcom-statement'
+import { getW2bConfig } from '@/lib/psp/selcom-w2b'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
-type PaymentMethod = 'mobile_money' | 'card'
+type PaymentMethod = 'mobile_money' | 'card' | 'lipa_namba'
 
 interface DepositBody {
   userId: string
   amountTzs: number
   paymentMethod?: PaymentMethod
-  // mobile_money
+  // mobile_money + lipa_namba
   phoneNumber?: string
   // card
   redirectUrl?: string
@@ -32,7 +34,7 @@ interface DepositBody {
 /**
  * POST /api/v1/deposits — Initiate a deposit (on-ramp)
  *
- * paymentMethod: "mobile_money" (default) | "card"
+ * paymentMethod: "mobile_money" (default) | "card" | "lipa_namba"
  *
  * mobile_money: requires phoneNumber. Sends a push prompt to the user's phone.
  *   Response: { id, status, amountTzs, paymentMethod, instructions }
@@ -41,6 +43,14 @@ interface DepositBody {
  *   Response: { id, status, amountTzs, paymentMethod, paymentUrl }
  *   Redirect your user to paymentUrl to complete card payment. On completion,
  *   Snippe fires a webhook and nTZS is minted automatically.
+ *
+ * lipa_namba: requires phoneNumber — the number the user will PAY FROM (it is
+ *   the matching key). No push is sent; show the returned instructions
+ *   (business number + exact amount) in your UI. The user pays from their own
+ *   mobile-money menu and nTZS mints automatically once the payment lands
+ *   (typically under 5 minutes). Only available when Selcom w2b is enabled.
+ *   Response: { id, status, amountTzs, paymentMethod, instructions:
+ *     { lipaNamba, accountName, amountTzs, payFromPhone, note } }
  */
 export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
@@ -83,18 +93,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
   }
 
-  if (paymentMethod !== 'mobile_money' && paymentMethod !== 'card') {
+  if (paymentMethod !== 'mobile_money' && paymentMethod !== 'card' && paymentMethod !== 'lipa_namba') {
     return NextResponse.json(
-      { error: 'paymentMethod must be "mobile_money" or "card"' },
+      { error: 'paymentMethod must be "mobile_money", "card" or "lipa_namba"' },
       { status: 400 }
     )
   }
 
   // Method-specific validation
-  if (paymentMethod === 'mobile_money') {
+  if (paymentMethod === 'mobile_money' || paymentMethod === 'lipa_namba') {
     if (!phoneNumber) {
       return NextResponse.json(
-        { error: 'phoneNumber is required for mobile_money deposits' },
+        { error: `phoneNumber is required for ${paymentMethod} deposits` },
         { status: 400 }
       )
     }
@@ -104,6 +114,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+  }
+
+  const w2bConfig = paymentMethod === 'lipa_namba' ? getW2bConfig() : null
+  if (paymentMethod === 'lipa_namba' && !w2bConfig) {
+    return NextResponse.json(
+      { error: 'lipa_namba deposits are not enabled' },
+      { status: 400 }
+    )
   }
 
   if (paymentMethod === 'card') {
@@ -261,6 +279,61 @@ export async function POST(request: NextRequest) {
 
   const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
   const webhookUrl = `${apiBaseUrl}/api/webhooks/snippe/payment`
+
+  // ── Lipa Namba (Selcom w2b) ────────────────────────────────────────────────
+  // No push, no PSP call: the row is an intent. The selcom-statement-sync cron
+  // matches the incoming credit by amount + payer phone and advances it.
+  if (paymentMethod === 'lipa_namba' && w2bConfig) {
+    const [deposit] = await db
+      .insert(depositRequests)
+      .values({
+        userId,
+        bankId,
+        walletId,
+        chain: 'base',
+        amountTzs,
+        status: 'submitted',
+        idempotencyKey,
+        partnerId: partner.id,
+        paymentProvider: 'selcom',
+        pspChannel: W2B_CHANNEL,
+        buyerPhone: normalizePhone(phoneNumber!),
+      })
+      .returning({
+        id: depositRequests.id,
+        status: depositRequests.status,
+        amountTzs: depositRequests.amountTzs,
+      })
+
+    if (!deposit) {
+      return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 })
+    }
+
+    await writeAuditLog('deposit.w2b_intent_created', 'deposit_request', deposit.id, {
+      partnerId: partner.id,
+      lipaNamba: w2bConfig.lipaNamba,
+      amountTzs,
+    })
+
+    return NextResponse.json(
+      {
+        id: deposit.id,
+        status: 'submitted',
+        amountTzs: deposit.amountTzs,
+        paymentMethod: 'lipa_namba',
+        instructions: {
+          lipaNamba: w2bConfig.lipaNamba,
+          accountName: w2bConfig.accountName,
+          amountTzs: deposit.amountTzs,
+          payFromPhone: phoneNumber,
+          note:
+            'Pay EXACTLY this amount from EXACTLY this phone number via "Lipa by M-Pesa / Lipa Namba" in the mobile money menu. ' +
+            'The deposit is credited automatically once the payment lands (typically under 5 minutes).',
+        },
+      },
+      { status: 201 }
+    )
+  }
 
   // ── Mobile money ───────────────────────────────────────────────────────────
   if (paymentMethod === 'mobile_money') {

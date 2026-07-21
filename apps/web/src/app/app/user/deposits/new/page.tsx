@@ -5,6 +5,7 @@ import { GlassCard } from '@/components/ui/glass-card'
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { getCachedApprovedKyc, getCachedDefaultBank } from '@/lib/user/cachedQueries'
+import { getW2bConfig } from '@/lib/psp/selcom-w2b'
 
 import { DepositForm } from './DepositForm'
 
@@ -72,7 +73,7 @@ export default async function NewDepositPage() {
 
         {/* Form card */}
         <GlassCard className="p-6">
-          <DepositForm defaultBankId={defaultBank?.id} userPhone={dbUser.phone} />
+          <DepositForm defaultBankId={defaultBank?.id} userPhone={dbUser.phone} w2b={getW2bConfig()} />
         </GlassCard>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
