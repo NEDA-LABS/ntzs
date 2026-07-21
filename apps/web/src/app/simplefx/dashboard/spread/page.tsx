@@ -146,6 +146,7 @@ export default function SpreadPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState<string | null>(null);
   const [mid, setMid] = useState(3750);
 
   // Fetch live mid rate
@@ -182,11 +183,25 @@ export default function SpreadPage() {
 
   const toggleActive = async () => {
     setActivating(true);
-    await fetch('/simplefx/api/lp/activate', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !lp.isActive }),
-    });
+    setActivateError(null);
+    try {
+      const res = await fetch('/simplefx/api/lp/activate', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !lp.isActive }),
+      });
+      const body = await res.json().catch(() => null);
+      // Surface failures and partial (207) results — silently swallowing them
+      // left users staring at a button that "did nothing" while the API was
+      // reporting exactly what went wrong (e.g. a position it couldn't return).
+      if (!res.ok || body?.partial) {
+        setActivateError(
+          body?.error ?? `Request failed (HTTP ${res.status}). Please try again.`,
+        );
+      }
+    } catch {
+      setActivateError('Network error — please check your connection and try again.');
+    }
     await refresh();
     setActivating(false);
   };
@@ -243,6 +258,11 @@ export default function SpreadPage() {
               {activating ? '...' : lp.isActive ? 'Deactivate' : 'Go Live'}
             </button>
           </div>
+          {activateError && (
+            <p className="mt-3 text-xs leading-relaxed text-red-400 border-t border-white/5 pt-3">
+              {activateError}
+            </p>
+          )}
         </div>
       </motion.div>
     </div>

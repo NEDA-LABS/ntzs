@@ -2,11 +2,11 @@ import { NextRequest } from 'next/server'
 import { getSessionFromCookies } from '@/lib/fx/auth'
 import { swapRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/fx/db'
-import { lpAccounts, lpFxPairs } from '@ntzs/db'
-import { eq } from 'drizzle-orm'
+import { lpAccounts, lpFxPairs, lpFills, lpPoolPositions } from '@ntzs/db'
+import { eq, and, sql } from 'drizzle-orm'
 import { deriveWallet } from '@/lib/fx/lp-wallet'
-import { executeSwap, calcMinOutput, SWAP_TOKENS, type SwapTokenSymbol } from '@/lib/fx/swap'
-import { BASE_RPC_URL } from '@/lib/env'
+import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
+import { BASE_RPC_URL, PLATFORM_FX_FEE_BPS } from '@/lib/env'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -14,8 +14,12 @@ export const maxDuration = 300
 /**
  * POST /simplefx/api/lp/swap
  *
- * Places a HyperBridge intent order from the LP's own wallet.
- * Used for testing the swap flow from the SimpleFX portal.
+ * Direct pool test swap from the LP's own wallet (inactive LPs only).
+ * Priced and ledgered exactly like /api/v1/swap: the fill is attributed to the
+ * best active LP and the double-entry pool accounting runs, so test swaps can
+ * never drift the ledger away from the solver's real on-chain holdings (the
+ * 21 Jul incident: an unledgered test swap left an LP's USDC claim above the
+ * pool balance, blocking their deactivation).
  * Streams SSE status updates.
  *
  * Body: { fromToken, toToken, amount, slippageBps? }
@@ -74,14 +78,32 @@ export async function POST(req: NextRequest) {
   if (!pair) return new Response('No active pair for these tokens', { status: 404 })
 
   const midRate = parseFloat(pair.midRate.toString())
+
+  // Price and attribute exactly like /api/v1/swap: the pool's inventory belongs
+  // to active LPs, so the best active LP by spread — not the tester — is the
+  // counterparty that earns the spread and whose position the fill adjusts.
+  const activeLPs = await db
+    .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.isActive, true as unknown as boolean))
+
+  if (activeLPs.length === 0) {
+    return new Response('No active liquidity provider to take the other side of the swap. Activate a pool LP first.', { status: 503 })
+  }
+
+  const direction = toToken === 'NTZS' ? 'STABLE_TO_NTZS' : 'NTZS_TO_STABLE'
+  const lpConfigs: LPConfig[] = activeLPs.map((a) => ({ id: a.id, bidBps: a.bidBps ?? 120, askBps: a.askBps ?? 150 }))
+  const bestLP = rankLPsByRate(lpConfigs, direction)[0]
+
   const minOutput = calcMinOutput({
     fromToken,
     toToken,
     amount,
     midRate,
-    bidBps: lp.bidBps,
-    askBps: lp.askBps,
+    bidBps: bestLP.bidBps,
+    askBps: bestLP.askBps,
     slippageBps,
+    protocolFeeBps: PLATFORM_FX_FEE_BPS,
   })
 
   // Active LPs have no funds to test with: activation sweeps their wallet into
@@ -114,7 +136,7 @@ export async function POST(req: NextRequest) {
           userPrivateKey: signerKey,
           solverPrivateKey: solverPrivateKey!,
           solverAddress,
-          selectedLpId: lp.id,
+          selectedLpId: bestLP.id,
           fromToken,
           toToken,
           amount,
@@ -122,7 +144,70 @@ export async function POST(req: NextRequest) {
           recipientAddress: lp.walletAddress as `0x${string}`,
           rpcUrl,
         })) {
-          send(update)
+          const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
+          send(clientUpdate)
+
+          // Same double-entry recording as /api/v1/swap — a test swap moves the
+          // same real tokens, so it must move the same ledger entries.
+          if (update.status === 'FILLED' && _result) {
+            const toMeta = SWAP_TOKENS[toToken]
+            const fromMeta = SWAP_TOKENS[fromToken]
+            const midOutput = fromToken === 'NTZS' ? amount / midRate : amount * midRate
+            const totalSpread = Math.max(0, midOutput - parseFloat(_result.amountOut))
+            const protocolFee = Math.min(totalSpread, midOutput * PLATFORM_FX_FEE_BPS / 10000)
+            const lpSpread = totalSpread - protocolFee
+
+            try {
+              await db.insert(lpFills).values({
+                lpId: bestLP.id,
+                userAddress: lp.walletAddress,
+                fromToken: fromMeta.address,
+                toToken: toMeta.address,
+                amountIn: _result.amountIn,
+                amountOut: _result.amountOut,
+                spreadEarned: lpSpread.toFixed(toMeta.decimals),
+                protocolFeeEarned: protocolFee.toFixed(toMeta.decimals),
+                inTxHash: _result.inTxHash,
+                outTxHash: _result.outTxHash,
+                source: 'lp_test',
+              })
+
+              const feeStr = protocolFee.toFixed(toMeta.decimals)
+              await db
+                .update(lpPoolPositions)
+                .set({
+                  contributed: sql`GREATEST(0, ${lpPoolPositions.contributed} - ${_result.amountOut}::numeric - ${feeStr}::numeric)`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(lpPoolPositions.lpId, bestLP.id),
+                  eq(lpPoolPositions.chain, 'base'),
+                  eq(lpPoolPositions.tokenAddress, toMeta.address.toLowerCase()),
+                ))
+
+              await db
+                .insert(lpPoolPositions)
+                .values({
+                  lpId: bestLP.id,
+                  chain: 'base',
+                  tokenAddress: fromMeta.address.toLowerCase(),
+                  tokenSymbol: fromToken,
+                  decimals: fromMeta.decimals,
+                  contributed: _result.amountIn,
+                  earned: '0',
+                })
+                .onConflictDoUpdate({
+                  target: [lpPoolPositions.lpId, lpPoolPositions.chain, lpPoolPositions.tokenAddress],
+                  set: {
+                    contributed: sql`${lpPoolPositions.contributed} + ${_result.amountIn}::numeric`,
+                    updatedAt: new Date(),
+                  },
+                })
+            } catch (err) {
+              console.error('[lp/swap] Failed to record fill:', err)
+            }
+          }
+
           if (['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'].includes(update.status)) break
         }
       } catch (err) {
