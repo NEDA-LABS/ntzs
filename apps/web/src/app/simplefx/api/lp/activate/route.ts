@@ -8,6 +8,13 @@ import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits } from 'ethe
 import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig';
 import { withLpOpLock, LP_LOCK_BUSY } from '@/lib/fx/lp-lock';
 
+// Activate/deactivate wait on real on-chain transfers (sweeps and returns,
+// potentially across chains). Without this, the platform default timeout can
+// kill a deactivate between token returns — the 21 Jul incident: nTZS leg
+// confirmed, function killed before the USDC leg, lock left stranded.
+export const runtime = 'nodejs';
+export const maxDuration = 300;
+
 const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
   'function balanceOf(address owner) view returns (uint256)',
