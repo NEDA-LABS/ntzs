@@ -22,11 +22,12 @@ export async function enforceRateLimit(key: string, limit: number, windowSec: nu
   const bucket = `${key}:${windowStart}`
   // Keep the row a little past the window so a late request in the same window
   // still sees the count; expired rows are pruned opportunistically below.
-  const expiresAt = new Date((windowStart + windowSec * 2) * 1000)
+  // Bound as ISO text — the Neon sql driver rejects Date instances.
+  const expiresAt = new Date((windowStart + windowSec * 2) * 1000).toISOString()
 
   const [row] = await sql<{ count: number }[]>`
     insert into rate_limits (bucket, count, expires_at)
-    values (${bucket}, 1, ${expiresAt})
+    values (${bucket}, 1, ${expiresAt}::timestamptz)
     on conflict (bucket) do update set count = rate_limits.count + 1
     returning count
   `
