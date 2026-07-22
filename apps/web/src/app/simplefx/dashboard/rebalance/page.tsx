@@ -17,7 +17,12 @@ interface PoolHealth {
   isActive: boolean
 }
 
-interface WalletBalance { ntzs: string; usdc: string }
+interface WalletBalance {
+  ntzs: string
+  usdc: string
+  /** Per-chain wallet breakdown from /lp/balances — e.g. USDT held on BNB. */
+  byChain?: Record<string, Record<string, string>>
+}
 
 type Step = 'overview' | 'deactivating' | 'adjust' | 'activating' | 'done'
 
@@ -84,7 +89,7 @@ export default function RebalancePage() {
   const fetchWallet = useCallback(() => {
     fetch('/simplefx/api/lp/balances')
       .then(r => r.json())
-      .then(d => setWallet({ ntzs: d.ntzs ?? '0', usdc: d.usdc ?? '0' }))
+      .then(d => setWallet({ ntzs: d.ntzs ?? '0', usdc: d.usdc ?? '0', byChain: d.walletByChain }))
       .catch(() => {})
   }, [])
 
@@ -287,6 +292,19 @@ export default function RebalancePage() {
                   <div>
                     <StatRow label="nTZS" value={fmt(wallet.ntzs)} />
                     <StatRow label="USDC" value={fmt(wallet.usdc)} />
+                    {Object.entries(wallet.byChain ?? {}).flatMap(([chain, tokens]) =>
+                      Object.entries(tokens)
+                        // nTZS/USDC on Base already render above — this surfaces the rest
+                        // (e.g. USDT on BNB) so off-Base holdings are never invisible.
+                        .filter(([sym, v]) => parseFloat(v) > 0 && !(chain === 'base' && (sym === 'ntzs' || sym === 'usdc')))
+                        .map(([sym, v]) => (
+                          <StatRow
+                            key={`${chain}-${sym}`}
+                            label={`${sym === 'ntzs' ? 'nTZS' : sym.toUpperCase()} · ${chain === 'bnb' ? 'BNB Chain' : chain === 'base' ? 'Base' : chain}`}
+                            value={fmt(v)}
+                          />
+                        ))
+                    )}
                   </div>
                 ) : (
                   <div className="h-16 rounded-lg bg-zinc-900 animate-pulse" />

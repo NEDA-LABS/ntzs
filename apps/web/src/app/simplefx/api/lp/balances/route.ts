@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
-import { lpAccounts, lpPoolPositions, lpFills, lpFxPairs } from '@ntzs/db';
+import { lpAccounts, lpPoolPositions, lpFills } from '@ntzs/db';
 import { eq, sql } from 'drizzle-orm';
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers';
-import { getChainConfig, getChainTokens, type ChainId } from '@/lib/fx/chainConfig';
+import { getChainConfig, getChainTokens, CHAIN_TOKENS, type ChainId } from '@/lib/fx/chainConfig';
 
 const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
@@ -20,36 +20,62 @@ async function getOnChainBalance(provider: JsonRpcProvider, token: string, walle
   return formatUnits(raw, Number(decimals));
 }
 
+/**
+ * Read the LP wallet's on-chain balances on EVERY configured chain.
+ *
+ * Deliberately independent of lp_fx_pairs: pair rows control what can SWAP,
+ * not what the LP OWNS. (Deactivating the only bnb pair used to make BNB-side
+ * holdings vanish from the dashboard — 650 USDT "went missing" on 21 Jul.)
+ * A chain whose RPC isn't configured is skipped with a log, never an error.
+ */
+async function fetchWalletBalances(walletAddress: string) {
+  const walletByChain: Partial<Record<ChainId, Record<string, string>>> = {};
+  const walletBySymbol: Record<string, string> = {};
+
+  await Promise.all(
+    (Object.keys(CHAIN_TOKENS) as ChainId[]).map(async (chain) => {
+      let cfg: ReturnType<typeof getChainConfig>;
+      try { cfg = getChainConfig(chain); } catch (e) {
+        console.error(`[balances] chain config missing for ${chain}:`, e);
+        return;
+      }
+      const provider = new JsonRpcProvider(cfg.rpcUrl);
+      const results = await Promise.all(
+        Object.values(getChainTokens(chain)).map(async (t) => {
+          const bal = await getOnChainBalance(provider, t.address, walletAddress).catch((e) => {
+            console.error(`[balances] balanceOf failed for ${t.symbol} on ${chain}:`, e);
+            return '0';
+          });
+          return { sym: t.symbol.toLowerCase(), bal };
+        })
+      );
+      const chainMap: Record<string, string> = {};
+      for (const { sym, bal } of results) {
+        chainMap[sym] = bal;
+        walletBySymbol[sym] = (parseFloat(walletBySymbol[sym] ?? '0') + parseFloat(bal)).toString();
+      }
+      walletByChain[chain] = chainMap;
+    })
+  );
+
+  return { walletByChain, walletBySymbol };
+}
+
 export async function GET() {
   try {
     const session = await getSessionFromCookies();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const [lp, pairs] = await Promise.all([
-      db
-        .select({ walletAddress: lpAccounts.walletAddress, isActive: lpAccounts.isActive })
-        .from(lpAccounts)
-        .where(eq(lpAccounts.id, session.lpId))
-        .limit(1)
-        .then((r) => r[0]),
-      db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)),
-    ]);
+    const [lp] = await db
+      .select({ walletAddress: lpAccounts.walletAddress, isActive: lpAccounts.isActive })
+      .from(lpAccounts)
+      .where(eq(lpAccounts.id, session.lpId))
+      .limit(1);
 
     if (!lp) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    // Build token map per chain from CHAIN_TOKENS (source of truth for which tokens exist on each chain)
-    const activeChains = new Set<ChainId>(pairs.map((p) => (p.chain ?? 'base') as ChainId))
-    const tokensByChain = new Map<ChainId, Map<string, { address: string; symbol: string; decimals: number }>>()
-    for (const chain of activeChains) {
-      const map = new Map<string, { address: string; symbol: string; decimals: number }>()
-      for (const token of Object.values(getChainTokens(chain))) {
-        map.set(token.address.toLowerCase(), { address: token.address, symbol: token.symbol, decimals: token.decimals })
-      }
-      tokensByChain.set(chain, map)
-    }
-
     if (lp.isActive) {
-      const [positions, fillTotals] = await Promise.all([
+      const [positions, fillTotals, walletBalances] = await Promise.all([
         db.select().from(lpPoolPositions).where(eq(lpPoolPositions.lpId, session.lpId)),
         db
           .select({
@@ -59,6 +85,7 @@ export async function GET() {
           .from(lpFills)
           .where(eq(lpFills.lpId, session.lpId))
           .groupBy(lpFills.toToken),
+        fetchWalletBalances(lp.walletAddress),
       ]);
 
       const earnedByAddr: Record<string, string> = {};
@@ -66,8 +93,10 @@ export async function GET() {
         earnedByAddr[f.toToken.toLowerCase()] = f.totalEarned ?? '0';
       }
 
-      // Aggregate positions by token symbol (across chains)
+      // Aggregate positions by token symbol (across chains) plus a per-chain
+      // breakdown so the UI can label where each pooled balance lives.
       const byToken: Record<string, { contributed: string; earned: string; total: string }> = {};
+      const positionsByChain: Record<string, Record<string, { contributed: string; earned: string; total: string }>> = {};
       for (const pos of positions) {
         const sym = pos.tokenSymbol.toLowerCase();
         const contributed = parseFloat(pos.contributed);
@@ -90,32 +119,14 @@ export async function GET() {
             total: contributed.toString(),
           };
         }
-      }
 
-      // Wallet balances per chain
-      const walletBySymbol: Record<string, string> = {}
-      await Promise.all(
-        [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
-          let cfg: ReturnType<typeof getChainConfig>
-          try { cfg = getChainConfig(chain) } catch (e) {
-            console.error(`[balances] chain config missing for ${chain}:`, e)
-            return
-          }
-          const provider = new JsonRpcProvider(cfg.rpcUrl)
-          const results = await Promise.all(
-            [...tokenMap.values()].map(async (t) => {
-              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch((e) => {
-                console.error(`[balances] balanceOf failed for ${t.symbol} on ${chain}:`, e)
-                return '0'
-              })
-              return { sym: t.symbol.toLowerCase(), bal }
-            })
-          )
-          for (const { sym, bal } of results) {
-            walletBySymbol[sym] = (parseFloat(walletBySymbol[sym] ?? '0') + parseFloat(bal)).toString()
-          }
-        })
-      )
+        const chainKey = (pos.chain ?? 'base') as string;
+        (positionsByChain[chainKey] ??= {})[sym] = {
+          contributed: pos.contributed,
+          earned: earned.toString(),
+          total: contributed.toString(),
+        };
+      }
 
       return NextResponse.json({
         source: 'pool',
@@ -123,33 +134,13 @@ export async function GET() {
         usdc: byToken['usdc']?.total ?? '0',
         usdt: byToken['usdt']?.total ?? '0',
         positions: byToken,
-        wallet: walletBySymbol,
+        positionsByChain,
+        wallet: walletBalances.walletBySymbol,
+        walletByChain: walletBalances.walletByChain,
       });
     } else {
-      // LP not active — show on-chain wallet balances per chain
-      const walletBySymbol: Record<string, string> = {}
-      await Promise.all(
-        [...tokensByChain.entries()].map(async ([chain, tokenMap]) => {
-          let cfg: ReturnType<typeof getChainConfig>
-          try { cfg = getChainConfig(chain) } catch (e) {
-            console.error(`[balances] chain config missing for ${chain}:`, e)
-            return
-          }
-          const provider = new JsonRpcProvider(cfg.rpcUrl)
-          const results = await Promise.all(
-            [...tokenMap.values()].map(async (t) => {
-              const bal = await getOnChainBalance(provider, t.address, lp.walletAddress).catch((e) => {
-                console.error(`[balances] balanceOf failed for ${t.symbol} on ${chain}:`, e)
-                return '0'
-              })
-              return { sym: t.symbol.toLowerCase(), bal }
-            })
-          )
-          for (const { sym, bal } of results) {
-            walletBySymbol[sym] = (parseFloat(walletBySymbol[sym] ?? '0') + parseFloat(bal)).toString()
-          }
-        })
-      )
+      // LP not active — on-chain wallet balances across every configured chain
+      const { walletByChain, walletBySymbol } = await fetchWalletBalances(lp.walletAddress);
 
       return NextResponse.json({
         source: 'wallet',
@@ -157,6 +148,8 @@ export async function GET() {
         usdc: walletBySymbol['usdc'] ?? '0',
         usdt: walletBySymbol['usdt'] ?? '0',
         ...walletBySymbol,
+        wallet: walletBySymbol,
+        walletByChain,
       });
     }
   } catch (err) {

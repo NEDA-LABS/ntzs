@@ -282,6 +282,66 @@ function PoolHealthCard({ health }: { health: PoolHealth }) {
   );
 }
 
+const CHAIN_LABELS: Record<string, string> = { base: 'Base', bnb: 'BNB Chain' };
+
+/**
+ * Per-chain balance breakdown — wallet + pooled holdings labeled by network,
+ * so funds on secondary chains (e.g. USDT on BNB) are always visible even
+ * when no trading pair is active there.
+ */
+function ChainBalancesCard({
+  walletByChain,
+  positionsByChain,
+}: {
+  walletByChain?: Record<string, Record<string, string>>;
+  positionsByChain?: Record<string, Record<string, { total: string }>>;
+}) {
+  const rows: Array<{ chain: string; sym: string; amount: number; where: 'wallet' | 'pool' }> = [];
+  for (const [chain, tokens] of Object.entries(walletByChain ?? {})) {
+    for (const [sym, v] of Object.entries(tokens)) {
+      const n = parseFloat(v);
+      if (n > 0) rows.push({ chain, sym, amount: n, where: 'wallet' });
+    }
+  }
+  for (const [chain, tokens] of Object.entries(positionsByChain ?? {})) {
+    for (const [sym, pos] of Object.entries(tokens)) {
+      const n = parseFloat(pos.total);
+      if (n > 0) rows.push({ chain, sym, amount: n, where: 'pool' });
+    }
+  }
+  if (rows.length === 0) return null;
+
+  const symLabel = (s: string) => (s === 'ntzs' ? 'nTZS' : s.toUpperCase());
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">
+      <p className="text-xs uppercase tracking-[0.2em] text-zinc-600 mb-3">Balances by chain</p>
+      <div className="divide-y divide-white/[0.04]">
+        {rows.map(({ chain, sym, amount, where }) => (
+          <div key={`${chain}-${sym}-${where}`} className="flex items-center justify-between py-2.5">
+            <span className="flex items-center gap-2 text-sm text-zinc-400">
+              {symLabel(sym)}
+              <span
+                className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
+                  chain === 'bnb'
+                    ? 'border-yellow-500/25 text-yellow-500/80'
+                    : 'border-blue-500/25 text-blue-400/80'
+                }`}
+              >
+                {CHAIN_LABELS[chain] ?? chain}
+              </span>
+              <span className="text-[10px] text-zinc-600">{where === 'pool' ? 'in solver pool' : 'in wallet'}</span>
+            </span>
+            <span className="text-sm tabular-nums text-white">
+              {amount.toLocaleString('en-US', { maximumFractionDigits: 4 })}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function OverviewPage() {
   const { lp } = useLp();
   const [balances, setBalances] = useState<{
@@ -290,7 +350,9 @@ export default function OverviewPage() {
     usdt?: string;
     source?: string;
     positions?: Record<string, { contributed: string; earned: string; total: string }>;
+    positionsByChain?: Record<string, Record<string, { contributed: string; earned: string; total: string }>>;
     wallet?: { ntzs: string; usdc: string; usdt?: string };
+    walletByChain?: Record<string, Record<string, string>>;
   } | null>(null);
   const [health, setHealth] = useState<PoolHealth | null>(null);
 
@@ -431,6 +493,15 @@ export default function OverviewPage() {
           <StatCard label="Earnings" value="0" sub="Activate to start earning" accent />
         )}
       </div>
+
+      {(balances?.walletByChain || balances?.positionsByChain) && (
+        <div className="mb-6">
+          <ChainBalancesCard
+            walletByChain={balances.walletByChain}
+            positionsByChain={balances.positionsByChain}
+          />
+        </div>
+      )}
 
       <div className="mb-6">
         <WalletAddressCard address={lp.walletAddress} />
