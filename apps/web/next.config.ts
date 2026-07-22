@@ -27,11 +27,6 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: repoRoot,
   },
-  serverExternalPackages: [
-    '@hyperbridge/sdk',
-    '@substrate/connect',
-    'smoldot',
-  ],
 }
 
 export default nextConfig

@@ -3,7 +3,7 @@
  *
  * Transfers input tokens from the user's platform wallet to the solver pool,
  * then immediately sends the output tokens from the solver pool to the user.
- * No HyperBridge / ERC-4337 involved.
+ * Plain ERC-20 transfers — no bridging protocol or ERC-4337 involved.
  *
  * All liquidity is pooled in a single solver wallet. Multiple LPs contribute
  * to the pool — we pick the best LP rate and attribute fills accordingly.
