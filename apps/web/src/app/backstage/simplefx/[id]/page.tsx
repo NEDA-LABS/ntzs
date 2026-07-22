@@ -1,5 +1,5 @@
 import { eq, desc } from 'drizzle-orm'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
@@ -26,6 +26,31 @@ async function toggleLpActiveAction(formData: FormData) {
   const isActive = formData.get('isActive') === 'true'
   if (!id) throw new Error('Missing id')
   const { db } = getDb()
+
+  // This toggle only flips the flag — it moves NO funds. That makes it safe in
+  // exactly two states and dangerous in the other two (21 Jul incident: an
+  // admin deactivated an LP whose 10,000 nTZS was swept into the pool; the
+  // LP's dashboard then read zero and their own re-activate errored on an
+  // empty wallet). Fund-moving transitions belong to the LP's own dashboard,
+  // whose activate route sweeps/returns on-chain and keeps the ledger true.
+  const [pos] = await db
+    .select({ id: lpPoolPositions.id })
+    .from(lpPoolPositions)
+    .where(eq(lpPoolPositions.lpId, id))
+    .limit(1)
+  const hasPositions = Boolean(pos)
+
+  if (isActive && hasPositions) {
+    redirect(`/backstage/simplefx/${id}?actionError=${encodeURIComponent(
+      'This LP has funds in the solver pool. Deactivating here would strand them invisibly — the LP must deactivate from their dashboard (Rebalance), which returns the funds on-chain.',
+    )}`)
+  }
+  if (!isActive && !hasPositions) {
+    redirect(`/backstage/simplefx/${id}?actionError=${encodeURIComponent(
+      'This LP has no pooled capital. Activating here would make them fill-eligible with nothing backing them — the LP must activate from their dashboard, which sweeps their wallet into the pool.',
+    )}`)
+  }
+
   await db.update(lpAccounts).set({ isActive: !isActive, updatedAt: new Date() }).where(eq(lpAccounts.id, id))
   revalidatePath(`/backstage/simplefx/${id}`)
   revalidatePath('/backstage/simplefx')
@@ -137,8 +162,15 @@ function KycBadge({ status }: { status: string }) {
   )
 }
 
-export default async function LpDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LpDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ actionError?: string }>
+}) {
   const { id } = await params
+  const { actionError } = await searchParams
   const { db } = getDb()
 
   const [lp] = await db.select().from(lpAccounts).where(eq(lpAccounts.id, id)).limit(1)
@@ -213,6 +245,13 @@ export default async function LpDetailPage({ params }: { params: Promise<{ id: s
           </span>
         </div>
       </div>
+
+      {actionError ? (
+        <div className="mx-8 mt-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+          <p className="text-sm font-medium text-rose-400">Action refused</p>
+          <p className="mt-1 text-xs leading-relaxed text-rose-300/90">{actionError}</p>
+        </div>
+      ) : null}
 
       <div className="p-8 grid gap-6 lg:grid-cols-3">
         {/* Left column: info + actions */}
