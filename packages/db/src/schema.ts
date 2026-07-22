@@ -1798,6 +1798,11 @@ export const attestations = pgTable(
     reserveSource: text('reserve_source').notNull(),
     reportHash: text('report_hash').notNull(),
     emailedTo: text('emailed_to'),
+    // Reserve composition + reconciliation-to-1:1 (attestation-math.ts shape).
+    // Requires drizzle/0062_attestation_annex.sql applied manually in Neon;
+    // until then the writer falls back to a legacy row (never select-all this
+    // table from code that must survive the pre-apply window).
+    annex: jsonb('annex'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

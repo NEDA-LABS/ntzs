@@ -185,8 +185,20 @@ export default async function OversightDashboard() {
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(wallets)
 
+  // Explicit columns: a select-all here would break the moment schema.ts gains
+  // a column ahead of its manual migration (annex/0062 pattern).
   const attestationRows = await db
-    .select()
+    .select({
+      reportDate: attestations.reportDate,
+      ntzsCirculation: attestations.ntzsCirculation,
+      tzsCustodialReserve: attestations.tzsCustodialReserve,
+      tzsGovtSecurities: attestations.tzsGovtSecurities,
+      reserveTotal: attestations.reserveTotal,
+      deviationPct: attestations.deviationPct,
+      fullyBacked: attestations.fullyBacked,
+      reportHash: attestations.reportHash,
+      createdAt: attestations.createdAt,
+    })
     .from(attestations)
     .orderBy(desc(attestations.reportDate))
     .limit(30)

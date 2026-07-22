@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 
-import { generateDailyAttestation } from '@/lib/attestation'
+import { generateDailyAttestation, isIncomplete } from '@/lib/attestation'
 
 export const maxDuration = 60
 
@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const report = await generateDailyAttestation()
-    return NextResponse.json({ ok: true, report })
+    // incomplete = alert sent, nothing persisted; re-run via POST /api/admin/attestation
+    return NextResponse.json({ ok: !isIncomplete(report), report })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Attestation failed'
     console.error('[daily-attestation] failed:', message)
