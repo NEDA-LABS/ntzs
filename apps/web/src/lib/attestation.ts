@@ -10,7 +10,7 @@ import * as selcom from '@/lib/psp/selcom'
 import { sendEmail } from '@/lib/email'
 import { POOL_ALERT_RECIPIENTS } from '@/lib/fx/alert-email'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
-import { computeAnnex, type AttestationAnnex, type ReservePot } from '@/lib/attestation-math'
+import { computeAnnex, errorChainIncludes, type AttestationAnnex, type ReservePot } from '@/lib/attestation-math'
 
 /**
  * Daily reserve attestation — BoT sandbox Parameter 7 + 16.
@@ -82,6 +82,14 @@ export interface IncompleteAttestation {
   status: 'incomplete'
   reportDate: string
   failures: string[]
+  /** Everything that DID read — so an incomplete run still shows the reserve
+   * position ("backed at ~X%, one source down") instead of a bare error wall. */
+  partial: {
+    supplyTzs: number | null
+    pots: ReservePot[]
+    /** gross pots / supply when both sides read — provisional, NOT attested. */
+    provisionalCoveragePct: number | null
+  }
   generatedAt: string
 }
 
@@ -270,8 +278,11 @@ async function readNettings() {
       .where(and(eq(orphanPayments.status, 'unmatched'), eq(orphanPayments.currency, 'TZS')))
     orphanUnmatchedTzs = Number(orphanRow?.total ?? 0)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (/does not exist|42P01/i.test(msg)) {
+    // Match through the CAUSE CHAIN — drizzle's outer message is only the SQL
+    // text; the "relation does not exist" reason lives in e.cause (the miss
+    // that blocked the 2026-07-23 morning run).
+    if (errorChainIncludes(e, /does not exist|42P01|undefined_table/i)) {
+      const msg = e instanceof Error ? e.message : String(e)
       console.warn('[attestation] orphan_payments table missing (apply drizzle/0060); counting 0:', msg.split('\n')[0])
       notes.push('Unmatched-credit netting counted as 0 — orphan ledger not yet provisioned (drizzle/0060 pending).')
     } else {
@@ -320,11 +331,6 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     failures.push(sanitizeFailure('Obligation ledger queries', e))
   }
 
-  if (failures.length > 0 || !nettingsRead) {
-    return { status: 'incomplete', reportDate, failures, generatedAt: new Date().toISOString() }
-  }
-  const { notes, ...nettings } = nettingsRead
-
   const pots: ReservePot[] = [snippePot.pot, azamPot.pot, selcomPot.pot].filter(
     (p): p is ReservePot => Boolean(p)
   )
@@ -338,6 +344,27 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
       asOf: new Date().toISOString(),
     })
   }
+
+  if (failures.length > 0 || !nettingsRead) {
+    // Incomplete — but never a bare error wall: carry everything that DID
+    // read so humans still see the reserve position at a glance.
+    const grossRead = pots.reduce((s, p) => s + p.amountTzs, 0)
+    return {
+      status: 'incomplete',
+      reportDate,
+      failures,
+      partial: {
+        supplyTzs: chain.ok ? chain.supply : null,
+        pots,
+        provisionalCoveragePct:
+          chain.ok && chain.supply > 0 && pots.length > 0
+            ? Math.round((grossRead / chain.supply) * 1000000) / 10000
+            : null,
+      },
+      generatedAt: new Date().toISOString(),
+    }
+  }
+  const { notes, ...nettings } = nettingsRead
 
   const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply, notes })
 
@@ -424,16 +451,26 @@ function annexHtml(a: AttestationAnnex, deltaLine: string): string {
     </p>`
 }
 
-function reportEmailHtml(r: AttestationReport, deltaLine: string): string {
+/**
+ * The attestation email. `includeAnnex` controls whether the reconciliation
+ * annex (adjusted coverage, residual) is included:
+ *  - regulator copy: classic (a)–(d) format only, until the residual is
+ *    understood and stable — promote via ATTESTATION_ANNEX_TO_REGULATOR=true.
+ *  - internal copy: always the full annex.
+ */
+function reportEmailHtml(r: AttestationReport, deltaLine: string, includeAnnex: boolean): string {
   const color = r.fullyBacked ? '#059669' : '#dc2626'
   const status = r.fullyBacked ? 'FULLY BACKED — 1:1 peg maintained' : '⚠️ UNDER-BACKED — PEG BREACH'
+  const adjustedLine = includeAnnex
+    ? `<p style="margin:0 0 16px;font-size:12px;color:#374151">Adjusted coverage after accrued obligations: <b>${r.annex.adjustedCoveragePct.toFixed(4)}%</b> · residual ${r.annex.residualPct >= 0 ? '+' : ''}${r.annex.residualPct.toFixed(4)}%</p>`
+    : '<span style="display:block;margin:0 0 12px"></span>'
   return `
   <div style="font-family:ui-monospace,Menlo,monospace;max-width:640px;margin:0 auto;color:#111827">
     <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Bank of Tanzania · Sandbox Ref. LD.170/515/02/1254</p>
     <h2 style="margin:4px 0 2px">nTZS Daily Reserve Attestation</h2>
     <p style="margin:0 0 16px;color:#6b7280">Report date (EAT): <b>${r.reportDate}</b> · Parameter 7 &amp; 16</p>
     <p style="display:inline-block;padding:6px 12px;border-radius:6px;background:${color}1a;color:${color};font-weight:700;margin:0 0 4px">${status}</p>
-    <p style="margin:0 0 16px;font-size:12px;color:#374151">Adjusted coverage after accrued obligations: <b>${r.annex.adjustedCoveragePct.toFixed(4)}%</b> · residual ${r.annex.residualPct >= 0 ? '+' : ''}${r.annex.residualPct.toFixed(4)}%</p>
+    ${adjustedLine}
     <table style="border-collapse:collapse;width:100%;font-size:13px">
       ${row('(a) Total nTZS in circulation', fmt(r.ntzsCirculation) + ' nTZS')}
       ${row('(b) TZS held in custodial reserve', 'TZS ' + fmt(r.tzsCustodialReserve))}
@@ -445,7 +482,7 @@ function reportEmailHtml(r: AttestationReport, deltaLine: string): string {
       The nTZS exchange rate is fixed at 1.00 TZS by the mint/redeem protocol. The figure above is the
       reserve-coverage deviation; a positive value means reserves exceed circulating supply (over-backed, safe).
     </p>
-    ${annexHtml(r.annex, deltaLine)}
+    ${includeAnnex ? annexHtml(r.annex, deltaLine) : ''}
     <table style="border-collapse:collapse;width:100%;font-size:11px;color:#6b7280;margin-top:16px">
       ${row('Supply source', r.supplySource)}
       ${row('Reserve source', r.reserveSource)}
@@ -471,7 +508,17 @@ function incompleteEmailHtml(inc: IncompleteAttestation): string {
     <ul style="font-size:12px;color:#6b7280;margin:0 0 12px;padding-left:18px">
       ${inc.failures.map((f) => `<li>${f}</li>`).join('')}
     </ul>
-    <p style="font-size:11px;color:#9ca3af;margin:0">Generated at ${inc.generatedAt}</p>
+    ${
+      inc.partial.pots.length > 0 || inc.partial.supplyTzs != null
+        ? `<h3 style="margin:12px 0 6px;font-size:13px;color:#374151">What DID read (provisional — not attested)</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:12px">
+      ${inc.partial.supplyTzs != null ? row('On-chain supply', fmt(inc.partial.supplyTzs) + ' nTZS') : ''}
+      ${inc.partial.pots.map((p) => row(p.label, 'TZS ' + fmt(p.amountTzs))).join('')}
+      ${inc.partial.provisionalCoveragePct != null ? row('<b>Provisional raw coverage</b>', `<b>${inc.partial.provisionalCoveragePct.toFixed(2)} %</b>`) : ''}
+    </table>`
+        : ''
+    }
+    <p style="font-size:11px;color:#9ca3af;margin:8px 0 0">Generated at ${inc.generatedAt}</p>
   </div>`
 }
 
@@ -549,10 +596,30 @@ export async function generateDailyAttestation(): Promise<AttestationReport | In
   const subject = report.fullyBacked
     ? `nTZS Daily Reserve Attestation · ${report.reportDate} · Fully backed`
     : `⚠️ URGENT: nTZS reserve UNDER-BACKED · ${report.reportDate} · peg breach`
+
+  // Regulator copy: classic (a)–(d) format. The reconciliation annex joins it
+  // only once explicitly promoted (ATTESTATION_ANNEX_TO_REGULATOR=true) —
+  // until the residual is understood and stable it is an internal instrument.
+  const annexToRegulator = process.env.ATTESTATION_ANNEX_TO_REGULATOR === 'true'
   try {
-    await sendEmail({ to, subject, html: reportEmailHtml(report, deltaLine) })
+    await sendEmail({ to, subject, html: reportEmailHtml(report, deltaLine, annexToRegulator) })
   } catch (e) {
     console.error('[attestation] email failed:', e instanceof Error ? e.message : e)
+  }
+
+  // Internal copy always carries the full annex (skip anyone already on the
+  // regulator list when they got the annex there).
+  const internalOnly = internalRecipients().filter((r) => annexToRegulator ? !to.includes(r) : true)
+  if (internalOnly.length > 0) {
+    try {
+      await sendEmail({
+        to: internalOnly,
+        subject: `nTZS Reserve Reconciliation (internal) · ${report.reportDate} · adjusted ${report.annex.adjustedCoveragePct.toFixed(2)}%`,
+        html: reportEmailHtml(report, deltaLine, true),
+      })
+    } catch (e) {
+      console.error('[attestation] internal annex email failed:', e instanceof Error ? e.message : e)
+    }
   }
   return report
 }

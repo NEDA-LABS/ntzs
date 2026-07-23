@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { computeAnnex, type ReservePot } from './attestation-math'
+import { computeAnnex, errorChainIncludes, type ReservePot } from './attestation-math'
 
 const pot = (key: string, amountTzs: number, source: 'api' | 'book' | 'env' = 'api'): ReservePot => ({
   key,
@@ -64,5 +64,28 @@ describe('computeAnnex', () => {
       totalSupplyTzs: 5_800_000,
     })
     expect(annex.residualPct).toBeCloseTo(0.8621, 3)
+  })
+})
+
+describe('errorChainIncludes', () => {
+  it('finds the pattern in a wrapped cause, not just the top message (drizzle-style)', () => {
+    const pg = Object.assign(new Error('relation "orphan_payments" does not exist'), { code: '42P01' })
+    const wrapped = new Error('Failed query: select coalesce(sum("amount_tzs"), 0) from "orphan_payments"', { cause: pg })
+    expect(errorChainIncludes(wrapped, /does not exist|42P01/i)).toBe(true)
+    // Top-level-only matching would have missed it:
+    expect(/does not exist/.test(wrapped.message)).toBe(false)
+  })
+
+  it('matches on nested code even without message text', () => {
+    const inner = { code: '42P01' }
+    const outer = new Error('query failed', { cause: inner })
+    expect(errorChainIncludes(outer, /42P01/)).toBe(true)
+  })
+
+  it('returns false for unrelated errors and survives cycles/depth', () => {
+    expect(errorChainIncludes(new Error('connection refused'), /does not exist/)).toBe(false)
+    const a: { message: string; cause?: unknown } = { message: 'a' }
+    a.cause = a // cycle — must terminate
+    expect(errorChainIncludes(a, /nope/)).toBe(false)
   })
 })
