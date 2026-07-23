@@ -92,19 +92,51 @@ export default async function AttestationPage({
       )}
 
       {isIncomplete(report) ? (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">
-          <p className="inline-block rounded-lg bg-amber-500/15 px-3 py-1.5 text-sm font-bold text-amber-400">
-            ⚠ READING INCOMPLETE — would not attest
-          </p>
-          <p className="mt-3 text-sm text-zinc-300">
-            One or more sources cannot be read right now. Sending is blocked for the regulator list;
-            fix the sources below and refresh.
-          </p>
-          <ul className="mt-3 list-disc pl-5 text-sm text-zinc-400">
-            {report.failures.map((f, i) => (
-              <li key={i}>{f}</li>
-            ))}
-          </ul>
+        <div className="space-y-4">
+          {/* Reserve position FIRST — an incomplete reading must never look
+              like a solvency problem when 9 of 10 sources read fine. */}
+          {(report.partial.supplyTzs != null || report.partial.pots.length > 0) && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+                  What we CAN read right now
+                </h2>
+                <span className="rounded-full bg-zinc-500/20 px-3 py-1 text-xs font-bold text-zinc-300">
+                  PROVISIONAL — NOT ATTESTED
+                </span>
+              </div>
+              <dl className="space-y-2 text-sm">
+                {report.partial.supplyTzs != null && (
+                  <div className="flex justify-between"><dt className="text-zinc-400">On-chain supply</dt><dd className="font-semibold text-white">{fmt(report.partial.supplyTzs)} nTZS</dd></div>
+                )}
+                {report.partial.pots.map((p) => (
+                  <div key={p.key} className="flex justify-between"><dt className="text-zinc-400">{p.label}</dt><dd className="font-semibold text-white">TZS {fmt(p.amountTzs)}</dd></div>
+                ))}
+                {report.partial.provisionalCoveragePct != null && (
+                  <div className="flex justify-between border-t border-white/10 pt-2">
+                    <dt className="font-semibold text-zinc-200">Provisional raw coverage</dt>
+                    <dd className={`font-bold ${report.partial.provisionalCoveragePct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {report.partial.provisionalCoveragePct.toFixed(2)} %
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">
+            <p className="inline-block rounded-lg bg-amber-500/15 px-3 py-1.5 text-sm font-bold text-amber-400">
+              ⚠ READING INCOMPLETE — would not attest
+            </p>
+            <p className="mt-3 text-sm text-zinc-300">
+              The source(s) below cannot be read, so the attestation cannot be finalized or sent to the
+              regulator list. Fix and refresh — everything above already reads correctly.
+            </p>
+            <ul className="mt-3 list-disc pl-5 text-sm text-zinc-400">
+              {report.failures.map((f, i) => (
+                <li key={i}>{f}</li>
+              ))}
+            </ul>
+          </div>
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
