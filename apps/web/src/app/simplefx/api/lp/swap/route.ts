@@ -3,9 +3,9 @@ import { getSessionFromCookies } from '@/lib/fx/auth'
 import { swapRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/fx/db'
 import { lpAccounts, lpFxPairs, lpFills, lpPoolPositions } from '@ntzs/db'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 import { deriveWallet } from '@/lib/fx/lp-wallet'
-import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
+import { executeSwap, calcMinOutput, rankLPsByRate, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
 import { BASE_RPC_URL, PLATFORM_FX_FEE_BPS } from '@/lib/env'
 
 export const runtime = 'nodejs'
@@ -93,7 +93,25 @@ export async function POST(req: NextRequest) {
 
   const direction = toToken === 'NTZS' ? 'STABLE_TO_NTZS' : 'NTZS_TO_STABLE'
   const lpConfigs: LPConfig[] = activeLPs.map((a) => ({ id: a.id, bidBps: a.bidBps ?? 120, askBps: a.askBps ?? 150 }))
-  const bestLP = rankLPsByRate(lpConfigs, direction)[0]
+
+  // Only LPs whose pooled out-token inventory covers the payout are eligible —
+  // routing to a thin LP doesn't fail the swap, it silently drains other LPs'
+  // pooled capital (the debit clamps at zero while the pool pays in full).
+  const midOutput = fromToken === 'NTZS' ? amount / midRate : amount * midRate
+  const outPositions = await db
+    .select({ lpId: lpPoolPositions.lpId, contributed: lpPoolPositions.contributed })
+    .from(lpPoolPositions)
+    .where(and(
+      eq(lpPoolPositions.chain, 'base'),
+      eq(lpPoolPositions.tokenAddress, tokenAddr(toToken)),
+      inArray(lpPoolPositions.lpId, lpConfigs.map((l) => l.id)),
+    ))
+  const inventoryByLpId = new Map(outPositions.map((p) => [p.lpId, parseFloat(p.contributed)]))
+  const coveredLPs = filterLPsByInventory(lpConfigs, inventoryByLpId, midOutput)
+  if (coveredLPs.length === 0) {
+    return new Response('Insufficient LP inventory for this swap size. Try a smaller amount.', { status: 503 })
+  }
+  const bestLP = rankLPsByRate(coveredLPs, direction)[0]
 
   const minOutput = calcMinOutput({
     fromToken,
@@ -145,14 +163,14 @@ export async function POST(req: NextRequest) {
           rpcUrl,
         })) {
           const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
-          send(clientUpdate)
 
           // Same double-entry recording as /api/v1/swap — a test swap moves the
-          // same real tokens, so it must move the same ledger entries.
+          // same real tokens, so it must move the same ledger entries. Books
+          // before broadcast: the fill is recorded before the client sees
+          // FILLED, so a disconnect can't leave moved funds unledgered.
           if (update.status === 'FILLED' && _result) {
             const toMeta = SWAP_TOKENS[toToken]
             const fromMeta = SWAP_TOKENS[fromToken]
-            const midOutput = fromToken === 'NTZS' ? amount / midRate : amount * midRate
             const totalSpread = Math.max(0, midOutput - parseFloat(_result.amountOut))
             const protocolFee = Math.min(totalSpread, midOutput * PLATFORM_FX_FEE_BPS / 10000)
             const lpSpread = totalSpread - protocolFee
@@ -208,6 +226,7 @@ export async function POST(req: NextRequest) {
             }
           }
 
+          send(clientUpdate)
           if (['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'].includes(update.status)) break
         }
       } catch (err) {

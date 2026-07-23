@@ -17,11 +17,15 @@ import {
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
+import {
+  computeWithdrawalGrossUp,
+  verifyQuoteToken,
+  quoteRequired,
+  PSP_FLAT_FEE_TZS,
+  DEFAULT_PLATFORM_FEE_PERCENT,
+} from '@/lib/waas/quote'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
-// ⚠ Replace with AzamPay's actual fee once confirmed via sandbox/support
-const PSP_FLAT_FEE_TZS = 1500
-const DEFAULT_PLATFORM_FEE_PERCENT = 0.5
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
@@ -42,14 +46,14 @@ export async function POST(request: NextRequest) {
 
   const { partner } = authResult
 
-  let body: { userId: string; amountTzs: number; phoneNumber: string }
+  let body: { userId: string; amountTzs: number; phoneNumber: string; quoteId?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, amountTzs: receiveAmountRaw, phoneNumber } = body
+  const { userId, amountTzs: receiveAmountRaw, phoneNumber, quoteId } = body
 
   if (!userId || !receiveAmountRaw || !phoneNumber) {
     return NextResponse.json(
@@ -102,9 +106,48 @@ export async function POST(request: NextRequest) {
       ? PLATFORM_TREASURY_ADDRESS
       : null
 
-  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate))
-  const burnAmountTzs = Math.ceil((receiveAmountTzs + PSP_FLAT_FEE_TZS) / (1 - feePercent / 100))
-  const platformFeeTzs = burnAmountTzs - receiveAmountTzs - PSP_FLAT_FEE_TZS
+  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate)) —
+  // shared with the quote endpoint so quotes price exactly what executes.
+  const { burnAmountTzs, platformFeeTzs } = computeWithdrawalGrossUp(receiveAmountTzs, feePercent)
+
+  // ── Quote verification (the name+fee disclosure contract) ─────────────────
+  // A valid quoteId proves the client fetched recipient name + fee breakdown
+  // for THESE terms within the last 5 minutes. Optional until partners adopt;
+  // WAAS_REQUIRE_QUOTE=true makes it mandatory.
+  if (quoteId) {
+    const v = verifyQuoteToken(quoteId)
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: 'invalid_quote', reason: v.reason, message: 'Quote is invalid or expired — request a new one via POST /api/v1/withdrawals/quote.' },
+        { status: 400 }
+      )
+    }
+    const q = v.payload
+    const normalizedPhone = normalizePhone(phoneNumber)
+    if (q.partnerId !== partner.id || q.userId !== userId || q.phone !== normalizedPhone || q.receiveAmountTzs !== receiveAmountTzs) {
+      return NextResponse.json(
+        { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/phone/amount). Request a new quote.' },
+        { status: 400 }
+      )
+    }
+    if (q.burnAmountTzs !== burnAmountTzs) {
+      // Fee config changed between quote and execute — force a re-quote so
+      // the user confirms the CURRENT price, never a stale one.
+      return NextResponse.json(
+        { error: 'quote_stale', message: 'Pricing changed since this quote was issued. Request a new quote.' },
+        { status: 409 }
+      )
+    }
+  } else if (quoteRequired()) {
+    return NextResponse.json(
+      {
+        error: 'quote_required',
+        message:
+          'This withdrawal requires a quote: call POST /api/v1/withdrawals/quote, show the user the recipient name, fees and net amount, then retry with the returned quoteId.',
+      },
+      { status: 400 }
+    )
+  }
 
   // BoT Sandbox Parameter #3 — per-transaction cap (applied to nTZS burned)
   const perTxnErr = checkPerTransactionCap(burnAmountTzs)
@@ -341,6 +384,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Trigger AzamPay payout
+  let verifiedRecipientName: string | null = null
   if (isMobilePspConfigured()) {
     const phone = normalizePhone(phoneNumber)
     const webhookUrl = `${APP_URL}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`
@@ -348,6 +392,7 @@ export async function POST(request: NextRequest) {
     // Name lookup — non-fatal, result stored for audit trail
     const recipientInfo = await lookupRecipientName(phone)
     if (recipientInfo.name) {
+      verifiedRecipientName = recipientInfo.name
       console.log(`[v1/withdrawals] Recipient name verified: ${recipientInfo.name} (${phone})`)
     }
 
@@ -458,10 +503,12 @@ export async function POST(request: NextRequest) {
       status: 'burned',
       amountTzs: burn.amountTzs,
       receiveAmountTzs,
+      recipientName: verifiedRecipientName,
       platformFeeTzs,
       pspFeeTzs: PSP_FLAT_FEE_TZS,
+      totalFeeTzs: platformFeeTzs + PSP_FLAT_FEE_TZS,
       feeRecipient,
-      message: 'Withdrawal processed successfully.',
+      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + PSP_FLAT_FEE_TZS} TZS in fees).`,
     },
     { status: 201 }
   )

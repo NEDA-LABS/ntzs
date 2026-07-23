@@ -8,7 +8,7 @@ import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
 import { getDb } from '@/lib/db'
 import { wallets, lpFxPairs, lpAccounts, lpPoolPositions, lpFills, users } from '@ntzs/db'
-import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type ExternalTransferFn } from '@/lib/fx/swap'
+import { executeSwap, calcMinOutput, selectLPForSwap, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type ExternalTransferFn } from '@/lib/fx/swap'
 import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 
 export const runtime = 'nodejs'
@@ -158,7 +158,25 @@ export async function POST(request: NextRequest) {
   const lastFillTimes = new Map<string, number>(
     lastFillRows.map((r) => [r.lpId, r.lastAt ? new Date(r.lastAt).getTime() : 0]),
   )
-  const bestLP = selectLPForSwap(lpConfigs, direction, lastFillTimes)
+
+  // Only LPs whose pooled out-token inventory covers the payout are eligible —
+  // routing to a thin LP doesn't fail the swap, it silently drains other LPs'
+  // pooled capital (the debit clamps at zero while the pool pays in full).
+  const midOutput = fromToken === 'NTZS' ? amount / midRate : amount * midRate
+  const outPositions = await db
+    .select({ lpId: lpPoolPositions.lpId, contributed: lpPoolPositions.contributed })
+    .from(lpPoolPositions)
+    .where(and(
+      eq(lpPoolPositions.chain, toChain),
+      eq(lpPoolPositions.tokenAddress, toTokenAddress),
+      inArray(lpPoolPositions.lpId, lpConfigs.map((lp) => lp.id)),
+    ))
+  const inventoryByLpId = new Map(outPositions.map((p) => [p.lpId, parseFloat(p.contributed)]))
+  const coveredLPs = filterLPsByInventory(lpConfigs, inventoryByLpId, midOutput)
+  if (coveredLPs.length === 0) {
+    return new Response('Insufficient LP inventory for this swap size. Try a smaller amount.', { status: 503 })
+  }
+  const bestLP = selectLPForSwap(coveredLPs, direction, lastFillTimes)
 
   const minOutput = calcMinOutput({
     fromToken, toToken, amount, midRate,
@@ -196,8 +214,10 @@ export async function POST(request: NextRequest) {
           recipientAddress,
         })) {
           const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
-          send(clientUpdate)
 
+          // Books before broadcast: record the fill BEFORE the client sees
+          // FILLED, so a disconnecting client can't leave moved funds
+          // unledgered if the runtime reclaims the function early.
           if (update.status === 'FILLED' && _result) {
             const filledLpId = _result.lpId
             let toTokenMeta: { decimals: number; address: string }
@@ -214,9 +234,6 @@ export async function POST(request: NextRequest) {
             }
             const toDecimals = toTokenMeta.decimals
 
-            const midOutput = fromToken === 'NTZS'
-              ? amount / midRate
-              : amount * midRate
             const spread = Math.max(0, midOutput - parseFloat(_result.amountOut))
 
             try {
@@ -241,6 +258,16 @@ export async function POST(request: NextRequest) {
               // separate `earned` credit — that single-entry write was the bug that
               // inflated positions above solver balance. (App swaps take no protocol
               // fee, so the full spread accrues to the LP inside `contributed`.)
+              // Tripwire: selection filtered to covered LPs, so this firing
+              // means the inventory read raced or the filter regressed.
+              const debitTotal = parseFloat(_result.amountOut)
+              const preInventory = inventoryByLpId.get(filledLpId) ?? 0
+              if (preInventory < debitTotal) {
+                console.error('[swap] INVARIANT BREACH: debit exceeds LP inventory', {
+                  lpId: filledLpId, debitTotal, preInventory, toToken,
+                })
+              }
+
               const outTokenAddr = toTokenMeta.address.toLowerCase()
               await db
                 .update(lpPoolPositions)
@@ -283,6 +310,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          send(clientUpdate)
           if (['FILLED', 'FAILED'].includes(update.status)) break
         }
       } catch (err) {

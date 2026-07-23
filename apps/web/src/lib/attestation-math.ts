@@ -65,15 +65,37 @@ export interface AttestationAnnex {
   adjustedCoveragePct: number
   /** adjustedCoveragePct − 100 — the number to watch. */
   residualPct: number
+  /** Caveats about this reading (e.g. a netting source counted as 0 because
+   * its table is not yet provisioned). Shown in the annex when present. */
+  notes?: string[]
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 const r4 = (n: number) => Math.round(n * 10000) / 10000
 
+/**
+ * True when the pattern matches anywhere in an error's cause chain.
+ * Database drivers wrap errors — e.g. drizzle's outer message is only
+ * "Failed query: <sql>" while the real Postgres reason ("relation ... does
+ * not exist", code 42P01) lives in `.cause` — so matching only the top-level
+ * message misses known conditions. Walks message + code up to 6 levels deep.
+ */
+export function errorChainIncludes(err: unknown, pattern: RegExp): boolean {
+  let current: unknown = err
+  for (let depth = 0; depth < 6 && current != null; depth++) {
+    const e = current as { message?: unknown; code?: unknown; cause?: unknown }
+    const text = `${typeof e.message === 'string' ? e.message : ''} ${typeof e.code === 'string' ? e.code : ''}`
+    if (pattern.test(text)) return true
+    current = e.cause
+  }
+  return false
+}
+
 export function computeAnnex(input: {
   pots: ReservePot[]
   nettings: AttestationNettings
   totalSupplyTzs: number
+  notes?: string[]
 }): AttestationAnnex {
   const { pots, nettings, totalSupplyTzs } = input
   const grossReservesTzs = r2(pots.reduce((s, p) => s + p.amountTzs, 0))
@@ -101,5 +123,6 @@ export function computeAnnex(input: {
     rawDeviationPct,
     adjustedCoveragePct,
     residualPct,
+    ...(input.notes && input.notes.length > 0 ? { notes: input.notes } : {}),
   }
 }

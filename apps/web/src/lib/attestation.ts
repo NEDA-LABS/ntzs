@@ -10,7 +10,7 @@ import * as selcom from '@/lib/psp/selcom'
 import { sendEmail } from '@/lib/email'
 import { POOL_ALERT_RECIPIENTS } from '@/lib/fx/alert-email'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
-import { computeAnnex, type AttestationAnnex, type ReservePot } from '@/lib/attestation-math'
+import { computeAnnex, errorChainIncludes, type AttestationAnnex, type ReservePot } from '@/lib/attestation-math'
 
 /**
  * Daily reserve attestation — BoT sandbox Parameter 7 + 16.
@@ -39,6 +39,23 @@ function recipients(): string[] {
   return env.length ? env : POOL_ALERT_RECIPIENTS
 }
 
+/** Ops-only audience for plumbing alerts (INCOMPLETE readings). The regulator
+ * list (ATTESTATION_RECIPIENTS) receives attestations and nothing else — an
+ * internal read failure must never surface to BoT. */
+function internalRecipients(): string[] {
+  const env = (process.env.ATTESTATION_INTERNAL_RECIPIENTS || '').split(',').map((s) => s.trim()).filter(Boolean)
+  return env.length ? env : POOL_ALERT_RECIPIENTS
+}
+
+/** One short human line per failure — full detail goes to server logs only.
+ * Never let raw driver errors (SQL text, hosts) into an email body. */
+function sanitizeFailure(label: string, err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  console.error(`[attestation] ${label}:`, msg)
+  const firstLine = msg.split('\n')[0].replace(/Failed query:[\s\S]*/i, 'database query error')
+  return `${label}: ${firstLine.slice(0, 140)}`
+}
+
 /** EAT (UTC+3, no DST) calendar date as YYYY-MM-DD. */
 export function eatDate(d = new Date()): string {
   return new Date(d.getTime() + 3 * 3600 * 1000).toISOString().slice(0, 10)
@@ -65,6 +82,14 @@ export interface IncompleteAttestation {
   status: 'incomplete'
   reportDate: string
   failures: string[]
+  /** Everything that DID read — so an incomplete run still shows the reserve
+   * position ("backed at ~X%, one source down") instead of a bare error wall. */
+  partial: {
+    supplyTzs: number | null
+    pots: ReservePot[]
+    /** gross pots / supply when both sides read — provisional, NOT attested. */
+    provisionalCoveragePct: number | null
+  }
   generatedAt: string
 }
 
@@ -111,7 +136,7 @@ async function readSnippePot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: `Snippe balance read failed: ${e instanceof Error ? e.message : e}` }
+    return { failure: sanitizeFailure('Snippe balance read', e) }
   }
 }
 
@@ -147,7 +172,7 @@ async function readAzamPayPot(): Promise<PotRead> {
         },
       }
     } catch (e) {
-      return { failure: `AzamPay balance read failed: ${e instanceof Error ? e.message : e}` }
+      return { failure: sanitizeFailure('AzamPay balance read', e) }
     }
   }
 
@@ -175,7 +200,7 @@ async function readAzamPayPot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: `AzamPay book balance query failed: ${e instanceof Error ? e.message : e}` }
+    return { failure: sanitizeFailure('AzamPay book balance query', e) }
   }
 }
 
@@ -197,7 +222,7 @@ async function readSelcomPot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: `Selcom balance read failed: ${e instanceof Error ? e.message : e}` }
+    return { failure: sanitizeFailure('Selcom balance read', e) }
   }
 }
 
@@ -241,11 +266,29 @@ async function readNettings() {
   const feesUnmintedTzs = Number(feeRow?.platform ?? 0) + Number(feeRow?.neda ?? 0)
 
   // Cash that reached a PSP with no attributed deposit (pending manual review).
-  const [orphanRow] = await db
-    .select({ total: dsql<string>`coalesce(sum(${orphanPayments.amountTzs}), 0)` })
-    .from(orphanPayments)
-    .where(and(eq(orphanPayments.status, 'unmatched'), eq(orphanPayments.currency, 'TZS')))
-  const orphanUnmatchedTzs = Number(orphanRow?.total ?? 0)
+  // The orphan ledger ships in drizzle/0060 — if that migration is not applied
+  // yet the table is missing, which is a KNOWN deployment state, not a reading
+  // failure: count 0 with a caveat note instead of aborting the attestation.
+  let orphanUnmatchedTzs = 0
+  const notes: string[] = []
+  try {
+    const [orphanRow] = await db
+      .select({ total: dsql<string>`coalesce(sum(${orphanPayments.amountTzs}), 0)` })
+      .from(orphanPayments)
+      .where(and(eq(orphanPayments.status, 'unmatched'), eq(orphanPayments.currency, 'TZS')))
+    orphanUnmatchedTzs = Number(orphanRow?.total ?? 0)
+  } catch (e) {
+    // Match through the CAUSE CHAIN — drizzle's outer message is only the SQL
+    // text; the "relation does not exist" reason lives in e.cause (the miss
+    // that blocked the 2026-07-23 morning run).
+    if (errorChainIncludes(e, /does not exist|42P01|undefined_table/i)) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.warn('[attestation] orphan_payments table missing (apply drizzle/0060); counting 0:', msg.split('\n')[0])
+      notes.push('Unmatched-credit netting counted as 0 — orphan ledger not yet provisioned (drizzle/0060 pending).')
+    } else {
+      throw e
+    }
+  }
 
   // Fiat confirmed in a counted pot, tokens not yet minted (mint owed).
   const [unmintedRow] = await db
@@ -260,7 +303,7 @@ async function readNettings() {
     )
   const paidUnmintedTzs = Number(unmintedRow?.total ?? 0)
 
-  return { burnedUnpaidTzs, feesUnmintedTzs, orphanUnmatchedTzs, paidUnmintedTzs }
+  return { burnedUnpaidTzs, feesUnmintedTzs, orphanUnmatchedTzs, paidUnmintedTzs, notes }
 }
 
 // ─── Compute ─────────────────────────────────────────────────────────────────
@@ -278,18 +321,14 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
   ])
 
   const failures: string[] = []
-  if (!chain.ok) failures.push(`Chain supply read failed: ${chain.error}`)
+  if (!chain.ok) failures.push(sanitizeFailure('Chain supply read', chain.error))
   for (const r of [snippePot, azamPot, selcomPot]) if (r.failure) failures.push(r.failure)
 
-  let nettings
+  let nettingsRead
   try {
-    nettings = await readNettings()
+    nettingsRead = await readNettings()
   } catch (e) {
-    failures.push(`Obligation queries failed: ${e instanceof Error ? e.message : e}`)
-  }
-
-  if (failures.length > 0 || !nettings) {
-    return { status: 'incomplete', reportDate, failures, generatedAt: new Date().toISOString() }
+    failures.push(sanitizeFailure('Obligation ledger queries', e))
   }
 
   const pots: ReservePot[] = [snippePot.pot, azamPot.pot, selcomPot.pot].filter(
@@ -306,7 +345,28 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     })
   }
 
-  const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply })
+  if (failures.length > 0 || !nettingsRead) {
+    // Incomplete — but never a bare error wall: carry everything that DID
+    // read so humans still see the reserve position at a glance.
+    const grossRead = pots.reduce((s, p) => s + p.amountTzs, 0)
+    return {
+      status: 'incomplete',
+      reportDate,
+      failures,
+      partial: {
+        supplyTzs: chain.ok ? chain.supply : null,
+        pots,
+        provisionalCoveragePct:
+          chain.ok && chain.supply > 0 && pots.length > 0
+            ? Math.round((grossRead / chain.supply) * 1000000) / 10000
+            : null,
+      },
+      generatedAt: new Date().toISOString(),
+    }
+  }
+  const { notes, ...nettings } = nettingsRead
+
+  const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply, notes })
 
   const ntzsCirculation = chain.supply
   const tzsCustodialReserve = annex.grossReservesTzs - govt
@@ -378,6 +438,11 @@ function annexHtml(a: AttestationAnnex, deltaLine: string): string {
       ${row('<b>Adjusted coverage</b>', `<b>${a.adjustedCoveragePct.toFixed(4)} %</b>`)}
       ${row('Unexplained residual', `${a.residualPct >= 0 ? '+' : ''}${a.residualPct.toFixed(4)} %`)}
     </table>
+    ${
+      a.notes && a.notes.length > 0
+        ? `<p style="font-size:11px;color:#b45309;margin:8px 0 0">${a.notes.map((n) => `⚠ ${n}`).join('<br>')}</p>`
+        : ''
+    }
     <p style="font-size:11px;color:#6b7280;margin:8px 0 0">
       Adjusted coverage nets obligations already accrued against the reserves that hold their cash;
       100.0000% means every shilling of deviation is attributed. The residual carries the PSP fee
@@ -386,16 +451,26 @@ function annexHtml(a: AttestationAnnex, deltaLine: string): string {
     </p>`
 }
 
-function reportEmailHtml(r: AttestationReport, deltaLine: string): string {
+/**
+ * The attestation email. `includeAnnex` controls whether the reconciliation
+ * annex (adjusted coverage, residual) is included:
+ *  - regulator copy: classic (a)–(d) format only, until the residual is
+ *    understood and stable — promote via ATTESTATION_ANNEX_TO_REGULATOR=true.
+ *  - internal copy: always the full annex.
+ */
+function reportEmailHtml(r: AttestationReport, deltaLine: string, includeAnnex: boolean): string {
   const color = r.fullyBacked ? '#059669' : '#dc2626'
   const status = r.fullyBacked ? 'FULLY BACKED — 1:1 peg maintained' : '⚠️ UNDER-BACKED — PEG BREACH'
+  const adjustedLine = includeAnnex
+    ? `<p style="margin:0 0 16px;font-size:12px;color:#374151">Adjusted coverage after accrued obligations: <b>${r.annex.adjustedCoveragePct.toFixed(4)}%</b> · residual ${r.annex.residualPct >= 0 ? '+' : ''}${r.annex.residualPct.toFixed(4)}%</p>`
+    : '<span style="display:block;margin:0 0 12px"></span>'
   return `
   <div style="font-family:ui-monospace,Menlo,monospace;max-width:640px;margin:0 auto;color:#111827">
     <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Bank of Tanzania · Sandbox Ref. LD.170/515/02/1254</p>
     <h2 style="margin:4px 0 2px">nTZS Daily Reserve Attestation</h2>
     <p style="margin:0 0 16px;color:#6b7280">Report date (EAT): <b>${r.reportDate}</b> · Parameter 7 &amp; 16</p>
     <p style="display:inline-block;padding:6px 12px;border-radius:6px;background:${color}1a;color:${color};font-weight:700;margin:0 0 4px">${status}</p>
-    <p style="margin:0 0 16px;font-size:12px;color:#374151">Adjusted coverage after accrued obligations: <b>${r.annex.adjustedCoveragePct.toFixed(4)}%</b> · residual ${r.annex.residualPct >= 0 ? '+' : ''}${r.annex.residualPct.toFixed(4)}%</p>
+    ${adjustedLine}
     <table style="border-collapse:collapse;width:100%;font-size:13px">
       ${row('(a) Total nTZS in circulation', fmt(r.ntzsCirculation) + ' nTZS')}
       ${row('(b) TZS held in custodial reserve', 'TZS ' + fmt(r.tzsCustodialReserve))}
@@ -407,7 +482,7 @@ function reportEmailHtml(r: AttestationReport, deltaLine: string): string {
       The nTZS exchange rate is fixed at 1.00 TZS by the mint/redeem protocol. The figure above is the
       reserve-coverage deviation; a positive value means reserves exceed circulating supply (over-backed, safe).
     </p>
-    ${annexHtml(r.annex, deltaLine)}
+    ${includeAnnex ? annexHtml(r.annex, deltaLine) : ''}
     <table style="border-collapse:collapse;width:100%;font-size:11px;color:#6b7280;margin-top:16px">
       ${row('Supply source', r.supplySource)}
       ${row('Reserve source', r.reserveSource)}
@@ -421,19 +496,29 @@ function reportEmailHtml(r: AttestationReport, deltaLine: string): string {
 function incompleteEmailHtml(inc: IncompleteAttestation): string {
   return `
   <div style="font-family:ui-monospace,Menlo,monospace;max-width:640px;margin:0 auto;color:#111827">
-    <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Bank of Tanzania · Sandbox Ref. LD.170/515/02/1254</p>
+    <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Internal operations alert — not sent to regulators</p>
     <h2 style="margin:4px 0 2px">nTZS Daily Reserve Attestation</h2>
     <p style="margin:0 0 16px;color:#6b7280">Report date (EAT): <b>${inc.reportDate}</b></p>
     <p style="display:inline-block;padding:6px 12px;border-radius:6px;background:#d977061a;color:#d97706;font-weight:700;margin:0 0 16px">⚠️ READING INCOMPLETE — NOT ATTESTED</p>
     <p style="font-size:13px;color:#374151;margin:0 0 8px">
-      One or more reserve or supply sources could not be verified, so no attestation figures are
-      published for this run. A corrected attestation for the same report date will follow once the
-      reading is restored. No reserve deficiency is implied by this notice.
+      One or more reserve or supply sources could not be verified, so no attestation was generated
+      or sent for this run. Resolve the source below, then send the day's attestation from
+      Backstage → Attestation (or POST /api/admin/attestation). No reserve deficiency is implied.
     </p>
     <ul style="font-size:12px;color:#6b7280;margin:0 0 12px;padding-left:18px">
       ${inc.failures.map((f) => `<li>${f}</li>`).join('')}
     </ul>
-    <p style="font-size:11px;color:#9ca3af;margin:0">Generated at ${inc.generatedAt}</p>
+    ${
+      inc.partial.pots.length > 0 || inc.partial.supplyTzs != null
+        ? `<h3 style="margin:12px 0 6px;font-size:13px;color:#374151">What DID read (provisional — not attested)</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:12px">
+      ${inc.partial.supplyTzs != null ? row('On-chain supply', fmt(inc.partial.supplyTzs) + ' nTZS') : ''}
+      ${inc.partial.pots.map((p) => row(p.label, 'TZS ' + fmt(p.amountTzs))).join('')}
+      ${inc.partial.provisionalCoveragePct != null ? row('<b>Provisional raw coverage</b>', `<b>${inc.partial.provisionalCoveragePct.toFixed(2)} %</b>`) : ''}
+    </table>`
+        : ''
+    }
+    <p style="font-size:11px;color:#9ca3af;margin:8px 0 0">Generated at ${inc.generatedAt}</p>
   </div>`
 }
 
@@ -447,9 +532,11 @@ export async function generateDailyAttestation(): Promise<AttestationReport | In
   const to = recipients()
 
   if (isIncomplete(report)) {
+    // Plumbing alert → ops only. The regulator list gets attestations, never
+    // internal failure notices.
     const subject = `⚠️ nTZS Attestation INCOMPLETE — ${report.reportDate} — manual review required`
     try {
-      await sendEmail({ to, subject, html: incompleteEmailHtml(report) })
+      await sendEmail({ to: internalRecipients(), subject, html: incompleteEmailHtml(report) })
     } catch (e) {
       console.error('[attestation] incomplete-alert email failed:', e instanceof Error ? e.message : e)
     }
@@ -509,10 +596,30 @@ export async function generateDailyAttestation(): Promise<AttestationReport | In
   const subject = report.fullyBacked
     ? `nTZS Daily Reserve Attestation · ${report.reportDate} · Fully backed`
     : `⚠️ URGENT: nTZS reserve UNDER-BACKED · ${report.reportDate} · peg breach`
+
+  // Regulator copy: classic (a)–(d) format. The reconciliation annex joins it
+  // only once explicitly promoted (ATTESTATION_ANNEX_TO_REGULATOR=true) —
+  // until the residual is understood and stable it is an internal instrument.
+  const annexToRegulator = process.env.ATTESTATION_ANNEX_TO_REGULATOR === 'true'
   try {
-    await sendEmail({ to, subject, html: reportEmailHtml(report, deltaLine) })
+    await sendEmail({ to, subject, html: reportEmailHtml(report, deltaLine, annexToRegulator) })
   } catch (e) {
     console.error('[attestation] email failed:', e instanceof Error ? e.message : e)
+  }
+
+  // Internal copy always carries the full annex (skip anyone already on the
+  // regulator list when they got the annex there).
+  const internalOnly = internalRecipients().filter((r) => annexToRegulator ? !to.includes(r) : true)
+  if (internalOnly.length > 0) {
+    try {
+      await sendEmail({
+        to: internalOnly,
+        subject: `nTZS Reserve Reconciliation (internal) · ${report.reportDate} · adjusted ${report.annex.adjustedCoveragePct.toFixed(2)}%`,
+        html: reportEmailHtml(report, deltaLine, true),
+      })
+    } catch (e) {
+      console.error('[attestation] internal annex email failed:', e instanceof Error ? e.message : e)
+    }
   }
   return report
 }

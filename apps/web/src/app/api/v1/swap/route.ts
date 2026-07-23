@@ -4,8 +4,8 @@ import { authenticatePartner } from '@/lib/waas/auth'
 import { swapRateLimit } from '@/lib/rate-limit'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
 import { partnerUsers, partners, lpFxPairs, lpAccounts, lpFills, lpPoolPositions } from '@ntzs/db'
-import { eq, and, sql } from 'drizzle-orm'
-import { executeSwap, calcMinOutput, rankLPsByRate, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
+import { eq, and, sql, inArray } from 'drizzle-orm'
+import { executeSwap, calcMinOutput, rankLPsByRate, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
 import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 import { PLATFORM_FX_FEE_BPS } from '@/lib/env'
 
@@ -145,7 +145,25 @@ export async function POST(request: NextRequest) {
     bidBps: lp.bidBps ?? 120,
     askBps: lp.askBps ?? 150,
   }))
-  const bestLP = rankLPsByRate(lpConfigs, direction)[0]
+
+  // Only LPs whose pooled out-token inventory covers the payout are eligible —
+  // routing to a thin LP doesn't fail the swap, it silently drains other LPs'
+  // pooled capital (the debit clamps at zero while the pool pays in full).
+  const midOutput = fromToken === 'NTZS' ? amount / midRate : amount * midRate
+  const outPositions = await db
+    .select({ lpId: lpPoolPositions.lpId, contributed: lpPoolPositions.contributed })
+    .from(lpPoolPositions)
+    .where(and(
+      eq(lpPoolPositions.chain, toChain),
+      eq(lpPoolPositions.tokenAddress, toTokenAddress),
+      inArray(lpPoolPositions.lpId, lpConfigs.map((lp) => lp.id)),
+    ))
+  const inventoryByLpId = new Map(outPositions.map((p) => [p.lpId, parseFloat(p.contributed)]))
+  const coveredLPs = filterLPsByInventory(lpConfigs, inventoryByLpId, midOutput)
+  if (coveredLPs.length === 0) {
+    return new Response('Insufficient LP inventory for this swap size. Try a smaller amount.', { status: 503 })
+  }
+  const bestLP = rankLPsByRate(coveredLPs, direction)[0]
 
   // Protocol fee is charged on top of the LP spread: the taker's output is cut
   // by PLATFORM_FX_FEE_BPS, the LP keeps its full spread, and the fee accrues as
@@ -190,8 +208,10 @@ export async function POST(request: NextRequest) {
           recipientAddress,
         })) {
           const { _result, ...clientUpdate } = update as typeof update & { _result?: SwapResult }
-          send(clientUpdate)
 
+          // Books before broadcast: record the fill BEFORE the client sees
+          // FILLED, so a disconnecting client can't leave moved funds
+          // unledgered if the runtime reclaims the function early.
           if (update.status === 'FILLED' && _result) {
             let toTokenMeta: { decimals: number; address: string }
             try {
@@ -207,9 +227,6 @@ export async function POST(request: NextRequest) {
             }
             const toDecimals = toTokenMeta.decimals
 
-            const midOutput = fromToken === 'NTZS'
-              ? amount / midRate
-              : amount * midRate
             const totalSpread = Math.max(0, midOutput - parseFloat(_result.amountOut))
             // Protocol fee is carved from the LP's spread; user-facing rate is unchanged.
             const protocolFee = Math.min(totalSpread, midOutput * PLATFORM_FX_FEE_BPS / 10000)
@@ -240,6 +257,16 @@ export async function POST(request: NextRequest) {
               // profit (lpSpread) is captured implicitly — amountIn is worth more than
               // amountOut + fee — so no separate `earned` credit is needed (that was
               // the single-entry bug that inflated positions above solver balance).
+              // Tripwire: selection filtered to covered LPs, so this firing
+              // means the inventory read raced or the filter regressed.
+              const debitTotal = parseFloat(_result.amountOut) + protocolFee
+              const preInventory = inventoryByLpId.get(bestLP.id) ?? 0
+              if (preInventory < debitTotal) {
+                console.error('[waas/swap] INVARIANT BREACH: debit exceeds LP inventory', {
+                  lpId: bestLP.id, debitTotal, preInventory, toToken,
+                })
+              }
+
               const outTokenAddr = toTokenMeta.address.toLowerCase()
               const feeStr = protocolFee.toFixed(toDecimals)
               await db
@@ -283,6 +310,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          send(clientUpdate)
           if (['FILLED', 'FAILED', 'PARTIAL_FILL_EXHAUSTED'].includes(update.status)) break
         }
       } catch (err) {

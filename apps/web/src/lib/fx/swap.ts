@@ -103,6 +103,26 @@ export function selectLPForSwap(
   }, eligible[0])
 }
 
+/**
+ * Keep only LPs whose pooled out-token position covers this swap's payout.
+ *
+ * `midOutput` (amount at mid rate) is a conservative upper bound on the LP's
+ * double-entry debit (amountOut + protocolFee = midOutput − lpSpread), so
+ * requiring contributed ≥ midOutput guarantees the debit can never overdraw
+ * the LP. Selecting an LP without inventory doesn't fail the transfer — the
+ * pool pays the taker in full and the LP's ledger clamps at zero, silently
+ * draining OTHER LPs' pooled capital (23 Jul incident: two 2,550 nTZS payouts
+ * routed to an LP holding 1,000 left the pool 3,056 short and blocked every
+ * LP's exit).
+ */
+export function filterLPsByInventory<T extends LPConfig>(
+  lps: T[],
+  inventoryByLpId: Map<string, number>,
+  midOutput: number,
+): T[] {
+  return lps.filter((lp) => (inventoryByLpId.get(lp.id) ?? 0) >= midOutput)
+}
+
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address to, uint256 amount) returns (bool)',
