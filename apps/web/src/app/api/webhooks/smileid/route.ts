@@ -2,7 +2,9 @@ import { and, desc, eq } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { auditLogs, kycCases, partnerUsers } from '@ntzs/db'
+import { auditLogs, kycCases, partnerUsers, users } from '@ntzs/db'
+import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
+import { sameIdNumber } from '@/lib/kyc/name-match'
 import { maskShape } from '@/lib/kyc/selcom'
 import { interpretSmileIdResult, verifySmileIdWebhookSignature } from '@/lib/kyc/smileid'
 import { invalidateKycCache } from '@/lib/user/cachedQueries'
@@ -71,11 +73,12 @@ export async function POST(request: NextRequest) {
     status: kycCases.status,
     nationalId: kycCases.nationalId,
     idType: kycCases.idType,
+    country: kycCases.country,
     providerReference: kycCases.providerReference,
     providerUserId: kycCases.providerUserId,
   }
 
-  let kase: { id: string; userId: string; status: string; nationalId: string | null; idType: string | null; providerReference: string | null; providerUserId: string | null } | undefined
+  let kase: { id: string; userId: string; status: string; nationalId: string | null; idType: string | null; country: string; providerReference: string | null; providerUserId: string | null } | undefined
 
   if (correlation.kycCaseId && UUID_RE.test(correlation.kycCaseId)) {
     ;[kase] = await db.select(caseColumns).from(kycCases).where(eq(kycCases.id, correlation.kycCaseId)).limit(1)
@@ -122,7 +125,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, status: 'processing' })
   }
 
+  // ── Cross-checks before an approval is honored (fail toward review) ────────
+  // A 'clear' document alone carries the day for a case with no prior claims,
+  // but claims we already hold MUST agree with it:
+  //  1. The number ON the document must equal the NIDA claimed at signup — a
+  //     genuine card belonging to someone else never approves a case.
+  //  2. TZ only: the telco SIM registration behind the user's phone (NIDA +
+  //     fingerprints by law) corroborates the document holder's name. Ladder
+  //     rules: a contradiction outranks the document; telco silence never
+  //     blocks (same posture as non-TZ users, who have no telco leg at all).
+  let final = verdict
   if (verdict.outcome === 'approved') {
+    if (kase.nationalId && verdict.idNumber && !sameIdNumber(verdict.idNumber, kase.nationalId)) {
+      final = {
+        outcome: 'review',
+        reason: 'document_id_mismatch',
+        evidence: `Document ID number does not match the NIDA claimed at signup · ${verdict.evidence}`,
+      }
+    } else if (kase.country === 'TZ') {
+      const [holder] = await db.select({ phone: users.phone }).from(users).where(eq(users.id, kase.userId)).limit(1)
+      const comparableNida = kase.nationalId ?? verdict.idNumber
+      if (holder?.phone && comparableNida) {
+        const binding = await bindPhoneToNidaIdentity({
+          phone: holder.phone,
+          nidaNumber: comparableNida,
+          nidaFullName: verdict.fullName,
+        })
+        if (binding.outcome === 'mismatch') {
+          final = {
+            outcome: 'review',
+            reason: 'telco_contradiction',
+            evidence: `Document verified but telco registration contradicts: ${binding.evidence} · ${verdict.evidence}`,
+          }
+        } else {
+          final = { ...verdict, evidence: `${verdict.evidence} · ${binding.evidence}` }
+        }
+      }
+    }
+  }
+
+  if (final.outcome === 'approved') {
     await db
       .update(kycCases)
       .set({
@@ -130,33 +172,33 @@ export async function POST(request: NextRequest) {
         status: 'approved',
         // The extracted document number becomes the case's ID number — but an
         // ID captured at submission is never overwritten by vendor data.
-        nationalId: kase.nationalId ?? verdict.idNumber,
-        idType: kase.idType ?? verdict.idType,
+        nationalId: kase.nationalId ?? final.idNumber,
+        idType: kase.idType ?? final.idType,
         reviewedAt: new Date(),
-        reviewReason: verdict.evidence,
+        reviewReason: final.evidence,
       })
       .where(pendingGuard)
-  } else if (verdict.outcome === 'rejected') {
+  } else if (final.outcome === 'rejected') {
     await db
       .update(kycCases)
-      .set({ ...refs, status: 'rejected', reviewedAt: new Date(), reviewReason: verdict.evidence })
+      .set({ ...refs, status: 'rejected', reviewedAt: new Date(), reviewReason: final.evidence })
       .where(pendingGuard)
   } else {
     // 'review' parks for Tier C; 'error' records the failed attempt — both
     // stay 'pending' so Backstage → KYC (or a fresh capture session) decides.
-    await db.update(kycCases).set({ ...refs, reviewReason: verdict.evidence }).where(pendingGuard)
+    await db.update(kycCases).set({ ...refs, reviewReason: final.evidence }).where(pendingGuard)
   }
 
   invalidateKycCache(kase.userId)
 
   await db.insert(auditLogs).values({
-    action: `kyc.smileid.${verdict.outcome}`,
+    action: `kyc.smileid.${final.outcome}`,
     entityType: 'kyc_case',
     entityId: kase.id,
     metadata: {
       jobId: correlation.jobId,
-      outcome: verdict.outcome,
-      reason: 'reason' in verdict ? verdict.reason : null,
+      outcome: final.outcome,
+      reason: 'reason' in final ? final.reason : null,
       via: 'webhook',
     },
   })
@@ -164,7 +206,7 @@ export async function POST(request: NextRequest) {
   // Notify the owning partner (if this is a WaaS user) through the queued,
   // signed, retried partner-webhook channel — mirroring the #118 kycStatus
   // vocabulary: approved | pending_review | rejected.
-  if (verdict.outcome !== 'error') {
+  if (final.outcome !== 'error') {
     const [mapping] = await db
       .select({ partnerId: partnerUsers.partnerId, externalId: partnerUsers.externalId })
       .from(partnerUsers)
@@ -174,7 +216,7 @@ export async function POST(request: NextRequest) {
     if (mapping) {
       await queuePartnerWebhook(mapping.partnerId, 'kyc.updated', {
         externalId: mapping.externalId,
-        kycStatus: verdict.outcome === 'approved' ? 'approved' : verdict.outcome === 'rejected' ? 'rejected' : 'pending_review',
+        kycStatus: final.outcome === 'approved' ? 'approved' : final.outcome === 'rejected' ? 'rejected' : 'pending_review',
         provider: 'smileid',
         jobId: correlation.jobId,
       })

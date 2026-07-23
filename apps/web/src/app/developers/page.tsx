@@ -105,6 +105,7 @@ const NAV = [
       { id: 'capabilities', label: 'Overview' },
       { id: 'auth', label: 'Authentication' },
       { id: 'users', label: 'Create users' },
+      { id: 'kyc', label: 'Identity (KYC)' },
       { id: 'balance', label: 'Get balance' },
     ],
   },
@@ -397,27 +398,49 @@ export default function DevelopersPage() {
     externalId: 'your-internal-user-id',  // required — your own system's user ID
     email: 'user@example.com',            // required
     name: 'Jane Doe',                     // optional
-    phone: '255712345678',                // optional, Tanzanian format
+    nidaNumber: '19990102614010000120',   // required — user's 20-digit NIDA
+    phone: '255712345678',                // required — user's OWN mobile money line
   }),
 })`}
             />
             <CodeBlock
-              title="201 response"
+              title="201 — verified instantly, wallet issued"
               code={`{
   "id": "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
   "externalId": "your-internal-user-id",
   "email": "user@example.com",
   "name": "Jane Doe",
   "phone": "255712345678",
+  "kycStatus": "approved",
   "walletAddress": "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C",
   "balance": 0
 }`}
+            />
+            <CodeBlock
+              title="202 — identity needs verification first"
+              code={`{
+  "id": "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
+  "externalId": "your-internal-user-id",
+  "kycStatus": "pending_review",
+  "code": "kyc_pending_review",
+  "walletAddress": null
+}
+// The user exists but has NO wallet yet. Don't make them wait —
+// open a document-capture session (next section) so they can
+// verify in ~2 minutes, then re-call POST /api/v1/users.`}
             />
             <Note variant="info">
               <span className="font-semibold text-blue-200">Store the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">id</code> field.</span>{' '}
               This is the nTZS user ID you will pass as <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">userId</code> in all
               subsequent requests (deposits, transfers, withdrawals). It is different from your own
               <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs"> externalId</code>.
+            </Note>
+            <Note variant="warning">
+              <span className="font-semibold text-amber-200">Every wallet is backed by a verified identity</span>{' '}
+              (Bank of Tanzania requirement). A <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">201</code> means
+              the NIDA + phone pair verified instantly; a <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">202</code> means
+              verification is still open — see <a href="#kyc" className="text-blue-400 hover:underline">Identity (KYC)</a> for
+              how to finish it instantly instead of waiting for review.
             </Note>
             <div className="grid gap-3 sm:grid-cols-2">
               <Note variant="neutral">
@@ -433,11 +456,132 @@ export default function DevelopersPage() {
             </div>
           </DocSection>
 
+          {/* Identity verification (KYC) */}
+          <DocSection
+            id="kyc"
+            isActive={activeSection === 'kyc'}
+            step="Step 3"
+            title="Identity verification (KYC)"
+            description="Every wallet is backed by a verified identity, checked on a risk-tiered ladder. Most users pass instantly at create-user; the rest finish in ~2 minutes with a document-capture session — nobody waits on a human unless something genuinely needs review."
+          >
+            <CodeBlock
+              title="POST /api/v1/users/:id/kyc/session"
+              code={`// Open a capture session for a user stuck in pending_review
+// (or any user holding a non-Tanzanian document).
+const res = await fetch(
+  'https://www.ntzs.co.tz/api/v1/users/14e17d04-ec7f-4d99-91a3-dfbaca19fba1/kyc/session',
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ country: 'TZ' }),  // ISO-3166 alpha-2 of the ID document
+  }
+)`}
+            />
+            <CodeBlock
+              title="201 — session open (valid 15 minutes)"
+              code={`{
+  "id": "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
+  "externalId": "your-internal-user-id",
+  "kycStatus": "pending_review",
+  "caseId": "6f1e...c2a9",
+  "session": {
+    "token": "eyJhbGciOi...",          // short-lived, safe for the browser
+    "smilePartnerId": "8005",
+    "apiBaseUrl": "https://api.smileidentity.com",
+    "submitPath": "/v3/document_verification",
+    "country": "TZ",
+    "partnerParams": { "kyc_case_id": "6f1e...c2a9", "external_id": "your-internal-user-id" },
+    "expiresInSeconds": 900
+  }
+}`}
+            />
+            <CodeBlock
+              title="Client capture submit (multipart)"
+              code={`// From your app, with the user present and consenting:
+// capture with the device camera, then POST directly to
+// session.apiBaseUrl + session.submitPath as multipart/form-data.
+//
+// Headers:
+//   SmileID-Partner-ID: session.smilePartnerId
+//   SmileID-Token:      session.token
+//
+// Parts:
+//   country          session.country
+//   document         ID front photo (JPEG/PNG)
+//   document_back    optional back photo
+//   selfie_image     one selfie (JPEG)
+//   liveness_images  6-8 JPEG frames (short selfie burst)
+//   user_details     JSON string: { given_names, last_name, email | phone_number }
+//   consent          JSON string: { granted: true, granted_at,
+//                      notice_language, notice_privacy_policy_url }
+//   partner_params   JSON string: exactly session.partnerParams
+//
+// Response is 202 Accepted — the VERDICT arrives on the
+// kyc.updated webhook, not in this response.`}
+            />
+            <div className="overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 bg-white/5">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-white/50">Tier</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-white/50">What happens</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-white/50">Speed</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {[
+                    ['A', 'NIDA + phone pair verified against a bank-grade registry at create-user', 'instant'],
+                    ['B', "The phone's telco SIM registration (NIDA + fingerprints by law) corroborates — a contradiction outranks", 'instant'],
+                    ['B′', 'Document + selfie capture: the ID is forensically checked and face-matched to the live person', '~2 min'],
+                    ['C', 'Our compliance team reviews the collected evidence', '< 1 business day'],
+                  ].map(([tier, what, speed]) => (
+                    <tr key={tier} className="hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 font-mono text-xs text-emerald-300/80">{tier}</td>
+                      <td className="px-4 py-3 text-white/70">{what}</td>
+                      <td className="px-4 py-3 text-white/50">{speed}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">"Under review" is an action, not a wait.</span>{' '}
+              When create-user returns <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">202</code>, open a
+              session and let the user photograph their ID + take a selfie. On the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">kyc.updated</code> webhook with{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">approved</code>, re-call{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/users</code> (idempotent) — the
+              response now carries the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">walletAddress</code>.
+            </Note>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Consent is mandatory:</span> capture requires the
+                user present and consenting — record it in the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">consent</code>{' '}
+                part. Sessions are re-callable: an abandoned capture just restarts with a fresh token.
+              </Note>
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">International documents:</span> pass the document&apos;s{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">country</code> — passports, national IDs and
+                residence permits from 200+ countries verify through the same flow. Existing users only for now;
+                NIDA-less signup ships next.
+              </Note>
+            </div>
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">Retro-KYC:</span> users created before the KYC standard
+              show <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">kycStatus: &quot;none&quot;</code> — attach an identity
+              with <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/users/:id/kyc</code>{' '}
+              (NIDA + phone, same outcomes as signup), or go straight to a capture session.
+            </Note>
+          </DocSection>
+
           {/* Balance */}
           <DocSection
             id="balance"
             isActive={activeSection === 'balance'}
-            step="Step 3"
+            step="Step 4"
             title="Get user profile &amp; balance"
             description="Fetch a user's on-chain nTZS balance alongside their profile. The balance is read live from Base mainnet at request time."
           >
@@ -453,6 +597,7 @@ const user = await res.json()
 //   externalId: "your-internal-user-id",
 //   email: "user@example.com",
 //   phone: "255712345678",
+//   kycStatus: "approved",  // approved | pending_review | rejected | none
 //   walletAddress: "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C",
 //   balanceTzs: 25000,   // nTZS balance (18 decimals, integer TZS units)
 //   balanceUsdc: 6.50    // USDC balance (6 decimals, float)
@@ -480,7 +625,7 @@ const user = await res.json()
           <DocSection
             id="deposits"
             isActive={activeSection === 'deposits'}
-            step="Step 4"
+            step="Step 5"
             title="Accept deposits (On-Ramp)"
             description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
           >
@@ -553,7 +698,7 @@ body: JSON.stringify({
           <DocSection
             id="transfers"
             isActive={activeSection === 'transfers'}
-            step="Step 5"
+            step="Step 6"
             title="Transfers"
             description="Move nTZS or USDC between platform users or to any external wallet address. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
           >
@@ -669,7 +814,7 @@ const transfer = await res.json()
           <DocSection
             id="withdrawals"
             isActive={activeSection === 'withdrawals'}
-            step="Step 6"
+            step="Step 7"
             title="Cash out to mobile money (Off-Ramp)"
             description="Two-step flow: quote, then execute. The quote returns the recipient's registered name, the fee breakdown and the net amount — everything your confirmation screen must show — plus a signed quoteId that authorizes execution at exactly those terms. amountTzs is always the amount the recipient RECEIVES (net)."
           >
@@ -995,6 +1140,12 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
     case 'withdrawal.completed':
       // event.data: { withdrawalId, userId, amountTzs, phoneNumber }
       break
+    case 'kyc.updated':
+      // event.data: { externalId, kycStatus, provider, jobId }
+      // kycStatus: 'approved' | 'rejected' | 'pending_review'
+      // On 'approved': re-call POST /api/v1/users (idempotent) — the
+      // response now carries the user's walletAddress.
+      break
   }
 
   res.status(200).json({ received: true })
@@ -1049,6 +1200,12 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
                     ['insufficient_balance', '400', 'Sender does not have enough nTZS'],
                     ['user_not_found', '404', 'userId not found under your partner account'],
                     ['unauthorized', '401', 'Missing or invalid API key'],
+                    ['kyc_required', '400', 'nidaNumber (and phone) missing on create-user'],
+                    ['kyc_pending_review', '202', 'Not an error — verification open; offer a capture session'],
+                    ['identity_binding_failed', '400', "Phone is registered to a different person's identity"],
+                    ['nida_already_registered', '409', 'This NIDA already backs another wallet on your platform'],
+                    ['invalid_country', '400', 'country must be an ISO 3166-1 alpha-2 code'],
+                    ['kyc_unavailable', '503', 'Verification temporarily unavailable — retry shortly'],
                     ['relayer_unavailable', '503', 'Gas relay temporarily offline — retry shortly'],
                     ['blockchain_error', '500', 'On-chain transaction failed — see details.technicalError'],
                     ['network_error', '500', 'RPC connection timed out — retry'],
