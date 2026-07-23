@@ -671,11 +671,11 @@ const transfer = await res.json()
             isActive={activeSection === 'withdrawals'}
             step="Step 6"
             title="Cash out to mobile money (Off-Ramp)"
-            description="Burns nTZS tokens on-chain and sends TZS to the user's mobile money number. Supports all major Tanzanian mobile networks. The burn and payout happen automatically."
+            description="Two-step flow: quote, then execute. The quote returns the recipient's registered name, the fee breakdown and the net amount — everything your confirmation screen must show — plus a signed quoteId that authorizes execution at exactly those terms. amountTzs is always the amount the recipient RECEIVES (net)."
           >
             <CodeBlock
-              title="POST /api/v1/withdrawals"
-              code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/withdrawals', {
+              title="1 · POST /api/v1/withdrawals/quote"
+              code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/withdrawals/quote', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
@@ -683,23 +683,63 @@ const transfer = await res.json()
   },
   body: JSON.stringify({
     userId:      user.id,
-    amountTzs:   10000,           // minimum 5,000 TZS
-    phoneNumber: '255712345678',  // mobile money recipient (Vodacom, Airtel, Tigo, Halotel, TTCL, Yass)
+    amountTzs:   10000,           // recipient receives this (net), minimum 5,000 TZS
+    phoneNumber: '255712345678',  // Vodacom, Airtel, Tigo/Yas, Halotel, TTCL
   }),
 })
-const withdrawal = await res.json()
-// Small amounts (< 1,000,000 TZS):
-// { id, status: "burned", amountTzs: 10000,
-//   message: "Withdrawal processed successfully." }
+const quote = await res.json()
+// {
+//   quoteId: "eyJ2IjoxLCJw…",           // null if balance.sufficient is false
+//   expiresAt: "…",                      // valid 5 minutes
+//   recipientName: "JOHN DOE",           // null = registry had no answer (don't block)
+//   receiveAmountTzs: 10000,
+//   burnAmountTzs: 11558,                // deducted from the user's balance
+//   fees: { platformFeeTzs: 58, pspFeeTzs: 1500, totalFeeTzs: 1558 },
+//   balance: { availableTzs: 25000, sufficient: true }
+// }`}
+            />
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Required confirmation screen:</span>{' '}
+              before the user&apos;s final tap, show <em>who they are paying</em> (name + number),{' '}
+              <em>the fee</em> (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">fees.totalFeeTzs</code>) and{' '}
+              <em>what the recipient receives</em> — this is a Bank of Tanzania consumer-disclosure
+              requirement. On success say &ldquo;TZS 10,000 is on its way to JOHN DOE (fees TZS 1,558)&rdquo; —
+              never present the gross burn amount as the amount &ldquo;sent&rdquo;.
+            </Note>
+            <CodeBlock
+              title="2 · POST /api/v1/withdrawals — execute with the quoteId"
+              code={`const res2 = await fetch('https://www.ntzs.co.tz/api/v1/withdrawals', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:      user.id,
+    amountTzs:   10000,           // must match the quote
+    phoneNumber: '255712345678',  // must match the quote
+    quoteId:     quote.quoteId,   // optional today — MANDATORY after the announced enforcement date
+  }),
+})
+const withdrawal = await res2.json()
+// { id, status: "burned", receiveAmountTzs: 10000, recipientName: "JOHN DOE",
+//   totalFeeTzs: 1558, message: "Withdrawal processed: 10000 TZS on its way…" }
 //
-// Large amounts (>= 1,000,000 TZS):
-// { id, status: "requested", amountTzs: 150000,
-//   message: "Withdrawal requires admin approval for amounts >= 1,000,000 TZS." }`}
+// Errors to handle (fetch a fresh quote and re-confirm):
+//   400 invalid_quote   — expired (> 5 min) or malformed
+//   400 quote_mismatch  — user/phone/amount differ from the quote
+//   409 quote_stale     — pricing changed since the quote was issued
+//   400 quote_required  — enforcement is on and no quoteId was sent
+//
+// Large amounts (>= 1,000,000 TZS) queue instead:
+// { id, status: "requested", message: "…requires admin approval…" }`}
             />
             <div className="grid gap-3 sm:grid-cols-2">
               {[
-                { label: 'Minimum', value: '5,000 TZS' },
+                { label: 'Minimum', value: '5,000 TZS (recipient net)' },
+                { label: 'Quote validity', value: '5 minutes — fetch a fresh quote if the user dawdles' },
                 { label: 'Large withdrawal threshold', value: '>= 1,000,000 TZS requires admin approval and may take up to 1 business day' },
+                { label: 'Enforcement', value: 'quoteId is optional during the migration window and becomes mandatory on the announced enforcement date (quote_required)' },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-medium text-white/50">{label}</div>
