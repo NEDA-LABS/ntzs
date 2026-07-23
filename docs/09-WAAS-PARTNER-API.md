@@ -45,6 +45,8 @@ sequenceDiagram
 | Execute swap | `POST /api/v1/swap` (SSE) |
 | Create user + wallet | `POST /api/v1/users` |
 | Get user profile + balances | `GET /api/v1/users/:id` |
+| Withdrawal quote (name + fees + net) | `POST /api/v1/withdrawals/quote` |
+| Execute withdrawal (cash-out) | `POST /api/v1/withdrawals` |
 | Recipient name check before withdrawal | `POST /api/v1/lookup/recipient-name` |
 | Create org/treasury sub-wallet | `POST /api/v1/partners/sub-wallets` |
 | List sub-wallets | `GET /api/v1/partners/sub-wallets` |
@@ -56,6 +58,24 @@ sequenceDiagram
 ---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
+
+---
+
+## What's New — v1.7.0 (23 Jul 2026)
+
+### Withdrawal quotes — fee & recipient disclosure before money moves
+
+`POST /api/v1/withdrawals/quote` prices a cash-out exactly as execution will and returns the full confirmation-card payload in one call: the recipient's **registered name**, the **fee breakdown** (platform + PSP + total), the **burn amount**, the **net the recipient receives**, balance sufficiency, and a signed **`quoteId`** valid 5 minutes. `POST /api/v1/withdrawals` accepts the `quoteId` and rejects it if the terms changed — so the payer always confirms the current price. See [Withdrawals (Cash-out)](#withdrawals-cash-out).
+
+Your confirmation screen must show, before the user's final tap: *who they are paying (name + number), the fee, and the net amount* — this is a Bank of Tanzania consumer-disclosure requirement, and the quote response contains everything needed to render it.
+
+**Do you need to update your integration?**
+
+| Scenario | Action required |
+|----------|----------------|
+| You execute withdrawals (cash-out) | **Yes.** Call `/withdrawals/quote` first, render the confirmation card (name, fees, net), then execute with the returned `quoteId`. Direct calls without a `quoteId` keep working during the migration window; **on the announced enforcement date they will fail with `quote_required`**. |
+| You use `/api/v1/lookup/recipient-name` before withdrawals | Keep it for non-withdrawal use; for withdrawals the quote endpoint supersedes it (name + fees in one call). |
+| You only use swap / rates / deposits | **None.** No changes. |
 
 ---
 
@@ -499,6 +519,89 @@ Resolves the mobile-money-registered name for a Tanzanian number so your app can
 | Name unavailable | "Confirm the number {phone} is correct before continuing." | "Hakikisha namba {phone} ni sahihi kabla ya kuendelea." |
 
 Lookups are rate-limited and audit-logged: the endpoint resolves registered names (PII) and must only be called from user-initiated withdrawal flows — bulk or speculative querying will trip the limiter and our audit review.
+
+---
+
+## Withdrawals (Cash-out)
+
+Burns the user's nTZS and pays out TZS to their mobile money number. **Two-step flow: quote, then execute.** The quote returns everything your confirmation screen must display — recipient name, fees, and net amount — plus a signed `quoteId` that authorizes execution at exactly those terms.
+
+`amountTzs` in both calls is the amount the recipient should **receive** (net). The burn amount is grossed up server-side: `burn = ceil((receive + pspFee) / (1 − platformFeeRate))`. Minimum receive amount: **5,000 TZS**.
+
+### `POST /api/v1/withdrawals/quote`
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `userId` | string | ✓ | Your user's nTZS user id |
+| `amountTzs` | number | ✓ | Amount the recipient should receive (net), ≥ 5000 |
+| `phoneNumber` | string | ✓ | Recipient mobile money number (any TZ format) |
+
+#### Response `200 OK`
+
+```json
+{
+  "quoteId": "eyJ2IjoxLCJw…",
+  "expiresAt": "2026-07-23T14:05:00.000Z",
+  "expiresInSeconds": 300,
+  "recipientPhone": "255744277496",
+  "recipientName": "JOHN DOE",
+  "receiveAmountTzs": 5000,
+  "burnAmountTzs": 6533,
+  "fees": { "platformFeeTzs": 33, "pspFeeTzs": 1500, "totalFeeTzs": 1533 },
+  "balance": { "availableTzs": 12000, "sufficient": true }
+}
+```
+
+- `recipientName: null` means the registry had no answer — show the number without a name line, never block (same fail-soft contract as recipient-name lookup).
+- `balance.sufficient: false` → `quoteId` is `null`; show the shortfall instead of a confirm button.
+- Quotes expire after **5 minutes**; fetch a fresh one if the user dawdles.
+
+#### Required confirmation screen
+
+Before the user's final tap, display: **who they are paying** (name + number), **the fee** (`fees.totalFeeTzs`), and **what the recipient receives** (`receiveAmountTzs`). On success, say "*TZS 5,000 is on its way to JOHN DOE (fees TZS 1,533)*" — never present the gross burn amount as the amount "sent".
+
+### `POST /api/v1/withdrawals`
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `userId` | string | ✓ | Must match the quote |
+| `amountTzs` | number | ✓ | Must match the quote (receive-net) |
+| `phoneNumber` | string | ✓ | Must match the quote |
+| `quoteId` | string | ✓* | From `/withdrawals/quote`. *Optional during the migration window; **mandatory after the announced enforcement date** (`quote_required` otherwise). |
+
+#### Response `201 Created`
+
+```json
+{
+  "id": "af9fb83f-4ef9-4445-acdf-22ef5b774766",
+  "status": "burned",
+  "amountTzs": 6533,
+  "receiveAmountTzs": 5000,
+  "recipientName": "JOHN DOE",
+  "platformFeeTzs": 33,
+  "pspFeeTzs": 1500,
+  "totalFeeTzs": 1533,
+  "message": "Withdrawal processed: 5000 TZS on its way to the recipient (1533 TZS in fees)."
+}
+```
+
+Amounts ≥ 1,000,000 TZS queue for admin approval instead (`status: "requested"`).
+
+#### Errors
+
+| Error | Status | Meaning | UI action |
+|-------|--------|---------|-----------|
+| `quote_required` | 400 | Enforcement on, no `quoteId` sent | Upgrade to the two-step flow |
+| `invalid_quote` | 400 | Expired / malformed / bad signature | Fetch a fresh quote, re-confirm |
+| `quote_mismatch` | 400 | user/phone/amount differ from the quote | Fetch a fresh quote |
+| `quote_stale` | 409 | Pricing changed since the quote was issued | Fetch a fresh quote, re-confirm the new price |
+| `insufficient_balance` | 400 | Balance below burn amount | Show shortfall (`details.available` / `details.required`) |
+
+Payout failures after a successful burn are handled server-side (auto-revert or operator reconciliation); the response's `payoutStatus` and `message` describe the state — surface `message` verbatim when present.
 
 ---
 
