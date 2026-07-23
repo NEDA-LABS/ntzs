@@ -65,6 +65,9 @@ export interface AttestationAnnex {
   adjustedCoveragePct: number
   /** adjustedCoveragePct − 100 — the number to watch. */
   residualPct: number
+  /** Caveats about this reading (e.g. a netting source counted as 0 because
+   * its table is not yet provisioned). Shown in the annex when present. */
+  notes?: string[]
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -74,6 +77,7 @@ export function computeAnnex(input: {
   pots: ReservePot[]
   nettings: AttestationNettings
   totalSupplyTzs: number
+  notes?: string[]
 }): AttestationAnnex {
   const { pots, nettings, totalSupplyTzs } = input
   const grossReservesTzs = r2(pots.reduce((s, p) => s + p.amountTzs, 0))
@@ -101,5 +105,6 @@ export function computeAnnex(input: {
     rawDeviationPct,
     adjustedCoveragePct,
     residualPct,
+    ...(input.notes && input.notes.length > 0 ? { notes: input.notes } : {}),
   }
 }
