@@ -142,11 +142,19 @@ export const kycCases = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
 
-    nationalId: text('national_id').notNull(),
+    // Nullable since 0063: an async document-verification case opens before
+    // any ID number is known (it arrives extracted on the result webhook).
+    nationalId: text('national_id'),
     status: kycStatus('status').notNull().default('pending'),
 
     provider: text('provider').notNull().default('manual'),
     providerReference: text('provider_reference'),
+    /** ISO 3166-1 alpha-2 of the identity claim. Pre-international rows are TZ by construction. */
+    country: text('country').notNull().default('TZ'),
+    /** Document/ID type backing the case (SmileID vocabulary, e.g. IDENTITY_CARD, PASSPORT). NULL on legacy NIDA cases. */
+    idType: text('id_type'),
+    /** SmileID user handle echoed on result webhooks — fallback correlation key (provider_reference holds the job_id). */
+    providerUserId: text('provider_user_id'),
 
     reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
@@ -158,6 +166,7 @@ export const kycCases = pgTable(
   (t) => ({
     userIdx: index('kyc_cases_user_id_idx').on(t.userId),
     statusIdx: index('kyc_cases_status_idx').on(t.status),
+    providerReferenceIdx: index('kyc_cases_provider_reference_idx').on(t.providerReference),
   })
 )
 
