@@ -39,6 +39,23 @@ function recipients(): string[] {
   return env.length ? env : POOL_ALERT_RECIPIENTS
 }
 
+/** Ops-only audience for plumbing alerts (INCOMPLETE readings). The regulator
+ * list (ATTESTATION_RECIPIENTS) receives attestations and nothing else — an
+ * internal read failure must never surface to BoT. */
+function internalRecipients(): string[] {
+  const env = (process.env.ATTESTATION_INTERNAL_RECIPIENTS || '').split(',').map((s) => s.trim()).filter(Boolean)
+  return env.length ? env : POOL_ALERT_RECIPIENTS
+}
+
+/** One short human line per failure — full detail goes to server logs only.
+ * Never let raw driver errors (SQL text, hosts) into an email body. */
+function sanitizeFailure(label: string, err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  console.error(`[attestation] ${label}:`, msg)
+  const firstLine = msg.split('\n')[0].replace(/Failed query:[\s\S]*/i, 'database query error')
+  return `${label}: ${firstLine.slice(0, 140)}`
+}
+
 /** EAT (UTC+3, no DST) calendar date as YYYY-MM-DD. */
 export function eatDate(d = new Date()): string {
   return new Date(d.getTime() + 3 * 3600 * 1000).toISOString().slice(0, 10)
@@ -111,7 +128,7 @@ async function readSnippePot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: `Snippe balance read failed: ${e instanceof Error ? e.message : e}` }
+    return { failure: sanitizeFailure('Snippe balance read', e) }
   }
 }
 
@@ -147,7 +164,7 @@ async function readAzamPayPot(): Promise<PotRead> {
         },
       }
     } catch (e) {
-      return { failure: `AzamPay balance read failed: ${e instanceof Error ? e.message : e}` }
+      return { failure: sanitizeFailure('AzamPay balance read', e) }
     }
   }
 
@@ -175,7 +192,7 @@ async function readAzamPayPot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: `AzamPay book balance query failed: ${e instanceof Error ? e.message : e}` }
+    return { failure: sanitizeFailure('AzamPay book balance query', e) }
   }
 }
 
@@ -197,7 +214,7 @@ async function readSelcomPot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: `Selcom balance read failed: ${e instanceof Error ? e.message : e}` }
+    return { failure: sanitizeFailure('Selcom balance read', e) }
   }
 }
 
@@ -241,11 +258,26 @@ async function readNettings() {
   const feesUnmintedTzs = Number(feeRow?.platform ?? 0) + Number(feeRow?.neda ?? 0)
 
   // Cash that reached a PSP with no attributed deposit (pending manual review).
-  const [orphanRow] = await db
-    .select({ total: dsql<string>`coalesce(sum(${orphanPayments.amountTzs}), 0)` })
-    .from(orphanPayments)
-    .where(and(eq(orphanPayments.status, 'unmatched'), eq(orphanPayments.currency, 'TZS')))
-  const orphanUnmatchedTzs = Number(orphanRow?.total ?? 0)
+  // The orphan ledger ships in drizzle/0060 — if that migration is not applied
+  // yet the table is missing, which is a KNOWN deployment state, not a reading
+  // failure: count 0 with a caveat note instead of aborting the attestation.
+  let orphanUnmatchedTzs = 0
+  const notes: string[] = []
+  try {
+    const [orphanRow] = await db
+      .select({ total: dsql<string>`coalesce(sum(${orphanPayments.amountTzs}), 0)` })
+      .from(orphanPayments)
+      .where(and(eq(orphanPayments.status, 'unmatched'), eq(orphanPayments.currency, 'TZS')))
+    orphanUnmatchedTzs = Number(orphanRow?.total ?? 0)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/does not exist|42P01/i.test(msg)) {
+      console.warn('[attestation] orphan_payments table missing (apply drizzle/0060); counting 0:', msg.split('\n')[0])
+      notes.push('Unmatched-credit netting counted as 0 — orphan ledger not yet provisioned (drizzle/0060 pending).')
+    } else {
+      throw e
+    }
+  }
 
   // Fiat confirmed in a counted pot, tokens not yet minted (mint owed).
   const [unmintedRow] = await db
@@ -260,7 +292,7 @@ async function readNettings() {
     )
   const paidUnmintedTzs = Number(unmintedRow?.total ?? 0)
 
-  return { burnedUnpaidTzs, feesUnmintedTzs, orphanUnmatchedTzs, paidUnmintedTzs }
+  return { burnedUnpaidTzs, feesUnmintedTzs, orphanUnmatchedTzs, paidUnmintedTzs, notes }
 }
 
 // ─── Compute ─────────────────────────────────────────────────────────────────
@@ -278,19 +310,20 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
   ])
 
   const failures: string[] = []
-  if (!chain.ok) failures.push(`Chain supply read failed: ${chain.error}`)
+  if (!chain.ok) failures.push(sanitizeFailure('Chain supply read', chain.error))
   for (const r of [snippePot, azamPot, selcomPot]) if (r.failure) failures.push(r.failure)
 
-  let nettings
+  let nettingsRead
   try {
-    nettings = await readNettings()
+    nettingsRead = await readNettings()
   } catch (e) {
-    failures.push(`Obligation queries failed: ${e instanceof Error ? e.message : e}`)
+    failures.push(sanitizeFailure('Obligation ledger queries', e))
   }
 
-  if (failures.length > 0 || !nettings) {
+  if (failures.length > 0 || !nettingsRead) {
     return { status: 'incomplete', reportDate, failures, generatedAt: new Date().toISOString() }
   }
+  const { notes, ...nettings } = nettingsRead
 
   const pots: ReservePot[] = [snippePot.pot, azamPot.pot, selcomPot.pot].filter(
     (p): p is ReservePot => Boolean(p)
@@ -306,7 +339,7 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     })
   }
 
-  const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply })
+  const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply, notes })
 
   const ntzsCirculation = chain.supply
   const tzsCustodialReserve = annex.grossReservesTzs - govt
@@ -378,6 +411,11 @@ function annexHtml(a: AttestationAnnex, deltaLine: string): string {
       ${row('<b>Adjusted coverage</b>', `<b>${a.adjustedCoveragePct.toFixed(4)} %</b>`)}
       ${row('Unexplained residual', `${a.residualPct >= 0 ? '+' : ''}${a.residualPct.toFixed(4)} %`)}
     </table>
+    ${
+      a.notes && a.notes.length > 0
+        ? `<p style="font-size:11px;color:#b45309;margin:8px 0 0">${a.notes.map((n) => `⚠ ${n}`).join('<br>')}</p>`
+        : ''
+    }
     <p style="font-size:11px;color:#6b7280;margin:8px 0 0">
       Adjusted coverage nets obligations already accrued against the reserves that hold their cash;
       100.0000% means every shilling of deviation is attributed. The residual carries the PSP fee
@@ -421,14 +459,14 @@ function reportEmailHtml(r: AttestationReport, deltaLine: string): string {
 function incompleteEmailHtml(inc: IncompleteAttestation): string {
   return `
   <div style="font-family:ui-monospace,Menlo,monospace;max-width:640px;margin:0 auto;color:#111827">
-    <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Bank of Tanzania · Sandbox Ref. LD.170/515/02/1254</p>
+    <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Internal operations alert — not sent to regulators</p>
     <h2 style="margin:4px 0 2px">nTZS Daily Reserve Attestation</h2>
     <p style="margin:0 0 16px;color:#6b7280">Report date (EAT): <b>${inc.reportDate}</b></p>
     <p style="display:inline-block;padding:6px 12px;border-radius:6px;background:#d977061a;color:#d97706;font-weight:700;margin:0 0 16px">⚠️ READING INCOMPLETE — NOT ATTESTED</p>
     <p style="font-size:13px;color:#374151;margin:0 0 8px">
-      One or more reserve or supply sources could not be verified, so no attestation figures are
-      published for this run. A corrected attestation for the same report date will follow once the
-      reading is restored. No reserve deficiency is implied by this notice.
+      One or more reserve or supply sources could not be verified, so no attestation was generated
+      or sent for this run. Resolve the source below, then send the day's attestation from
+      Backstage → Attestation (or POST /api/admin/attestation). No reserve deficiency is implied.
     </p>
     <ul style="font-size:12px;color:#6b7280;margin:0 0 12px;padding-left:18px">
       ${inc.failures.map((f) => `<li>${f}</li>`).join('')}
@@ -447,9 +485,11 @@ export async function generateDailyAttestation(): Promise<AttestationReport | In
   const to = recipients()
 
   if (isIncomplete(report)) {
+    // Plumbing alert → ops only. The regulator list gets attestations, never
+    // internal failure notices.
     const subject = `⚠️ nTZS Attestation INCOMPLETE — ${report.reportDate} — manual review required`
     try {
-      await sendEmail({ to, subject, html: incompleteEmailHtml(report) })
+      await sendEmail({ to: internalRecipients(), subject, html: incompleteEmailHtml(report) })
     } catch (e) {
       console.error('[attestation] incomplete-alert email failed:', e instanceof Error ? e.message : e)
     }
