@@ -66,19 +66,31 @@ export async function GET(request: NextRequest) {
     const skipped: Record<string, number> = {}
     const warnings: string[] = []
 
-    const statement = await getStatement({
+    const PER_PAGE = 500
+    const MAX_PAGES = 5
+    const range = {
       fromDate: ymdEAT(new Date(now.getTime() - 24 * 3600_000)),
       toDate: ymdEAT(now),
-      perPage: 500,
-      order: 'DESC',
-    })
-
-    if (statement.pagination?.lastPage && statement.pagination.lastPage > 1) {
-      // No silent caps: page 2+ exists and the adapter has no page param yet.
-      warnings.push(`statement has ${statement.pagination.lastPage} pages; only page 1 (500 rows) ingested this run`)
+      perPage: PER_PAGE,
+      order: 'DESC' as const,
     }
 
-    for (const row of statement.transactions) {
+    const statement = await getStatement({ ...range, page: 1 })
+    const transactions = [...statement.transactions]
+    const lastPage = statement.pagination?.lastPage ?? 1
+    for (let page = 2; page <= Math.min(lastPage, MAX_PAGES); page++) {
+      const next = await getStatement({ ...range, page })
+      if (next.transactions.length === 0) break
+      transactions.push(...next.transactions)
+    }
+    if (lastPage > MAX_PAGES) {
+      // No silent caps: an unread tail exists beyond the per-run page budget.
+      warnings.push(
+        `statement has ${lastPage} pages; only ${MAX_PAGES} (${MAX_PAGES * PER_PAGE} rows) ingested this run — remainder picked up next run`
+      )
+    }
+
+    for (const row of transactions) {
       const parsed = parseStatementRow(row)
       if (parsed.kind === 'debit') {
         debits++

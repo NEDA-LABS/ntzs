@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
 
-import { signRequest, detectWalletFiCode, normalizePhone } from './selcom'
+import { signRequest, detectWalletFiCode, normalizePhone, buildBillPayFields, buildLipaFields } from './selcom'
 import { estimateSendMoneyFee, getPayoutFeeTzs, SNIPPE_FLAT_FEE_TZS } from './selcom-fees'
 
 // signRequest reads SELCOM_API_KEY + SELCOM_PRIVATE_KEY from the environment —
@@ -113,6 +113,42 @@ describe('signRequest (RSA-SHA256 signed headers)', () => {
     v2.update(tampered, 'utf8')
     v2.end()
     expect(v2.verify(publicPem, headers['digest'], 'base64')).toBe(false)
+  })
+})
+
+describe('bill-pay / lipa field builders (order defines body + signature)', () => {
+  const signingStringFor = (fields: ReturnType<typeof buildBillPayFields>) => {
+    const { headers, timestamp } = signRequest(fields)
+    const expected = `timestamp=${timestamp}&` + fields.map((f) => `${f.name}=${f.value}`).join('&')
+    const v = createVerify('RSA-SHA256')
+    v.update(expected, 'utf8')
+    v.end()
+    return { verifies: v.verify(publicPem, headers['digest'], 'base64'), signedFields: headers['signed-fields'] }
+  }
+
+  it('bill-pay: transId, utilityCode, utilityRef, amount — exactly the collection order', () => {
+    const fields = buildBillPayFields({ utilityCode: 'ATOP', utilityRef: '0744277496', amountTzs: 1000 }, 't-bill-1')
+    expect(fields.map((f) => f.name)).toEqual(['transId', 'utilityCode', 'utilityRef', 'amount'])
+    const { verifies, signedFields } = signingStringFor(fields)
+    expect(signedFields).toBe('transId,utilityCode,utilityRef,amount')
+    expect(verifies).toBe(true)
+  })
+
+  it('lipa: includes network between payNumber and amount when provided', () => {
+    const fields = buildLipaFields({ payNumber: '123456', network: 'VODACOM', amountTzs: 500 }, 't-lipa-1')
+    expect(fields.map((f) => f.name)).toEqual(['transId', 'payNumber', 'network', 'amount'])
+    const { verifies, signedFields } = signingStringFor(fields)
+    expect(signedFields).toBe('transId,payNumber,network,amount')
+    expect(verifies).toBe(true)
+  })
+
+  it('lipa: OMITS network entirely when absent (empty string would change the signature)', () => {
+    const fields = buildLipaFields({ payNumber: '123456', amountTzs: 500 }, 't-lipa-2')
+    expect(fields.map((f) => f.name)).toEqual(['transId', 'payNumber', 'amount'])
+    expect(fields.some((f) => f.value === '')).toBe(false)
+    const { verifies, signedFields } = signingStringFor(fields)
+    expect(signedFields).toBe('transId,payNumber,amount')
+    expect(verifies).toBe(true)
   })
 })
 

@@ -432,6 +432,40 @@ export interface SelcomDisbursementParams {
  */
 export async function processDisbursement(params: SelcomDisbursementParams): Promise<SelcomPayoutResponse> {
   const transId = params.transId || crypto.randomUUID()
+  // Field ORDER matters — it defines both the body and the signing string.
+  return postSignedTransaction(
+    getDisbursePath(),
+    [
+      { name: 'transId', value: transId },
+      { name: 'recipientFiCode', value: params.recipientFiCode },
+      { name: 'recipientAccount', value: params.recipientAccount },
+      { name: 'recipientName', value: params.recipientName },
+      { name: 'amount', value: params.amountTzs },
+      { name: 'purpose', value: params.purpose || getDefaultPurpose() },
+      { name: 'remarks', value: params.narration || 'nTZS disbursement' },
+    ],
+    transId,
+    'disbursement'
+  )
+}
+
+/**
+ * Shared money-moving POST used by disbursement, bill-pay and lipa-payout —
+ * all three speak the same result envelope and the same safety rules:
+ *
+ * - `transId` is REUSED across transport retries — Selcom treats it as the
+ *   idempotency key, so retrying after a transport failure cannot double-pay.
+ * - Only transport-level failures (HTTP 5xx / network) are retried; any
+ *   decisive Selcom result (FAIL/AMBIGUOUS) is returned without retry.
+ * - 643 duplicate-transId means a previous attempt actually landed: the
+ *   transaction's real status is resolved via /v1/transaction/query.
+ */
+async function postSignedTransaction(
+  path: string,
+  fields: SignedField[],
+  transId: string,
+  label: string
+): Promise<SelcomPayoutResponse> {
   const MAX_ATTEMPTS = 3
   const BACKOFF_MS = [0, 1000, 3000]
   let lastError: string | undefined
@@ -440,18 +474,9 @@ export async function processDisbursement(params: SelcomDisbursementParams): Pro
     if (BACKOFF_MS[attempt] > 0) await sleep(BACKOFF_MS[attempt])
 
     try {
-      // Field ORDER matters — it defines both the body and the signing string.
-      const { headers, body } = signRequest([
-        { name: 'transId', value: transId },
-        { name: 'recipientFiCode', value: params.recipientFiCode },
-        { name: 'recipientAccount', value: params.recipientAccount },
-        { name: 'recipientName', value: params.recipientName },
-        { name: 'amount', value: params.amountTzs },
-        { name: 'purpose', value: params.purpose || getDefaultPurpose() },
-        { name: 'remarks', value: params.narration || 'nTZS disbursement' },
-      ])
+      const { headers, body } = signRequest(fields)
 
-      const response = await fetch(`${getBaseUrl()}${getDisbursePath()}`, {
+      const response = await fetch(`${getBaseUrl()}${path}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -470,7 +495,7 @@ export async function processDisbursement(params: SelcomDisbursementParams): Pro
       // error — is the truth: resolve it via the status query.
       if (result.resultcode === '643' || result.error_code === 643) {
         const st = await checkPayoutStatus(transId)
-        console.log('[selcom] duplicate transId resolved via query', { transId, status: st.status, attempt: attempt + 1 })
+        console.log(`[selcom] duplicate transId resolved via query`, { label, transId, status: st.status, attempt: attempt + 1 })
         if (st.status === 'completed' || st.status === 'pending') {
           return { success: true, reference: transId }
         }
@@ -478,7 +503,7 @@ export async function processDisbursement(params: SelcomDisbursementParams): Pro
           success: false,
           error:
             st.status === 'failed'
-              ? st.failureReason || 'Disbursement failed'
+              ? st.failureReason || `${label} failed`
               : 'Duplicate transaction with unknown status — manual reconciliation required',
           reference: transId,
           errorCode: '643',
@@ -487,10 +512,8 @@ export async function processDisbursement(params: SelcomDisbursementParams): Pro
 
       if (response.status < 500) {
         const mapped = interpretDisbursement(result, transId)
-        console.log('[selcom] disbursement result:', {
+        console.log(`[selcom] ${label} result:`, {
           transId,
-          fiCode: params.recipientFiCode,
-          amount: params.amountTzs,
           result: result.result,
           resultcode: result.resultcode,
           success: mapped.success,
@@ -501,14 +524,76 @@ export async function processDisbursement(params: SelcomDisbursementParams): Pro
 
       // HTTP 5xx — request may not have been processed; safe to retry (idempotent transId).
       lastError = result.message || `Selcom HTTP ${response.status}`
-      console.error('[selcom] disbursement 5xx, will retry', { attempt: attempt + 1, status: response.status })
+      console.error(`[selcom] ${label} 5xx, will retry`, { attempt: attempt + 1, status: response.status })
     } catch (err) {
       lastError = err instanceof Error ? err.message : 'Failed to connect to Selcom'
-      console.error('[selcom] disbursement fetch error', { attempt: attempt + 1, error: lastError })
+      console.error(`[selcom] ${label} fetch error`, { attempt: attempt + 1, error: lastError })
     }
   }
 
-  return { success: false, error: lastError || 'Disbursement failed', reference: transId }
+  return { success: false, error: lastError || `${label} failed`, reference: transId }
+}
+
+// ─── Bill pay + Lipa (merchant) payouts — "spend your nTZS" rails ─────────────
+// Endpoints from Selcom's "SB API for NEDA Labs with Lipa and Bill Pay"
+// Postman collection (Dhimant, 24 Jul 2026). Selcom-side deployment in
+// progress — exercise via POST /api/admin/selcom-spend-test (flag-gated)
+// before wiring any user-facing flow. ⚠ Fee tariffs and the utilityCode
+// catalogue are pending from Selcom.
+
+export interface SelcomBillPayRequest {
+  /** Biller/utility code, e.g. 'ATOP' (airtime top-up) — catalogue ⚠ pending. */
+  utilityCode: string
+  /** The bill/control/reference number at the biller. */
+  utilityRef: string
+  amountTzs: number
+  /** Idempotency key, reused across retries. Defaults to a random UUID. */
+  transId?: string
+}
+
+/** Field order defines body + signature — exactly the collection's order. */
+export function buildBillPayFields(req: SelcomBillPayRequest, transId: string): SignedField[] {
+  return [
+    { name: 'transId', value: transId },
+    { name: 'utilityCode', value: req.utilityCode },
+    { name: 'utilityRef', value: req.utilityRef },
+    { name: 'amount', value: req.amountTzs },
+  ]
+}
+
+/** Pay a utility/government bill from the Selcom account. POST /v1/transaction/neda-bill-pay */
+export async function payBill(req: SelcomBillPayRequest): Promise<SelcomPayoutResponse> {
+  const transId = req.transId || crypto.randomUUID()
+  return postSignedTransaction('/v1/transaction/neda-bill-pay', buildBillPayFields(req, transId), transId, 'bill-pay')
+}
+
+export interface SelcomLipaPayRequest {
+  /** Merchant Lipa Namba (pay number). */
+  payNumber: string
+  /** Optional network hint per the collection. OMITTED entirely when absent —
+   * signed-fields derive from the keys present, and an empty-string field
+   * would change the signature vs. their reference signer. */
+  network?: string
+  amountTzs: number
+  /** Idempotency key, reused across retries. Defaults to a random UUID. */
+  transId?: string
+}
+
+/** Field order defines body + signature — exactly the collection's order. */
+export function buildLipaFields(req: SelcomLipaPayRequest, transId: string): SignedField[] {
+  const fields: SignedField[] = [
+    { name: 'transId', value: transId },
+    { name: 'payNumber', value: req.payNumber },
+  ]
+  if (req.network) fields.push({ name: 'network', value: req.network })
+  fields.push({ name: 'amount', value: req.amountTzs })
+  return fields
+}
+
+/** Pay a merchant's Lipa Namba from the Selcom account. POST /v1/transaction/neda-lipa-payout */
+export async function payLipa(req: SelcomLipaPayRequest): Promise<SelcomPayoutResponse> {
+  const transId = req.transId || crypto.randomUUID()
+  return postSignedTransaction('/v1/transaction/neda-lipa-payout', buildLipaFields(req, transId), transId, 'lipa-payout')
 }
 
 /** Send a mobile-money payout — resolves the wallet FI code from the phone prefix. */
@@ -747,6 +832,8 @@ export interface SelcomStatementParams {
   preset?: string
   /** 1–500, default 10 (Selcom-side). */
   perPage?: number
+  /** 1-based page index (collection body puts it right after per_page). */
+  page?: number
   order?: 'ASC' | 'DESC'
 }
 
@@ -782,6 +869,7 @@ export async function getStatement(params: SelcomStatementParams): Promise<Selco
     fields.push({ name: 'from_date', value: params.fromDate }, { name: 'to_date', value: params.toDate })
   }
   if (params.perPage != null) fields.push({ name: 'per_page', value: params.perPage })
+  if (params.page != null) fields.push({ name: 'page', value: params.page })
   if (params.order) fields.push({ name: 'order', value: params.order })
 
   const { headers, body } = signRequest(fields)
