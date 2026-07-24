@@ -26,6 +26,56 @@ afterAll(() => {
   process.env.SELCOM_API_KEY = savedApi
 })
 
+describe('private key input tolerance (env paste shapes)', () => {
+  const verify = (ts: string, digest: string) => {
+    const v = createVerify('RSA-SHA256')
+    v.update(`timestamp=${ts}&transId=t-1`, 'utf8')
+    v.end()
+    return v.verify(publicPem, digest, 'base64')
+  }
+  const signOnce = () => {
+    const { headers, timestamp } = signRequest([{ name: 'transId', value: 't-1' }])
+    return verify(timestamp, headers['digest'])
+  }
+
+  it('accepts a raw multi-line PEM', () => {
+    process.env.SELCOM_PRIVATE_KEY = privatePem
+    expect(signOnce()).toBe(true)
+  })
+
+  it('repairs a PEM whose newlines were collapsed by a paste', () => {
+    process.env.SELCOM_PRIVATE_KEY = privatePem.replace(/\n/g, ' ')
+    expect(signOnce()).toBe(true)
+  })
+
+  it('tolerates surrounding quotes and whitespace on the base64 form', () => {
+    process.env.SELCOM_PRIVATE_KEY = `  "${Buffer.from(privatePem).toString('base64')}"  `
+    expect(signOnce()).toBe(true)
+  })
+
+  it('accepts base64-encoded DER (PKCS#8)', () => {
+    const der = privateKey.export({ type: 'pkcs8', format: 'der' })
+    process.env.SELCOM_PRIVATE_KEY = Buffer.from(der).toString('base64')
+    expect(signOnce()).toBe(true)
+  })
+
+  it('throws a diagnostic (never key material) on garbage', () => {
+    process.env.SELCOM_PRIVATE_KEY = 'definitely-not-a-key!!'
+    expect(() => signRequest([{ name: 'transId', value: 't-1' }])).toThrow(/could not be parsed/)
+    try {
+      signRequest([{ name: 'transId', value: 't-1' }])
+    } catch (e) {
+      expect((e as Error).message).not.toContain('definitely')
+    }
+  })
+
+  // restore the suite default for the following describes
+  it('restores suite key', () => {
+    process.env.SELCOM_PRIVATE_KEY = Buffer.from(privatePem).toString('base64')
+    expect(signOnce()).toBe(true)
+  })
+})
+
 describe('signRequest (RSA-SHA256 signed headers)', () => {
   it('produces a digest that verifies against the public key over the documented signing string', () => {
     const fields = [
