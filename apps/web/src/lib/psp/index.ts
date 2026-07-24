@@ -130,14 +130,18 @@ export async function getBalance(): ReturnType<typeof snippe.getBalance> {
   return useAzamPay() ? azampay.getBalance() : snippe.getBalance()
 }
 
-// ─── Name lookup — AzamPay only; graceful no-op for Snippe ──────────────────
+// ─── Name lookup — provider chain, independent of who moves the money ────────
+//
+// Selcom first: its account-lookup covers ALL five wallets (including Vodacom
+// M-Pesa, which AzamPay cannot serve) plus bank accounts, and needs no IP
+// whitelisting on our credential. AzamPay is the fallback (its namelookup
+// rides their IP-whitelisted disbursement surface, so it only answers once
+// static egress exists). Every step is fail-soft — a null name never blocks.
 
-export async function lookupAccountName(
-  phone: string
-): Promise<{ name: string | null; phone: string }> {
-  return useAzamPay()
-    ? azampay.lookupAccountName(phone)
-    : { name: null, phone: snippe.normalizePhone(phone) }
+function selcomLookupConfigured(): boolean {
+  return Boolean(
+    process.env.SELCOM_API_KEY && process.env.SELCOM_PRIVATE_KEY && process.env.SELCOM_ACCOUNT_NUMBER
+  )
 }
 
 /**
@@ -154,7 +158,30 @@ function azamPayLookupConfigured(): boolean {
 export async function lookupRecipientName(
   phone: string
 ): Promise<{ name: string | null; idNumber?: string }> {
-  return useAzamPay() || azamPayLookupConfigured() ? azampay.lookupRecipientName(phone) : { name: null }
+  if (selcomLookupConfigured()) {
+    try {
+      const r = await selcom.lookupRecipientName(phone)
+      if (r.name) return { name: r.name }
+    } catch {
+      // fall through to the next provider
+    }
+  }
+  if (useAzamPay() || azamPayLookupConfigured()) {
+    try {
+      return await azampay.lookupRecipientName(phone)
+    } catch {
+      // fall through
+    }
+  }
+  return { name: null }
+}
+
+export async function lookupAccountName(
+  phone: string
+): Promise<{ name: string | null; phone: string }> {
+  const normalized = snippe.normalizePhone(phone)
+  const { name } = await lookupRecipientName(phone)
+  return { name, phone: normalized }
 }
 
 // ─── Card payments — always Snippe ───────────────────────────────────────────
