@@ -664,16 +664,21 @@ export interface SelcomRecipientInfo {
   idNumber?: string
 }
 
-/** Verify the registered name on a mobile-money account before a payout. */
+/**
+ * Verify the registered name on a mobile-money account before a payout.
+ *
+ * Uses bank=SELCOM for ALL wallet MSISDNs — established by live probe
+ * (/api/admin/selcom-lookup-probe, 24 Jul 2026): bank=SELCOM resolved the
+ * registered owner of a Vodacom number, while the per-network *CASHIN codes
+ * are DISBURSEMENT-ONLY vocabulary (lookup answers 642 "Lookup failed") and
+ * operator spellings like VODACOM/MPESA are not FI codes at all (651).
+ * detectWalletFiCode stays authoritative for payout routing only.
+ */
+const LOOKUP_WALLET_FI_CODE = 'SELCOM'
+
 export async function lookupRecipientName(phone: string): Promise<SelcomRecipientInfo> {
   const normalized = normalizePhone(phone)
-  let fiCode: string
-  try {
-    fiCode = detectWalletFiCode(normalized)
-  } catch {
-    return { name: null }
-  }
-  const { name } = await accountLookup(fiCode, normalized)
+  const { name } = await accountLookup(LOOKUP_WALLET_FI_CODE, normalized)
   return { name }
 }
 
