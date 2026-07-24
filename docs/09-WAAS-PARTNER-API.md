@@ -61,6 +61,22 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.8.0 (23 Jul 2026)
+
+### Instant document verification — no more waiting when the registry has no record
+
+Until now, a user whose NIDA + phone pair had no Tier-A registry record (typically: not a Selcom Pesa customer) was queued for manual review — correct, but slow. They can now finish **instantly** instead: open a capture session with `POST /api/v1/users/:id/kyc/session`, let the user photograph their ID and take a selfie (~2 minutes), and our `kyc.updated` webhook tells you the verdict. The same session verifies non-Tanzanian identity documents (pass `country`) — document verification covers 200+ countries.
+
+**Do you need to update your integration?**
+
+| Scenario | Action required |
+|----------|----------------|
+| You handle `202 kyc_pending_review` today | **Recommended.** On a `202`, open a session and run the capture flow instead of showing "wait for review". On the `kyc.updated` webhook with `approved`, re-call `POST /api/v1/users` (idempotent) to get the `walletAddress`. |
+| Your users hold non-Tanzanian documents | **Partially unlocked.** An existing user can verify a non-TZ document via the session `country` field. NIDA-less user creation (full international signup) ships in the next version. |
+| Selcom Tier A verifies your users instantly today | **None.** Nothing changes for them. |
+
+---
+
 ## What's New — v1.7.0 (23 Jul 2026)
 
 ### Withdrawal quotes — fee & recipient disclosure before money moves
@@ -422,12 +438,13 @@ Every end-user wallet is backed by a verified national identity (BoT sandbox Tes
 |------|--------------|-------|
 | A | The NIDA + phone pair is verified against a bank-grade KYC registry | instant |
 | B | The phone's telco SIM registration (NIDA + fingerprints by law) is used as supporting evidence | instant |
+| B′ | No registry record? The user photographs their government ID + takes a selfie with liveness — verified automatically ([session endpoint](#post-apiv1usersidkycsession)) | ~2 minutes |
 | C | Our compliance team reviews the case with the collected evidence | usually < 1 business day |
 
 Rules your UX should reflect:
 
 - The phone must be the user's **own** mobile money line (a line registered to someone else is a hard fail — this is deliberate, per AML policy).
-- "Under review" is **not** a rejection — never show it as an error.
+- "Under review" is **not** a rejection — never show it as an error. Better: make it an *action* by opening a document-capture session so the user can finish instantly.
 - One NIDA backs at most one wallet on your platform.
 
 ### `POST /api/v1/users/:id/kyc`
@@ -458,6 +475,37 @@ Attaches a verified identity to an **existing** user — for users created befor
 3. `POST /api/v1/users/:id/kyc` → handle the three outcomes exactly like signup.
 4. Nothing is frozen and no deadline is enforced by the API — the campaign is prompt-driven.
 
+### `POST /api/v1/users/:id/kyc/session`
+
+Opens an **instant document-verification session** for an existing user — the fast path out of `pending_review` (users the registry doesn't know), and the verification path for non-Tanzanian identity documents. Never touches wallets or balances.
+
+#### Request body (optional)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `country` | string | — | ISO 3166-1 alpha-2 of the user's identity document (default `TZ`) |
+
+#### Responses
+
+| Status | Body highlights | Meaning |
+|--------|-----------------|---------|
+| `201` | `caseId`, `session: { token, smilePartnerId, apiBaseUrl, submitPath, partnerParams, callbackUrl, expiresInSeconds }` | Session open — run the capture flow within 15 minutes |
+| `200` | `alreadyVerified: true` | Already approved — nothing to do |
+| `400` | `invalid_country` | Bad country code |
+| `404` | — | User does not belong to your platform |
+| `503` | `kyc_unavailable` | Temporarily unavailable — retry shortly |
+
+#### Capture flow
+
+1. **Open the session server-side** (your API key never reaches a browser) and hand the `session` object to your frontend. The `token` is short-lived and safe for the client.
+2. **Capture with the device camera**: document **front** photo (back optional where relevant), one **selfie**, and **6–8 liveness frames** (a short burst). On mobile, the SmileID v12 mobile SDKs handle all capture; on web you own the camera UI.
+3. **Submit directly from the client to SmileID** — `POST {session.apiBaseUrl}{session.submitPath}` as `multipart/form-data`, headers `SmileID-Partner-ID: {session.smilePartnerId}` + `SmileID-Token: {session.token}`, parts: `country`, `document`, `document_back` (optional), `selfie_image`, `liveness_images` (repeated), plus `user_details`, `consent`, and `partner_params` as **JSON-string parts**. `partner_params` must be exactly `session.partnerParams`; `consent` records the user's explicit agreement: `{ "granted": true, "granted_at": ISO-8601, "notice_language": "EN", "notice_privacy_policy_url": "…" }`.
+4. SmileID responds `202 Accepted` — that is an acknowledgement, **not** the verdict.
+5. The verdict lands on our platform webhook; we move the case and notify you via the `kyc.updated` partner webhook (signed + retried, configured from your partner dashboard): `{ externalId, kycStatus: "approved" | "rejected" | "pending_review", provider: "smileid" }`.
+6. On `approved`, re-call `POST /api/v1/users` (idempotent) — the response now carries `walletAddress`. On `pending_review`, the document needs a human look (expired, glare, photocopy) — usually < 1 business day. On `rejected`, show the reason and allow a fresh attempt with a new session.
+
+Re-calling the endpoint reuses the user's open case with a fresh token, so an abandoned capture can simply be restarted.
+
 ### Suggested UX copy
 
 | State | English | Swahili (suggested) |
@@ -478,6 +526,7 @@ Sub-wallets and treasury wallets are business wallets: they unlock after **KYB**
 3. Re-call `POST /api/v1/users` with the same `externalId` → expect the idempotent existing-user response.
 4. A `202` user: after our team approves the review, re-call → expect `walletAddress` populated.
 5. A legacy user: `GET /api/v1/users/:id` → `kycStatus: "none"` → `POST /api/v1/users/:id/kyc` → same outcomes as signup.
+6. A `202` user: `POST /api/v1/users/:id/kyc/session` → complete capture with a SmileID sandbox test identity → expect the `kyc.updated` webhook, then `walletAddress` on the create-user re-call.
 
 ---
 
