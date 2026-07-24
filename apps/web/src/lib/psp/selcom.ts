@@ -71,7 +71,9 @@ function requireEnv(key: string): string {
 }
 
 function getApiKey(): string {
-  return requireEnv('SELCOM_API_KEY')
+  // Trim paste artifacts — a trailing newline or quote in the env value
+  // reaches Selcom as part of the header and reads as "API key not found".
+  return requireEnv('SELCOM_API_KEY').trim().replace(/^["']+|["']+$/g, '')
 }
 
 /**
@@ -149,6 +151,21 @@ export function selcomKeyDiagnostics(): string {
     }
   }
   parts.push(`parses:${tryLoadPrivateKey() ? 'yes' : 'NO'}`)
+  // Which gateway we're calling + api-key hygiene (length only, never the key):
+  // 'API key not found' with the right key usually means the wrong host
+  // (prelive-issued credentials don't exist on api.selcom.business) or paste
+  // whitespace — both visible here.
+  try {
+    parts.push(`host:${new URL(getBaseUrl()).host}`)
+  } catch {
+    parts.push('host:INVALID-BASE-URL')
+  }
+  const apiRaw = process.env.SELCOM_API_KEY
+  if (!apiRaw) parts.push('apiKey:not-set')
+  else {
+    parts.push(`apiKeyLen:${apiRaw.trim().replace(/^["']+|["']+$/g, '').length}`)
+    if (apiRaw !== apiRaw.trim()) parts.push('apiKey:HAD-WHITESPACE(now trimmed)')
+  }
   return parts.join(' · ')
 }
 

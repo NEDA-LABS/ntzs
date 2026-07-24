@@ -69,9 +69,17 @@ describe('private key input tolerance (env paste shapes)', () => {
     }
   })
 
+  it('trims paste artifacts off the api key before it reaches the header', () => {
+    process.env.SELCOM_PRIVATE_KEY = Buffer.from(privatePem).toString('base64')
+    process.env.SELCOM_API_KEY = ' "test-api-key"\n'
+    const { headers } = signRequest([{ name: 'transId', value: 't-1' }])
+    expect(headers['api-key']).toBe('test-api-key')
+  })
+
   // restore the suite default for the following describes
   it('restores suite key', () => {
     process.env.SELCOM_PRIVATE_KEY = Buffer.from(privatePem).toString('base64')
+    process.env.SELCOM_API_KEY = 'test-api-key'
     expect(signOnce()).toBe(true)
   })
 })
