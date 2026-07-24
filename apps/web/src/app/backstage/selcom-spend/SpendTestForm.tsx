@@ -37,6 +37,41 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<SpendResult | null>(null)
   const [httpError, setHttpError] = useState<string | null>(null)
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookupOk, setLookupOk] = useState(false)
+  const [lookupText, setLookupText] = useState<string | null>(null)
+
+  // Merchant-name check for the Lipa till — read-only, works independently of
+  // the payment flags (the lookup endpoint is already permitted for our creds).
+  const checkName = async () => {
+    setLookupBusy(true)
+    setLookupText(null)
+    try {
+      const res = await fetch(`/api/admin/selcom-lookup-probe?account=${encodeURIComponent(payNumber.trim())}`)
+      const json = (await res.json()) as {
+        error?: string
+        attempts?: Array<{ bank: string; name: string | null; operator?: string; reason?: string }>
+      }
+      if (!res.ok) {
+        setLookupOk(false)
+        setLookupText(json.error ?? `HTTP ${res.status}`)
+      } else {
+        const hit = (json.attempts ?? []).find((a) => a.name)
+        if (hit) {
+          setLookupOk(true)
+          setLookupText(`${hit.name}${hit.operator ? ` · ${hit.operator}` : ''}`)
+        } else {
+          setLookupOk(false)
+          setLookupText(`No name resolved — ${json.attempts?.[0]?.reason ?? 'no attempts'}`)
+        }
+      }
+    } catch (e) {
+      setLookupOk(false)
+      setLookupText(e instanceof Error ? e.message : 'lookup failed')
+    } finally {
+      setLookupBusy(false)
+    }
+  }
 
   const kindEnabled = kind === 'bill' ? billEnabled : lipaEnabled
   const fieldsOk =
@@ -130,12 +165,30 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
           <>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">Lipa Namba (pay number)</label>
-              <input
-                value={payNumber}
-                onChange={(e) => setPayNumber(e.target.value)}
-                placeholder="e.g. 123456"
-                className={inputCls}
-              />
+              <div className="flex gap-2">
+                <input
+                  value={payNumber}
+                  onChange={(e) => {
+                    setPayNumber(e.target.value)
+                    setLookupText(null)
+                  }}
+                  placeholder="e.g. 123456"
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={checkName}
+                  disabled={!payNumber.trim() || lookupBusy}
+                  className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:text-zinc-600"
+                >
+                  {lookupBusy ? 'Checking…' : 'Check name'}
+                </button>
+              </div>
+              {lookupText && (
+                <p className={`mt-1.5 text-xs ${lookupOk ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {lookupOk ? `Till registered to: ${lookupText}` : lookupText}
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">
