@@ -75,13 +75,87 @@ function getApiKey(): string {
 }
 
 /**
- * RSA private key used to sign requests, in PEM form. To survive single-line
- * env vars, a base64-encoded PEM is also accepted and decoded here.
+ * RSA private key used to sign requests. Accepted forms (all seen in the
+ * wild as env-var paste shapes):
+ *   - proper multi-line PEM
+ *   - PEM whose newlines were collapsed by a clipboard/editor (repaired here)
+ *   - base64-encoded PEM (the documented single-line form)
+ *   - base64-encoded DER (PKCS#8 or PKCS#1)
+ * Surrounding quotes and stray whitespace are tolerated. The parsed KeyObject
+ * is memoized per raw value.
  */
-function getPrivateKey(): string {
-  const raw = requireEnv('SELCOM_PRIVATE_KEY')
-  if (raw.includes('BEGIN')) return raw
-  return Buffer.from(raw, 'base64').toString('utf8')
+function cleanRawKey(): string {
+  return requireEnv('SELCOM_PRIVATE_KEY').trim().replace(/^["']+|["']+$/g, '')
+}
+
+/** Rebuild a PEM whose line breaks were lost in a paste: 64-char body lines
+ * between the original header/footer. Returns input unchanged if intact. */
+function repairPem(pem: string): string {
+  if (pem.includes('\n')) return pem
+  const m = pem.match(/-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*)-----END \1-----/)
+  if (!m) return pem
+  const body = m[2].replace(/\s+/g, '')
+  const wrapped = body.match(/.{1,64}/g)?.join('\n') ?? body
+  return `-----BEGIN ${m[1]}-----\n${wrapped}\n-----END ${m[1]}-----\n`
+}
+
+let cachedKey: { raw: string; key: crypto.KeyObject } | null = null
+
+function tryLoadPrivateKey(): crypto.KeyObject | null {
+  const raw = process.env.SELCOM_PRIVATE_KEY ? cleanRawKey() : ''
+  if (!raw) return null
+  if (cachedKey && cachedKey.raw === raw) return cachedKey.key
+
+  const candidates: Array<Buffer> = []
+  if (raw.includes('BEGIN')) {
+    candidates.push(Buffer.from(repairPem(raw)))
+  } else {
+    const buf = Buffer.from(raw.replace(/\s+/g, ''), 'base64')
+    const asText = buf.toString('utf8')
+    if (asText.includes('BEGIN')) candidates.push(Buffer.from(repairPem(asText.trim())))
+    else candidates.push(buf) // possibly raw DER
+  }
+
+  for (const c of candidates) {
+    try { const k = crypto.createPrivateKey(c); cachedKey = { raw, key: k }; return k } catch { /* next */ }
+    try { const k = crypto.createPrivateKey({ key: c, format: 'der', type: 'pkcs8' }); cachedKey = { raw, key: k }; return k } catch { /* next */ }
+    try { const k = crypto.createPrivateKey({ key: c, format: 'der', type: 'pkcs1' }); cachedKey = { raw, key: k }; return k } catch { /* next */ }
+  }
+  return null
+}
+
+/**
+ * Non-secret description of the configured key for ops surfaces: lengths,
+ * detected form, and a short fingerprint so a human can compare the deployed
+ * value against their clipboard (`pbpaste | tr -d '\n' | shasum -a 256 |
+ * cut -c1-8`). NEVER includes key material.
+ */
+export function selcomKeyDiagnostics(): string {
+  const raw = process.env.SELCOM_PRIVATE_KEY
+  if (!raw) return 'key not set'
+  const t = raw.trim()
+  const parts = [
+    `len:${raw.length}`,
+    `fp:${crypto.createHash('sha256').update(t).digest('hex').slice(0, 8)}`,
+  ]
+  if (t.includes('BEGIN')) {
+    parts.push('form:pem', t.includes('\n') ? 'newlines:yes' : 'newlines:collapsed')
+  } else {
+    const cleaned = t.replace(/\s+/g, '')
+    const validB64 = /^[A-Za-z0-9+/]+=*$/.test(cleaned)
+    parts.push('form:base64', validB64 ? 'charset:ok' : 'charset:INVALID')
+    if (validB64) {
+      parts.push(Buffer.from(cleaned, 'base64').toString('utf8').includes('BEGIN') ? 'decodes-to:pem' : 'decodes-to:non-pem')
+    }
+  }
+  parts.push(`parses:${tryLoadPrivateKey() ? 'yes' : 'NO'}`)
+  return parts.join(' · ')
+}
+
+function getPrivateKey(): crypto.KeyObject {
+  const key = tryLoadPrivateKey()
+  if (!key) throw new Error(`[selcom] SELCOM_PRIVATE_KEY could not be parsed (${selcomKeyDiagnostics()})`)
+  return key
 }
 
 /**

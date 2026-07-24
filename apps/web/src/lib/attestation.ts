@@ -222,7 +222,9 @@ async function readSelcomPot(): Promise<PotRead> {
       },
     }
   } catch (e) {
-    return { failure: sanitizeFailure('Selcom balance read', e) }
+    // Key-config diagnostics (lengths/fingerprint only, never material) so a
+    // paste problem is identifiable from the backstage failure line alone.
+    return { failure: `${sanitizeFailure('Selcom balance read', e)} · ${selcom.selcomKeyDiagnostics()}` }
   }
 }
 
