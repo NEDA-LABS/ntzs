@@ -602,14 +602,23 @@ export interface SelcomAccountLookup {
   operator?: string
   /** Total applicable charges for the amount, when an amount was supplied. */
   charges?: number
+  /** Why the lookup produced no name (Selcom's resultcode/message or the
+   * transport error) — for logs and the admin probe, never end users. */
+  reason?: string
 }
 
 /**
  * Validate a destination account and read its name + applicable charges.
  * GET /v1/account/lookup?bank=<fiCode>&account=<acct>&transId=<id>&amount=<amt>
- * Never throws — returns { name: null } on any failure.
+ * Never throws — returns { name: null, reason } on any failure.
+ *
+ * ⚠ The `bank` code vocabulary for THIS endpoint is unconfirmed: Selcom's own
+ * Postman example uses bank=SELCOM (Selcom Pesa) for a wallet MSISDN, while
+ * the disbursement shortcode table lists *CASHIN codes. Refusals are logged
+ * with their reason, and /api/admin/selcom-lookup-probe tries candidate
+ * codes side by side so the right mapping is established from evidence.
  */
-async function accountLookup(fiCode: string, account: string, amount?: number): Promise<SelcomAccountLookup> {
+export async function accountLookup(fiCode: string, account: string, amount?: number): Promise<SelcomAccountLookup> {
   try {
     const fields: SignedField[] = [
       { name: 'bank', value: fiCode },
@@ -627,18 +636,26 @@ async function accountLookup(fiCode: string, account: string, amount?: number): 
 
     // Response shape per prelive docs: data.accountName / operator / charges[] / totalCharges.
     const result = (await response.json()) as {
+      success?: boolean
+      resultcode?: string
+      message?: string
       data?: { accountName?: string; operator?: string; charges?: unknown[]; totalCharges?: number }
     }
     const d = result.data
-    if (!d) return { name: null }
+    if (!d || !d.accountName) {
+      const reason = `http:${response.status} resultcode:${result.resultcode ?? 'n/a'} message:${result.message ?? 'n/a'}`
+      console.warn('[selcom] accountLookup no name', { bank: fiCode, reason })
+      return { name: null, reason }
+    }
     return {
-      name: d.accountName ?? null,
+      name: d.accountName,
       operator: d.operator,
       charges: d.totalCharges,
     }
   } catch (err) {
-    console.warn('[selcom] accountLookup failed (non-fatal):', err instanceof Error ? err.message : err)
-    return { name: null }
+    const reason = `transport: ${err instanceof Error ? err.message : String(err)}`
+    console.warn('[selcom] accountLookup failed (non-fatal):', reason)
+    return { name: null, reason }
   }
 }
 
