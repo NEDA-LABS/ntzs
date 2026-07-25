@@ -96,6 +96,10 @@ describe('signRequest (RSA-SHA256 signed headers)', () => {
     expect(headers['api-key']).toBe('test-api-key')
     expect(headers['signed-fields']).toBe('transId,amount')
     expect(headers['timestamp']).toBe(timestamp)
+    // Both content headers required — without Accept their gateway answers
+    // validation errors as HTML redirects (Selcom, 25 Jul).
+    expect(headers['Content-Type']).toBe('application/json')
+    expect(headers['Accept']).toBe('application/json')
 
     // Body preserves the exact fields + order semantics.
     expect(body).toEqual({ transId: 'abc-123', amount: 5000 })
