@@ -2,7 +2,17 @@
 
 import { useState } from 'react'
 
+import {
+  SELCOM_BILLERS,
+  BILLER_CATEGORY_LABELS,
+  getBiller,
+  validateUtilityRef,
+  lengthHint,
+  type BillerCategory,
+} from '@/lib/psp/selcom-billers'
+
 type Kind = 'bill' | 'lipa'
+const CUSTOM_CODE = '__custom'
 
 interface SpendResult {
   kind?: string
@@ -29,7 +39,8 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
   const anyEnabled = billEnabled || lipaEnabled
   const [kind, setKind] = useState<Kind>(billEnabled || !lipaEnabled ? 'bill' : 'lipa')
   const [amount, setAmount] = useState('1000')
-  const [utilityCode, setUtilityCode] = useState('ATOP')
+  const [utilityCode, setUtilityCode] = useState('TOP')
+  const [customCode, setCustomCode] = useState('')
   const [utilityRef, setUtilityRef] = useState('')
   const [payNumber, setPayNumber] = useState('')
   const [network, setNetwork] = useState('')
@@ -59,7 +70,9 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
         const hit = (json.attempts ?? []).find((a) => a.name)
         if (hit) {
           setLookupOk(true)
-          setLookupText(`${hit.name}${hit.operator ? ` · ${hit.operator}` : ''}`)
+          // Selcom returns '-' for operator on merchant tills — treat as absent.
+          const operator = hit.operator && hit.operator.trim() !== '-' ? ` · ${hit.operator}` : ''
+          setLookupText(`${hit.name}${operator}`)
         } else {
           setLookupOk(false)
           setLookupText(`No name resolved — ${json.attempts?.[0]?.reason ?? 'no attempts'}`)
@@ -74,10 +87,13 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
   }
 
   const kindEnabled = kind === 'bill' ? billEnabled : lipaEnabled
+  const effectiveCode = utilityCode === CUSTOM_CODE ? customCode.trim().toUpperCase() : utilityCode
+  const selectedBiller = getBiller(effectiveCode)
+  const refCheck = validateUtilityRef(effectiveCode, utilityRef)
   const fieldsOk =
     Number(amount) > 0 &&
     Number(amount) <= 5000 &&
-    (kind === 'bill' ? utilityCode.trim() && utilityRef.trim() : payNumber.trim())
+    (kind === 'bill' ? Boolean(effectiveCode && utilityRef.trim() && refCheck.ok) : Boolean(payNumber.trim()))
 
   const send = async () => {
     setBusy(true)
@@ -86,7 +102,7 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
     try {
       const body =
         kind === 'bill'
-          ? { kind, amountTzs: Number(amount), utilityCode: utilityCode.trim(), utilityRef: utilityRef.trim() }
+          ? { kind, amountTzs: Number(amount), utilityCode: effectiveCode, utilityRef: utilityRef.trim() }
           : {
               kind,
               amountTzs: Number(amount),
@@ -145,20 +161,43 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
           <>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                Utility code <span className="text-zinc-600">(ATOP = airtime; catalogue pending from Selcom)</span>
+                Biller <span className="text-zinc-600">(catalogue: SB Biller Codes, 25 Jul)</span>
               </label>
-              <input value={utilityCode} onChange={(e) => setUtilityCode(e.target.value)} className={inputCls} />
+              <select value={utilityCode} onChange={(e) => setUtilityCode(e.target.value)} className={inputCls}>
+                {(Object.keys(BILLER_CATEGORY_LABELS) as BillerCategory[]).map((cat) => (
+                  <optgroup key={cat} label={BILLER_CATEGORY_LABELS[cat]}>
+                    {SELCOM_BILLERS.filter((x) => x.category === cat).map((x) => (
+                      <option key={x.code} value={x.code}>
+                        {x.code} — {x.refLabel}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+                <option value={CUSTOM_CODE}>Other (type a code)…</option>
+              </select>
+              {utilityCode === CUSTOM_CODE && (
+                <input
+                  value={customCode}
+                  onChange={(e) => setCustomCode(e.target.value)}
+                  placeholder="utility code, e.g. ATOP"
+                  className={`${inputCls} mt-2`}
+                />
+              )}
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                Reference <span className="text-zinc-600">(for airtime: the phone number, e.g. 0744…)</span>
+                {selectedBiller ? selectedBiller.refLabel : 'Reference'}{' '}
+                {selectedBiller && <span className="text-zinc-600">({lengthHint(selectedBiller)})</span>}
               </label>
               <input
                 value={utilityRef}
                 onChange={(e) => setUtilityRef(e.target.value)}
-                placeholder="07XXXXXXXX"
+                placeholder={selectedBiller?.refLabel ?? 'reference at the biller'}
                 className={inputCls}
               />
+              {utilityRef.trim() && !refCheck.ok && (
+                <p className="mt-1.5 text-xs text-amber-400">{refCheck.reason}</p>
+              )}
             </div>
           </>
         ) : (

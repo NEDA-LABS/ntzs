@@ -73,9 +73,9 @@ export default async function SelcomSpendPage() {
               ?
             </span>
             <span className="text-sm text-zinc-300">
-              Selcom deploys the neda-bill-pay / neda-lipa-payout endpoints on their side — confirm with Dhimant
-              (also owed: fee tariffs + the biller-code catalogue). Until then a test returns their error, which is
-              harmless and itself confirms the wiring.
+              Selcom enables the neda-bill-pay / neda-lipa-payout endpoints for our credential — confirm with
+              Dhimant (still owed: fee tariffs; biller catalogue received 25 Jul, lipa is all-networks per Dhimant).
+              Until then a test returns their permission error, which is harmless and itself confirms the wiring.
             </span>
           </li>
           {check(
@@ -97,8 +97,9 @@ export default async function SelcomSpendPage() {
           )}
         </ul>
         <p className="mt-4 text-xs text-zinc-500">
-          Recommended first test once everything above is green: 1,000 TZS airtime to your own phone number
-          (utility code ATOP) — self-verifying, the airtime lands on your handset.
+          Recommended first tests once everything above is green: pay our own Lipa till 70031820 (closed loop —
+          the money returns to this account), and 1,000 TZS airtime to your own phone (biller TOP per the PDF;
+          if the code is rejected try ATOP — the collection example disagrees with the catalogue).
         </p>
       </div>
 
