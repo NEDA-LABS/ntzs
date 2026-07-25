@@ -725,7 +725,11 @@ export async function checkPayoutStatus(reference: string): Promise<SelcomPayout
     }
     // data.status is ACCEPTED | COMPLETED | FAILED per the prelive docs.
     if (result.result === 'FAIL' || status === 'FAILED') {
-      return { status: 'failed', failureReason: result.message }
+      // Their envelope message on a status query is the generic "Transaction
+      // status retrieved." — that is not a failure reason; omit it (live
+      // FAILED payloads carry no per-transaction reason field).
+      const generic = /^transaction status retrieved/i.test(result.message ?? '')
+      return { status: 'failed', failureReason: generic ? undefined : result.message }
     }
     return { status: 'unknown' }
   } catch (err) {
