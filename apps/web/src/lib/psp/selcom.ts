@@ -483,7 +483,23 @@ async function postSignedTransaction(
         signal: AbortSignal.timeout(30_000),
       })
 
-      const result = (await response.json()) as SelcomTransactionResult
+      const rawBody = await response.text()
+      let result: SelcomTransactionResult
+      try {
+        result = JSON.parse(rawBody) as SelcomTransactionResult
+      } catch {
+        // Non-JSON answer (e.g. a web-server 404/error page while the endpoint
+        // is mid-deployment) — surface status + content as evidence instead of
+        // a bare parse error. Retry is safe: transId is the idempotency key.
+        const snippet = rawBody.replace(/\s+/g, ' ').slice(0, 140)
+        lastError = `Selcom answered HTTP ${response.status} with non-JSON (${response.headers.get('content-type') ?? 'no content-type'}): ${snippet}`
+        console.error(`[selcom] ${label} non-JSON response`, {
+          attempt: attempt + 1,
+          status: response.status,
+          snippet,
+        })
+        continue
+      }
 
       if (process.env.SELCOM_DEBUG) {
         console.log('[selcom] raw response', { httpStatus: response.status, body: result })

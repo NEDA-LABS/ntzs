@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
 
 import { signRequest, detectWalletFiCode, normalizePhone, buildBillPayFields, buildLipaFields } from './selcom'
@@ -113,6 +113,32 @@ describe('signRequest (RSA-SHA256 signed headers)', () => {
     v2.update(tampered, 'utf8')
     v2.end()
     expect(v2.verify(publicPem, headers['digest'], 'base64')).toBe(false)
+  })
+})
+
+describe('postSignedTransaction non-JSON answers (via payLipa)', () => {
+  it('surfaces HTTP status + content snippet when the gateway returns an HTML page', async () => {
+    const { payLipa } = await import('./selcom')
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 404,
+      headers: new Headers({ 'content-type': 'text/html' }),
+      text: async () => '<div class="error-page">404 Not Found</div>',
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.useFakeTimers()
+    try {
+      const pending = payLipa({ payNumber: '70031820', amountTzs: 1000, transId: 't-nonjson-1' })
+      await vi.advanceTimersByTimeAsync(10_000) // burn through the retry backoffs
+      const result = await pending
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('HTTP 404')
+      expect(result.error).toContain('non-JSON')
+      expect(result.error).toContain('text/html')
+      expect(fetchMock).toHaveBeenCalledTimes(3) // retried — transId is idempotent
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 })
 
