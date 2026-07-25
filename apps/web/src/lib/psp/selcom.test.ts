@@ -120,6 +120,15 @@ describe('signRequest (RSA-SHA256 signed headers)', () => {
   })
 })
 
+describe('makeNumericTransId (neda-endpoint idempotency key)', () => {
+  it('produces the 12-digit YYYYMMDD#### shape from the vendor example', async () => {
+    const { makeNumericTransId } = await import('./selcom')
+    const id = makeNumericTransId(new Date('2026-07-25T10:30:00Z'))
+    expect(id).toMatch(/^20260725\d{4}$/)
+    expect(id).toHaveLength(12)
+  })
+})
+
 describe('postSignedTransaction non-JSON answers (via payLipa)', () => {
   it('surfaces HTTP status + content snippet when the gateway returns an HTML page', async () => {
     const { payLipa } = await import('./selcom')

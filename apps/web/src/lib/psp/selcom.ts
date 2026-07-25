@@ -561,13 +561,28 @@ async function postSignedTransaction(
 // POST /api/admin/selcom-spend-test (flag-gated) before wiring any
 // user-facing flow. ⚠ Fee tariffs still pending from Selcom.
 
+/**
+ * transId format for the neda-* endpoints: 12-digit numeric, YYYYMMDD + 4
+ * random digits — the exact shape Selcom's own working example used
+ * (202607220010). Our 36-char UUIDs passed validation but drew a 500
+ * "Server Error" on 25 Jul (suspected narrow column/format server-side), so
+ * match the demonstrated-working shape until Selcom confirms the contract.
+ * ⚠ 10k/day namespace — fine for the admin test endpoint; revisit (longer
+ * suffix or a Selcom answer on max length) before product-volume use.
+ */
+export function makeNumericTransId(now: Date = new Date()): string {
+  const ymd = now.toISOString().slice(0, 10).replace(/-/g, '')
+  const rand = String(Math.floor(Math.random() * 10_000)).padStart(4, '0')
+  return `${ymd}${rand}`
+}
+
 export interface SelcomBillPayRequest {
   /** Biller/utility code — catalogue + ref validation in selcom-billers.ts. */
   utilityCode: string
   /** The bill/control/reference number at the biller. */
   utilityRef: string
   amountTzs: number
-  /** Idempotency key, reused across retries. Defaults to a random UUID. */
+  /** Idempotency key, reused across retries. Defaults to makeNumericTransId(). */
   transId?: string
 }
 
@@ -583,7 +598,7 @@ export function buildBillPayFields(req: SelcomBillPayRequest, transId: string): 
 
 /** Pay a utility/government bill from the Selcom account. POST /v1/transaction/neda-bill-pay */
 export async function payBill(req: SelcomBillPayRequest): Promise<SelcomPayoutResponse> {
-  const transId = req.transId || crypto.randomUUID()
+  const transId = req.transId || makeNumericTransId()
   return postSignedTransaction('/v1/transaction/neda-bill-pay', buildBillPayFields(req, transId), transId, 'bill-pay')
 }
 
@@ -595,7 +610,7 @@ export interface SelcomLipaPayRequest {
    * would change the signature vs. their reference signer. */
   network?: string
   amountTzs: number
-  /** Idempotency key, reused across retries. Defaults to a random UUID. */
+  /** Idempotency key, reused across retries. Defaults to makeNumericTransId(). */
   transId?: string
 }
 
@@ -612,7 +627,7 @@ export function buildLipaFields(req: SelcomLipaPayRequest, transId: string): Sig
 
 /** Pay a merchant's Lipa Namba from the Selcom account. POST /v1/transaction/neda-lipa-payout */
 export async function payLipa(req: SelcomLipaPayRequest): Promise<SelcomPayoutResponse> {
-  const transId = req.transId || crypto.randomUUID()
+  const transId = req.transId || makeNumericTransId()
   return postSignedTransaction('/v1/transaction/neda-lipa-payout', buildLipaFields(req, transId), transId, 'lipa-payout')
 }
 
