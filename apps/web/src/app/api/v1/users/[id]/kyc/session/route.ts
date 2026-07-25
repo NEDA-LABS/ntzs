@@ -46,15 +46,18 @@ export async function POST(
     const { partner } = authResult
     const { id: userId } = await params
 
-    // Body is optional: { country?: 'TZ' | ISO-3166-1 alpha-2 }
+    // Body is optional: { country?: ISO-3166-1 alpha-2 }. When omitted, the
+    // user's open case decides (an international signup already carries its
+    // country) and only a brand-new case falls back to TZ — an explicit value
+    // always wins.
     let body: { country?: string } = {}
     try {
       body = await request.json()
     } catch {
       // No/empty body is fine — defaults apply.
     }
-    const countryRaw = (body.country ?? 'TZ').toUpperCase()
-    if (!/^[A-Z]{2}$/.test(countryRaw)) {
+    const explicitCountry = body.country?.toUpperCase()
+    if (explicitCountry && !/^[A-Z]{2}$/.test(explicitCountry)) {
       return NextResponse.json(
         { error: 'country must be an ISO 3166-1 alpha-2 code (e.g. TZ, KE).', code: 'invalid_country' },
         { status: 400 }
@@ -81,11 +84,14 @@ export async function POST(
     }
 
     const [latestCase] = await db
-      .select({ id: kycCases.id, status: kycCases.status })
+      .select({ id: kycCases.id, status: kycCases.status, country: kycCases.country })
       .from(kycCases)
       .where(eq(kycCases.userId, userId))
       .orderBy(desc(kycCases.createdAt))
       .limit(1)
+
+    const sessionCountry =
+      explicitCountry ?? (latestCase?.status === 'pending' ? latestCase.country : undefined) ?? 'TZ'
 
     if (latestCase?.status === 'approved') {
       return NextResponse.json({
@@ -105,12 +111,12 @@ export async function POST(
       caseId = latestCase.id
       await db
         .update(kycCases)
-        .set({ provider: 'smileid_docv', country: countryRaw, updatedAt: new Date() })
+        .set({ provider: 'smileid_docv', country: sessionCountry, updatedAt: new Date() })
         .where(eq(kycCases.id, caseId))
     } else {
       const [fresh] = await db
         .insert(kycCases)
-        .values({ userId, nationalId: null, status: 'pending', provider: 'smileid_docv', country: countryRaw })
+        .values({ userId, nationalId: null, status: 'pending', provider: 'smileid_docv', country: sessionCountry })
         .returning({ id: kycCases.id })
       caseId = fresh.id
       createdFreshCase = true
@@ -142,7 +148,7 @@ export async function POST(
       action: 'kyc.smileid.session_created',
       entityType: 'kyc_case',
       entityId: caseId,
-      metadata: { partnerId: partner.id, externalId: mapping.externalId, country: countryRaw },
+      metadata: { partnerId: partner.id, externalId: mapping.externalId, country: sessionCountry },
     })
 
     return NextResponse.json(
@@ -158,7 +164,7 @@ export async function POST(
           apiBaseUrl: smileIdApiBaseUrl(),
           product: 'document_verification',
           submitPath: '/v3/document_verification',
-          country: countryRaw,
+          country: sessionCountry,
           // Include these as JSON-string multipart parts on the submit; the
           // token already carries them as signed claims (belt and braces).
           partnerParams: { kyc_case_id: caseId, external_id: mapping.externalId },

@@ -61,6 +61,21 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.9.0 (23 Jul 2026)
+
+### International signups + no more dead-ends
+
+`POST /api/v1/users` now accepts a `country` field (ISO 3166-1 alpha-2, default `TZ`). For any country other than TZ, `nidaNumber` is **not** required: the user is created immediately with a pending document-verification case, and the capture session (see [Identity Verification](#identity-verification-kyc)) verifies their passport / national ID — 200+ countries covered. The `202` response now carries `nextStep: "kyc_session"`.
+
+Two more changes in the same spirit:
+
+- **Rejected signups soft-land.** A NIDA + phone pair that fails the registry/telco checks no longer returns `400` at signup — the user is created `pending_review` and finishes by document capture. A human still reviews any case with a standing telco contradiction; nothing auto-approves over one.
+- **Document uniqueness enforced at the verdict.** One document identity backs at most one user per partner — the document-flow equivalent of the NIDA dedupe, applied at the moment the ID number is first known (extraction).
+
+**Do you need to update your integration?** No — all changes are additive. To onboard non-Tanzanian users, send `country` and omit `nidaNumber`; everything after the `202` is the flow you already built.
+
+---
+
 ## What's New — v1.8.0 (23 Jul 2026)
 
 ### Instant document verification — no more waiting when the registry has no record
@@ -350,8 +365,9 @@ Creates a new WaaS user, verifies their identity, and provisions a dedicated HD-
 |-------|------|----------|-------------|
 | `externalId` | string | ✓ | Your app's internal user ID — used for idempotency and lookup |
 | `email` | string | ✓ | User's email address |
-| `nidaNumber` | string | ✓ | User's 20-digit NIDA number (dashes/spaces accepted) |
-| `phone` | string | ✓ | User's **own** Tanzanian mobile money number (`07…`, `+2557…`, or `2557…`) — it must be registered in the user's name |
+| `nidaNumber` | string | ✓ (TZ) | User's 20-digit NIDA number (dashes/spaces accepted). Omit when `country` ≠ `TZ` |
+| `phone` | string | ✓ (TZ) | User's **own** Tanzanian mobile money number (`07…`, `+2557…`, or `2557…`) — must be registered in the user's name. Optional E.164 for non-TZ signups |
+| `country` | string | — | ISO 3166-1 alpha-2 of the user's identity (default `TZ`). Non-TZ signups skip the NIDA ladder and verify by document capture |
 | `name` | string | — | Display name |
 
 #### Response `201 Created` — identity verified instantly, wallet issued
@@ -443,7 +459,7 @@ Every end-user wallet is backed by a verified national identity (BoT sandbox Tes
 
 Rules your UX should reflect:
 
-- The phone must be the user's **own** mobile money line (a line registered to someone else is a hard fail — this is deliberate, per AML policy).
+- The phone must be the user's **own** mobile money line. A line registered to someone else no longer hard-fails signup — the user soft-lands into document verification — but a standing telco contradiction always puts a human reviewer in the loop before approval (deliberate, per AML policy: nothing auto-approves over a contradiction).
 - "Under review" is **not** a rejection — never show it as an error. Better: make it an *action* by opening a document-capture session so the user can finish instantly.
 - One NIDA backs at most one wallet on your platform.
 
@@ -483,7 +499,7 @@ Opens an **instant document-verification session** for an existing user — the 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `country` | string | — | ISO 3166-1 alpha-2 of the user's identity document (default `TZ`) |
+| `country` | string | — | ISO 3166-1 alpha-2 of the user's identity document. Defaults to the user's open case country (international signups carry theirs), then `TZ` |
 
 #### Responses
 

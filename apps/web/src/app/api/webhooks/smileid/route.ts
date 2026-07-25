@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
@@ -113,6 +113,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, ignored: `already ${kase.status}` })
   }
 
+  // Partner scope, used by the uniqueness guard and the notify step below.
+  const [mapping] = await db
+    .select({ partnerId: partnerUsers.partnerId, externalId: partnerUsers.externalId })
+    .from(partnerUsers)
+    .where(eq(partnerUsers.userId, kase.userId))
+    .limit(1)
+
   const refs = {
     providerReference: kase.providerReference ?? correlation.jobId,
     providerUserId: kase.providerUserId ?? correlation.smileUserId,
@@ -130,7 +137,10 @@ export async function POST(request: NextRequest) {
   // but claims we already hold MUST agree with it:
   //  1. The number ON the document must equal the NIDA claimed at signup — a
   //     genuine card belonging to someone else never approves a case.
-  //  2. TZ only: the telco SIM registration behind the user's phone (NIDA +
+  //  2. One document identity backs at most one user per partner — the
+  //     doc-flow equivalent of the entry-time NIDA dedupe (which cannot run
+  //     at entry for document flows: the ID number is only known here).
+  //  3. TZ only: the telco SIM registration behind the user's phone (NIDA +
   //     fingerprints by law) corroborates the document holder's name. Ladder
   //     rules: a contradiction outranks the document; telco silence never
   //     blocks (same posture as non-TZ users, who have no telco leg at all).
@@ -142,7 +152,31 @@ export async function POST(request: NextRequest) {
         reason: 'document_id_mismatch',
         evidence: `Document ID number does not match the NIDA claimed at signup · ${verdict.evidence}`,
       }
-    } else if (kase.country === 'TZ') {
+    }
+    const documentDigits = (kase.nationalId ?? verdict.idNumber)?.replace(/\D/g, '')
+    if (final.outcome === 'approved' && documentDigits && mapping) {
+      const [duplicate] = await db
+        .select({ id: kycCases.id })
+        .from(kycCases)
+        .innerJoin(partnerUsers, eq(partnerUsers.userId, kycCases.userId))
+        .where(
+          and(
+            eq(partnerUsers.partnerId, mapping.partnerId),
+            ne(kycCases.userId, kase.userId),
+            inArray(kycCases.status, ['approved', 'pending']),
+            sql`regexp_replace(${kycCases.nationalId}, '\\D', '', 'g') = ${documentDigits}`
+          )
+        )
+        .limit(1)
+      if (duplicate) {
+        final = {
+          outcome: 'review',
+          reason: 'duplicate_document_id',
+          evidence: `Document ID already backs another user on this partner (case ${duplicate.id}) · ${verdict.evidence}`,
+        }
+      }
+    }
+    if (final.outcome === 'approved' && kase.country === 'TZ') {
       const [holder] = await db.select({ phone: users.phone }).from(users).where(eq(users.id, kase.userId)).limit(1)
       const comparableNida = kase.nationalId ?? verdict.idNumber
       if (holder?.phone && comparableNida) {
@@ -207,12 +241,6 @@ export async function POST(request: NextRequest) {
   // signed, retried partner-webhook channel — mirroring the #118 kycStatus
   // vocabulary: approved | pending_review | rejected.
   if (final.outcome !== 'error') {
-    const [mapping] = await db
-      .select({ partnerId: partnerUsers.partnerId, externalId: partnerUsers.externalId })
-      .from(partnerUsers)
-      .where(eq(partnerUsers.userId, kase.userId))
-      .limit(1)
-
     if (mapping) {
       await queuePartnerWebhook(mapping.partnerId, 'kyc.updated', {
         externalId: mapping.externalId,

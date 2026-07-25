@@ -398,8 +398,9 @@ export default function DevelopersPage() {
     externalId: 'your-internal-user-id',  // required — your own system's user ID
     email: 'user@example.com',            // required
     name: 'Jane Doe',                     // optional
-    nidaNumber: '19990102614010000120',   // required — user's 20-digit NIDA
-    phone: '255712345678',                // required — user's OWN mobile money line
+    country: 'TZ',                        // optional — default TZ; non-TZ signups omit NIDA
+    nidaNumber: '19990102614010000120',   // required for TZ — user's 20-digit NIDA
+    phone: '255712345678',                // required for TZ — user's OWN mobile money line
   }),
 })`}
             />
@@ -423,6 +424,7 @@ export default function DevelopersPage() {
   "externalId": "your-internal-user-id",
   "kycStatus": "pending_review",
   "code": "kyc_pending_review",
+  "nextStep": "kyc_session",
   "walletAddress": null
 }
 // The user exists but has NO wallet yet. Don't make them wait —
@@ -1200,9 +1202,9 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
                     ['insufficient_balance', '400', 'Sender does not have enough nTZS'],
                     ['user_not_found', '404', 'userId not found under your partner account'],
                     ['unauthorized', '401', 'Missing or invalid API key'],
-                    ['kyc_required', '400', 'nidaNumber (and phone) missing on create-user'],
+                    ['kyc_required', '400', 'nidaNumber (and phone) missing on a TZ create-user — non-TZ signups send country instead'],
                     ['kyc_pending_review', '202', 'Not an error — verification open; offer a capture session'],
-                    ['identity_binding_failed', '400', "Phone is registered to a different person's identity"],
+                    ['identity_binding_failed', '400', "Phone registered to a different person (retro-KYC re-attempts); signups now soft-land to document capture instead"],
                     ['nida_already_registered', '409', 'This NIDA already backs another wallet on your platform'],
                     ['invalid_country', '400', 'country must be an ISO 3166-1 alpha-2 code'],
                     ['kyc_unavailable', '503', 'Verification temporarily unavailable — retry shortly'],
