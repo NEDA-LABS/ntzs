@@ -17,7 +17,8 @@ import {
   partners,
 } from '@ntzs/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
-import { getBalance, ACTIVE_PSP_NAME } from '@/lib/psp'
+import { ACTIVE_PSP_NAME } from '@/lib/psp'
+import { readReservePots } from '@/lib/attestation'
 import { OversightPortal, type OversightData } from './_components/OversightPortal'
 
 const CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
@@ -44,7 +45,7 @@ export default async function OversightDashboard() {
 
   const { db } = getDb()
 
-  const [stats, pspBalanceRaw] = await Promise.all([
+  const [stats, reserveRead] = await Promise.all([
     db
       .select({
         totalUsers: sql<number>`count(distinct ${users.id})`.mapWith(Number),
@@ -53,8 +54,12 @@ export default async function OversightDashboard() {
       .from(depositRequests)
       .leftJoin(users, eq(users.id, depositRequests.userId))
       .then(r => r[0]),
-    getBalance().catch(() => ({ available: 0, pending: 0, currency: 'TZS' })),
+    // Same multi-pot reserve definition as the attestation — the regulator's
+    // portal must never disagree with the regulator's email, and pot-to-pot
+    // treasury moves (Snippe → Selcom) must read total-neutral here.
+    readReservePots().catch(() => ({ pots: [], failures: ['reserve read unavailable'] })),
   ])
+  const reserveTotalTzs = reserveRead.pots.reduce((s, p) => s + p.amountTzs, 0)
 
   const [kycStats] = await db
     .select({
@@ -236,10 +241,12 @@ export default async function OversightDashboard() {
       totalDeposits: stats?.totalDeposits ?? 0,
     },
     pspBalance: {
-      available: pspBalanceRaw.available,
-      pending: pspBalanceRaw.pending,
-      currency: pspBalanceRaw.currency,
-      pspName: ACTIVE_PSP_NAME,
+      available: reserveTotalTzs,
+      pending: 0,
+      currency: 'TZS',
+      pspName: reserveRead.pots.length
+        ? reserveRead.pots.map((p) => p.label.split(' ')[0]).join(' + ')
+        : ACTIVE_PSP_NAME,
     },
     kycStats: {
       total: kycStats?.total ?? 0,

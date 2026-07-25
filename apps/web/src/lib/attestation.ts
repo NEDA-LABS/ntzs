@@ -228,6 +228,38 @@ async function readSelcomPot(): Promise<PotRead> {
   }
 }
 
+/**
+ * The ONE definition of the reserve position — pot list + read failures.
+ * The attestation, the backstage minting reserve card and the oversight
+ * portal all consume THIS, so no surface can disagree with the number the
+ * regulator receives. Pot-to-pot treasury moves (e.g. Snippe → Selcom) are
+ * therefore total-neutral on every display simultaneously.
+ */
+export async function readReservePots(): Promise<{ pots: ReservePot[]; failures: string[] }> {
+  const [snippePot, azamPot, selcomPot] = await Promise.all([
+    readSnippePot(),
+    readAzamPayPot(),
+    readSelcomPot(),
+  ])
+  const failures: string[] = []
+  for (const r of [snippePot, azamPot, selcomPot]) if (r.failure) failures.push(r.failure)
+
+  const pots: ReservePot[] = [snippePot.pot, azamPot.pot, selcomPot.pot].filter(
+    (p): p is ReservePot => Boolean(p)
+  )
+  const govt = govtSecuritiesTzs()
+  if (govt > 0) {
+    pots.push({
+      key: 'govt_securities',
+      label: 'Government securities (T-bills)',
+      source: 'env',
+      amountTzs: govt,
+      asOf: new Date().toISOString(),
+    })
+  }
+  return { pots, failures }
+}
+
 // ─── Obligation nettings (our own ledger) ────────────────────────────────────
 
 async function readNettings() {
@@ -315,16 +347,11 @@ async function readNettings() {
  * source cannot be read: a reading we could not verify is never attested. */
 export async function computeAttestation(): Promise<AttestationReport | IncompleteAttestation> {
   const reportDate = eatDate()
-  const [chain, snippePot, azamPot, selcomPot] = await Promise.all([
-    readChain(),
-    readSnippePot(),
-    readAzamPayPot(),
-    readSelcomPot(),
-  ])
+  const [chain, potsRead] = await Promise.all([readChain(), readReservePots()])
 
   const failures: string[] = []
   if (!chain.ok) failures.push(sanitizeFailure('Chain supply read', chain.error))
-  for (const r of [snippePot, azamPot, selcomPot]) if (r.failure) failures.push(r.failure)
+  failures.push(...potsRead.failures)
 
   let nettingsRead
   try {
@@ -333,19 +360,8 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     failures.push(sanitizeFailure('Obligation ledger queries', e))
   }
 
-  const pots: ReservePot[] = [snippePot.pot, azamPot.pot, selcomPot.pot].filter(
-    (p): p is ReservePot => Boolean(p)
-  )
-  const govt = govtSecuritiesTzs()
-  if (govt > 0) {
-    pots.push({
-      key: 'govt_securities',
-      label: 'Government securities (T-bills)',
-      source: 'env',
-      amountTzs: govt,
-      asOf: new Date().toISOString(),
-    })
-  }
+  const pots = potsRead.pots
+  const govt = pots.find((p) => p.key === 'govt_securities')?.amountTzs ?? 0
 
   if (failures.length > 0 || !nettingsRead) {
     // Incomplete — but never a bare error wall: carry everything that DID

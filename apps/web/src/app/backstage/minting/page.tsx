@@ -28,7 +28,8 @@ import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
 import { SafeMintActions } from './_components/SafeMintActions'
 import { SupplyReconciliationCard } from './_components/SupplyReconciliationCard'
 import { SubmitButton } from '../_components/SubmitButton'
-import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS, SNIPPE_API_KEY } from '@/lib/env'
+import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS } from '@/lib/env'
+import { readReservePots } from '@/lib/attestation'
 
 const SAFE_MINT_THRESHOLD_TZS = 100000
 const DAILY_ISSUANCE_CAP_TZS = Number(process.env.DAILY_ISSUANCE_CAP_TZS ?? '100000000')
@@ -804,25 +805,6 @@ async function getOnChainSupply(): Promise<number | null> {
   }
 }
 
-async function getSnippeBalance(): Promise<number | null> {
-  try {
-    if (!SNIPPE_API_KEY) return null
-    const resp = await fetch('https://api.snippe.sh/v1/payments/balance', {
-      headers: { Authorization: `Bearer ${SNIPPE_API_KEY}` },
-      next: { revalidate: 60 },
-    })
-    const text = await resp.text()
-    if (!text || !text.trim()) return null
-    const json = JSON.parse(text) as { status: string; data?: { available: number | { value: number } } }
-    if (json.status !== 'success' || !json.data) return null
-    const raw = json.data.available
-    return typeof raw === 'object' ? Number((raw as { value: number }).value) : Number(raw)
-  } catch (err) {
-    console.error('[Minting] Failed to fetch Snippe balance:', err)
-    return null
-  }
-}
-
 const PROVIDER_LABEL: Record<string, string> = {
   azampay: 'AzamPay',
   snippe: 'Snippe',
@@ -950,7 +932,7 @@ export default async function MintingPage({
   const { db } = getDb()
 
   // Fetch all deposit requests with related data including mint transaction info
-  const [allDeposits, allReconciliationEntries, onChainSupply, snippeBalance] = await Promise.all([
+  const [allDeposits, allReconciliationEntries, onChainSupply, reserveRead] = await Promise.all([
     db
       .select({
         id: depositRequests.id,
@@ -984,7 +966,9 @@ export default async function MintingPage({
       .from(reconciliationEntries)
       .orderBy(desc(reconciliationEntries.createdAt)),
     getOnChainSupply(),
-    getSnippeBalance(),
+    // Same multi-pot reserve definition as the attestation — a pot-to-pot
+    // treasury move (Snippe → Selcom) must read total-neutral on this page.
+    readReservePots().catch(() => ({ pots: [], failures: ['reserve read unavailable'] })),
   ])
 
   // Orphan PSP payments awaiting review. Fail-soft: until migration
@@ -1074,7 +1058,18 @@ export default async function MintingPage({
   const dbTrackedTotal = totalVolume + reconciliationTotal
   const discrepancy = onChainSupply !== null ? onChainSupply - dbTrackedTotal : null
 
-  // New reserve health formula: Snippe balance = PSP source of truth
+  // Reserve health = ALL pots (Snippe + Selcom + AzamPay book + declared) over
+  // supply — the attestation's own definition via readReservePots().
+  const reservePots = reserveRead.pots.map((p) => ({
+    key: p.key,
+    label: p.label,
+    source: p.source,
+    amountTzs: p.amountTzs,
+  }))
+  const totalReserveTzs = reserveRead.pots.length
+    ? reserveRead.pots.reduce((s, p) => s + p.amountTzs, 0)
+    : null
+
   const dbMintedViaSnippeOnly = allDeposits
     .filter(d => d.status === 'minted' && (d.paymentProvider === 'snippe' || d.paymentProvider === 'snippe_card') && d.mintContractAddress === NTZS_CONTRACT_ADDRESS)
     .reduce((sum, d) => sum + d.amountTzs, 0)
@@ -1127,7 +1122,8 @@ export default async function MintingPage({
         <div className="mb-6">
           <SupplyReconciliationCard
             onChainSupply={onChainSupply}
-            snippeBalance={snippeBalance}
+            pots={reservePots}
+            totalReserveTzs={totalReserveTzs}
             dbMintedViaSnippeOnly={dbMintedViaSnippeOnly}
             pendingMintsTzs={pendingMintsTzs}
           />

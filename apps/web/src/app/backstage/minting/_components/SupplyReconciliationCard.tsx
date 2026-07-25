@@ -2,12 +2,26 @@
 
 import { motion, useReducedMotion } from 'framer-motion'
 
+interface ReservePotView {
+  key: string
+  label: string
+  source: string
+  amountTzs: number
+}
+
 interface SupplyReconciliationCardProps {
   onChainSupply: number | null
-  snippeBalance: number | null
+  /** All reserve pots (Snippe, Selcom, AzamPay book, declared) — the
+   * attestation's own definition, so a pot-to-pot treasury move never
+   * changes the health number shown here. */
+  pots: ReservePotView[]
+  totalReserveTzs: number | null
   dbMintedViaSnippeOnly: number
   pendingMintsTzs: number
 }
+
+/** Short display name for a pot ("Snippe settled balance" → "Snippe"). */
+const potShortName = (label: string) => label.split(' ')[0]
 
 function generateDots(count: number, radius: number, cx: number, cy: number) {
   const dots = []
@@ -22,7 +36,8 @@ function generateDots(count: number, radius: number, cx: number, cy: number) {
 
 export function SupplyReconciliationCard({
   onChainSupply,
-  snippeBalance,
+  pots,
+  totalReserveTzs,
   dbMintedViaSnippeOnly,
   pendingMintsTzs,
 }: SupplyReconciliationCardProps) {
@@ -34,8 +49,8 @@ export function SupplyReconciliationCard({
   const innerDots = generateDots(40, 148, CX, CY)
 
   const reserveHealth =
-    onChainSupply && onChainSupply > 0 && snippeBalance !== null
-      ? (snippeBalance / onChainSupply) * 100
+    onChainSupply && onChainSupply > 0 && totalReserveTzs !== null
+      ? (totalReserveTzs / onChainSupply) * 100
       : null
 
   const healthColor =
@@ -61,7 +76,9 @@ export function SupplyReconciliationCard({
       {/* Header */}
       <div className="px-6 pt-5 pb-0 flex items-center justify-between">
         <h2 className="text-base font-semibold text-white">Reserve Health</h2>
-        <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider">Base Mainnet · Snippe PSP</span>
+        <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider">
+          Base Mainnet · {pots.length > 0 ? pots.map((p) => potShortName(p.label)).join(' + ') : 'reserve unavailable'}
+        </span>
       </div>
 
       {/* Dots + hero supply */}
@@ -160,11 +177,15 @@ export function SupplyReconciliationCard({
         transition={{ delay: 0.7, duration: 0.4 }}
       >
         <div className="sm:pr-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Snippe Reserve</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Total Reserve</p>
           <p className="mt-1 text-sm font-bold text-emerald-400 tabular-nums">
-            {snippeBalance !== null ? snippeBalance.toLocaleString() : '—'}
+            {totalReserveTzs !== null ? totalReserveTzs.toLocaleString() : '—'}
           </p>
-          <p className="text-[10px] text-zinc-700">PSP collection balance</p>
+          <p className="text-[10px] text-zinc-700">
+            {pots.length > 0
+              ? pots.map((p) => `${potShortName(p.label)} ${Math.round(p.amountTzs).toLocaleString()}`).join(' · ')
+              : 'no pots readable'}
+          </p>
         </div>
         <div className="sm:px-8">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Reserve Health</p>
