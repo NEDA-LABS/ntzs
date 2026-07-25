@@ -23,6 +23,15 @@ export function azampayPayoutFee(receiveAmountTzs: number): number {
  * government levy may apply separately "where applicable" — confirm for
  * wallet/bank sends. Selcom-to-Selcom (SB2SELCOM) is FREE.
  *
+ * CONFIRMED for Lipa/TanQR payouts (25 Jul 2026): the dashboard's dedicated
+ * "Lipa/TanQR" charges table matches these tiers verbatim through the
+ * 5,000,001–20,000,000 → 2,550 band, and the first live lipa payment (ref
+ * 202607250630: 1,000 principal → 30 charged, "Fee 23, VAT 5, Ex Duty 2")
+ * matched to the shilling. The >20M tiers below come from the send-money
+ * columns only. ⚠ Bill-payment ("Pay Bills") tariff is a separate dashboard
+ * table, not yet captured — bill quotes use these tiers as an estimate until
+ * it is.
+ *
  * ⚠ This is the published production tariff — the SANDBOX returns different
  * (inflated) fees, so treat this as the estimate and the disbursement
  * response's `total_charges` as authoritative for the actual amount charged.
