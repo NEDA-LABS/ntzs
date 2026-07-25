@@ -182,8 +182,20 @@ export async function POST(request: NextRequest) {
     transactionId: payload.transactionId,
   })
 
+  // Explicit columns — keeps this webhook immune to schema columns that
+  // exist in code before their migration is applied.
   const [burn] = await db
-    .select()
+    .select({
+      id: burnRequests.id,
+      amountTzs: burnRequests.amountTzs,
+      payoutStatus: burnRequests.payoutStatus,
+      platformFeeTzs: burnRequests.platformFeeTzs,
+      feeTxHash: burnRequests.feeTxHash,
+      feeRecipientAddress: burnRequests.feeRecipientAddress,
+      nedaFeeTzs: burnRequests.nedaFeeTzs,
+      nedaFeeTxHash: burnRequests.nedaFeeTxHash,
+      walletId: burnRequests.walletId,
+    })
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
     .limit(1)

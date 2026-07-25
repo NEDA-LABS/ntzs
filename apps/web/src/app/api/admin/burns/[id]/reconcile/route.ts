@@ -8,6 +8,28 @@ import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { burnRequests, wallets } from '@ntzs/db'
 
+// Explicit column set (both fetch sites) — keeps this route immune to schema
+// columns that exist in code before their migration is applied.
+const RECONCILE_BURN_COLUMNS = {
+  id: burnRequests.id,
+  status: burnRequests.status,
+  payoutStatus: burnRequests.payoutStatus,
+  payoutError: burnRequests.payoutError,
+  payoutReference: burnRequests.payoutReference,
+  recipientPhone: burnRequests.recipientPhone,
+  txHash: burnRequests.txHash,
+  amountTzs: burnRequests.amountTzs,
+  platformFeeTzs: burnRequests.platformFeeTzs,
+  feeTxHash: burnRequests.feeTxHash,
+  feeRecipientAddress: burnRequests.feeRecipientAddress,
+  nedaFeeTzs: burnRequests.nedaFeeTzs,
+  nedaFeeTxHash: burnRequests.nedaFeeTxHash,
+  walletId: burnRequests.walletId,
+  userId: burnRequests.userId,
+  createdAt: burnRequests.createdAt,
+  updatedAt: burnRequests.updatedAt,
+} as const
+
 /**
  * POST /api/admin/burns/:id/reconcile
  *
@@ -58,7 +80,7 @@ export async function POST(
   const { db } = getDb()
 
   const [burn] = await db
-    .select()
+    .select(RECONCILE_BURN_COLUMNS)
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
     .limit(1)
@@ -313,7 +335,7 @@ export async function GET(
 
   const { db } = getDb()
   const [burn] = await db
-    .select()
+    .select(RECONCILE_BURN_COLUMNS)
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
     .limit(1)
