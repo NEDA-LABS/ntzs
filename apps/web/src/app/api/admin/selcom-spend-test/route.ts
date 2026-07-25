@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { writeAuditLog } from '@/lib/audit'
-import { payBill, payLipa, checkPayoutStatus } from '@/lib/psp/selcom'
+import { payBill, payLipa, checkPayoutStatus, queryTransactionRaw } from '@/lib/psp/selcom'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -27,6 +27,22 @@ const MAX_TEST_AMOUNT_TZS = 5000
  * (from the custodial account) when the rails are live; amount is capped at
  * 5,000 TZS and every call is audit-logged.
  */
+/**
+ * GET ?reference=<transId> — re-check a previous dispatch's authoritative
+ * status. Returns both the mapped status and Selcom's raw query payload
+ * (settlement details / charges / names live there when they exist).
+ * Read-only; no flags required.
+ */
+export async function GET(request: NextRequest) {
+  await requireAnyRole(['super_admin'])
+  const reference = request.nextUrl.searchParams.get('reference')?.trim()
+  if (!reference) {
+    return NextResponse.json({ error: 'reference query param required' }, { status: 400 })
+  }
+  const [query, raw] = await Promise.all([checkPayoutStatus(reference), queryTransactionRaw(reference)])
+  return NextResponse.json({ reference, query, raw })
+}
+
 export async function POST(request: NextRequest) {
   const admin = await requireAnyRole(['super_admin'])
 

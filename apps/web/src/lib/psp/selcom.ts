@@ -682,6 +682,25 @@ export interface SelcomPayoutStatusResponse {
 }
 
 /**
+ * Raw transaction query — the untranslated Selcom answer, for admin/evidence
+ * surfaces (the spend-test re-check box) where the full payload matters
+ * (settlement details, charges, recipient name if their response carries it).
+ */
+export async function queryTransactionRaw(
+  reference: string
+): Promise<{ httpStatus: number; body: SelcomTransactionResult } | { error: string }> {
+  try {
+    const { headers } = signRequest([{ name: 'transId', value: reference }])
+    const url = `${getBaseUrl()}/v1/transaction/query?transId=${encodeURIComponent(reference)}`
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
+    const body = (await response.json()) as SelcomTransactionResult
+    return { httpStatus: response.status, body }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'query failed' }
+  }
+}
+
+/**
  * Query the authoritative status of a disbursement.
  * GET /v1/transaction/query?transId=<transId>
  *
@@ -690,11 +709,12 @@ export interface SelcomPayoutStatusResponse {
  */
 export async function checkPayoutStatus(reference: string): Promise<SelcomPayoutStatusResponse> {
   try {
-    const { headers } = signRequest([{ name: 'transId', value: reference }])
-    const url = `${getBaseUrl()}/v1/transaction/query?transId=${encodeURIComponent(reference)}`
-
-    const response = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
-    const result = (await response.json()) as SelcomTransactionResult
+    const raw = await queryTransactionRaw(reference)
+    if ('error' in raw) {
+      console.error('[selcom] payout status check error:', raw.error)
+      return { status: 'unknown' }
+    }
+    const result = raw.body
 
     const status = String(result.data?.status ?? '').toUpperCase()
     if (result.result === 'SUCCESS' || status === 'COMPLETED' || result.resultcode === '000') {
