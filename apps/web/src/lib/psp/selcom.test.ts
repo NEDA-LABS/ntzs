@@ -155,6 +155,34 @@ describe('postSignedTransaction non-JSON answers (via payLipa)', () => {
   })
 })
 
+describe('checkPayoutStatus FAILED mapping (live payload shape, 25 Jul)', () => {
+  it('maps FAIL and drops the generic envelope message as a failure reason', async () => {
+    const { checkPayoutStatus } = await import('./selcom')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: true,
+          error_code: '000',
+          message: 'Transaction status retrieved.',
+          result: 'FAIL',
+          resultcode: '200',
+          data: { transId: '202607259640', status: 'FAILED', amount: '1030.00' },
+        }),
+      })
+    )
+    try {
+      const r = await checkPayoutStatus('202607259640')
+      expect(r.status).toBe('failed')
+      expect(r.failureReason).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe('bill-pay / lipa field builders (order defines body + signature)', () => {
   const signingStringFor = (fields: ReturnType<typeof buildBillPayFields>) => {
     const { headers, timestamp } = signRequest(fields)
