@@ -61,6 +61,16 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.10.0 (25 Jul 2026)
+
+### Spend — pay any Lipa Namba or bill in Tanzania with nTZS
+
+Your users can now **spend** their nTZS directly: `POST /api/v1/spend/quote` + `POST /api/v1/spend` burn the user's balance and pay a **merchant Lipa Namba on any network** (M-Pesa, Tigo, Airtel, Selcom tills) or a **biller** — LUKU electricity, GEPG government control numbers, DSTV/AzamTV/StarTimes, water utilities, airtime and more. Settlement is typically seconds, failures auto-revert the burn, and the quote returns the destination's **registered name** (merchant tills and bill accounts alike — a LUKU meter number resolves to its registered customer before the user pays). Spend is **quote-first by design**: execution always requires a `quoteId`, so every user sees who they're paying and the exact fees before money moves. See [Spend (Pay Merchants & Bills)](#spend-pay-merchants--bills).
+
+> Rollout: the endpoints return `503 spend_disabled` until the rails are switched on for your environment — integrate now, flip later with no code change.
+
+---
+
 ## What's New — v1.9.0 (23 Jul 2026)
 
 ### International signups + no more dead-ends
@@ -667,6 +677,94 @@ Amounts ≥ 1,000,000 TZS queue for admin approval instead (`status: "requested"
 | `insufficient_balance` | 400 | Balance below burn amount | Show shortfall (`details.available` / `details.required`) |
 
 Payout failures after a successful burn are handled server-side (auto-revert or operator reconciliation); the response's `payoutStatus` and `message` describe the state — surface `message` verbatim when present.
+
+---
+
+## Spend (Pay Merchants & Bills)
+
+Burns the user's nTZS and pays a **merchant Lipa Namba** (any network — M-Pesa, Tigo, Airtel, Selcom tills) or a **biller** (LUKU electricity, GEPG government control numbers, DSTV/AzamTV, water, airtime and more) directly from the reserve. Settlement is typically seconds.
+
+**Quote-first by design.** Unlike withdrawals (where quote enforcement was phased in), `POST /api/v1/spend` **always requires a `quoteId`** — there is no un-quoted path. The quote returns the destination's registered name and the full fee breakdown; your confirmation screen must show both before executing.
+
+`amountTzs` in both calls is the **principal** — what the till or biller receives. The burn is `principal + selcomFee + platformFee` (no gross-up division; fees are additive).
+
+> Availability: these endpoints return `503 spend_disabled` / `spend_kind_disabled` until the rails are enabled for the environment. Minimum principal: **500 TZS**.
+
+### `POST /api/v1/spend/quote`
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `userId` | string | ✓ | Your user's nTZS user id |
+| `kind` | string | ✓ | `lipa` (merchant till) or `bill` (biller) |
+| `amountTzs` | number | ✓ | Principal the destination receives, ≥ 500 |
+| `payNumber` | string | lipa | Merchant Lipa Namba (4–12 digits) |
+| `network` | string | – | Optional network hint — leave unset unless instructed |
+| `utilityCode` | string | bill | Biller code, e.g. `LUKU`, `GEPG`, `DSTV`, `TOP` (airtime). Unknown codes return `unknown_biller` with the full `supportedCodes` list |
+| `utilityRef` | string | bill | The reference at the biller (meter / control / smartcard number) — validated against the biller's format before any lookup |
+
+#### Response `200 OK`
+
+```json
+{
+  "quoteId": "eyJ2IjoxLCJr…",
+  "expiresAt": "2026-07-25T14:05:00.000Z",
+  "expiresInSeconds": 300,
+  "kind": "lipa",
+  "target": { "payNumber": "61115582", "network": null },
+  "recipientName": "ENZI COFFEE COMPANY LIMITED",
+  "principalTzs": 1000,
+  "burnAmountTzs": 1035,
+  "fees": { "selcomFeeTzs": 30, "platformFeeTzs": 5, "totalFeeTzs": 35 },
+  "balance": { "availableTzs": 12000, "sufficient": true }
+}
+```
+
+`recipientName` is the destination's **registered name** (merchant tills and most bill accounts — e.g. a LUKU meter resolves to its registered customer). When the registry has no answer, `recipientName` is `null` and `nameUnavailableReason` explains why — show the raw number with an "unverified destination" warning. `quoteId` is omitted when `balance.sufficient` is `false`.
+
+### `POST /api/v1/spend`
+
+Execute at the quoted terms. Send the **same** destination fields plus the `quoteId`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `userId` | string | ✓ | Same user the quote was issued for |
+| `quoteId` | string | ✓ | From the quote — **always required** |
+| `kind`, `amountTzs`, `payNumber` / `utilityCode` + `utilityRef`, `network` | | ✓ | Must match the quoted terms exactly |
+
+#### Response `201 Created`
+
+```json
+{
+  "id": "b3f1…",
+  "status": "burned",
+  "payoutStatus": "completed",
+  "reference": "202607259999",
+  "kind": "lipa",
+  "target": { "payNumber": "61115582", "network": null },
+  "recipientName": "ENZI COFFEE COMPANY LIMITED",
+  "principalTzs": 1000,
+  "burnAmountTzs": 1035,
+  "fees": { "selcomFeeTzs": 30, "platformFeeTzs": 5, "totalFeeTzs": 35 }
+}
+```
+
+`payoutStatus` is usually `completed` within the response (settlement measured at ~4s) or `pending` — pending spends settle server-side within a minute and failures **auto-revert the burn** (the user's balance is restored; no partner action needed).
+
+#### Errors
+
+| Error | Status | Meaning | UI action |
+|-------|--------|---------|-----------|
+| `quote_required` | 400 | No `quoteId` sent | Always fetch a quote first — spend has no un-quoted path |
+| `invalid_quote` | 400 | Expired / malformed / bad signature | Fetch a fresh quote, re-confirm |
+| `quote_mismatch` | 400 | user/destination/amount differ from the quote | Fetch a fresh quote |
+| `quote_stale` | 409 | Pricing changed since the quote was issued | Fetch a fresh quote, re-confirm the new price |
+| `unknown_biller` | 400 | `utilityCode` not in the catalogue | Offer the codes from `supportedCodes` |
+| `invalid_utility_ref` | 400 | Reference fails the biller's format | Surface `message` (e.g. "Meter No must be exactly 11 digits") |
+| `insufficient_balance` | 400 | Balance below burn amount | Show shortfall |
+| `amount_too_large` | 400 | Burn total ≥ 1,000,000 TZS | Route the user to support |
+| `spend_disabled` / `spend_kind_disabled` | 503 | Rail not enabled on this environment | Hide the feature |
 
 ---
 

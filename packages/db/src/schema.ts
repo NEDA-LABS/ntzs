@@ -299,6 +299,20 @@ export const burnRequests = pgTable(
     // Set for merchant financing disbursements → the lender's treasury wallet.
     burnFromAddress: text('burn_from_address'),
 
+    // Rail that carries (or carried) the fiat leg (drizzle/0061 — applied).
+    payoutProvider: pspProvider('payout_provider'),
+    // PSP charge funded from the reserve for this payout (drizzle/0061).
+    pspFeeTzs: bigint('psp_fee_tzs', { mode: 'number' }),
+
+    // What the fiat leg pays (drizzle/0064): 'wallet' = mobile-money payout
+    // (classic withdrawal), 'lipa' = merchant till, 'bill' = biller payment.
+    payoutKind: text('payout_kind').notNull().default('wallet'),
+    // Spend-target descriptor + disclosure snapshot for lipa/bill rows
+    // (drizzle/0064): { kind, payNumber?, network?, utilityCode?, utilityRef?,
+    // recipientName?, principalTzs, selcomFeeEstimateTzs, actualChargesTzs?,
+    // selcomReceipt? }.
+    spend: jsonb('spend'),
+
     // Links this burn to a Ramp API settlement (off-ramp leg), so PSP webhooks
     // can resume the ramp flow. Plain uuid (app-level link to ramp_settlements).
     rampSettlementId: uuid('ramp_settlement_id'),
