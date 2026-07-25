@@ -688,6 +688,8 @@ Burns the user's nTZS and pays a **merchant Lipa Namba** (any network — M-Pesa
 
 `amountTzs` in both calls is the **principal** — what the till or biller receives. The burn is `principal + selcomFee + platformFee` (no gross-up division; fees are additive).
 
+Fees follow Selcom's published tariffs by destination type: Lipa payments use the Lipa/TanQR table (e.g. 30 TZS on a 1,000 payment), and bill fees vary by biller group — **government payments (GEPG, DAWASA, NHC, Traffic Fine, Tarura, water bills) are FREE up to 20,000 TZS**, while commercial billers like LUKU use a cheaper commercial tier (12 TZS on 1,000). The quote always returns the exact fee — display it, never hardcode it.
+
 > Availability: these endpoints return `503 spend_disabled` / `spend_kind_disabled` until the rails are enabled for the environment. Minimum principal: **500 TZS**.
 
 ### `POST /api/v1/spend/quote`

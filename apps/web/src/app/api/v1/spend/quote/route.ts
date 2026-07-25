@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
   const partnerFeePercentRaw = partnerRow ? parseFloat(String(partnerRow.feePercent ?? '0')) : 0
   const feePercent = partnerFeePercentRaw > 0 ? partnerFeePercentRaw : DEFAULT_PLATFORM_FEE_PERCENT
 
-  const totals = computeSpendTotals(principalTzs, feePercent)
+  const totals = computeSpendTotals(kind, principalTzs, feePercent, utilityCode)
 
   // Caps behave exactly like execution (applied to the burn total).
   const perTxnErr = checkPerTransactionCap(totals.burnAmountTzs)
