@@ -30,14 +30,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  let body: { externalId: string; email: string; name?: string; phone?: string; nidaNumber?: string }
+  let body: { externalId: string; email: string; name?: string; phone?: string; nidaNumber?: string; country?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { externalId, email, name, phone, nidaNumber } = body
+  const { externalId, email, name, phone, nidaNumber, country } = body
 
   if (!externalId || !email) {
     return NextResponse.json(
@@ -134,6 +134,96 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // ── International signup (country ≠ TZ): no NIDA exists — identity comes
+  // from document verification AFTER creation. The user + mapping and a
+  // pending doc-verification case are created NOW; the wallet only once the
+  // capture verdict approves the case (same 202 contract as Tier-C review,
+  // resolved by the idempotent re-call). Uniqueness of the document identity
+  // is enforced at the webhook, where the ID number is first known. ─────────
+  const countryCode = (country ?? 'TZ').toUpperCase()
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return NextResponse.json(
+      { error: 'country must be an ISO 3166-1 alpha-2 code (e.g. TZ, KE).', code: 'invalid_country' },
+      { status: 400 }
+    )
+  }
+  if (countryCode !== 'TZ') {
+    if (phone && !/^\+?[1-9]\d{6,14}$/.test(phone.replace(/[\s()-]/g, ''))) {
+      return NextResponse.json(
+        { error: 'phone must be international E.164 format (e.g. +254712345678).', code: 'phone_invalid' },
+        { status: 400 }
+      )
+    }
+
+    const neonAuthUserId = `waas_${partner.id}_${externalId}`
+    const [newIntlUser] = await db
+      .insert(users)
+      .values({ neonAuthUserId, email, name: name || null, phone: phone || null, role: 'end_user' })
+      .onConflictDoNothing()
+      .returning({ id: users.id, email: users.email, name: users.name, phone: users.phone })
+
+    let intlUser = newIntlUser
+    if (!intlUser) {
+      const [byAuthId] = await db
+        .select({ id: users.id, email: users.email, name: users.name, phone: users.phone })
+        .from(users)
+        .where(eq(users.neonAuthUserId, neonAuthUserId))
+        .limit(1)
+      if (!byAuthId) {
+        return NextResponse.json({ error: 'Failed to create or resolve partner-scoped user' }, { status: 500 })
+      }
+      intlUser = byAuthId
+    }
+
+    await db.insert(kycCases).values({
+      userId: intlUser.id,
+      nationalId: null,
+      status: 'pending',
+      provider: 'smileid_docv',
+      country: countryCode,
+      reviewReason: `International signup (${countryCode}) — identity pending document verification`,
+    })
+
+    let intlSeed = partner.encryptedHdSeed
+    if (!intlSeed) {
+      const { encryptedSeed: newSeed } = generatePartnerSeed()
+      await db
+        .update(partners)
+        .set({ encryptedHdSeed: newSeed, updatedAt: new Date() })
+        .where(eq(partners.id, partner.id))
+      intlSeed = newSeed
+    }
+
+    // Claim the wallet index now so the eventual address stays deterministic.
+    const [intlIndex] = await db
+      .update(partners)
+      .set({ nextWalletIndex: sql`${partners.nextWalletIndex} + 1`, updatedAt: new Date() })
+      .where(eq(partners.id, partner.id))
+      .returning({ walletIndex: partners.nextWalletIndex })
+
+    await db
+      .insert(partnerUsers)
+      .values({ partnerId: partner.id, userId: intlUser.id, externalId, walletIndex: (intlIndex?.walletIndex ?? 1) - 1 })
+      .onConflictDoNothing()
+
+    return NextResponse.json(
+      {
+        id: intlUser.id,
+        externalId,
+        email: intlUser.email,
+        name: intlUser.name,
+        phone: intlUser.phone,
+        walletAddress: null,
+        balance: 0,
+        kycStatus: 'pending_review',
+        code: 'kyc_pending_review',
+        nextStep: 'kyc_session',
+        message: `Identity verification required: open a document-verification session (POST /api/v1/users/${intlUser.id}/kyc/session) and complete the capture to activate the wallet.`,
+      },
+      { status: 202 }
+    )
+  }
+
   // STRUCTURAL PREREQUISITE (BoT Parameter 8): no end-user wallet is ever
   // issued without a KYC-verified identity — independent of any pause flag.
   // Partners get compliant wallets by construction. (This gate sits BELOW the
@@ -196,12 +286,12 @@ export async function POST(request: NextRequest) {
       { status: 503 }
     )
   }
-  if (verdict.outcome === 'rejected') {
-    return NextResponse.json(
-      { error: verdict.userMessage, code: verdict.code },
-      { status: 400 }
-    )
-  }
+  // v1.9 soft landing: a 'rejected' pair verdict (typically a telco name
+  // contradiction — SIMs registered to a parent/spouse are common) no longer
+  // dead-ends the user. The user + mapping + a pending case carrying the
+  // contradiction evidence are created below, and document verification (the
+  // session endpoint) takes over; the webhook's telco-corroboration guard
+  // keeps a human in the loop for exactly these cases.
 
   // Create new user (both for instant approval and Tier-C review — a review
   // user exists without a wallet until Backstage approves the case).
@@ -323,7 +413,11 @@ export async function POST(request: NextRequest) {
         balance: 0,
         kycStatus: 'pending_review',
         code: 'kyc_pending_review',
-        message: verdict.userMessage,
+        nextStep: 'kyc_session',
+        message:
+          verdict.outcome === 'rejected'
+            ? 'We could not verify this NIDA and phone together automatically. Continue with document verification: open a session (POST /api/v1/users/:id/kyc/session) and photograph the NIDA card.'
+            : verdict.userMessage,
       },
       { status: 202 }
     )
