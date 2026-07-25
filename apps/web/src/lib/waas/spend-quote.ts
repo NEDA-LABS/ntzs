@@ -13,12 +13,14 @@ import { DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
  *
  * Fee model: burn = principal + selcomFee + platformFee.
  *  - principal      → what the till/biller receives
- *  - selcomFee      → Selcom's charge, funded from the reserve. Estimated
- *                     from the published send-money tariff — the first live
- *                     lipa payment's measured charge (TZS 30 on 1,000, ref
- *                     202607250630) matches that tariff exactly. Actuals are
- *                     recorded per transaction at settlement; drift is logged.
- *                     ⚠ Replace with Selcom's official spend tariff when it arrives.
+ *  - selcomFee      → Selcom's charge, funded from the reserve. For LIPA this
+ *                     is Selcom's official published tariff, confirmed three
+ *                     ways (dashboard "Lipa/TanQR" charges table 25 Jul; the
+ *                     6 Jul tariff capture; the first live payment's measured
+ *                     charge — see selcom-fees.ts). For BILLS the dashboard
+ *                     has a separate "Pay Bills" table not yet captured, so
+ *                     the same tiers serve as the estimate. Actual charges
+ *                     are recorded per transaction at settlement.
  *  - platformFee    → our margin (partner feePercent, minted to treasury)
  */
 
