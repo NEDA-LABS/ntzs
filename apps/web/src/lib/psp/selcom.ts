@@ -536,13 +536,14 @@ async function postSignedTransaction(
 
 // ─── Bill pay + Lipa (merchant) payouts — "spend your nTZS" rails ─────────────
 // Endpoints from Selcom's "SB API for NEDA Labs with Lipa and Bill Pay"
-// Postman collection (Dhimant, 24 Jul 2026). Selcom-side deployment in
-// progress — exercise via POST /api/admin/selcom-spend-test (flag-gated)
-// before wiring any user-facing flow. ⚠ Fee tariffs and the utilityCode
-// catalogue are pending from Selcom.
+// Postman collection (Dhimant, 24 Jul 2026). Lipa payout is ALL-NETWORKS
+// (M-Pesa/Tigo/Airtel tills too — Dhimant, 25 Jul). Selcom-side endpoint
+// permissioning for our credential pending — exercise via
+// POST /api/admin/selcom-spend-test (flag-gated) before wiring any
+// user-facing flow. ⚠ Fee tariffs still pending from Selcom.
 
 export interface SelcomBillPayRequest {
-  /** Biller/utility code, e.g. 'ATOP' (airtime top-up) — catalogue ⚠ pending. */
+  /** Biller/utility code — catalogue + ref validation in selcom-billers.ts. */
   utilityCode: string
   /** The bill/control/reference number at the biller. */
   utilityRef: string
