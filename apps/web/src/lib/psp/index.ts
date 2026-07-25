@@ -155,13 +155,78 @@ function azamPayLookupConfigured(): boolean {
   )
 }
 
+// ─── Lookup volume guard (cache + restriction breaker) ───────────────────────
+//
+// Every quote, partner lookup call and deposit form hits this chain, and on
+// 24 Jul Selcom temporarily restricted our credential for "excessive lookup
+// usage". Two defenses, both per warm lambda instance (which is exactly where
+// high-volume traffic lives):
+//   1. Result cache — a number's registered name doesn't change day to day;
+//      hits are held 24h, misses 10min (transient failures must not stick).
+//   2. Circuit breaker — when Selcom answers with a rate-limit/restriction
+//      signal, stop sending it lookups for 15 minutes instead of hammering a
+//      closed door (which risks extending the restriction).
+
+const NAME_HIT_TTL_MS = 24 * 3600_000
+const NAME_MISS_TTL_MS = 10 * 60_000
+const RESTRICTION_BACKOFF_MS = 15 * 60_000
+const NAME_CACHE_MAX = 5000
+const nameCache = new Map<string, { name: string | null; idNumber?: string; exp: number }>()
+let selcomLookupPausedUntil = 0
+
+export function _resetLookupGuardForTests(): void {
+  nameCache.clear()
+  selcomLookupPausedUntil = 0
+}
+
 export async function lookupRecipientName(
   phone: string
 ): Promise<{ name: string | null; idNumber?: string }> {
-  if (selcomLookupConfigured()) {
+  let key: string | null = null
+  try {
+    key = snippe.normalizePhone(phone)
+  } catch {
+    key = null
+  }
+  const now = Date.now()
+
+  if (key) {
+    const cached = nameCache.get(key)
+    if (cached && cached.exp > now) {
+      return { name: cached.name, idNumber: cached.idNumber }
+    }
+  }
+
+  const result = await lookupRecipientNameUncached(phone, now)
+
+  if (key) {
+    if (nameCache.size >= NAME_CACHE_MAX) {
+      const oldest = nameCache.keys().next().value
+      if (oldest !== undefined) nameCache.delete(oldest)
+    }
+    nameCache.set(key, {
+      name: result.name,
+      idNumber: result.idNumber,
+      exp: now + (result.name ? NAME_HIT_TTL_MS : NAME_MISS_TTL_MS),
+    })
+  }
+  return result
+}
+
+async function lookupRecipientNameUncached(
+  phone: string,
+  now: number
+): Promise<{ name: string | null; idNumber?: string }> {
+  if (selcomLookupConfigured() && now >= selcomLookupPausedUntil) {
     try {
       const r = await selcom.lookupRecipientName(phone)
       if (r.name) return { name: r.name }
+      if (r.reason && /http:(403|429)|restricted|excessive|rate.?limit/i.test(r.reason)) {
+        selcomLookupPausedUntil = now + RESTRICTION_BACKOFF_MS
+        console.warn(
+          `[psp] selcom lookup restricted — pausing selcom lookups for ${RESTRICTION_BACKOFF_MS / 60_000} min: ${r.reason}`
+        )
+      }
     } catch {
       // fall through to the next provider
     }
