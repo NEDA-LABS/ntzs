@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { accountLookup, detectWalletFiCode, normalizePhone } from '@/lib/psp/selcom'
+import { accountLookup, nedaAccountLookup, detectWalletFiCode, normalizePhone } from '@/lib/psp/selcom'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -53,8 +53,9 @@ export async function GET(request: NextRequest) {
   } else {
     mode = 'account'
     account = (accountRaw as string).replace(/\s+/g, '')
-    if (!/^\d{4,20}$/.test(account)) {
-      return NextResponse.json({ error: 'invalid account: digits only (4–20)' }, { status: 400 })
+    // Alphanumeric: TARURA vehicle plates etc. are valid bill refs.
+    if (!/^[A-Za-z0-9]{3,20}$/.test(account)) {
+      return NextResponse.json({ error: 'invalid account: letters/digits only (3–20)' }, { status: 400 })
     }
   }
 
@@ -62,19 +63,37 @@ export async function GET(request: NextRequest) {
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean)
+  const bankOverride = request.nextUrl.searchParams.get('bank')?.trim().toUpperCase() || null
 
-  // Candidates: for phones — the shortcode-table code for this network plus
-  // operator spellings; for raw accounts (tills etc.) — bank=SELCOM, which is
-  // the vocabulary the lookup endpoint answered for wallets. ?codes= extends.
-  const candidates =
-    mode === 'phone'
-      ? [...new Set([...(detected ? [detected] : []), 'SELCOM', 'VODACOM', 'MPESA', ...extra])]
-      : [...new Set(['SELCOM', ...extra])]
-
-  const attempts: Array<{ bank: string; name: string | null; operator?: string; reason?: string }> = []
-  for (const bank of candidates) {
+  // Attempts run against BOTH lookup endpoints where sensible:
+  //  - legacy GET /v1/account/lookup — inter-transfer scope (wallets, banks,
+  //    Selcom-to-Selcom); per Selcom, Lipa + Pay Bill are NOT enabled here.
+  //  - POST /v1/account/neda-lookup — adds SB2LIPA (merchant tills) and
+  //    biller codes (e.g. LUKU meter → owner).
+  // ?bank= pins a single code (bill-ref validation); ?codes= extends defaults.
+  type Attempt = { endpoint: 'neda-lookup' | 'lookup'; bank: string; name: string | null; operator?: string; reason?: string }
+  const attempts: Attempt[] = []
+  const runNeda = async (bank: string) => {
+    const r = await nedaAccountLookup(bank, account)
+    attempts.push({ endpoint: 'neda-lookup', bank, name: r.name, operator: r.operator, reason: r.reason })
+  }
+  const runLegacy = async (bank: string) => {
     const r = await accountLookup(bank, account)
-    attempts.push({ bank, name: r.name, operator: r.operator, reason: r.reason })
+    attempts.push({ endpoint: 'lookup', bank, name: r.name, operator: r.operator, reason: r.reason })
+  }
+
+  if (mode === 'phone') {
+    for (const bank of [...new Set([...(detected ? [detected] : []), 'SELCOM', 'VODACOM', 'MPESA', ...extra])]) {
+      await runLegacy(bank)
+    }
+  } else if (bankOverride) {
+    await runNeda(bankOverride)
+    await runLegacy(bankOverride)
+  } else {
+    for (const bank of [...new Set(['SB2LIPA', 'SELCOM', ...extra])]) {
+      await runNeda(bank)
+    }
+    await runLegacy('SELCOM')
   }
 
   const working = attempts.filter((a) => a.name)
@@ -87,7 +106,7 @@ export async function GET(request: NextRequest) {
     attempts,
     conclusion:
       working.length > 0
-        ? `Name resolves with bank=${working.map((w) => w.bank).join(', ')} — canonicalize this in detectWalletFiCode/lookup mapping.`
+        ? `Name resolves via ${working.map((w) => `${w.endpoint}:${w.bank}`).join(', ')} — canonicalize this in the lookup mapping.`
         : 'No candidate resolved a name — share this JSON output; the per-attempt reasons identify the next step.',
   })
 }
