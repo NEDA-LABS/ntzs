@@ -803,6 +803,54 @@ export async function accountLookup(fiCode: string, account: string, amount?: nu
   }
 }
 
+/** Field order defines body + signature — exactly the collection's order. */
+export function buildNedaLookupFields(bank: string, account: string, transId: string): SignedField[] {
+  return [
+    { name: 'bank', value: bank },
+    { name: 'account', value: account },
+    { name: 'transId', value: transId },
+  ]
+}
+
+/**
+ * Extended lookup — POST /v1/account/neda-lookup (Selcom collection, 25 Jul).
+ * The legacy GET /v1/account/lookup is inter-transfer-scoped (wallets, banks,
+ * Selcom-to-Selcom); per Selcom "Lipa and Pay Bill not enabled" there. This
+ * endpoint adds, via the `bank` vocabulary in their example body:
+ *   SB2LIPA           → merchant Lipa tills (any network)
+ *   <utilityCode>     → bill accounts, e.g. LUKU meter → registered owner
+ *   SELCOM | CRDB | … → same inter-transfer codes as legacy
+ * Never throws — returns { name: null, reason } on any failure.
+ */
+export async function nedaAccountLookup(bank: string, account: string): Promise<SelcomAccountLookup> {
+  try {
+    const { headers, body } = signRequest(buildNedaLookupFields(bank, account, makeNumericTransId()))
+    const response = await fetch(`${getBaseUrl()}/v1/account/neda-lookup`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8_000),
+    })
+    const result = (await response.json()) as {
+      success?: boolean
+      resultcode?: string
+      message?: string
+      data?: { accountName?: string; operator?: string; charges?: unknown[]; totalCharges?: number }
+    }
+    const d = result.data
+    if (!d || !d.accountName) {
+      const reason = `http:${response.status} resultcode:${result.resultcode ?? 'n/a'} message:${result.message ?? 'n/a'}`
+      console.warn('[selcom] nedaAccountLookup no name', { bank, reason })
+      return { name: null, reason }
+    }
+    return { name: d.accountName, operator: d.operator, charges: d.totalCharges }
+  } catch (err) {
+    const reason = `transport: ${err instanceof Error ? err.message : String(err)}`
+    console.warn('[selcom] nedaAccountLookup failed (non-fatal):', reason)
+    return { name: null, reason }
+  }
+}
+
 export interface SelcomRecipientInfo {
   name: string | null
   idNumber?: string

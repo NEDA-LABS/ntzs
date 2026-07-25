@@ -209,6 +209,15 @@ describe('bill-pay / lipa field builders (order defines body + signature)', () =
     expect(verifies).toBe(true)
   })
 
+  it('neda-lookup: bank, account, transId — exactly the collection order', async () => {
+    const { buildNedaLookupFields } = await import('./selcom')
+    const fields = buildNedaLookupFields('SB2LIPA', '61115582', '202607250001')
+    expect(fields.map((f) => f.name)).toEqual(['bank', 'account', 'transId'])
+    const { verifies, signedFields } = signingStringFor(fields)
+    expect(signedFields).toBe('bank,account,transId')
+    expect(verifies).toBe(true)
+  })
+
   it('lipa: sends network as an EMPTY STRING when absent (vendor demo body shape)', () => {
     const fields = buildLipaFields({ payNumber: '123456', amountTzs: 500 }, 't-lipa-2')
     expect(fields.map((f) => f.name)).toEqual(['transId', 'payNumber', 'network', 'amount'])

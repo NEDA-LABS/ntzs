@@ -51,6 +51,9 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
   const [lookupBusy, setLookupBusy] = useState(false)
   const [lookupOk, setLookupOk] = useState(false)
   const [lookupText, setLookupText] = useState<string | null>(null)
+  const [billLookupBusy, setBillLookupBusy] = useState(false)
+  const [billLookupOk, setBillLookupOk] = useState(false)
+  const [billLookupText, setBillLookupText] = useState<string | null>(null)
   const [recheckRef, setRecheckRef] = useState('')
   const [recheckBusy, setRecheckBusy] = useState(false)
   const [recheckResult, setRecheckResult] = useState<{
@@ -59,6 +62,41 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
     raw?: unknown
     error?: string
   } | null>(null)
+
+  // Bill-account validation via neda-lookup: bank=<utilityCode> resolves the
+  // registered owner (e.g. a LUKU meter's customer) before any money moves.
+  const checkBillName = async () => {
+    setBillLookupBusy(true)
+    setBillLookupText(null)
+    try {
+      const res = await fetch(
+        `/api/admin/selcom-lookup-probe?account=${encodeURIComponent(utilityRef.trim())}&bank=${encodeURIComponent(effectiveCode)}`
+      )
+      const json = (await res.json()) as {
+        error?: string
+        attempts?: Array<{ endpoint: string; bank: string; name: string | null; operator?: string; reason?: string }>
+      }
+      if (!res.ok) {
+        setBillLookupOk(false)
+        setBillLookupText(json.error ?? `HTTP ${res.status}`)
+      } else {
+        const hit = (json.attempts ?? []).find((a) => a.name)
+        if (hit) {
+          setBillLookupOk(true)
+          const operator = hit.operator && hit.operator.trim() !== '-' ? ` · ${hit.operator}` : ''
+          setBillLookupText(`${hit.name}${operator}`)
+        } else {
+          setBillLookupOk(false)
+          setBillLookupText(`No name resolved — ${json.attempts?.[0]?.reason ?? 'no attempts'}`)
+        }
+      }
+    } catch (e) {
+      setBillLookupOk(false)
+      setBillLookupText(e instanceof Error ? e.message : 'lookup failed')
+    } finally {
+      setBillLookupBusy(false)
+    }
+  }
 
   // Re-ask Selcom for a previous dispatch's settled status ("pending" at
   // send time is just the instant-after answer — settlement comes later).
@@ -213,14 +251,32 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
                 {selectedBiller ? selectedBiller.refLabel : 'Reference'}{' '}
                 {selectedBiller && <span className="text-zinc-600">({lengthHint(selectedBiller)})</span>}
               </label>
-              <input
-                value={utilityRef}
-                onChange={(e) => setUtilityRef(e.target.value)}
-                placeholder={selectedBiller?.refLabel ?? 'reference at the biller'}
-                className={inputCls}
-              />
+              <div className="flex gap-2">
+                <input
+                  value={utilityRef}
+                  onChange={(e) => {
+                    setUtilityRef(e.target.value)
+                    setBillLookupText(null)
+                  }}
+                  placeholder={selectedBiller?.refLabel ?? 'reference at the biller'}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={checkBillName}
+                  disabled={!utilityRef.trim() || !effectiveCode || billLookupBusy}
+                  className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:text-zinc-600"
+                >
+                  {billLookupBusy ? 'Checking…' : 'Check name'}
+                </button>
+              </div>
               {utilityRef.trim() && !refCheck.ok && (
                 <p className="mt-1.5 text-xs text-amber-400">{refCheck.reason}</p>
+              )}
+              {billLookupText && (
+                <p className={`mt-1.5 text-xs ${billLookupOk ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {billLookupOk ? `Registered to: ${billLookupText}` : billLookupText}
+                </p>
               )}
             </div>
           </>
