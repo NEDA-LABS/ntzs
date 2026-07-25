@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
       ? PLATFORM_TREASURY_ADDRESS
       : null
 
-  const totals = computeSpendTotals(principalTzs, feePercent)
+  const totals = computeSpendTotals(kind, principalTzs, feePercent, utilityCode)
   if (q.burnAmountTzs !== totals.burnAmountTzs || q.selcomFeeTzs !== totals.selcomFeeTzs || q.platformFeeTzs !== totals.platformFeeTzs) {
     return NextResponse.json(
       { error: 'quote_stale', message: 'Pricing changed since this quote was issued. Request a new quote.' },

@@ -21,20 +21,36 @@ afterAll(() => {
 describe('computeSpendTotals (burn = principal + selcomFee + platformFee)', () => {
   it('prices the measured live case: 1,000 TZS lipa → 30 TZS selcom fee', () => {
     // Live evidence 25 Jul (ref 202607250630): principal 1000, charges 30.
-    const t = computeSpendTotals(1000, 0.5)
+    const t = computeSpendTotals('lipa', 1000, 0.5)
     expect(t.selcomFeeTzs).toBe(30)
     expect(t.platformFeeTzs).toBe(5) // ceil(1000 * 0.5%)
     expect(t.burnAmountTzs).toBe(1035)
   })
 
-  it('scales through tariff tiers and always ceils the platform fee', () => {
-    const t = computeSpendTotals(50_000, 0.5)
-    expect(t.selcomFeeTzs).toBe(550) // published tariff tier
+  it('scales through lipa tariff tiers and always ceils the platform fee', () => {
+    const t = computeSpendTotals('lipa', 50_000, 0.5)
+    expect(t.selcomFeeTzs).toBe(550) // published Lipa/TanQR tier
     expect(t.platformFeeTzs).toBe(250)
     expect(t.burnAmountTzs).toBe(50_800)
 
-    const odd = computeSpendTotals(501, 1)
+    const odd = computeSpendTotals('lipa', 501, 1)
     expect(odd.platformFeeTzs).toBe(6) // ceil(5.01)
+  })
+
+  it('bills: government billers are FREE up to 20,000 then tiered (dashboard 25 Jul)', () => {
+    expect(computeSpendTotals('bill', 15_000, 0.5, 'GEPG').selcomFeeTzs).toBe(0)
+    expect(computeSpendTotals('bill', 20_000, 0.5, 'DAWASA').selcomFeeTzs).toBe(0)
+    expect(computeSpendTotals('bill', 25_000, 0.5, 'GEPG').selcomFeeTzs).toBe(200)
+    expect(computeSpendTotals('bill', 75_000, 0.5, 'TRAFFICFINE').selcomFeeTzs).toBe(500)
+  })
+
+  it('bills: charged billers (LUKU) use the commercial tiers; unknown codes price conservatively', () => {
+    expect(computeSpendTotals('bill', 1_000, 0.5, 'LUKU').selcomFeeTzs).toBe(12)
+    expect(computeSpendTotals('bill', 10_000, 0.5, 'LUKU').selcomFeeTzs).toBe(120)
+    expect(computeSpendTotals('bill', 100_000, 0.5, 'LUKU').selcomFeeTzs).toBe(800)
+    // Not in the dashboard's government label → charged table until confirmed.
+    expect(computeSpendTotals('bill', 1_000, 0.5, 'ZANMALIPO').selcomFeeTzs).toBe(12)
+    expect(computeSpendTotals('bill', 1_000, 0.5, 'DSTV').selcomFeeTzs).toBe(12)
   })
 
   it('exposes a sane minimum', () => {

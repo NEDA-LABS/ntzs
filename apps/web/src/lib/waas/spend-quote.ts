@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 
-import { estimateSendMoneyFee } from '@/lib/psp/selcom-fees'
+import { estimateSendMoneyFee, estimateBillPayFee } from '@/lib/psp/selcom-fees'
 import { DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
 
 /**
@@ -13,14 +13,14 @@ import { DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
  *
  * Fee model: burn = principal + selcomFee + platformFee.
  *  - principal      → what the till/biller receives
- *  - selcomFee      → Selcom's charge, funded from the reserve. For LIPA this
- *                     is Selcom's official published tariff, confirmed three
- *                     ways (dashboard "Lipa/TanQR" charges table 25 Jul; the
- *                     6 Jul tariff capture; the first live payment's measured
- *                     charge — see selcom-fees.ts). For BILLS the dashboard
- *                     has a separate "Pay Bills" table not yet captured, so
- *                     the same tiers serve as the estimate. Actual charges
- *                     are recorded per transaction at settlement.
+ *  - selcomFee      → Selcom's charge, funded from the reserve, priced from
+ *                     the dashboard-published tariffs (see selcom-fees.ts):
+ *                     LIPA = the Lipa/TanQR table (confirmed three ways incl.
+ *                     the first live payment's measured charge); BILLS = per
+ *                     biller group — government bills (GEPG family) are FREE
+ *                     up to 20,000 TZS, commercial billers (LUKU, airlines)
+ *                     have their own tiers. Actual charges are recorded per
+ *                     transaction at settlement.
  *  - platformFee    → our margin (partner feePercent, minted to treasury)
  */
 
@@ -36,9 +36,16 @@ export interface SpendTotals {
 }
 
 /** Identical math in quote and execute, or a quote could mismatch its own
- * execution (the withdrawal-quote lesson). */
-export function computeSpendTotals(principalTzs: number, feePercent: number): SpendTotals {
-  const selcomFeeTzs = estimateSendMoneyFee(principalTzs)
+ * execution (the withdrawal-quote lesson). `utilityCode` selects the bill
+ * tariff group and is ignored for lipa. */
+export function computeSpendTotals(
+  kind: SpendKind,
+  principalTzs: number,
+  feePercent: number,
+  utilityCode?: string
+): SpendTotals {
+  const selcomFeeTzs =
+    kind === 'lipa' ? estimateSendMoneyFee(principalTzs) : estimateBillPayFee(utilityCode ?? '', principalTzs)
   const platformFeeTzs = Math.ceil((principalTzs * feePercent) / 100)
   return {
     principalTzs,

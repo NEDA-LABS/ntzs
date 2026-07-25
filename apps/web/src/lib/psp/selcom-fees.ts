@@ -54,6 +54,55 @@ export function estimateSendMoneyFee(amount: number): number {
 }
 
 /**
+ * Selcom BILL-PAYMENT tariffs — dashboard "Selcom Business Charges → Pay
+ * Bills" (captured 25 Jul 2026). Bills price by BILLER GROUP, not one table:
+ *
+ *  - Government group (dashboard label "GEPG, Dawasa, NHC, Traffic Fine,
+ *    Tarura, Regional Water Bills, TRA"): FREE up to 20,000 TZS, then tiers.
+ *  - Charged group (label "Luku, iTrust, Auric Air, Coastal Aviation,
+ *    Flightlink, ZanAir, Zantas Air Services, Aramex"): tiers below.
+ *  - "Free Biller Services" group: list not yet captured from the dashboard —
+ *    until it is, billers not in the government set are priced on the
+ *    CHARGED table (conservative for the reserve; the settlement's actual
+ *    total_charges is recorded per transaction, so over-estimates surface as
+ *    reserve surplus, never as a user shortfall).
+ *
+ * Charges inclusive of VAT + Excise; government levy separate where applicable.
+ */
+const SELCOM_BILL_GOV_TIERS: ReadonlyArray<readonly [number, number]> = [
+  [20000, 0],
+  [30000, 200], [40000, 300], [50000, 400], [100000, 500],
+  [200000, 1000], [300000, 1500], [400000, 2000], [500000, 2500],
+  [100000000, 3000],
+]
+
+const SELCOM_BILL_CHARGED_TIERS: ReadonlyArray<readonly [number, number]> = [
+  [999, 12], [1999, 12], [2999, 24], [3999, 36], [4999, 48],
+  [9999, 60], [19999, 120], [29999, 240], [39999, 360], [49999, 480],
+  [99999, 600], [199999, 800], [299999, 1600], [399999, 2000], [499999, 2400],
+  [599999, 2450], [699999, 2660], [799999, 2800], [899999, 2940], [1000000, 3080],
+  [3000000, 3220], [10000000, 3360], [20000000, 3500],
+]
+
+/** Biller codes on the government (free-≤20k) tariff. Dashboard's "TRA" maps
+ * to our TRAGEPG. ZANMALIPO (Zanzibar gov) is NOT in the dashboard label —
+ * kept on the charged table until Selcom confirms (conservative). */
+const SELCOM_GOV_TARIFF_BILLERS = new Set([
+  'GEPG', 'DAWASA', 'NHC', 'TRAFFICFINE', 'TARURA', 'WATERBILLS', 'TRAGEPG',
+])
+
+/** Selcom's charge for a bill payment, by biller group. */
+export function estimateBillPayFee(utilityCode: string, amount: number): number {
+  const tiers = SELCOM_GOV_TARIFF_BILLERS.has(utilityCode.trim().toUpperCase())
+    ? SELCOM_BILL_GOV_TIERS
+    : SELCOM_BILL_CHARGED_TIERS
+  for (const [max, charge] of tiers) {
+    if (amount <= max) return charge
+  }
+  return tiers[tiers.length - 1][1]
+}
+
+/**
  * The PSP fee (TZS) for a mobile/bank payout where the recipient receives
  * `receiveAmountTzs`. Unknown/legacy provider tags fall back to the Snippe
  * flat fee (Snippe was the only historical rail).
