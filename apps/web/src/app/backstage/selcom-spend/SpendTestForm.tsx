@@ -51,6 +51,30 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
   const [lookupBusy, setLookupBusy] = useState(false)
   const [lookupOk, setLookupOk] = useState(false)
   const [lookupText, setLookupText] = useState<string | null>(null)
+  const [recheckRef, setRecheckRef] = useState('')
+  const [recheckBusy, setRecheckBusy] = useState(false)
+  const [recheckResult, setRecheckResult] = useState<{
+    reference?: string
+    query?: { status: string; failureReason?: string }
+    raw?: unknown
+    error?: string
+  } | null>(null)
+
+  // Re-ask Selcom for a previous dispatch's settled status ("pending" at
+  // send time is just the instant-after answer — settlement comes later).
+  const recheck = async () => {
+    setRecheckBusy(true)
+    setRecheckResult(null)
+    try {
+      const res = await fetch(`/api/admin/selcom-spend-test?reference=${encodeURIComponent(recheckRef.trim())}`)
+      const json = await res.json()
+      setRecheckResult(res.ok ? json : { error: json.error ?? `HTTP ${res.status}` })
+    } catch (e) {
+      setRecheckResult({ error: e instanceof Error ? e.message : 'request failed' })
+    } finally {
+      setRecheckBusy(false)
+    }
+  }
 
   // Merchant-name check for the Lipa till — read-only, works independently of
   // the payment flags (the lookup endpoint is already permitted for our creds).
@@ -322,6 +346,55 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
           </details>
         </div>
       )}
+
+      <div className="mt-8 border-t border-white/10 pt-6">
+        <p className="mb-3 text-sm font-medium text-zinc-300">
+          Re-check a previous reference{' '}
+          <span className="text-xs font-normal text-zinc-500">
+            (&quot;pending&quot; at send time is the instant-after answer — settlement lands later)
+          </span>
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={recheckRef}
+            onChange={(e) => setRecheckRef(e.target.value)}
+            placeholder="e.g. 202607250630"
+            className={inputCls}
+          />
+          <button
+            type="button"
+            onClick={recheck}
+            disabled={!recheckRef.trim() || recheckBusy}
+            className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:text-zinc-600"
+          >
+            {recheckBusy ? 'Checking…' : 'Check status'}
+          </button>
+        </div>
+        {recheckResult?.error && (
+          <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            {recheckResult.error}
+          </div>
+        )}
+        {recheckResult?.query && (
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black p-4 text-sm">
+              <span className="text-zinc-400">{recheckResult.reference}:</span>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${QUERY_BADGE[recheckResult.query.status] ?? QUERY_BADGE.unknown}`}
+              >
+                {recheckResult.query.status}
+              </span>
+              {recheckResult.query.failureReason && (
+                <span className="text-zinc-500">{recheckResult.query.failureReason}</span>
+              )}
+            </div>
+            <details className="rounded-xl border border-white/10 bg-black p-4 text-xs text-zinc-500">
+              <summary className="cursor-pointer text-zinc-400">Raw query payload</summary>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(recheckResult.raw, null, 2)}</pre>
+            </details>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
