@@ -748,6 +748,9 @@ export async function accountLookup(fiCode: string, account: string, amount?: nu
 export interface SelcomRecipientInfo {
   name: string | null
   idNumber?: string
+  /** Selcom's refusal detail when no name came back (http status / resultcode /
+   * message) — lets callers recognize rate-limit restrictions and back off. */
+  reason?: string
 }
 
 /**
@@ -764,8 +767,8 @@ const LOOKUP_WALLET_FI_CODE = 'SELCOM'
 
 export async function lookupRecipientName(phone: string): Promise<SelcomRecipientInfo> {
   const normalized = normalizePhone(phone)
-  const { name } = await accountLookup(LOOKUP_WALLET_FI_CODE, normalized)
-  return { name }
+  const { name, reason } = await accountLookup(LOOKUP_WALLET_FI_CODE, normalized)
+  return { name, reason }
 }
 
 /** Collection-side name lookup (kept for interface parity with AzamPay). */
