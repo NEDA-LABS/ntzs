@@ -261,6 +261,9 @@ export function signRequest(fields: SignedField[]): {
     'digest': digest,
     'signed-fields': fields.map((f) => f.name).join(','),
     'Content-Type': 'application/json',
+    // Without Accept, Selcom's gateway content-negotiates validation errors
+    // into HTML redirects instead of JSON (confirmed by Selcom, 25 Jul).
+    'Accept': 'application/json',
   }
   const body = Object.fromEntries(fields.map((f) => [f.name, f.value]))
   return { headers, body, timestamp }
