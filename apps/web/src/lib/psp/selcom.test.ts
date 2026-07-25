@@ -181,12 +181,12 @@ describe('bill-pay / lipa field builders (order defines body + signature)', () =
     expect(verifies).toBe(true)
   })
 
-  it('lipa: OMITS network entirely when absent (empty string would change the signature)', () => {
+  it('lipa: sends network as an EMPTY STRING when absent (vendor demo body shape)', () => {
     const fields = buildLipaFields({ payNumber: '123456', amountTzs: 500 }, 't-lipa-2')
-    expect(fields.map((f) => f.name)).toEqual(['transId', 'payNumber', 'amount'])
-    expect(fields.some((f) => f.value === '')).toBe(false)
+    expect(fields.map((f) => f.name)).toEqual(['transId', 'payNumber', 'network', 'amount'])
+    expect(fields.find((f) => f.name === 'network')?.value).toBe('')
     const { verifies, signedFields } = signingStringFor(fields)
-    expect(signedFields).toBe('transId,payNumber,amount')
+    expect(signedFields).toBe('transId,payNumber,network,amount')
     expect(verifies).toBe(true)
   })
 })

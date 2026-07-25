@@ -605,9 +605,10 @@ export async function payBill(req: SelcomBillPayRequest): Promise<SelcomPayoutRe
 export interface SelcomLipaPayRequest {
   /** Merchant Lipa Namba (pay number). */
   payNumber: string
-  /** Optional network hint per the collection. OMITTED entirely when absent —
-   * signed-fields derive from the keys present, and an empty-string field
-   * would change the signature vs. their reference signer. */
+  /** Optional network hint. Sent as an EMPTY STRING when absent — Selcom's
+   * own working demo body (25 Jul) carries "network": "" and their handler
+   * 500s persisted when we omitted the key entirely; match the demonstrated
+   * shape. Signed-fields stay consistent either way (we sign what we send). */
   network?: string
   amountTzs: number
   /** Idempotency key, reused across retries. Defaults to makeNumericTransId(). */
@@ -616,13 +617,12 @@ export interface SelcomLipaPayRequest {
 
 /** Field order defines body + signature — exactly the collection's order. */
 export function buildLipaFields(req: SelcomLipaPayRequest, transId: string): SignedField[] {
-  const fields: SignedField[] = [
+  return [
     { name: 'transId', value: transId },
     { name: 'payNumber', value: req.payNumber },
+    { name: 'network', value: req.network ?? '' },
+    { name: 'amount', value: req.amountTzs },
   ]
-  if (req.network) fields.push({ name: 'network', value: req.network })
-  fields.push({ name: 'amount', value: req.amountTzs })
-  return fields
 }
 
 /** Pay a merchant's Lipa Namba from the Selcom account. POST /v1/transaction/neda-lipa-payout */
