@@ -9,6 +9,7 @@ import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { spendEnabled } from '@/lib/waas/spend-quote'
 import { emitSpendWebhook } from '@/lib/waas/spend-webhook'
+import { finalizeRampSettlementForBurn } from '@/lib/ramp/offramp'
 
 export const maxDuration = 60
 
@@ -91,6 +92,12 @@ export async function GET(request: NextRequest) {
             .returning({ id: burnRequests.id })
           if (done.length > 0) {
             await emitSpendWebhook(settled, { burnRequestId: row.id, reference: row.payoutReference, status: 'completed', burnAmountTzs: row.amountTzs })
+            // Ramp off-ramp tail: close the linked settlement + fire ramp.settlement.completed.
+            await finalizeRampSettlementForBurn({
+              burnRequestId: row.id,
+              outcome: 'completed',
+              evidence: { actualChargesTzs: settled.actualChargesTzs as number | null, selcomReceipt: settled.selcomReceipt as string | null },
+            }).catch((e) => console.error('[cron/spend-status-sync] ramp finalize (completed) failed:', e instanceof Error ? e.message : e))
           }
           results.push({ id: row.id, outcome: 'completed' })
           console.log(`[cron/spend-status-sync] spend ${row.id} completed (${row.payoutReference})`)
@@ -146,6 +153,10 @@ export async function GET(request: NextRequest) {
             status: res.error ? 'reconcile_required' : 'reverted',
             burnAmountTzs: row.amountTzs,
           })
+          await finalizeRampSettlementForBurn({
+            burnRequestId: row.id,
+            outcome: res.error ? 'reconcile_required' : 'reverted',
+          }).catch((e) => console.error('[cron/spend-status-sync] ramp finalize (failed) failed:', e instanceof Error ? e.message : e))
           results.push({ id: row.id, outcome: res.error ? 'reconcile_required' : 'reverted' })
           console.warn(`[cron/spend-status-sync] spend ${row.id} failed → ${res.error ? 'reconcile_required' : 'reverted'}`)
           continue

@@ -1157,7 +1157,7 @@ while (true) {
             isActive={activeSection === 'ramp'}
             step="Capability · Ramp"
             title="Ramp — wallet-less settlement"
-            description="Convert USDC ⇄ mobile money (TZS) over the API with no per-end-user wallets. You keep a USDC float with us; off-ramps debit it, on-ramps deliver USDC to you. nTZS is an internal rail you never touch."
+            description="Convert USDC ⇄ mobile money (TZS) over the API with no per-end-user wallets — or pay a merchant Lipa Namba or bill straight from USDC. You keep a USDC float with us; off-ramps debit it, on-ramps deliver USDC to you. nTZS is an internal rail you never touch."
           >
             <Note variant="info">
               <span className="font-semibold text-blue-200">Access:</span> Ramp requires the{' '}
@@ -1192,6 +1192,21 @@ fetch('https://www.ntzs.co.tz/api/v1/ramp/quote', {
   body: JSON.stringify({ quoteId, phoneNumber: '0744000000' }),
 })
 // 201/202 { settlementId, status: "completed" | "paying_out" }`}
+            />
+            <CodeBlock
+              title="Off-ramp straight to a merchant or bill — USDC → Lipa / bill"
+              code={`// Pass a destination on the QUOTE — it's priced on the Selcom tariff and
+// returns the merchant/biller's registered name to show before you confirm.
+const q = await fetch('.../api/v1/ramp/quote', { method: 'POST', headers,
+  body: JSON.stringify({ direction: 'offramp', usdcAmount: 10,
+    destination: { kind: 'lipa', payNumber: '61115582' } }) }).then(r => r.json())
+// { quoteId, tzsAmount, feeTzs, recipientName: 'ENZI COFFEE COMPANY LIMITED', … }
+
+// bill example: destination: { kind: 'bill', utilityCode: 'LUKU', utilityRef: '<meter>' }
+
+await fetch('.../api/v1/ramp/offramp', { method: 'POST', headers,
+  body: JSON.stringify({ quoteId: q.quoteId }) })   // no phoneNumber for lipa/bill
+// 201/202 { settlementId, status, destination, recipientName }`}
             />
             <CodeBlock
               title="POST /api/v1/ramp/onramp — mobile money → USDC"

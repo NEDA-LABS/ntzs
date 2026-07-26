@@ -4,6 +4,7 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { lpFxPairs, lpAccounts, lpFills } from '@ntzs/db'
 import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
+import { estimateSpendFee } from '@/lib/psp/selcom-fees'
 import { BASE_RPC_URL } from '@/lib/env'
 
 export const RAMP_QUOTE_TTL_MS = 60_000
@@ -11,6 +12,14 @@ export const PSP_FLAT_FEE_TZS = 1500
 export const PLATFORM_FEE_PCT = 0.005 // 0.5% on the gross TZS (off-ramp)
 
 export type RampDirection = 'offramp' | 'onramp'
+
+/** Off-ramp terminal destination. 'wallet' (default) = mobile-money payout
+ * (the Snippe/AzamPay rail, flat PSP fee). 'lipa'/'bill' = pay a Selcom
+ * merchant till / biller from the reserve, priced on the Selcom tariff. */
+export type RampOfframpDestination =
+  | { kind: 'wallet' }
+  | { kind: 'lipa'; payNumber: string; network?: string; recipientName?: string | null }
+  | { kind: 'bill'; utilityCode: string; utilityRef: string; recipientName?: string | null }
 
 export interface RampQuote {
   direction: RampDirection
@@ -89,6 +98,8 @@ export async function computeRampQuote(params: {
   direction: RampDirection
   usdcAmount?: number
   tzsAmount?: number
+  /** Off-ramp only — the terminal destination. Defaults to wallet payout. */
+  destination?: RampOfframpDestination
 }): Promise<RampQuote | { error: string }> {
   const { direction } = params
   const ps = await getPairAndSpread(direction)
@@ -102,7 +113,17 @@ export async function computeRampQuote(params: {
     // USDC → nTZS (1 nTZS == 1 TZS). Gross TZS the swap yields.
     const grossTzs = calcMinOutput({ fromToken: 'USDC', toToken: 'NTZS', amount: usdcAmount, midRate, bidBps, askBps, slippageBps: 0 })
     const platformFee = Math.ceil(grossTzs * PLATFORM_FEE_PCT)
-    const feeTzs = PSP_FLAT_FEE_TZS + platformFee
+
+    // PSP fee depends on the destination: mobile-money wallet = the flat PSP
+    // fee; Selcom Lipa/bill = the Selcom tariff. Tariff estimated on gross
+    // (one tier ≥ the net) — conservative, so the reserve is never short.
+    const dest = params.destination ?? { kind: 'wallet' as const }
+    const pspFee =
+      dest.kind === 'wallet'
+        ? PSP_FLAT_FEE_TZS
+        : estimateSpendFee(dest.kind, Math.floor(grossTzs), dest.kind === 'bill' ? dest.utilityCode : undefined)
+
+    const feeTzs = pspFee + platformFee
     const tzsAmount = Math.floor(grossTzs) - feeTzs
     if (tzsAmount < 5000) return { error: 'Amount too small — recipient would net under 5,000 TZS after fees' }
 
