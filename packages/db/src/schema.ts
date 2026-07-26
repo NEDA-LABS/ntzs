@@ -1746,6 +1746,12 @@ export const rampQuotes = pgTable(
     usdcAmount: numeric('usdc_amount', { precision: 36, scale: 6 }).notNull(),
     tzsAmount: bigint('tzs_amount', { mode: 'number' }).notNull(),
     feeTzs: bigint('fee_tzs', { mode: 'number' }).notNull().default(0),
+    // Off-ramp destination bound to the quote (drizzle/0065). null / absent =
+    // legacy wallet payout (mobile money). For lipa/bill:
+    // { kind:'lipa', payNumber, network?, recipientName? }
+    // { kind:'bill', utilityCode, utilityRef, recipientName? }
+    // Binding it here keeps the fee honest: the quote priced THIS destination.
+    destination: jsonb('destination'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1788,6 +1794,11 @@ export const rampSettlements = pgTable(
 
     // Idempotency key from the initiating request (scope is per-partner).
     idempotencyKey: text('idempotency_key'),
+
+    // Off-ramp destination + settlement evidence (drizzle/0065). null / absent =
+    // legacy wallet payout. For lipa/bill: the bound destination plus, once
+    // settled, { actualChargesTzs, selcomReceipt } — the reconciliation trail.
+    destination: jsonb('destination'),
 
     // On-chain / PSP references, filled as legs complete.
     swapInTxHash: text('swap_in_tx_hash'),

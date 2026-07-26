@@ -28,8 +28,7 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }) }
 
   const { quoteId, phoneNumber } = body
-  if (!quoteId || !phoneNumber) return NextResponse.json({ error: 'quoteId and phoneNumber are required' }, { status: 400 })
-  if (!isValidTanzanianPhone(phoneNumber)) return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
+  if (!quoteId) return NextResponse.json({ error: 'quoteId is required' }, { status: 400 })
 
   return withIdempotency(`ramp_offramp:${partner.id}`, getIdempotencyKey(req), async () => {
     const { db } = getDb()
@@ -52,6 +51,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Quote not found, already used, expired, or not an off-ramp quote' }, { status: 409 })
     }
 
+    // The destination is bound to the quote (priced + name-disclosed there).
+    // Wallet payout still takes the phone at execute time; lipa/bill do not.
+    const destination = (quote.destination as
+      | { kind: 'lipa'; payNumber: string; network?: string; recipientName?: string | null }
+      | { kind: 'bill'; utilityCode: string; utilityRef: string; recipientName?: string | null }
+      | null) ?? { kind: 'wallet' as const }
+
+    if (destination.kind === 'wallet') {
+      if (!phoneNumber) return NextResponse.json({ error: 'phoneNumber is required for a wallet off-ramp' }, { status: 400 })
+      if (!isValidTanzanianPhone(phoneNumber)) return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
+    }
+
     if (!partner.encryptedHdSeed) {
       return NextResponse.json({ error: 'Partner HD seed not configured' }, { status: 400 })
     }
@@ -67,7 +78,8 @@ export async function POST(req: NextRequest) {
       usdcAmount: quote.usdcAmount,
       tzsAmount: quote.tzsAmount,
       feeTzs: quote.feeTzs,
-      recipientPhone: phoneNumber,
+      recipientPhone: destination.kind === 'wallet' ? phoneNumber : null,
+      destination: destination.kind === 'wallet' ? null : destination,
       idempotencyKey: getIdempotencyKey(req),
     }).returning()
 
@@ -80,7 +92,8 @@ export async function POST(req: NextRequest) {
       usdcAmount: Number(quote.usdcAmount),
       recipientTzs: quote.tzsAmount,
       feeTzs: quote.feeTzs,
-      recipientPhone: phoneNumber,
+      recipientPhone: destination.kind === 'wallet' ? phoneNumber : undefined,
+      destination,
     })
 
     const status = result.status === 'completed' ? 201
@@ -93,7 +106,9 @@ export async function POST(req: NextRequest) {
       status: result.status,
       usdcAmount: Number(quote.usdcAmount),
       tzsAmount: quote.tzsAmount,
-      recipientPhone: phoneNumber,
+      ...(destination.kind === 'wallet'
+        ? { recipientPhone: phoneNumber }
+        : { destination: destination.kind === 'lipa' ? { kind: 'lipa', payNumber: destination.payNumber } : { kind: 'bill', utilityCode: destination.utilityCode, utilityRef: destination.utilityRef }, recipientName: destination.recipientName ?? null }),
       ...(result.error ? { error: result.error } : {}),
     }, { status })
   })
