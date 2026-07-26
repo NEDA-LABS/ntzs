@@ -3,10 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { rampQuotes } from '@ntzs/db'
 import { requireRampPartner } from '@/lib/ramp/auth'
-import { computeRampQuote, RAMP_QUOTE_TTL_MS, type RampDirection, type RampOfframpDestination } from '@/lib/ramp/quote'
+import { computeRampQuote, RAMP_QUOTE_TTL_MS, rampSpendEnabled, type RampDirection, type RampOfframpDestination } from '@/lib/ramp/quote'
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
-import { spendEnabled, spendKindEnabled } from '@/lib/waas/spend-quote'
+import { spendKindEnabled } from '@/lib/waas/spend-quote'
 
 export const runtime = 'nodejs'
 
@@ -51,8 +51,11 @@ export async function POST(req: NextRequest) {
   let recipientName: string | null = null
   const rawKind = body.destination?.kind
   if (direction === 'offramp' && rawKind && rawKind !== 'wallet') {
-    if (!spendEnabled()) {
-      return NextResponse.json({ error: 'spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled on this environment yet.' }, { status: 503 })
+    // Dedicated, BoT-gated switch — independent of the (already-live) domestic
+    // spend gate, so cross-border merchant/bill off-ramps stay dark until BoT
+    // green-lights them, whatever the migration / domestic-spend state.
+    if (!rampSpendEnabled()) {
+      return NextResponse.json({ error: 'ramp_spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled yet (pending regulatory approval).' }, { status: 503 })
     }
     if (rawKind !== 'lipa' && rawKind !== 'bill') {
       return NextResponse.json({ error: "destination.kind must be 'wallet', 'lipa' or 'bill'" }, { status: 400 })

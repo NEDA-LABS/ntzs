@@ -13,6 +13,17 @@ export const PLATFORM_FEE_PCT = 0.005 // 0.5% on the gross TZS (off-ramp)
 
 export type RampDirection = 'offramp' | 'onramp'
 
+/**
+ * Dedicated gate for RAMP off-ramps that pay a Selcom Lipa till / bill —
+ * INDEPENDENT of the domestic spend gate (SELCOM_SPEND_ENABLED, already live).
+ * Cross-border crypto → TZ-merchant payment is a distinct regulatory surface;
+ * this stays OFF until the Bank of Tanzania green-lights it, regardless of the
+ * migration state or the domestic spend rails. Wallet off-ramps are unaffected.
+ */
+export function rampSpendEnabled(): boolean {
+  return process.env.RAMP_SPEND_ENABLED === 'true'
+}
+
 /** Off-ramp terminal destination. 'wallet' (default) = mobile-money payout
  * (the Snippe/AzamPay rail, flat PSP fee). 'lipa'/'bill' = pay a Selcom
  * merchant till / biller from the reserve, priced on the Selcom tariff. */

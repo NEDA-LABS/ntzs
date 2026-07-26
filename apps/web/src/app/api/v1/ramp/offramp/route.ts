@@ -6,6 +6,7 @@ import { rampQuotes, rampSettlements } from '@ntzs/db'
 import { requireRampPartner } from '@/lib/ramp/auth'
 import { getOrCreateSettlementWallet } from '@/lib/ramp/wallet'
 import { runOfframpSettlement } from '@/lib/ramp/offramp'
+import { rampSpendEnabled } from '@/lib/ramp/quote'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 import { isValidTanzanianPhone } from '@/lib/psp'
 
@@ -61,6 +62,10 @@ export async function POST(req: NextRequest) {
     if (destination.kind === 'wallet') {
       if (!phoneNumber) return NextResponse.json({ error: 'phoneNumber is required for a wallet off-ramp' }, { status: 400 })
       if (!isValidTanzanianPhone(phoneNumber)) return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
+    } else if (!rampSpendEnabled()) {
+      // Defense in depth: a lipa/bill quote can only be minted while the flag
+      // is on, but refuse execution too if it was switched off since.
+      return NextResponse.json({ error: 'ramp_spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled yet (pending regulatory approval).' }, { status: 503 })
     }
 
     if (!partner.encryptedHdSeed) {
