@@ -24,6 +24,7 @@ interface PartnerInfo {
   email: string | null
   apiKeyPrefix: string
   webhookUrl: string | null
+  hasWebhookSecret: boolean
   nextWalletIndex: number
   treasuryWalletAddress: string | null
   feePercent: number
@@ -1616,6 +1617,66 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
   const [webhookError, setWebhookError] = useState('')
   const [webhookSuccess, setWebhookSuccess] = useState(false)
 
+  // Webhook signing secret (revealed on demand — never in the dashboard payload)
+  const [revealedSecret, setRevealedSecret] = useState<string | null>(null)
+  const [revealing, setRevealing] = useState(false)
+  const [secretError, setSecretError] = useState('')
+  const [secretCopied, setSecretCopied] = useState(false)
+  const [showRotateConfirm, setShowRotateConfirm] = useState(false)
+  const [rotating, setRotating] = useState(false)
+
+  const handleRevealSecret = async () => {
+    setRevealing(true)
+    setSecretError('')
+    try {
+      const res = await fetch('/api/v1/partners/reveal-webhook-secret', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSecretError(json.error || 'Failed to reveal signing secret')
+        return
+      }
+      setRevealedSecret(json.webhookSecret ?? '')
+    } catch {
+      setSecretError('Failed to connect to server')
+    } finally {
+      setRevealing(false)
+    }
+  }
+
+  const handleRotateSecret = async () => {
+    setRotating(true)
+    setSecretError('')
+    try {
+      const res = await fetch('/api/v1/partners/rotate-webhook-secret', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSecretError(json.error || 'Failed to rotate signing secret')
+        return
+      }
+      setRevealedSecret(json.webhookSecret)
+      setShowRotateConfirm(false)
+      onRefresh()
+    } catch {
+      setSecretError('Failed to connect to server')
+    } finally {
+      setRotating(false)
+    }
+  }
+
+  const copySecret = () => {
+    if (revealedSecret) {
+      navigator.clipboard.writeText(revealedSecret)
+      setSecretCopied(true)
+      setTimeout(() => setSecretCopied(false), 2000)
+    }
+  }
+
   const handleRegenerate = async () => {
     setRegenerating(true)
     setError('')
@@ -1802,6 +1863,94 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
               </button>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Webhook Signing Secret */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <h3 className="text-base font-semibold">Webhook Signing Secret</h3>
+        <p className="mt-1 text-sm text-white/50">
+          Verify the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">X-Webhook-Signature</code> HMAC on
+          events we send to your endpoint. Treat it like a password — anyone with it can forge webhooks.
+        </p>
+
+        {secretError && <p className="mt-3 text-xs text-red-400">{secretError}</p>}
+
+        {revealedSecret !== null ? (
+          <div className="mt-4 flex items-center gap-2">
+            <code className="flex-1 rounded bg-black/30 px-3 py-2 text-sm font-mono text-white/90 break-all">
+              {revealedSecret || '— no signing secret set —'}
+            </code>
+            {revealedSecret && (
+              <button
+                onClick={copySecret}
+                className="shrink-0 rounded-lg bg-white/10 px-3 py-2 text-xs font-medium text-white/70 hover:bg-white/20 transition-colors"
+              >
+                {secretCopied ? 'Copied!' : 'Copy'}
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setRevealedSecret(null)
+                setSecretCopied(false)
+              }}
+              className="shrink-0 rounded-lg bg-white/10 px-3 py-2 text-xs font-medium text-white/70 hover:bg-white/20 transition-colors"
+            >
+              Hide
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 flex items-center gap-2">
+            <code className="rounded bg-white/10 px-3 py-2 text-sm font-mono text-white/40 select-none">
+              whsec_••••••••••••••••
+            </code>
+            <button
+              onClick={handleRevealSecret}
+              disabled={revealing || !partner.hasWebhookSecret}
+              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              {revealing ? 'Revealing…' : partner.hasWebhookSecret ? 'Reveal' : 'None set'}
+            </button>
+          </div>
+        )}
+
+        {showRotateConfirm ? (
+          <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+            <p className="text-sm text-red-200 font-medium">
+              {partner.hasWebhookSecret ? 'Rotate signing secret?' : 'Generate a signing secret?'}
+            </p>
+            <p className="mt-1 text-xs text-red-300/70">
+              {partner.hasWebhookSecret
+                ? 'A new secret is generated immediately. Signatures from the current secret will stop validating until you update your endpoint.'
+                : 'A new signing secret will be generated. Add it to your endpoint to start verifying webhook signatures.'}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={handleRotateSecret}
+                disabled={rotating}
+                className="rounded-lg bg-red-500/20 px-4 py-2 text-xs font-medium text-red-300 hover:bg-red-500/30 transition-colors disabled:opacity-50"
+              >
+                {rotating
+                  ? 'Working…'
+                  : partner.hasWebhookSecret
+                    ? 'Yes, rotate secret'
+                    : 'Yes, generate secret'}
+              </button>
+              <button
+                onClick={() => setShowRotateConfirm(false)}
+                className="rounded-lg bg-white/10 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/20 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowRotateConfirm(true)}
+            className="mt-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10 transition-colors"
+          >
+            {partner.hasWebhookSecret ? 'Rotate Secret' : 'Generate Secret'}
+          </button>
         )}
       </div>
     </div>

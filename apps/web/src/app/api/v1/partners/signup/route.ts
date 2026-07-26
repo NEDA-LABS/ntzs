@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { hashApiKey } from '@/lib/waas/auth'
+import { hashApiKey, generateWebhookSecret } from '@/lib/waas/auth'
 import { generatePartnerSeed, deriveTreasuryAddress } from '@/lib/waas/hd-wallets'
 import { partners } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   const passwordHash = `${salt}:${derivedKey}`
 
   // Generate webhook secret
-  const webhookSecret = `whsec_${crypto.randomBytes(24).toString('hex')}`
+  const webhookSecret = generateWebhookSecret()
 
   // Generate HD seed and derive treasury wallet
   const { encryptedSeed } = generatePartnerSeed()

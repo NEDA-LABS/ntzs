@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
-import { hashApiKey } from '@/lib/waas/auth'
+import { hashApiKey, generateWebhookSecret } from '@/lib/waas/auth'
 import { generatePartnerSeed, deriveTreasuryAddress } from '@/lib/waas/hd-wallets'
 import { partners } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
@@ -49,7 +49,7 @@ export async function provisionEnterprisePartner(opts: { name: string }): Promis
       email: null,
       apiKeyHash: hashApiKey(apiKey),
       apiKeyPrefix: apiKey.slice(0, 14),
-      webhookSecret: `whsec_${crypto.randomBytes(24).toString('hex')}`,
+      webhookSecret: generateWebhookSecret(),
       encryptedHdSeed: encryptedSeed,
       treasuryWalletAddress,
       isActive: true,

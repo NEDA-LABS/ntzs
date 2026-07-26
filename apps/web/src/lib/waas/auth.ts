@@ -27,6 +27,21 @@ export function hashApiKey(apiKey: string): string {
   return crypto.createHash('sha256').update(apiKey).digest('hex')
 }
 
+/** Fixed prefix on every partner webhook signing secret. */
+export const WEBHOOK_SECRET_PREFIX = 'whsec_'
+
+/**
+ * Mint a partner webhook signing secret (`whsec_` + 48 hex chars).
+ *
+ * Unlike the API key — which we only ever store hashed — this secret is kept in
+ * plaintext because the server must read it back to HMAC-sign every outbound
+ * webhook (see partner-webhooks.ts). Single source of truth for the format,
+ * shared by signup, enterprise provisioning, and dashboard rotation.
+ */
+export function generateWebhookSecret(): string {
+  return `${WEBHOOK_SECRET_PREFIX}${crypto.randomBytes(24).toString('hex')}`
+}
+
 /**
  * Resolve the HMAC secret used to sign partner sessions.
  * Fails closed when APP_SECRET is missing / too short to prevent any

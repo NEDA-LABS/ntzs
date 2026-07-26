@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
       email: partners.email,
       apiKeyPrefix: partners.apiKeyPrefix,
       webhookUrl: partners.webhookUrl,
+      webhookSecret: partners.webhookSecret,
       nextWalletIndex: partners.nextWalletIndex,
       treasuryWalletAddress: partners.treasuryWalletAddress,
       feePercent: partners.feePercent,
@@ -493,6 +494,9 @@ export async function GET(request: NextRequest) {
       email: partner.email,
       apiKeyPrefix: partner.apiKeyPrefix || 'ntzs_test_',
       webhookUrl: partner.webhookUrl,
+      // Never ship the raw signing secret in the dashboard payload — only whether
+      // one is set. The value is fetched on demand via reveal-webhook-secret.
+      hasWebhookSecret: !!partner.webhookSecret,
       nextWalletIndex: partner.nextWalletIndex,
       treasuryWalletAddress: partner.treasuryWalletAddress,
       feePercent: parseFloat(String(partner.feePercent ?? '0')),
