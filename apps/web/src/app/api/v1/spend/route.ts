@@ -18,6 +18,7 @@ import {
   DEFAULT_PLATFORM_FEE_PERCENT,
   type SpendKind,
 } from '@/lib/waas/spend-quote'
+import { emitSpendWebhook } from '@/lib/waas/spend-webhook'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest) {
   if (!mapping) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
+  const externalId = mapping.externalId
 
   // Re-derive totals with CURRENT fee config — quote_stale on drift, so the
   // user always confirms the live price, never a stale one.
@@ -214,6 +216,10 @@ export async function POST(request: NextRequest) {
     recipientName: q.recipientName,
     principalTzs,
     selcomFeeEstimateTzs: selcomFeeTzs,
+    // Partner link for the spend.updated webhook — carried in the descriptor
+    // so the settlement cron can notify without a schema change.
+    partnerId: partner.id,
+    externalId,
   }
 
   const [burn] = await db
@@ -314,6 +320,12 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(burnRequests.id, burnRequestId))
     console.log('[v1/spend] burn reverted', { burnRequestId, reason, remintError })
+    await emitSpendWebhook(spendDescriptor, {
+      burnRequestId,
+      reference: transId,
+      status: remintError ? 'reconcile_required' : 'reverted',
+      burnAmountTzs,
+    })
   }
 
   const revertBurnForUser = async (reason: string) => {
@@ -371,6 +383,7 @@ export async function POST(request: NextRequest) {
       .update(burnRequests)
       .set({ payoutStatus: 'reconcile_required', payoutError: dispatchError, updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
+    await emitSpendWebhook(spendDescriptor, { burnRequestId, reference: transId, status: 'reconcile_required', burnAmountTzs })
   } else if (dispatchOutcome === 'accepted') {
     // Quick completion poll — settlement measured at ~4s on the live rail.
     // The spend-status-sync cron is the durable path.
@@ -384,20 +397,17 @@ export async function POST(request: NextRequest) {
           const status = String(raw.body.data?.status ?? '').toUpperCase()
           if (status === 'COMPLETED' || raw.body.result === 'SUCCESS') {
             const d = raw.body.data as Record<string, unknown> | undefined
+            const settledDescriptor = {
+              ...spendDescriptor,
+              actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : undefined,
+              selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : undefined,
+            }
             await db
               .update(burnRequests)
-              .set({
-                status: 'burned',
-                payoutStatus: 'completed',
-                spend: {
-                  ...spendDescriptor,
-                  actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : undefined,
-                  selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : undefined,
-                },
-                updatedAt: new Date(),
-              })
+              .set({ status: 'burned', payoutStatus: 'completed', spend: settledDescriptor, updatedAt: new Date() })
               .where(eq(burnRequests.id, burnRequestId))
             console.log(`[v1/spend] ${transId} completed (polled)`)
+            await emitSpendWebhook(settledDescriptor, { burnRequestId, reference: transId, status: 'completed', burnAmountTzs })
             break
           }
           if (status === 'FAILED' || raw.body.result === 'FAIL') {
