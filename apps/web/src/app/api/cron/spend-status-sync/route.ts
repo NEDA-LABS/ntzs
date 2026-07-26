@@ -8,6 +8,7 @@ import { queryTransactionRaw } from '@/lib/psp/selcom'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { spendEnabled } from '@/lib/waas/spend-quote'
+import { emitSpendWebhook } from '@/lib/waas/spend-webhook'
 
 export const maxDuration = 60
 
@@ -78,19 +79,19 @@ export async function GET(request: NextRequest) {
         if (status === 'COMPLETED' || raw.body.result === 'SUCCESS') {
           const d = raw.body.data as Record<string, unknown> | undefined
           const descriptor = (row.spend ?? {}) as Record<string, unknown>
-          await db
+          const settled = {
+            ...descriptor,
+            actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : descriptor.actualChargesTzs,
+            selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : descriptor.selcomReceipt,
+          }
+          const done = await db
             .update(burnRequests)
-            .set({
-              status: 'burned',
-              payoutStatus: 'completed',
-              spend: {
-                ...descriptor,
-                actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : descriptor.actualChargesTzs,
-                selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : descriptor.selcomReceipt,
-              },
-              updatedAt: new Date(),
-            })
+            .set({ status: 'burned', payoutStatus: 'completed', spend: settled, updatedAt: new Date() })
             .where(and(eq(burnRequests.id, row.id), eq(burnRequests.payoutStatus, 'pending')))
+            .returning({ id: burnRequests.id })
+          if (done.length > 0) {
+            await emitSpendWebhook(settled, { burnRequestId: row.id, reference: row.payoutReference, status: 'completed', burnAmountTzs: row.amountTzs })
+          }
           results.push({ id: row.id, outcome: 'completed' })
           console.log(`[cron/spend-status-sync] spend ${row.id} completed (${row.payoutReference})`)
           continue
@@ -138,6 +139,12 @@ export async function GET(request: NextRequest) {
             payoutReference: row.payoutReference,
             amountTzs: row.amountTzs,
             remintError: res.error ?? null,
+          })
+          await emitSpendWebhook(row.spend as Record<string, unknown> | null, {
+            burnRequestId: row.id,
+            reference: row.payoutReference,
+            status: res.error ? 'reconcile_required' : 'reverted',
+            burnAmountTzs: row.amountTzs,
           })
           results.push({ id: row.id, outcome: res.error ? 'reconcile_required' : 'reverted' })
           console.warn(`[cron/spend-status-sync] spend ${row.id} failed → ${res.error ? 'reconcile_required' : 'reverted'}`)

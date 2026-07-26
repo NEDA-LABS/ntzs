@@ -115,6 +115,7 @@ const NAV = [
       { id: 'deposits', label: 'Collections' },
       { id: 'transfers', label: 'Transfers' },
       { id: 'withdrawals', label: 'Disbursements' },
+      { id: 'spend', label: 'Spend (bills & merchants)' },
       { id: 'swap', label: 'Swap' },
       { id: 'ramp', label: 'Ramp' },
     ],
@@ -134,7 +135,8 @@ const USE_CASES = [
   { name: 'Insurance', caps: ['Collections', 'Treasury'] },
   { name: 'Payroll', caps: ['Disbursements', 'Treasury'] },
   { name: 'Settlement', caps: ['Ramp'] },
-  { name: 'Neobank', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap'] },
+  { name: 'Neobank', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap', 'Spend'] },
+  { name: 'Super-app', caps: ['Wallets', 'Collections', 'Spend'] },
 ]
 
 // Capability cards — scannable, each jumps to its reference section.
@@ -896,6 +898,114 @@ const withdrawal = await res2.json()
             </div>
           </DocSection>
 
+          {/* Spend */}
+          <DocSection
+            id="spend"
+            isActive={activeSection === 'spend'}
+            step="Step 8"
+            title="Spend — pay merchants & bills"
+            description="Burn a user's nTZS and pay a merchant Lipa Namba on any network (M-Pesa, Tigo, Airtel, Selcom) or a biller (LUKU electricity, GEPG government control numbers, DSTV, airtime and more) directly from the reserve. Same quote → confirm → execute shape as Disbursements. amountTzs is always the PRINCIPAL the destination receives; fees are added on top. Quote-first by design — execution ALWAYS requires a quoteId."
+          >
+            <CodeBlock
+              title="1 · POST /api/v1/spend/quote"
+              code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/spend/quote', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:    user.id,
+    kind:      'lipa',          // 'lipa' (merchant till) | 'bill' (biller)
+    amountTzs: 1000,            // PRINCIPAL the till receives, minimum 500
+    payNumber: '61115582',     // merchant Lipa Namba (lipa)
+    // for kind: 'bill' send instead:
+    //   utilityCode: 'LUKU',   // from GET /api/v1/spend/billers
+    //   utilityRef:  '01234567890',  // meter / control / smartcard number
+  }),
+})
+const quote = await res.json()
+// {
+//   quoteId: "eyJ2IjoxLCJr…",           // null if balance.sufficient is false
+//   expiresAt: "…",                      // valid 5 minutes
+//   recipientName: "ENZI COFFEE COMPANY LIMITED",  // null = registry had no answer
+//   principalTzs: 1000,
+//   burnAmountTzs: 1035,                 // deducted from the user's balance
+//   fees: { selcomFeeTzs: 30, platformFeeTzs: 5, totalFeeTzs: 35 },
+//   balance: { availableTzs: 25000, sufficient: true }
+// }`}
+            />
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Required confirmation screen:</span>{' '}
+              before the user&apos;s final tap, show <em>who they are paying</em>{' '}
+              (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">recipientName</code> + number),{' '}
+              <em>the fee</em> (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">fees.totalFeeTzs</code>) and{' '}
+              <em>the total burned</em> (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">burnAmountTzs</code>).
+              When <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">recipientName</code> is null, show the raw
+              number with an &ldquo;unverified destination&rdquo; caution. This is a Bank of Tanzania consumer-disclosure requirement.
+            </Note>
+            <CodeBlock
+              title="2 · POST /api/v1/spend — execute with the quoteId"
+              code={`const res2 = await fetch('https://www.ntzs.co.tz/api/v1/spend', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:    user.id,
+    kind:      'lipa',
+    amountTzs: 1000,             // must match the quote
+    payNumber: '61115582',      // must match the quote
+    quoteId:   quote.quoteId,   // ALWAYS required
+  }),
+})
+const spend = await res2.json()
+// { id, status: "burned", payoutStatus: "completed", reference: "202607259999",
+//   recipientName: "ENZI COFFEE COMPANY LIMITED", principalTzs: 1000,
+//   fees: { totalFeeTzs: 35 }, message: "Payment of 1000 TZS dispatched…" }
+//
+// payoutStatus "pending" settles server-side within a minute; a failed
+// payment AUTO-REVERTS the burn (balance restored) — no partner action.
+// Subscribe to the spend.updated webhook to hear the final state.
+//
+// Errors to handle (fetch a fresh quote and re-confirm):
+//   400 quote_required   — no quoteId sent (spend has no un-quoted path)
+//   400 invalid_quote    — expired (> 5 min) or malformed
+//   400 quote_mismatch   — user/destination/amount differ from the quote
+//   409 quote_stale      — pricing changed since the quote was issued
+//   400 unknown_biller   — utilityCode not in the catalogue (see supportedCodes)
+//   400 invalid_utility_ref — reference fails the biller's format
+//   503 spend_disabled / spend_kind_disabled — rail not enabled yet`}
+            />
+            <CodeBlock
+              title="Biller catalogue — GET /api/v1/spend/billers"
+              code={`// Render your bill-payment picker from live data, never a hardcoded list.
+const { categories } = await (await fetch(
+  'https://www.ntzs.co.tz/api/v1/spend/billers',
+  { headers: { 'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx' } }
+)).json()
+// categories: [{ key, label, billers: [{ code, referenceLabel,
+//   referenceKind, referenceMinLength, referenceMaxLength, feeFreeUnder20k }] }]
+// e.g. LUKU → referenceLabel "Meter No", 11 digits; GEPG → feeFreeUnder20k: true`}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { label: 'Minimum', value: '500 TZS (principal)' },
+                { label: 'Networks', value: 'Lipa works on any network — M-Pesa, Tigo, Airtel, Selcom tills' },
+                { label: 'Government bills', value: 'GEPG, DAWASA, NHC, Traffic Fine, water bills are FREE up to 20,000 TZS' },
+                { label: 'Quote', value: 'Always mandatory — there is no un-quoted spend path' },
+                { label: 'Settlement', value: 'Usually seconds; failures auto-revert the burn' },
+                { label: 'Large spend threshold', value: '>= 1,000,000 TZS burn total is refused (amount_too_large)' },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-xs font-medium text-white/50">{label}</div>
+                  <div className="mt-2 text-sm text-white/80">{value}</div>
+                </div>
+              ))}
+            </div>
+          </DocSection>
+
           {/* Swap Rate */}
           <DocSection
             id="rate"
@@ -1147,6 +1257,14 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
       // kycStatus: 'approved' | 'rejected' | 'pending_review'
       // On 'approved': re-call POST /api/v1/users (idempotent) — the
       // response now carries the user's walletAddress.
+      break
+    case 'spend.updated':
+      // event.data: { spendId, externalId, reference, status, kind,
+      //   recipientName, principalTzs, burnAmountTzs, actualChargesTzs,
+      //   selcomReceipt }
+      // status: 'completed' | 'reverted' | 'reconcile_required'
+      // Fires when a spend that returned payoutStatus 'pending' reaches its
+      // terminal state. 'reverted' = the burn was refunded (payment failed).
       break
   }
 
