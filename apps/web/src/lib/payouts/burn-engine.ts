@@ -44,6 +44,7 @@ interface BurnJob {
   wallet_id: string
   amount_tzs: number
   platform_fee_tzs: number | null
+  neda_fee_tzs: number | null
   chain: string
   contract_address: string
   recipient_phone: string | null
@@ -64,7 +65,7 @@ async function claimNextBurnJob(sql: SqlClient): Promise<BurnJob | null> {
       for update skip locked
       limit 1
     )
-    returning id, wallet_id, amount_tzs, platform_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address
+    returning id, wallet_id, amount_tzs, platform_fee_tzs, neda_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address
   `
   return rows[0] ?? null
 }
@@ -135,6 +136,27 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
     }
   }
 
+  // Mint the NEDA protocol fee to the platform (NEDA) treasury — always the
+  // platform's own treasury, never a partner's. Best-effort; a fee failure
+  // must not block the recipient's payout.
+  if (job.neda_fee_tzs != null && job.neda_fee_tzs > 0) {
+    const platformTreasury = (process.env.PLATFORM_TREASURY_ADDRESS || '').replace(/^["']|["']$/g, '')
+    if (isAddressLike(platformTreasury)) {
+      try {
+        const nedaTx = await token.mint(platformTreasury, BigInt(String(job.neda_fee_tzs)) * WEI_PER_TZS)
+        await nedaTx.wait(1)
+        await sql`update burn_requests set neda_fee_tx_hash = ${nedaTx.hash}, updated_at = now() where id = ${job.id}`
+        await logAudit(sql, 'burn_neda_fee_minted', 'burn_request', job.id, { nedaFeeTzs: job.neda_fee_tzs, platformTreasury, nedaFeeTxHash: nedaTx.hash })
+      } catch (nedaErr) {
+        const msg = nedaErr instanceof Error ? nedaErr.message : String(nedaErr)
+        console.error('[burn-engine] NEDA fee mint failed (non-fatal)', { burnRequestId: job.id, error: msg })
+        await logAudit(sql, 'burn_neda_fee_mint_failed', 'burn_request', job.id, { nedaFeeTzs: job.neda_fee_tzs, error: msg })
+      }
+    } else {
+      console.warn('[burn-engine] no platform treasury — NEDA protocol fee kept as reserve surplus', { burnRequestId: job.id, nedaFeeTzs: job.neda_fee_tzs })
+    }
+  }
+
   await logAudit(sql, 'burn_completed', 'burn_request', job.id, {
     amountTzs: job.amount_tzs, walletAddress, burnedFrom: burnFromAddress, txHash: tx.hash, chain: job.chain, contractAddress: activeContractAddress,
   })
@@ -144,7 +166,7 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
   // payout_status to 'completed' when the cash lands.
   if (job.recipient_phone) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
-    const payoutAmountTzs = netPayoutTzs({ amountTzs: job.amount_tzs, platformFeeTzs: job.platform_fee_tzs })
+    const payoutAmountTzs = netPayoutTzs({ amountTzs: job.amount_tzs, platformFeeTzs: job.platform_fee_tzs, nedaFeeTzs: job.neda_fee_tzs })
 
     const routed = await sendPayoutRouted({
       amountTzs: payoutAmountTzs,

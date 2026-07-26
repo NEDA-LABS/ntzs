@@ -10,33 +10,46 @@ import {
 
 let savedSecret: string | undefined
 let savedFx: string | undefined
+let savedBps: string | undefined
+let savedFloor: string | undefined
 
 beforeAll(() => {
   savedSecret = process.env.WAAS_QUOTE_SECRET
   savedFx = process.env.FX_JWT_SECRET
+  savedBps = process.env.NEDA_PROTOCOL_FEE_BPS
+  savedFloor = process.env.NEDA_PROTOCOL_FEE_FLOOR_TZS
   process.env.WAAS_QUOTE_SECRET = 'test-quote-secret'
+  // Pin the protocol fee to its shipped defaults for deterministic burn math.
+  process.env.NEDA_PROTOCOL_FEE_BPS = '30'
+  process.env.NEDA_PROTOCOL_FEE_FLOOR_TZS = '30'
 })
 
 afterAll(() => {
   process.env.WAAS_QUOTE_SECRET = savedSecret
   process.env.FX_JWT_SECRET = savedFx
+  process.env.NEDA_PROTOCOL_FEE_BPS = savedBps
+  process.env.NEDA_PROTOCOL_FEE_FLOOR_TZS = savedFloor
 })
 
 describe('computeWithdrawalGrossUp', () => {
-  it('grosses up receive + PSP fee by the platform fee rate (ceil)', () => {
-    // receive 5,000 at 0.5%: ceil(6500 / 0.995) = 6533
+  it('grosses up receive + PSP fee by the platform rate, then adds the NEDA fee on top', () => {
+    // receive 5,000 at 0.5%: partnerBurn = ceil(6500 / 0.995) = 6533; NEDA fee
+    // = max(5000×30bps=15, floor 30) = 30 → total burn 6563. Partner margin
+    // (platformFeeTzs) is UNCHANGED by the add-on.
     const g = computeWithdrawalGrossUp(5000, 0.5)
-    expect(g.burnAmountTzs).toBe(6533)
     expect(g.pspFeeTzs).toBe(PSP_FLAT_FEE_TZS)
     expect(g.platformFeeTzs).toBe(6533 - 5000 - PSP_FLAT_FEE_TZS)
-    // Identity: burn = receive + psp + platform, exactly.
-    expect(g.burnAmountTzs).toBe(5000 + g.pspFeeTzs + g.platformFeeTzs)
+    expect(g.nedaFeeTzs).toBe(30)
+    expect(g.burnAmountTzs).toBe(6563)
+    // Identity: burn = receive + psp + platform + neda, exactly.
+    expect(g.burnAmountTzs).toBe(5000 + g.pspFeeTzs + g.platformFeeTzs + g.nedaFeeTzs)
   })
 
-  it('zero platform fee still carries the PSP flat fee', () => {
+  it('zero platform fee still carries the PSP flat fee + NEDA fee', () => {
     const g = computeWithdrawalGrossUp(10_000, 0)
-    expect(g.burnAmountTzs).toBe(11_500)
     expect(g.platformFeeTzs).toBe(0)
+    expect(g.nedaFeeTzs).toBe(30) // max(10000×30bps=30, 30)
+    expect(g.burnAmountTzs).toBe(11_530) // 10000 + 1500 + 0 + 30
   })
 })
 

@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
         receiveAmountTzs,
         burnAmountTzs: grossUp.burnAmountTzs,
         platformFeeTzs: grossUp.platformFeeTzs,
+        nedaFeeTzs: grossUp.nedaFeeTzs,
       })
     : null
 
@@ -155,7 +156,8 @@ export async function POST(request: NextRequest) {
     fees: {
       platformFeeTzs: grossUp.platformFeeTzs,
       pspFeeTzs: grossUp.pspFeeTzs,
-      totalFeeTzs: grossUp.platformFeeTzs + grossUp.pspFeeTzs,
+      nedaFeeTzs: grossUp.nedaFeeTzs,
+      totalFeeTzs: grossUp.platformFeeTzs + grossUp.pspFeeTzs + grossUp.nedaFeeTzs,
     },
     balance: { availableTzs, sufficient },
     message: sufficient
