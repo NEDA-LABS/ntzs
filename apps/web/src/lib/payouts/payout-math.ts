@@ -30,10 +30,11 @@ export function grossUpWithdrawal(receiveTzs: number, feePercent: number = WITHD
 
 /**
  * The net amount the recipient receives for a burn request. Grossed-up
- * requests (platform_fee_tzs set) back out the fees; legacy requests pay the
- * full burn amount. Never negative.
+ * requests (platform_fee_tzs set) back out the fees — including the NEDA
+ * protocol fee, which is burned on top and must not reach the recipient.
+ * Legacy requests (no platform fee) pay the full burn amount. Never negative.
  */
-export function netPayoutTzs(job: { amountTzs: number; platformFeeTzs: number | null }): number {
+export function netPayoutTzs(job: { amountTzs: number; platformFeeTzs: number | null; nedaFeeTzs?: number | null }): number {
   if (job.platformFeeTzs == null) return Math.max(0, job.amountTzs)
-  return Math.max(0, job.amountTzs - job.platformFeeTzs - SNIPPE_FLAT_FEE_TZS)
+  return Math.max(0, job.amountTzs - job.platformFeeTzs - (job.nedaFeeTzs ?? 0) - SNIPPE_FLAT_FEE_TZS)
 }

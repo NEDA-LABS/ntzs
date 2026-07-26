@@ -203,6 +203,7 @@ export async function POST(request: NextRequest) {
         principalTzs,
         selcomFeeTzs: totals.selcomFeeTzs,
         platformFeeTzs: totals.platformFeeTzs,
+        nedaFeeTzs: totals.nedaFeeTzs,
         burnAmountTzs: totals.burnAmountTzs,
         recipientName,
       })
@@ -226,7 +227,8 @@ export async function POST(request: NextRequest) {
     fees: {
       selcomFeeTzs: totals.selcomFeeTzs,
       platformFeeTzs: totals.platformFeeTzs,
-      totalFeeTzs: totals.selcomFeeTzs + totals.platformFeeTzs,
+      nedaFeeTzs: totals.nedaFeeTzs,
+      totalFeeTzs: totals.selcomFeeTzs + totals.platformFeeTzs + totals.nedaFeeTzs,
     },
     balance: { availableTzs, sufficient },
     message: sufficient

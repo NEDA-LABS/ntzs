@@ -1,5 +1,7 @@
 import crypto from 'crypto'
 
+import { nedaProtocolFeeTzs } from '@/lib/waas/protocol-fee'
+
 /**
  * Withdrawal quotes — the enforcement layer that guarantees every payout
  * client (NEDApay included) has the recipient name, the fee breakdown, and
@@ -23,22 +25,29 @@ export const DEFAULT_PLATFORM_FEE_PERCENT = 0.5
 export const QUOTE_TTL_MS = 5 * 60 * 1000
 
 export interface WithdrawalGrossUp {
-  /** nTZS burned from the user's wallet. */
+  /** nTZS burned from the user's wallet — includes the NEDA protocol fee. */
   burnAmountTzs: number
-  /** Our fee (minted to treasury), = burn − receive − PSP flat fee. */
+  /** Partner's fee (minted to their treasury), = partnerBurn − receive − PSP flat fee. */
   platformFeeTzs: number
   /** PSP flat fee (kept in reserve to fund the PSP's charge). */
   pspFeeTzs: number
+  /** NEDA Labs protocol fee (rail-operator earn), minted to the NEDA treasury.
+   * Add-on: it sits ON TOP of the partner gross-up, so the partner's margin is
+   * unchanged and the recipient still receives exactly `receiveAmountTzs`. */
+  nedaFeeTzs: number
 }
 
-/** burnAmount = ceil((receive + pspFee) / (1 − feePercent/100)) — identical
- * math in quote and execute, or a quote could mismatch its own execution. */
+/** partnerBurn = ceil((receive + pspFee) / (1 − feePercent/100)); the NEDA
+ * protocol fee is added on top. Identical math in quote and execute, or a
+ * quote could mismatch its own execution. */
 export function computeWithdrawalGrossUp(receiveAmountTzs: number, feePercent: number): WithdrawalGrossUp {
-  const burnAmountTzs = Math.ceil((receiveAmountTzs + PSP_FLAT_FEE_TZS) / (1 - feePercent / 100))
+  const partnerBurn = Math.ceil((receiveAmountTzs + PSP_FLAT_FEE_TZS) / (1 - feePercent / 100))
+  const nedaFeeTzs = nedaProtocolFeeTzs(receiveAmountTzs)
   return {
-    burnAmountTzs,
-    platformFeeTzs: burnAmountTzs - receiveAmountTzs - PSP_FLAT_FEE_TZS,
+    burnAmountTzs: partnerBurn + nedaFeeTzs,
+    platformFeeTzs: partnerBurn - receiveAmountTzs - PSP_FLAT_FEE_TZS,
     pspFeeTzs: PSP_FLAT_FEE_TZS,
+    nedaFeeTzs,
   }
 }
 
@@ -51,6 +60,9 @@ export interface QuotePayload {
   receiveAmountTzs: number
   burnAmountTzs: number
   platformFeeTzs: number
+  /** NEDA protocol fee bound into the quote (0 when disabled). Optional for
+   * backward-compatibility with tokens minted before this field existed. */
+  nedaFeeTzs?: number
   /** Unix ms expiry. */
   exp: number
 }

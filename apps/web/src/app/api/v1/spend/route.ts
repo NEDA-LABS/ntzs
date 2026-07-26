@@ -149,13 +149,20 @@ export async function POST(request: NextRequest) {
       : null
 
   const totals = computeSpendTotals(kind, principalTzs, feePercent, utilityCode)
-  if (q.burnAmountTzs !== totals.burnAmountTzs || q.selcomFeeTzs !== totals.selcomFeeTzs || q.platformFeeTzs !== totals.platformFeeTzs) {
+  if (
+    q.burnAmountTzs !== totals.burnAmountTzs ||
+    q.selcomFeeTzs !== totals.selcomFeeTzs ||
+    q.platformFeeTzs !== totals.platformFeeTzs ||
+    q.nedaFeeTzs !== totals.nedaFeeTzs
+  ) {
     return NextResponse.json(
       { error: 'quote_stale', message: 'Pricing changed since this quote was issued. Request a new quote.' },
       { status: 409 }
     )
   }
-  const { burnAmountTzs, platformFeeTzs, selcomFeeTzs } = totals
+  const { burnAmountTzs, platformFeeTzs, selcomFeeTzs, nedaFeeTzs } = totals
+  // NEDA protocol fee → the platform (NEDA) treasury, always — never the partner's.
+  const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
 
   // Spends above the safe threshold are an ops flow, not an API flow.
   if (burnAmountTzs >= SAFE_MINT_THRESHOLD_TZS) {
@@ -234,6 +241,7 @@ export async function POST(request: NextRequest) {
       status: 'burn_submitted',
       requestedByUserId: userId,
       platformFeeTzs,
+      nedaFeeTzs,
       payoutProvider: 'selcom',
       pspFeeTzs: selcomFeeTzs,
       payoutKind: kind,
@@ -278,6 +286,23 @@ export async function POST(request: NextRequest) {
         console.error('[v1/spend] fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
       }
     }
+
+    // Mint the NEDA protocol fee to the platform (NEDA) treasury — the rail
+    // operator's earn. Best-effort; with no treasury it stays reserve surplus.
+    if (nedaFeeTzs > 0 && nedaRecipient) {
+      try {
+        const nedaTx = await token.mint(nedaRecipient, BigInt(nedaFeeTzs) * BigInt(10) ** BigInt(18))
+        await nedaTx.wait(1)
+        await db
+          .update(burnRequests)
+          .set({ nedaFeeTxHash: nedaTx.hash, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+      } catch (feeErr) {
+        console.error('[v1/spend] NEDA fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
+      }
+    } else if (nedaFeeTzs > 0) {
+      console.warn('[v1/spend] no platform treasury — NEDA protocol fee kept as reserve surplus', { burnRequestId, nedaFeeTzs })
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     await db.update(burnRequests).set({ status: 'failed', error: errorMessage, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
@@ -286,7 +311,7 @@ export async function POST(request: NextRequest) {
   }
 
   const [feeRow] = await db
-    .select({ feeTxHash: burnRequests.feeTxHash })
+    .select({ feeTxHash: burnRequests.feeTxHash, nedaFeeTxHash: burnRequests.nedaFeeTxHash })
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
     .limit(1)
@@ -311,6 +336,9 @@ export async function POST(request: NextRequest) {
       platformFeeTzs,
       feeRecipientAddress: feeRecipient,
       feeMintOccurred: Boolean(feeRow?.feeTxHash),
+      nedaFeeTzs,
+      nedaFeeRecipientAddress: nedaRecipient,
+      nedaFeeMintOccurred: Boolean(feeRow?.nedaFeeTxHash),
     },
     label: 'v1/spend',
   })
@@ -346,8 +374,8 @@ export async function POST(request: NextRequest) {
       recipientName: q.recipientName,
       principalTzs,
       burnAmountTzs,
-      fees: { selcomFeeTzs, platformFeeTzs, totalFeeTzs: selcomFeeTzs + platformFeeTzs },
-      message: `Payment of ${principalTzs} TZS dispatched${q.recipientName ? ` to ${q.recipientName}` : ''} (${selcomFeeTzs + platformFeeTzs} TZS in fees).`,
+      fees: { selcomFeeTzs, platformFeeTzs, nedaFeeTzs, totalFeeTzs: selcomFeeTzs + platformFeeTzs + nedaFeeTzs },
+      message: `Payment of ${principalTzs} TZS dispatched${q.recipientName ? ` to ${q.recipientName}` : ''} (${selcomFeeTzs + platformFeeTzs + nedaFeeTzs} TZS in fees).`,
     },
     { status: 201 }
   )

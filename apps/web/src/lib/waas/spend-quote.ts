@@ -2,6 +2,7 @@ import crypto from 'crypto'
 
 import { estimateSendMoneyFee, estimateBillPayFee } from '@/lib/psp/selcom-fees'
 import { DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
+import { nedaProtocolFeeTzs } from '@/lib/waas/protocol-fee'
 
 /**
  * Spend quotes — the disclosure contract for the "spend your nTZS" rails
@@ -32,6 +33,8 @@ export interface SpendTotals {
   principalTzs: number
   selcomFeeTzs: number
   platformFeeTzs: number
+  /** NEDA Labs protocol fee (rail-operator earn), minted to the NEDA treasury. */
+  nedaFeeTzs: number
   burnAmountTzs: number
 }
 
@@ -47,11 +50,13 @@ export function computeSpendTotals(
   const selcomFeeTzs =
     kind === 'lipa' ? estimateSendMoneyFee(principalTzs) : estimateBillPayFee(utilityCode ?? '', principalTzs)
   const platformFeeTzs = Math.ceil((principalTzs * feePercent) / 100)
+  const nedaFeeTzs = nedaProtocolFeeTzs(principalTzs)
   return {
     principalTzs,
     selcomFeeTzs,
     platformFeeTzs,
-    burnAmountTzs: principalTzs + selcomFeeTzs + platformFeeTzs,
+    nedaFeeTzs,
+    burnAmountTzs: principalTzs + selcomFeeTzs + platformFeeTzs + nedaFeeTzs,
   }
 }
 
@@ -72,6 +77,7 @@ export interface SpendQuotePayload {
   principalTzs: number
   selcomFeeTzs: number
   platformFeeTzs: number
+  nedaFeeTzs: number
   burnAmountTzs: number
   /** Name shown to the user at quote time (null = lookup had no answer). */
   recipientName: string | null
