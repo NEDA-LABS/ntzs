@@ -6,7 +6,9 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { lpAccounts, lpFxConfig, lpFxPairs } from '@ntzs/db'
 import { SubmitButton } from '../_components/SubmitButton'
-import { formatDateEAT } from '@/lib/format-date'
+import { formatDateEAT, formatDateTimeEAT } from '@/lib/format-date'
+import { readReconState } from '@/lib/fx/recon-state'
+import type { ReconRunSummary } from '@/lib/fx/recon'
 
 async function setMidRateAction(formData: FormData) {
   'use server'
@@ -53,6 +55,99 @@ async function approveKycAction(formData: FormData) {
   revalidatePath('/backstage/simplefx')
 }
 
+/**
+ * Latest solver-pool reconciliation (written by /api/cron/fx-pool-reconcile
+ * every 10 min): per-token ledger-vs-chain delta plus the Transfer-log sweep.
+ */
+function ReconStatusCard({ recon }: { recon: ReconRunSummary | null }) {
+  if (!recon) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6">
+        <p className="text-xs uppercase tracking-widest text-zinc-500 mb-1">Pool Reconciliation</p>
+        <p className="text-sm text-zinc-500">
+          No run recorded yet — the cron runs every 10 minutes and needs migration{' '}
+          <code className="text-zinc-400">0065_fx_recon_state</code> applied.
+        </p>
+      </div>
+    )
+  }
+
+  const styles = {
+    ok: { border: 'border-white/10', dot: 'bg-emerald-400', pill: 'bg-emerald-500/10 text-emerald-400', label: 'Healthy' },
+    info: { border: 'border-amber-500/30', dot: 'bg-amber-400', pill: 'bg-amber-500/10 text-amber-400', label: 'Surplus (fees accruing)' },
+    critical: { border: 'border-rose-500/40', dot: 'bg-rose-400', pill: 'bg-rose-500/10 text-rose-400', label: 'Drift detected' },
+  }[recon.status]
+
+  const anomalyTotal = recon.sweeps.reduce((n, s) => n + s.anomalyCount, 0)
+
+  return (
+    <div className={`rounded-2xl border ${styles.border} bg-zinc-950 p-6`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <p className="text-xs uppercase tracking-widest text-zinc-500">Pool Reconciliation</p>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${styles.pill}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
+            {styles.label}
+          </span>
+          {anomalyTotal > 0 && (
+            <span className="rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-400">
+              {anomalyTotal} unexplained transfer{anomalyTotal === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-zinc-600">
+          Last run {formatDateTimeEAT(recon.ranAt)}
+          {recon.alerted && <span className="ml-2 text-rose-400">alert emailed</span>}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {recon.tokens.map((t) => {
+          const deltaColor =
+            t.status === 'deficit' ? 'text-rose-400' : t.status === 'surplus' ? 'text-amber-400' : 'text-emerald-400'
+          return (
+            <div key={`${t.chain}-${t.token}`} className="rounded-xl border border-white/5 bg-black/30 px-4 py-3">
+              <div className="flex items-baseline justify-between">
+                <p className="text-sm font-medium text-white">{t.token}</p>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t.chain}</p>
+              </div>
+              <div className="mt-1.5 space-y-0.5 font-mono text-[11px] tabular-nums text-zinc-500">
+                <p>claims+fees {t.expected}</p>
+                <p>on-chain&nbsp;&nbsp;&nbsp; {t.onChain}</p>
+                <p className={deltaColor}>
+                  Δ {t.delta.startsWith('-') ? '' : '+'}
+                  {t.delta}
+                </p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-600">
+        {recon.sweeps.map((s) => (
+          <span key={s.chain}>
+            sweep {s.chain}:{' '}
+            {s.skipped ? (
+              <span className="text-amber-400/80">{s.skipped}</span>
+            ) : (
+              <>
+                blocks {s.fromBlock.toLocaleString()}–{s.toBlock.toLocaleString()} · {s.transfers} transfers ·{' '}
+                <span className={s.anomalyCount ? 'text-rose-400' : ''}>{s.anomalyCount} anomalous</span>
+              </>
+            )}
+          </span>
+        ))}
+        {recon.chainsSkipped.map((s) => (
+          <span key={s} className="text-zinc-700">
+            {s}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function KycBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     approved: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
@@ -76,6 +171,9 @@ export default async function SimpleFXBackstagePage() {
     .select()
     .from(lpAccounts)
     .orderBy(desc(lpAccounts.createdAt))
+
+  // Fail-soft: null until the cron has run once (and migration 0065 is applied).
+  const recon = await readReconState<ReconRunSummary>(db, 'last_run')
 
   const activeCount = lps.filter((l) => l.isActive).length
   const pendingKyc = lps.filter((l) => l.kycStatus === 'pending').length
@@ -106,6 +204,9 @@ export default async function SimpleFXBackstagePage() {
       </div>
 
       <div className="p-8 space-y-8">
+        {/* Solver-pool reconciliation status */}
+        <ReconStatusCard recon={recon} />
+
         {/* Mid Rate Card */}
         <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6">
           <div className="flex items-start justify-between gap-8">

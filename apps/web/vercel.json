@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/cron/fx-pool-reconcile",
-      "schedule": "30 3 * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/daily-attestation",

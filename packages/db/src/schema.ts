@@ -1153,6 +1153,18 @@ export const lpWalletTransactions = pgTable(
   })
 )
 
+/**
+ * Tiny KV store for the solver-pool reconciliation cron (fx-pool-reconcile).
+ * Keys: 'sweep_cursor:<chain>' (last block scanned by the Transfer-log sweep),
+ * 'last_run' (latest run summary, surfaced on backstage/simplefx),
+ * 'last_alert' (fingerprint + timestamp for alert dedup).
+ */
+export const fxReconState = pgTable('fx_recon_state', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const partnerWebhookEvents = pgTable(
   'partner_webhook_events',
   {
