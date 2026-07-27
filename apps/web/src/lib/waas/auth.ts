@@ -9,6 +9,7 @@ import { eq, type SQL } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
+import { isMissingSchemaObject } from '@/lib/db-errors'
 import { normalizeMode, type PartnerMode } from '@/lib/testmode/mode'
 import { partners } from '@ntzs/db'
 
@@ -57,15 +58,13 @@ type PartnerRow = {
  * before the migration must not 500 every partner API call, so the first
  * "column does not exist" answer latches a fallback that treats every partner
  * as live — i.e. exactly today's behaviour — for the life of the process.
+ *
+ * The predicate MUST unwrap drizzle's error wrapper (see lib/db-errors.ts).
+ * A version of this that only inspected the top-level error shipped on
+ * 27 Jul 2026 and never latched, so the window it was written to cover
+ * returned 500s instead.
  */
 let modeColumnsMissing = false
-
-function isUndefinedColumn(err: unknown): boolean {
-  const code = (err as { code?: string } | null)?.code
-  if (code === '42703') return true
-  const message = err instanceof Error ? err.message : String(err)
-  return /column .* does not exist/i.test(message)
-}
 
 async function selectPartner(where: SQL): Promise<PartnerRow | null> {
   const { db } = getDb()
@@ -79,7 +78,7 @@ async function selectPartner(where: SQL): Promise<PartnerRow | null> {
         .limit(1)
       return row ?? null
     } catch (err) {
-      if (!isUndefinedColumn(err)) throw err
+      if (!isMissingSchemaObject(err)) throw err
       modeColumnsMissing = true
       console.warn('[waas/auth] partners.mode not present yet — treating all partners as live until 0066 is applied')
     }
