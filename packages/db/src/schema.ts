@@ -565,6 +565,14 @@ export const partners = pgTable(
     passwordHash: text('password_hash'),
     apiKeyHash: text('api_key_hash').notNull(),
     apiKeyPrefix: varchar('api_key_prefix', { length: 20 }),
+    // Developer TEST MODE (Stripe-style test keys) — 'live' | 'test'.
+    // A 'test' partner is a separate row with its own API key whose traffic is
+    // served entirely by lib/testmode/: no chain, no PSP, no money tables.
+    // NOT related to the BoT regulatory sandbox (lib/sandbox/limits.ts).
+    // Requires drizzle/0066_test_mode.sql.
+    mode: text('mode').notNull().default('live'),
+    /** Set on a test partner: the live partner it was issued for (null on live rows). */
+    livePartnerId: uuid('live_partner_id'),
     webhookUrl: text('webhook_url'),
     webhookSecret: text('webhook_secret'),
     // Enabled capability scopes (composable platform model). NULL = legacy
@@ -1854,5 +1862,70 @@ export const attestations = pgTable(
   (t) => ({
     reportDateIdx: index('attestations_report_date_idx').on(t.reportDate),
     createdAtIdx: index('attestations_created_at_idx').on(t.createdAt),
+  })
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Developer TEST MODE (see drizzle/0066_test_mode.sql)
+//
+// ⚠ This is the DEVELOPER sandbox (Stripe-style test keys) — NOT the Bank of
+// Tanzania regulatory sandbox, which lives in lib/sandbox/limits.ts.
+//
+// Isolation is structural: a test partner's traffic writes ONLY here. Nothing
+// in this section is ever read by attestation, supply, reserve pots, the
+// payout/burn engines or any Backstage aggregate — so simulated money cannot
+// reach a regulator-facing number by construction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const testModeUsers = pgTable(
+  'test_mode_users',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    email: text('email'),
+    name: text('name'),
+    phone: text('phone'),
+    /** Deterministic fake EVM address (valid checksum, never funded on chain). */
+    walletAddress: text('wallet_address').notNull(),
+    balanceTzs: bigint('balance_tzs', { mode: 'number' }).notNull().default(0),
+    kycStatus: text('kyc_status').notNull().default('approved'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerExternalUq: uniqueIndex('test_mode_users_partner_external_uq').on(t.partnerId, t.externalId),
+  })
+)
+
+export const testModeTransactions = pgTable(
+  'test_mode_transactions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => testModeUsers.id, { onDelete: 'cascade' }),
+    /** 'deposit' | 'withdrawal' | 'spend' | 'transfer' */
+    kind: text('kind').notNull(),
+    /** 'pending' | 'completed' | 'failed' | 'reconcile_required' */
+    status: text('status').notNull(),
+    amountTzs: bigint('amount_tzs', { mode: 'number' }).notNull().default(0),
+    /** Signed effect on the user's simulated balance, applied at settlement. */
+    balanceDeltaTzs: bigint('balance_delta_tzs', { mode: 'number' }).notNull().default(0),
+    fees: jsonb('fees'),
+    detail: jsonb('detail'),
+    /** When a pending row becomes terminal — swept on the next API call. */
+    settlesAt: timestamp('settles_at', { withTimezone: true }),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    webhookSent: boolean('webhook_sent').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    partnerCreatedIdx: index('test_mode_transactions_partner_created_idx').on(t.partnerId, t.createdAt),
+    dueIdx: index('test_mode_transactions_due_idx').on(t.status, t.settlesAt),
   })
 )

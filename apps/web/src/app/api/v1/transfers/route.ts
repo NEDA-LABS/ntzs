@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL as ENV_BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE as ENV_CONTRACT_ADDRESS } from '@/lib/env'
+import { isTestMode, testCreateTransfer } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { signAndSendTransfer, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
@@ -40,6 +41,9 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // TEST MODE: simulated wallet-to-wallet move, no chain transaction.
+  if (isTestMode(partner)) return testCreateTransfer(partner, request)
 
   let body: {
     fromUserId: string

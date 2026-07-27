@@ -7,6 +7,7 @@ import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
 import { runIdentityLadder } from '@/lib/kyc/ladder'
 import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
+import { isTestMode, testCreateUser } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { generatePartnerSeed, deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { users, wallets, partnerUsers, partners, kycCases } from '@ntzs/db'
@@ -20,6 +21,10 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // TEST MODE: simulated users, no chain, no identity registry. Must stay the
+  // first branch after auth — nothing below may run for a test partner.
+  if (isTestMode(partner)) return testCreateUser(partner, request)
 
   // Guard: encryption key must be configured before any HD wallet operations
   if (!process.env.WAAS_ENCRYPTION_KEY) {

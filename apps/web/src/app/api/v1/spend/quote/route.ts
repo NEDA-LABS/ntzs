@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { isTestMode, testSpendQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
   const { partner } = authResult
+
+  // TEST MODE (above the rail flag — see the execute route).
+  if (isTestMode(partner)) return testSpendQuote(partner, request)
 
   if (!spendEnabled()) {
     return NextResponse.json(

@@ -61,6 +61,20 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.11.0 (27 Jul 2026)
+
+### Test mode — build the whole integration before a shilling moves
+
+Every partner endpoint now has a **sandbox twin**. Get credentials in seconds from `POST /api/v1/testmode/signup` (no contract, no waiting), point your integration at the `ntzs_test_` key, and the same endpoints return the same shapes against **simulated money, simulated identity and simulated payment providers**.
+
+What is *real* in test mode: the fee maths (the same functions production charges with), quote signing and expiry, every validation rule and error code, and webhooks — really delivered, really signed, carrying `livemode: false`. What is simulated: the blockchain, the PSPs and the identity registry.
+
+Deterministic scenarios let you exercise the unhappy paths on demand — **the last two digits decide the outcome**: `…13` fails and reverts, `…02` lands in `reconcile_required`, `…99` stays pending forever, `…00` has no registered name, and a NIDA ending `0000` triggers the manual-review branch. See [Test Mode](#test-mode).
+
+Test data lives in its own tables. It is not, and cannot become, part of nTZS supply, the reserve, or any attestation.
+
+---
+
 ## What's New — v1.10.0 (25 Jul 2026)
 
 ### Spend — pay any Lipa Namba or bill in Tanzania with nTZS
@@ -203,6 +217,77 @@ Authorization: Bearer <partner-api-key>
 ```
 
 API keys are issued per partner and scoped to their sub-wallet namespace. Keys can be rotated via `POST /api/v1/partners/regenerate-key`.
+
+Keys are **mode-scoped**. A key beginning `ntzs_live_` moves real money; a key beginning `ntzs_test_` is served entirely by the sandbox described below. There is no per-request flag and no way to mix the two — the key decides.
+
+---
+
+## Test Mode
+
+Test mode is the sandbox partners integrate against before go-live. It is the **same API surface** — same paths, same request bodies, same response shapes, same error codes — running against simulated money.
+
+### Getting credentials
+
+```http
+POST /api/v1/testmode/signup
+Content-Type: application/json
+
+{ "name": "Acme Bank", "email": "dev@acme.co.tz", "webhookUrl": "https://acme.co.tz/hooks/ntzs" }
+```
+
+```json
+{
+  "livemode": false,
+  "partnerId": "…",
+  "apiKey": "ntzs_test_…",
+  "webhookSecret": "whsec_…"
+}
+```
+
+No contract, no account review, no waiting. Existing partners can instead issue a paired test key from the developer dashboard (**Settings → Test key**) — it is a separate sandbox account, so rotating it never affects the live key.
+
+### What is real, and what is not
+
+| Real in test mode | Simulated |
+| --- | --- |
+| Fee maths — the same functions production charges with | The blockchain (deterministic fake addresses and tx hashes) |
+| Quote signing, expiry, `quote_mismatch`, `quote_stale` | The payment providers (no PSP is ever called) |
+| Every validation rule and error code | The identity registry (no NIDA lookup) |
+| Webhooks — delivered, HMAC-signed, retried | Balances (held in `test_mode_*` tables) |
+
+Test-mode webhook payloads carry `livemode: false`; live ones carry `livemode: true`.
+
+### Scenarios — the last two digits decide the outcome
+
+For a **deposit** the digits come from the amount; for anything that **pays out** (withdrawal phone, Lipa till, bill reference) they come from the destination.
+
+| Trigger | Result |
+| --- | --- |
+| ends in `13` | Fails. A payout burns, fails, and reverts — the balance comes back. |
+| ends in `02` | `reconcile_required` — burned, unconfirmed, **not** refunded. Exercise your "do not retry" path. |
+| ends in `99` | Stays `pending` forever. Test timeouts and stuck-transaction handling. |
+| ends in `00` | No registered name — render the unverified-destination warning. |
+| Lipa till `61115582` / `70031820` | Resolves to `ENZI COFFEE COMPANY LIMITED` / `NEDA LABS LIMITED`. |
+| NIDA ending `0000` | `202 kyc_pending_review` — the manual-review branch. |
+| anything else | Completes. |
+
+### Controls
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/testmode` | Mode, scenarios, controls, recent transactions, and **which rails are live in production**. |
+| `POST /api/v1/testmode/advance` | Settle every due transaction now instead of waiting (~3s by default). Use this in CI. |
+| `POST /api/v1/testmode/users/:id/approve` | Clear a simulated manual KYC review and fire `kyc.updated`. |
+| `POST /api/v1/testmode/reset` | Delete every simulated user and transaction on this key. |
+
+### Two deliberate differences
+
+1. **Test mode runs every rail**, including capabilities not yet switched on in production — so you can build ahead of a rollout. `GET /api/v1/testmode` reports what is actually live; check it before committing to a launch date.
+2. **Ramp and Swap are not simulated** (`501 not_available_in_test_mode`). Both settle against live counterparties; ramp is additionally gated pending regulatory sign-off.
+
+### Isolation
+
+Test-mode activity is written to dedicated tables and is never read by nTZS supply, the reserve, or any attestation. Simulated balances are not liabilities and cannot appear in a regulatory report — the isolation is structural, not a filter.
 
 ---
 

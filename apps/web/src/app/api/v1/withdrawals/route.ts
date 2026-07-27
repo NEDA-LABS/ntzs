@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
+import { isTestMode, testCreateWithdrawal } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import {
   ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // TEST MODE: simulated burn + payout, real fee math and real quote checks.
+  if (isTestMode(partner)) return testCreateWithdrawal(partner, request)
 
   let body: { userId: string; amountTzs: number; phoneNumber: string; quoteId?: string }
   try {

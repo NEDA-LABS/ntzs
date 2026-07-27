@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
+import { isTestMode, testLookupName } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone, lookupRecipientName, normalizePhone } from '@/lib/psp'
 import { detectNetwork } from '@/lib/psp/routing'
@@ -27,6 +28,9 @@ export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
   const { partner } = authResult
+
+  // TEST MODE: deterministic names, no PSP lookup (and so no lookup quota).
+  if (isTestMode(partner)) return testLookupName(request)
 
   try {
     await enforceRateLimit(`namelookup:${partner.id}`, LOOKUPS_PER_MINUTE, 60)

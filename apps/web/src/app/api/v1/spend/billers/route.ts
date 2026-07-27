@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { isTestMode } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { SELCOM_BILLERS, BILLER_CATEGORY_LABELS, type BillerCategory } from '@/lib/psp/selcom-billers'
 import { estimateBillPayFee } from '@/lib/psp/selcom-fees'
@@ -21,6 +22,10 @@ export async function GET(request: import('next/server').NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
 
+  // TEST MODE: the catalogue is static reference data, so it is served as-is —
+  // only `enabled` differs, because every rail is on in the sandbox.
+  const testMode = isTestMode(authResult.partner)
+
   const categories = (Object.keys(BILLER_CATEGORY_LABELS) as BillerCategory[]).map((cat) => ({
     key: cat,
     label: BILLER_CATEGORY_LABELS[cat],
@@ -37,7 +42,8 @@ export async function GET(request: import('next/server').NextRequest) {
   }))
 
   return NextResponse.json({
-    enabled: spendEnabled(),
+    enabled: testMode || spendEnabled(),
+    ...(testMode ? { livemode: false } : {}),
     categories,
     note: 'Reference formats are validated at quote time. Always price with POST /api/v1/spend/quote — never hardcode fees.',
   })
