@@ -7,7 +7,7 @@ import { capabilityError, hasCapability } from '@/lib/platform/capabilities'
 import { requireServiceKey } from '@/lib/service-auth'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isTestMode } from '@/lib/testmode'
-import { merchantAccounts, partners } from '@ntzs/db'
+import { merchantAccounts, partnerKyb, partners } from '@ntzs/db'
 
 /**
  * Who is calling a Biashara endpoint — TWO DOORS, deliberately.
@@ -74,6 +74,24 @@ export async function requireBiasharaCaller(req: NextRequest): Promise<CallerRes
       .limit(1)
     if (!hasCapability(row?.capabilities ?? null, 'biashara')) {
       return { error: capabilityError('biashara') }
+    }
+
+    // KYB gate, mirroring the Ramp API. `biashara` is declared kybRequired,
+    // and that declaration is metadata — something has to enforce it. Issuing
+    // merchant wallets and moving merchant money is not a thing to open to an
+    // unverified business.
+    const [kyb] = await db
+      .select({ status: partnerKyb.status })
+      .from(partnerKyb)
+      .where(eq(partnerKyb.partnerId, partner.id))
+      .limit(1)
+    if (!kyb || kyb.status !== 'approved') {
+      return {
+        error: NextResponse.json(
+          { error: 'KYB approval required to use the Biashara API. Contact NEDA Labs to complete verification.' },
+          { status: 403 }
+        ),
+      }
     }
 
     return { caller: { scope: 'partner', partnerId: partner.id } }

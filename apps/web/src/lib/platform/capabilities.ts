@@ -78,11 +78,27 @@ export const CAPABILITY_PRESETS: Record<string, { label: string; capabilities: C
 }
 
 /**
+ * Capabilities that must be granted EXPLICITLY and are never implied by the
+ * legacy "capabilities IS NULL → everything" default.
+ *
+ * The legacy default exists so nothing an existing partner already uses can
+ * disappear. It must not become a back door that hands every partner each new
+ * product we add: adding `biashara` to the enum would otherwise have granted a
+ * live merchant product — wallets, collections, cash-out, working capital — to
+ * every partner holding a NULL capabilities row, without anyone deciding to.
+ *
+ * Only add a capability here when it is NEW. Moving an existing one in would
+ * revoke access somebody already has.
+ */
+export const OPT_IN_CAPABILITIES: readonly Capability[] = ['biashara']
+
+/**
  * Resolve a partner's effective capabilities. NULL/empty = legacy partner →
- * the full set (backward compatibility, so nothing they use today disappears).
+ * the full set minus anything opt-in (backward compatibility, so nothing they
+ * use today disappears, without silently granting tomorrow's products).
  */
 export function resolveCapabilities(raw: string[] | null | undefined): Capability[] {
-  if (!raw || raw.length === 0) return [...ALL_CAPABILITIES]
+  if (!raw || raw.length === 0) return ALL_CAPABILITIES.filter((c) => !OPT_IN_CAPABILITIES.includes(c))
   return raw.filter((c): c is Capability => c in CAPABILITIES)
 }
 

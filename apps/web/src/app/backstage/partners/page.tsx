@@ -9,6 +9,12 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, depositRequests, burnRequests, partnerKyb } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateEAT } from '@/lib/format-date'
+import {
+  CAPABILITIES,
+  OPT_IN_CAPABILITIES,
+  resolveCapabilities,
+  type Capability,
+} from '@/lib/platform/capabilities'
 
 async function togglePartnerStatusAction(formData: FormData) {
   'use server'
@@ -59,6 +65,39 @@ async function updateDailyLimitAction(formData: FormData) {
   revalidatePath('/backstage/partners')
 }
 
+async function toggleCapabilityAction(formData: FormData) {
+  'use server'
+  await requireRole('super_admin')
+
+  const partnerId = String(formData.get('partnerId') ?? '')
+  const capability = String(formData.get('capability') ?? '') as Capability
+  const enable = String(formData.get('enable') ?? '') === 'true'
+  if (!partnerId || !(capability in CAPABILITIES)) throw new Error('Missing partnerId or capability')
+
+  const { db } = getDb()
+  const [row] = await db
+    .select({ capabilities: partners.capabilities })
+    .from(partners)
+    .where(eq(partners.id, partnerId))
+    .limit(1)
+
+  // resolveCapabilities() materialises the legacy NULL default, so flipping one
+  // capability never silently revokes the rest.
+  const current = new Set(resolveCapabilities(row?.capabilities ?? null))
+  if (enable) current.add(capability)
+  else current.delete(capability)
+
+  await db
+    .update(partners)
+    .set({ capabilities: [...current], updatedAt: new Date() })
+    .where(eq(partners.id, partnerId))
+
+  await writeAuditLog(enable ? 'partner.capability_granted' : 'partner.capability_revoked', 'partner', partnerId, {
+    capability,
+  })
+  revalidatePath('/backstage/partners')
+}
+
 async function reviewKybAction(formData: FormData) {
   'use server'
   const reviewer = await requireAnyRole(['super_admin', 'platform_compliance'])
@@ -105,6 +144,7 @@ export default async function PartnersPage() {
       nextWalletIndex: partners.nextWalletIndex,
       treasuryWalletAddress: partners.treasuryWalletAddress,
       feePercent: partners.feePercent,
+      capabilities: partners.capabilities,
       createdAt: partners.createdAt,
     })
     .from(partners)
@@ -252,6 +292,7 @@ export default async function PartnersPage() {
                   <th className="px-6 py-4">Volume Minted</th>
                   <th className="px-6 py-4">Fee %</th>
                   <th className="px-6 py-4">Treasury</th>
+                  <th className="px-6 py-4">Capabilities</th>
                   <th className="px-6 py-4">Daily Limit</th>
                   <th className="px-6 py-4">Contract</th>
                   <th className="px-6 py-4">Joined</th>
@@ -337,6 +378,32 @@ export default async function PartnersPage() {
                           ) : (
                             <span className="text-xs text-amber-500/70">Not provisioned</span>
                           )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {/* Opt-in capabilities: never implied by the legacy
+                              NULL default, so they must be granted here. */}
+                          <div className="flex flex-col gap-1.5">
+                            {OPT_IN_CAPABILITIES.map((cap) => {
+                              const enabled = resolveCapabilities(partner.capabilities).includes(cap)
+                              return (
+                                <form key={cap} action={toggleCapabilityAction} className="flex items-center gap-2">
+                                  <input type="hidden" name="partnerId" value={partner.id} />
+                                  <input type="hidden" name="capability" value={cap} />
+                                  <input type="hidden" name="enable" value={enabled ? 'false' : 'true'} />
+                                  <SubmitButton
+                                    pendingText="..."
+                                    className={`rounded-lg px-2.5 py-1.5 text-xs ${
+                                      enabled
+                                        ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                                        : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                                    }`}
+                                  >
+                                    {CAPABILITIES[cap].label}: {enabled ? 'on' : 'off'}
+                                  </SubmitButton>
+                                </form>
+                              )
+                            })}
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <form action={updateDailyLimitAction} className="flex items-center gap-2">
