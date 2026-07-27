@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/merchant/db';
+import { findFirstPartyMerchantByEmail } from '@/lib/biashara/caller';
 import { merchantAccounts } from '@ntzs/db';
 import { verifyPassword, createSession, setSessionCookie } from '@/lib/merchant/auth';
 
@@ -13,11 +14,9 @@ export async function POST(req: NextRequest) {
 
     const normalized = email.toLowerCase().trim();
 
-    const [merchant] = await db
-      .select()
-      .from(merchantAccounts)
-      .where(eq(merchantAccounts.email, normalized))
-      .limit(1);
+    // First-party only: partner-owned merchants sign in through their own
+    // app, and email is no longer globally unique (see lib/biashara/caller.ts).
+    const merchant = await findFirstPartyMerchantByEmail(normalized);
 
     // Constant-time response to prevent account enumeration
     if (!merchant?.passwordHash) {

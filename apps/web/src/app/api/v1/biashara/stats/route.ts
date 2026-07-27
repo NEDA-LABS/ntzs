@@ -2,17 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, count, eq, gte, sum } from 'drizzle-orm'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts, merchantCollections, merchantPaymentLinks } from '@ntzs/db'
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 import { getCapitalSummary } from '@/lib/merchant/capital'
 
 export async function GET(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) {
-    return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
-  }
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const now = new Date()
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())

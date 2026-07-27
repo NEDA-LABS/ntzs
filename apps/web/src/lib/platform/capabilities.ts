@@ -18,6 +18,7 @@ export type Capability =
   | 'treasury'
   | 'swap'
   | 'ramp'
+  | 'biashara'
 
 export interface CapabilityDef {
   id: Capability
@@ -58,6 +59,10 @@ export const CAPABILITIES: Record<Capability, CapabilityDef> = {
   ramp: {
     id: 'ramp', label: 'Ramp', docsSlug: 'ramp', kybRequired: true,
     description: 'Wallet-less settlement: USDC ⇄ mobile money, no per-user wallets.',
+  },
+  biashara: {
+    id: 'biashara', label: 'Biashara', docsSlug: 'biashara', kybRequired: true,
+    description: 'Embed a full merchant product — payment links, sales, settlement and working capital — in your app.',
   },
 }
 
