@@ -1,6 +1,7 @@
 import { and, eq, gte, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
+import { isMissingSchemaObject } from '@/lib/db-errors'
 import { generateWebhookSecret, hashApiKey } from '@/lib/waas/auth'
 import { partners } from '@ntzs/db'
 
@@ -26,12 +27,8 @@ const MIGRATION_PENDING: ProvisionResult = {
   message: 'Test mode is not available on this deployment yet (pending database migration).',
 }
 
-function isUndefinedColumn(err: unknown): boolean {
-  const code = (err as { code?: string } | null)?.code
-  if (code === '42703' || code === '42P01') return true
-  const message = err instanceof Error ? err.message : String(err)
-  return /(column|relation) .* does not exist/i.test(message)
-}
+// Unwraps drizzle's error wrapper — see lib/db-errors.ts for why that matters.
+const isUndefinedColumn = isMissingSchemaObject
 
 /**
  * Create a test partner. `livePartnerId` links it to the live account that
