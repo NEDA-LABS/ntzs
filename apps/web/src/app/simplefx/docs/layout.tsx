@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import DocsSidebar from './_components/docs-sidebar'
 import DocsMobileNav from './_components/docs-mobile-nav'
+import ThemeToggle from '@/components/ui/theme-toggle'
 
 export const metadata = {
   title: 'Documentation — SimpleFX',
@@ -24,6 +25,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
           <div className="flex items-center gap-4 text-xs text-zinc-600">
             <Link href="/simplefx/terms" className="hover:text-zinc-300 transition-colors duration-150">Terms</Link>
             <Link href="/simplefx/privacy" className="hover:text-zinc-300 transition-colors duration-150">Privacy</Link>
+            <ThemeToggle className="rounded-full border border-white/10 bg-white/5 text-zinc-500 hover:text-white" />
           </div>
         </div>
       </div>

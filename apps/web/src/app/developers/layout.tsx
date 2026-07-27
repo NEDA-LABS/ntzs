@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
+import ThemeToggle from '@/components/ui/theme-toggle'
 
 function AuthButtons() {
   const router = useRouter()
@@ -108,6 +109,7 @@ export default function DevelopersLayout({ children }: { children: React.ReactNo
             </nav>
 
             <div className="flex items-center gap-3">
+              <ThemeToggle className="rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white" />
               <AuthButtons />
             </div>
           </div>

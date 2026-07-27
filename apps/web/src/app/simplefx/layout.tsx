@@ -13,7 +13,7 @@ export default function SimpleFXLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="font-mono antialiased bg-black text-white min-h-screen">
+    <div className="fx-root font-mono antialiased bg-black text-white min-h-screen">
       {children}
     </div>
   );

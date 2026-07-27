@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import LandingSections from './LandingSections'
+import ThemeToggle from '@/components/ui/theme-toggle'
 
 function useOnChainSupply() {
   const [supply, setSupply] = useState<string | null>(null)
@@ -59,7 +60,7 @@ export default function MasterLandingPage() {
         <div className="pointer-events-none absolute bottom-0 right-0 w-12 h-12 border-b border-r border-white/25 z-20" />
 
         {/* ── Top nav bar ── */}
-        <header className="relative z-50 border-b border-gray-100 bg-white shadow-sm">
+        <header className="relative z-50 border-b border-gray-100 bg-white light:bg-[#ffffff] shadow-sm">
           <div className="flex items-center justify-between px-6 py-3 lg:px-12">
 
             {/* Logo */}
@@ -107,6 +108,8 @@ export default function MasterLandingPage() {
               >
                 SimpleFX
               </Link>
+              <div className="w-px h-4 bg-gray-200 mx-1" />
+              <ThemeToggle className="border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900" />
             </nav>
 
             {/* Mobile nav */}
@@ -129,6 +132,7 @@ export default function MasterLandingPage() {
               >
                 SimpleFX
               </Link>
+              <ThemeToggle className="border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900" />
             </div>
           </div>
 

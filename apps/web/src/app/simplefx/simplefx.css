@@ -50,3 +50,23 @@
     opacity: 1;
   }
 }
+
+/* ── Light mode ──────────────────────────────────────────────
+   SimpleFX inherits the sitewide `.light` palette flip from
+   globals.css. The rules below cover what the variable remap
+   can't reach: the hardcoded white shimmer gradient, and the
+   gray-* muted text (the gray ramp deliberately doesn't flip). */
+.light .fx-gradient-text {
+  background-image: linear-gradient(
+    90deg,
+    rgba(15, 23, 42, 0.95) 0%,
+    rgba(15, 23, 42, 1) 35%,
+    rgba(37, 99, 235, 0.95) 55%,
+    rgba(29, 78, 216, 0.9) 72%,
+    rgba(15, 23, 42, 0.92) 100%
+  );
+}
+
+.light .fx-root .text-gray-300 { color: var(--color-gray-700); }
+.light .fx-root .text-gray-400 { color: var(--color-gray-600); }
+.light .fx-root .text-gray-500 { color: var(--color-gray-600); }

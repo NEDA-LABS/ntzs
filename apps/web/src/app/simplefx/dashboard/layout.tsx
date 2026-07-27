@@ -9,6 +9,7 @@ import {
   Activity, Settings, LogOut, Menu, ArrowLeftRight, Clock, ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
+import ThemeToggle from '@/components/ui/theme-toggle';
 
 export interface LpAccount {
   id: string;
@@ -92,13 +93,16 @@ function Sidebar({ lp, onLogout }: { lp: LpAccount | null; onLogout: () => void 
         })}
       </nav>
 
-      <button
-        onClick={onLogout}
-        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-colors w-full text-left mt-4"
-      >
-        <LogOut size={16} />
-        Sign out
-      </button>
+      <div className="mt-4 flex items-center justify-between">
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-colors text-left"
+        >
+          <LogOut size={16} />
+          Sign out
+        </button>
+        <ThemeToggle className="rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-white/5" />
+      </div>
     </aside>
   );
 }
@@ -171,6 +175,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span className="text-sm font-medium text-white">
               Simple<span className="text-blue-400">FX</span>
             </span>
+            <ThemeToggle className="ml-auto rounded-lg text-zinc-400 hover:text-white hover:bg-white/5" />
           </div>
 
           <main className="flex-1 overflow-y-auto">
