@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getDb } from '@/lib/db'
+import { isTestMode, testNotSupported } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { swapRateLimit } from '@/lib/rate-limit'
 import { deriveWallet } from '@/lib/waas/hd-wallets'
@@ -27,6 +28,9 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // TEST MODE: swaps hit a live LP pool and an SSE stream — not simulated yet.
+  if (isTestMode(partner)) return testNotSupported('Swap')
 
   const limited = await swapRateLimit(`swap:partner:${partner.id}`)
   if (limited) return limited

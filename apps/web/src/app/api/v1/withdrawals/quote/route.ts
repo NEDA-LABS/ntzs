@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { isTestMode, testWithdrawalQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { isValidTanzanianPhone, normalizePhone, lookupRecipientName } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
@@ -37,6 +38,8 @@ export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
   const { partner } = authResult
+
+  if (isTestMode(partner)) return testWithdrawalQuote(partner, request)
 
   let body: { userId: string; amountTzs: number; phoneNumber: string }
   try {

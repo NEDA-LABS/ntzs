@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
+import { isTestMode, testCreateSpend } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
@@ -50,6 +51,11 @@ export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
   const { partner } = authResult
+
+  // TEST MODE: simulated burn + Selcom dispatch. Deliberately ABOVE the rail
+  // flag — partners build against spend in the sandbox before it is switched
+  // on in production.
+  if (isTestMode(partner)) return testCreateSpend(partner, request)
 
   if (!spendEnabled()) {
     return NextResponse.json(

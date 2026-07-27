@@ -5,10 +5,11 @@
  */
 
 import crypto from 'crypto'
-import { eq } from 'drizzle-orm'
+import { eq, type SQL } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
+import { normalizeMode, type PartnerMode } from '@/lib/testmode/mode'
 import { partners } from '@ntzs/db'
 
 export interface AuthenticatedPartner {
@@ -18,6 +19,87 @@ export interface AuthenticatedPartner {
   webhookSecret: string | null
   encryptedHdSeed: string | null
   nextWalletIndex: number
+  /**
+   * Developer TEST MODE (see lib/testmode/). 'test' traffic is served by the
+   * simulator and never reaches the chain, a PSP, or a money table. Reads as
+   * 'live' on any deployment where drizzle/0066_test_mode.sql is not applied.
+   */
+  mode: PartnerMode
+  /** On a test partner, the live partner it was issued for. */
+  livePartnerId: string | null
+}
+
+const PARTNER_COLUMNS = {
+  id: partners.id,
+  name: partners.name,
+  webhookUrl: partners.webhookUrl,
+  webhookSecret: partners.webhookSecret,
+  encryptedHdSeed: partners.encryptedHdSeed,
+  nextWalletIndex: partners.nextWalletIndex,
+  isActive: partners.isActive,
+}
+
+type PartnerRow = {
+  id: string
+  name: string
+  webhookUrl: string | null
+  webhookSecret: string | null
+  encryptedHdSeed: string | null
+  nextWalletIndex: number
+  isActive: boolean
+  mode: string | null
+  livePartnerId: string | null
+}
+
+/**
+ * Deploy-order safety: `partners.mode` / `partners.live_partner_id` arrive with
+ * drizzle/0066_test_mode.sql, which is applied by hand. A deploy that lands
+ * before the migration must not 500 every partner API call, so the first
+ * "column does not exist" answer latches a fallback that treats every partner
+ * as live — i.e. exactly today's behaviour — for the life of the process.
+ */
+let modeColumnsMissing = false
+
+function isUndefinedColumn(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code
+  if (code === '42703') return true
+  const message = err instanceof Error ? err.message : String(err)
+  return /column .* does not exist/i.test(message)
+}
+
+async function selectPartner(where: SQL): Promise<PartnerRow | null> {
+  const { db } = getDb()
+
+  if (!modeColumnsMissing) {
+    try {
+      const [row] = await db
+        .select({ ...PARTNER_COLUMNS, mode: partners.mode, livePartnerId: partners.livePartnerId })
+        .from(partners)
+        .where(where)
+        .limit(1)
+      return row ?? null
+    } catch (err) {
+      if (!isUndefinedColumn(err)) throw err
+      modeColumnsMissing = true
+      console.warn('[waas/auth] partners.mode not present yet — treating all partners as live until 0066 is applied')
+    }
+  }
+
+  const [row] = await db.select(PARTNER_COLUMNS).from(partners).where(where).limit(1)
+  return row ? { ...row, mode: 'live', livePartnerId: null } : null
+}
+
+function toAuthenticated(row: PartnerRow): AuthenticatedPartner {
+  return {
+    id: row.id,
+    name: row.name,
+    webhookUrl: row.webhookUrl,
+    webhookSecret: row.webhookSecret,
+    encryptedHdSeed: row.encryptedHdSeed,
+    nextWalletIndex: row.nextWalletIndex,
+    mode: normalizeMode(row.mode),
+    livePartnerId: row.livePartnerId,
+  }
 }
 
 /**
@@ -113,31 +195,10 @@ export async function verifyPartnerSession(token: string): Promise<Authenticated
   const partnerId = verifySessionToken(token)
   if (!partnerId) return null
 
-  const { db } = getDb()
-  const [partner] = await db
-    .select({
-      id: partners.id,
-      name: partners.name,
-      webhookUrl: partners.webhookUrl,
-      webhookSecret: partners.webhookSecret,
-      encryptedHdSeed: partners.encryptedHdSeed,
-      nextWalletIndex: partners.nextWalletIndex,
-      isActive: partners.isActive,
-    })
-    .from(partners)
-    .where(eq(partners.id, partnerId))
-    .limit(1)
-
+  const partner = await selectPartner(eq(partners.id, partnerId))
   if (!partner || !partner.isActive) return null
 
-  return {
-    id: partner.id,
-    name: partner.name,
-    webhookUrl: partner.webhookUrl,
-    webhookSecret: partner.webhookSecret,
-    encryptedHdSeed: partner.encryptedHdSeed,
-    nextWalletIndex: partner.nextWalletIndex,
-  }
+  return toAuthenticated(partner)
 }
 
 /**
@@ -166,21 +227,7 @@ export async function authenticatePartner(
   }
 
   const keyHash = hashApiKey(apiKey)
-  const { db } = getDb()
-
-  const [partner] = await db
-    .select({
-      id: partners.id,
-      name: partners.name,
-      webhookUrl: partners.webhookUrl,
-      webhookSecret: partners.webhookSecret,
-      encryptedHdSeed: partners.encryptedHdSeed,
-      nextWalletIndex: partners.nextWalletIndex,
-      isActive: partners.isActive,
-    })
-    .from(partners)
-    .where(eq(partners.apiKeyHash, keyHash))
-    .limit(1)
+  const partner = await selectPartner(eq(partners.apiKeyHash, keyHash))
 
   if (!partner) {
     return {
@@ -194,14 +241,5 @@ export async function authenticatePartner(
     }
   }
 
-  return {
-    partner: {
-      id: partner.id,
-      name: partner.name,
-      webhookUrl: partner.webhookUrl,
-      webhookSecret: partner.webhookSecret,
-      encryptedHdSeed: partner.encryptedHdSeed,
-      nextWalletIndex: partner.nextWalletIndex,
-    },
-  }
+  return { partner: toAuthenticated(partner) }
 }

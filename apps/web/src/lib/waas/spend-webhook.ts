@@ -27,6 +27,9 @@ export async function emitSpendWebhook(
 
   try {
     await queuePartnerWebhook(partnerId, 'spend.updated', {
+      // Mirrors the test-mode emitter, so a partner can route on one field
+      // instead of on which API key happened to be in play.
+      livemode: true,
       spendId: args.burnRequestId,
       externalId: typeof spend?.externalId === 'string' ? spend.externalId : null,
       reference: args.reference,

@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { isTestMode, testGetUser } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { users, wallets, partnerUsers, kycCases } from '@ntzs/db'
 
@@ -26,6 +27,8 @@ export async function GET(
 
   const { partner } = authResult
   const { id: userId } = await params
+
+  if (isTestMode(partner)) return testGetUser(partner, userId)
 
   const { db } = getDb()
 

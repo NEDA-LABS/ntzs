@@ -2,6 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
+import { isTestMode, testNotSupported } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import {
   isSmileIdConfigured,
@@ -45,6 +46,10 @@ export async function POST(
 
     const { partner } = authResult
     const { id: userId } = await params
+
+    // TEST MODE: identity is simulated at user creation; a pending review is
+    // cleared with POST /api/v1/testmode/users/:id/approve.
+    if (isTestMode(partner)) return testNotSupported('Document-verification sessions')
 
     // Body is optional: { country?: ISO-3166-1 alpha-2 }. When omitted, the
     // user's open case decides (an international signup already carries its

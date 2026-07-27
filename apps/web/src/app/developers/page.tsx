@@ -104,6 +104,7 @@ const NAV = [
     items: [
       { id: 'capabilities', label: 'Overview' },
       { id: 'auth', label: 'Authentication' },
+      { id: 'testmode', label: 'Test mode' },
       { id: 'users', label: 'Create users' },
       { id: 'kyc', label: 'Identity (KYC)' },
       { id: 'balance', label: 'Get balance' },
@@ -380,11 +381,84 @@ export default function DevelopersPage() {
             </Note>
           </DocSection>
 
+          {/* Test mode */}
+          <DocSection
+            id="testmode"
+            isActive={activeSection === 'testmode'}
+            step="Step 2"
+            title="Test mode"
+            description="Build the whole integration before a single shilling moves. Test keys hit the same endpoints and return the same shapes — with simulated money, simulated identity and simulated payment providers."
+          >
+            <CodeBlock
+              title="Get sandbox credentials — no contract, no waiting"
+              code={`curl -X POST https://www.ntzs.co.tz/api/v1/testmode/signup \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Acme Bank","email":"dev@acme.co.tz"}'
+
+# → { "apiKey": "ntzs_test_…", "webhookSecret": "whsec_…" }
+# Then point every call below at that key. Start with:
+curl https://www.ntzs.co.tz/api/v1/testmode \\
+  -H "Authorization: Bearer ntzs_test_xxxxxxxxxxxx"`}
+            />
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">What is real:</span> the fee maths, the quote
+              signatures and expiry, every validation rule and error code, and the webhooks (really delivered,
+              really signed, carrying <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">livemode: false</code>).
+              What is simulated: the blockchain, the payment providers and the identity registry. Test data lives in
+              its own tables and can never touch the nTZS reserve or supply.
+            </Note>
+
+            <div className="mt-6 overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="bg-white/[0.04] text-white/60">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Use this value…</th>
+                    <th className="px-4 py-2.5 font-medium">…and you get</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06] text-white/75">
+                  {[
+                    ['Amount (deposit) or destination (payout) ending 13', 'Fails — a payout reverts and the balance comes back'],
+                    ['Destination ending 02', 'reconcile_required — burned, unconfirmed, no refund'],
+                    ['Amount or destination ending 99', 'Stays pending forever — test your timeouts'],
+                    ['Destination ending 00', 'No registered name — the unverified-destination warning'],
+                    ['Lipa till 61115582 / 70031820', 'ENZI COFFEE COMPANY LIMITED / NEDA LABS LIMITED'],
+                    ['NIDA ending 0000', '202 kyc_pending_review — clear it with the approve endpoint'],
+                    ['Anything else', 'Completes'],
+                  ].map(([trigger, result]) => (
+                    <tr key={trigger}>
+                      <td className="px-4 py-2.5"><code className="text-xs text-emerald-300/90">{trigger}</code></td>
+                      <td className="px-4 py-2.5">{result}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <CodeBlock
+              title="Drive the simulation"
+              code={`# Settle every pending transaction now (instead of waiting ~3s)
+POST /api/v1/testmode/advance
+
+# Clear a simulated manual KYC review
+POST /api/v1/testmode/users/{userId}/approve
+
+# Wipe every test user and transaction on this key
+POST /api/v1/testmode/reset`}
+            />
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">One deliberate difference:</span> test mode runs
+              every rail, including ones not yet switched on in production.
+              <code className="mx-1 rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/testmode</code>
+              reports which rails are actually live, so build ahead — but check there before you promise a launch date.
+            </Note>
+          </DocSection>
+
           {/* Users */}
           <DocSection
             id="users"
             isActive={activeSection === 'users'}
-            step="Step 2"
+            step="Step 3"
             title="Create users"
             description="Register a user and provision an on-chain wallet in a single call. Wallets are deterministically derived from your partner seed — no blockchain transaction required."
           >
@@ -464,7 +538,7 @@ export default function DevelopersPage() {
           <DocSection
             id="kyc"
             isActive={activeSection === 'kyc'}
-            step="Step 3"
+            step="Step 4"
             title="Identity verification (KYC)"
             description="Every wallet is backed by a verified identity, checked on a risk-tiered ladder. Most users pass instantly at create-user; the rest finish in ~2 minutes with a document-capture session — nobody waits on a human unless something genuinely needs review."
           >
@@ -585,7 +659,7 @@ const res = await fetch(
           <DocSection
             id="balance"
             isActive={activeSection === 'balance'}
-            step="Step 4"
+            step="Step 5"
             title="Get user profile &amp; balance"
             description="Fetch a user's on-chain nTZS balance alongside their profile. The balance is read live from Base mainnet at request time."
           >
@@ -629,7 +703,7 @@ const user = await res.json()
           <DocSection
             id="deposits"
             isActive={activeSection === 'deposits'}
-            step="Step 5"
+            step="Step 6"
             title="Accept deposits (On-Ramp)"
             description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
           >
@@ -702,7 +776,7 @@ body: JSON.stringify({
           <DocSection
             id="transfers"
             isActive={activeSection === 'transfers'}
-            step="Step 6"
+            step="Step 7"
             title="Transfers"
             description="Move nTZS or USDC between platform users or to any external wallet address. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
           >
@@ -818,7 +892,7 @@ const transfer = await res.json()
           <DocSection
             id="withdrawals"
             isActive={activeSection === 'withdrawals'}
-            step="Step 7"
+            step="Step 8"
             title="Cash out to mobile money (Off-Ramp)"
             description="Two-step flow: quote, then execute. The quote returns the recipient's registered name, the fee breakdown and the net amount — everything your confirmation screen must show — plus a signed quoteId that authorizes execution at exactly those terms. amountTzs is always the amount the recipient RECEIVES (net)."
           >
@@ -902,7 +976,7 @@ const withdrawal = await res2.json()
           <DocSection
             id="spend"
             isActive={activeSection === 'spend'}
-            step="Step 8"
+            step="Step 9"
             title="Spend — pay merchants & bills"
             description="Burn a user's nTZS and pay a merchant Lipa Namba on any network (M-Pesa, Tigo, Airtel, Selcom) or a biller (LUKU electricity, GEPG government control numbers, DSTV, airtime and more) directly from the reserve. Same quote → confirm → execute shape as Disbursements. amountTzs is always the PRINCIPAL the destination receives; fees are added on top. Quote-first by design — execution ALWAYS requires a quoteId."
           >

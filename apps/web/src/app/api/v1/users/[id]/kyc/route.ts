@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL } from '@/lib/env'
+import { isTestMode, testNotSupported } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { deriveAddress, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
@@ -35,6 +36,10 @@ export async function POST(
 
     const { partner } = authResult
     const { id: userId } = await params
+
+    // TEST MODE: identity is simulated at user creation; a pending review is
+    // cleared with POST /api/v1/testmode/users/:id/approve.
+    if (isTestMode(partner)) return testNotSupported('Retro-KYC')
 
     let body: { nidaNumber?: string; phone?: string }
     try {
