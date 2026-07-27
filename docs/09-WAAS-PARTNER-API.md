@@ -61,6 +61,24 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.12.0 (27 Jul 2026)
+
+### Biashara is now a partner capability — embed a merchant product in your app
+
+`/api/v1/biashara/*` (merchant activation, payment links & QR, sales, settlement, cash-out and
+working capital) now accepts a **standard partner API key** with the `biashara` capability, not
+only our internal service key. A partner can embed the whole merchant product under their own UI —
+a bank's merchant tab, for instance — while holding no wallet, no key and no float.
+
+**Tenant isolation:** a partner key can only see merchants it created. Another tenant's merchant id
+returns `404`, never `403`, so the API does not confirm it exists. Merchants created through the
+first-party service key are invisible to every partner key.
+
+Not simulated in test mode (`501`) — the merchant rails run against live providers, so the
+meaningful test is a small real payment. See [docs/partners/biashara.md](partners/biashara.md).
+
+---
+
 ## What's New — v1.11.0 (27 Jul 2026)
 
 ### Test mode — build the whole integration before a shilling moves

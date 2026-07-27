@@ -6,7 +6,7 @@ import {
   enterpriseMerchantApplications,
 } from '@ntzs/db'
 import { eq, and } from 'drizzle-orm'
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 
 /**
  * POST /api/v1/biashara/financing/invites/[id]/respond  (NEDApay service layer)
@@ -14,11 +14,9 @@ import { requireServiceKey } from '@/lib/service-auth'
  * Headers: x-service-key, x-merchant-id.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const { id } = await params
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts, merchantAiUsage, merchantCollections, merchantPaymentLinks, merchantPlatformFees } from '@ntzs/db'
 import { and, count, desc, eq, gte, sql, sum } from 'drizzle-orm'
@@ -151,11 +151,9 @@ async function runTool(
 }
 
 export async function POST(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const body = await req.json() as { messages: Anthropic.MessageParam[]; agentName?: string }
   if (!Array.isArray(body.messages) || !body.messages.length) {

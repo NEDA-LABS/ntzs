@@ -1243,15 +1243,35 @@ export const merchantAccounts = pgTable(
 
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
 
+    /**
+     * Owning partner (drizzle/0067). NULL = first-party merchant (NEDApay /
+     * our own portal) — every row that existed before partner scoping, and
+     * still the default. A partner API key may only ever see rows matching
+     * its own id, so NULL is invisible to partners and fails safe.
+     */
+    partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'set null' }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    emailUq: uniqueIndex('merchant_accounts_email_uq').on(t.email),
+    // email is the merchant-portal login identity: unique among first-party
+    // merchants (exactly the old global guarantee, since every legacy row is
+    // NULL), and unique per partner for everyone else. The same person may be
+    // a merchant on two platforms.
+    emailFirstPartyUq: uniqueIndex('merchant_accounts_email_first_party_uq')
+      .on(t.email)
+      .where(sql`${t.partnerId} is null`),
+    emailPartnerUq: uniqueIndex('merchant_accounts_email_partner_uq')
+      .on(t.partnerId, t.email)
+      .where(sql`${t.partnerId} is not null`),
+    // handle stays GLOBALLY unique — it resolves public payment URLs with no
+    // tenant context, so a duplicate could route money to the wrong merchant.
     handleUq: uniqueIndex('merchant_accounts_handle_uq').on(t.handle),
     walletIndexUq: uniqueIndex('merchant_accounts_wallet_index_uq').on(t.walletIndex),
     walletAddressUq: uniqueIndex('merchant_accounts_wallet_address_uq').on(t.walletAddress),
     userIdx: index('merchant_accounts_user_id_idx').on(t.userId),
+    partnerIdx: index('merchant_accounts_partner_id_idx').on(t.partnerId),
   })
 )
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyOtp } from '@/lib/merchant/otp';
 import { createSession, setSessionCookie } from '@/lib/merchant/auth';
 import { db } from '@/lib/merchant/db';
+import { findFirstPartyMerchantByEmail } from '@/lib/biashara/caller';
 import { merchantAccounts } from '@ntzs/db';
 import { eq } from 'drizzle-orm';
 import { provisionMerchantWallet, slugFromEmail } from '@/lib/merchant/wallet';
@@ -20,11 +21,9 @@ export async function POST(req: NextRequest) {
 
     const normalized = email.toLowerCase().trim();
 
-    let [merchant] = await db
-      .select()
-      .from(merchantAccounts)
-      .where(eq(merchantAccounts.email, normalized))
-      .limit(1);
+    // First-party only: partner-owned merchants sign in through their own
+    // app, and email is no longer globally unique (see lib/biashara/caller.ts).
+    let merchant = await findFirstPartyMerchantByEmail(normalized);
 
     if (!merchant) {
       // Merchants are NEDApay users: new stores are created through the NEDApay

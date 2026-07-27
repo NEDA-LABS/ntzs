@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 import { JsonRpcProvider, Contract } from 'ethers'
 import { MIN_WITHDRAWAL_TZS, SNIPPE_FLAT_FEE_TZS, WITHDRAWAL_FEE_PCT } from '@/lib/payouts/payout-math'
 
@@ -14,11 +14,9 @@ const NTZS_ABI = ['function balanceOf(address) view returns (uint256)']
  * Headers: x-service-key, x-merchant-id.
  */
 export async function GET(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const [merchant] = await db
     .select({ walletAddress: merchantAccounts.walletAddress })

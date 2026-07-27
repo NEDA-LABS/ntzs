@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 import { requestMerchantWithdrawal } from '@/lib/merchant/withdraw'
 
 /**
@@ -14,11 +14,9 @@ import { requestMerchantWithdrawal } from '@/lib/merchant/withdraw'
  * merchant's own balance and needs no lender.
  */
 export async function POST(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   let body: { amountTzs?: number; phone?: string }
   try {
