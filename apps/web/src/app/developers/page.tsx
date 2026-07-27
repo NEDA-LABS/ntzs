@@ -117,6 +117,7 @@ const NAV = [
       { id: 'transfers', label: 'Transfers' },
       { id: 'withdrawals', label: 'Disbursements' },
       { id: 'spend', label: 'Spend (bills & merchants)' },
+      { id: 'biashara', label: 'Biashara (merchant product)' },
       { id: 'swap', label: 'Swap' },
       { id: 'ramp', label: 'Ramp' },
     ],
@@ -1130,6 +1131,109 @@ const crossRate = await fetch(
                 <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">SLIPPAGE_EXCEEDED</code>.
               </Note>
             </div>
+          </DocSection>
+
+          {/* Biashara */}
+          <DocSection
+            id="biashara"
+            isActive={activeSection === 'biashara'}
+            step="Step 10"
+            title="Biashara — a merchant product inside your app"
+            description="Turn your customers into merchants: they collect payments by QR or link, watch their sales, control how much auto-settles to mobile money, cash out — and, where a lender is attached, draw working capital against their sales history. All under your UI, your brand. You hold no wallet, no key and no float."
+          >
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">Access:</span> Biashara requires the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">biashara</code> capability and
+              approved KYB — it issues merchant wallets and moves merchant money. Ask us to enable it.
+              A key without it gets <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">403</code>.
+            </Note>
+
+            <CodeBlock
+              title="1 · Activate a customer as a merchant"
+              code={`// Provision the user first (Step 3), then:
+const res = await fetch('https://www.ntzs.co.tz/api/v1/biashara/accounts', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:          user.id,          // from POST /api/v1/users
+    email:           'shop@example.co.tz',
+    businessName:    'Duka la Asha',
+    settlementPhone: '0744277496',
+  }),
+})
+const merchant = await res.json()
+// {
+//   merchantId:    "…",           // send as x-merchant-id on every call below
+//   handle:        "dukalaasha",  // PUBLIC payment identity — read it back!
+//   walletAddress: "0x…",
+// }
+
+// Idempotent per userId/email WITHIN YOUR OWN BOOK — calling again returns the
+// same merchant with alreadyExists: true.
+//
+// handle is globally unique across the platform. If yours is taken we assign
+// the next free variant and return it, so activation never fails on a
+// collision — never assume the handle you asked for.`}
+            />
+
+            <CodeBlock
+              title="2 · Every other call carries the merchant id"
+              code={`const headers = {
+  'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+  'x-merchant-id': merchant.merchantId,
+  'Content-Type': 'application/json',
+}
+
+// Collect
+POST   /api/v1/biashara/links      { amountTzs, label }   // payment link + QR
+GET    /api/v1/biashara/links
+DELETE /api/v1/biashara/links
+
+// Show them their business
+GET /api/v1/biashara/stats         // sales today / this month
+GET /api/v1/biashara/collections   // history, ?limit= up to 50, cursor-paginated
+GET /api/v1/biashara/wallet        // balance
+
+// Settlement + cash-out
+GET   /api/v1/biashara/settlement  // auto-settle % + payout phone
+PATCH /api/v1/biashara/settlement
+POST  /api/v1/biashara/withdraw    { amountTzs: 10000 }   // NET received, min 5,000
+
+// Working capital
+GET  /api/v1/biashara/financing/status     // facility, drawn, available
+POST /api/v1/biashara/financing/withdraw   // draw against it`}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Tenant isolation:</span> your key only ever
+                sees merchants it created. Another partner&apos;s merchant id returns{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">404</code>, never{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">403</code> — we don&apos;t
+                confirm that it exists.
+              </Note>
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Lender-controlled settlement:</span> when a
+                lender funds the merchant, the merchant&apos;s own settlement controls go read-only.
+                Surface that in your UI rather than letting the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">PATCH</code> fail.
+              </Note>
+            </div>
+
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">No sandbox — deliberately.</span> A{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ntzs_test_</code> key gets{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">501</code> here. The merchant
+              rails run against live payment providers, so the meaningful test is a real one: activate a
+              merchant, create a link, push a small payment (1,000 TZS) to a phone you control, and watch
+              it land in <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/collections</code>,{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/stats</code> and{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/wallet</code>, then withdraw it
+              back out. Everything else on this page <em>does</em> have a full sandbox — build those
+              against a test key while your Biashara account is being set up.
+            </Note>
           </DocSection>
 
           {/* Swap */}
