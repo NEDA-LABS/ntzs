@@ -70,7 +70,14 @@ export interface SpendQuotePayload {
   k: 'spend'
   kind: SpendKind
   partnerId: string
+  /** Empty when the quote was funded by a sub-wallet — see `src`. */
   userId: string
+  /**
+   * Funding source the quote was priced for, as `user:<id>` or
+   * `sub_wallet:<id>`. Optional for tokens minted before agent floats existed;
+   * execute falls back to comparing `userId` when absent.
+   */
+  src?: string
   /** spendTarget() of the destination the name+fees were disclosed for. */
   target: string
   network?: string

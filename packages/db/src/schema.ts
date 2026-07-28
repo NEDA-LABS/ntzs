@@ -296,8 +296,21 @@ export const burnRequests = pgTable(
     nedaFeeTzs: bigint('neda_fee_tzs', { mode: 'number' }),
     nedaFeeTxHash: text('neda_fee_tx_hash'),
     // Explicit on-chain address to burn from (overrides wallet_id lookup).
-    // Set for merchant financing disbursements → the lender's treasury wallet.
+    // Set for merchant financing disbursements → the lender's treasury wallet,
+    // and for agent-float disbursements → the funding sub-wallet.
     burnFromAddress: text('burn_from_address'),
+
+    /**
+     * Funding sub-wallet for agent-float ("SmartWakala") disbursements
+     * (drizzle/0068). NULL for every user-funded burn.
+     *
+     * ⚠ This is the CAP SUBJECT, not decoration. Sub-wallets sit under a
+     * partner treasury and so escape the per-user sandbox limits by default;
+     * tagging the burn is what lets BoT Parameters #4/#5 be counted per agent
+     * float, so a float is capped exactly as a user is. Never disburse from a
+     * sub-wallet without setting this.
+     */
+    subWalletId: uuid('sub_wallet_id'),
 
     // Rail that carries (or carried) the fiat leg (drizzle/0061 — applied).
     payoutProvider: pspProvider('payout_provider'),

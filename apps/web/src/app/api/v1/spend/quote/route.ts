@@ -6,9 +6,10 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { isTestMode, testSpendQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
+import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, partners } from '@ntzs/db'
 import { QUOTE_TTL_MS } from '@/lib/waas/quote'
 import {
@@ -58,7 +59,9 @@ export async function POST(request: NextRequest) {
   }
 
   let body: {
-    userId: string
+    userId?: string
+    /** Agent float (SmartWakala) — funds the spend from a partner sub-wallet. */
+    subWalletId?: string
     kind: SpendKind
     amountTzs: number
     payNumber?: string
@@ -72,9 +75,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, kind } = body
-  if (!userId || !kind || !body.amountTzs) {
-    return NextResponse.json({ error: 'userId, kind, and amountTzs are required' }, { status: 400 })
+  const { kind } = body
+  if (!kind || !body.amountTzs) {
+    return NextResponse.json({ error: 'kind and amountTzs are required' }, { status: 400 })
   }
   if (kind !== 'lipa' && kind !== 'bill') {
     return NextResponse.json({ error: "kind must be 'lipa' or 'bill'" }, { status: 400 })
@@ -125,14 +128,12 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  const [mapping] = await db
-    .select({ externalId: partnerUsers.externalId })
-    .from(partnerUsers)
-    .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, userId)))
-    .limit(1)
-  if (!mapping) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
+  // Funds come from the user's wallet, or — for agent-float partners — from a
+  // partner sub-wallet. One resolver, so the quote and the execute route can
+  // never disagree about what is fundable.
+  const funding = await resolveFundingSource(partner, body)
+  if ('error' in funding) return funding.error
+  const { source } = funding
 
   // Same fee resolution as execution — a quote must price exactly what
   // execution will charge.
@@ -149,17 +150,9 @@ export async function POST(request: NextRequest) {
   // Caps behave exactly like execution (applied to the burn total).
   const perTxnErr = checkPerTransactionCap(totals.burnAmountTzs)
   if (perTxnErr) return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  const periodErr = await checkUserPeriodLimits(userId, totals.burnAmountTzs)
+  const periodErr = await checkFundingSourcePeriodLimits(source.subject, totals.burnAmountTzs)
   if (periodErr) return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
 
-  const [wallet] = await db
-    .select({ id: wallets.id, address: wallets.address })
-    .from(wallets)
-    .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
-    .limit(1)
-  if (!wallet || wallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json({ error: 'User wallet is not provisioned yet' }, { status: 400 })
-  }
 
   if (!BASE_RPC_URL || !NTZS_CONTRACT_ADDRESS_BASE) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
@@ -169,7 +162,7 @@ export async function POST(request: NextRequest) {
   try {
     const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
     const token = new ethers.Contract(NTZS_CONTRACT_ADDRESS_BASE, NTZS_BALANCE_ABI, provider)
-    const balanceWei: bigint = await token.balanceOf(wallet.address)
+    const balanceWei: bigint = await token.balanceOf(source.address)
     availableTzs = Number(balanceWei / BigInt(10) ** BigInt(18))
   } catch (err) {
     console.error('[v1/spend/quote] Balance check failed:', err instanceof Error ? err.message : err)
@@ -201,7 +194,8 @@ export async function POST(request: NextRequest) {
     ? createSpendQuoteToken({
         kind,
         partnerId: partner.id,
-        userId,
+        userId: source.kind === 'user' ? source.userId : '',
+        src: fundingSourceKey(source),
         target,
         network,
         principalTzs,
