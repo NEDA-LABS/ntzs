@@ -118,6 +118,7 @@ const NAV = [
       { id: 'withdrawals', label: 'Disbursements' },
       { id: 'spend', label: 'Spend (bills & merchants)' },
       { id: 'biashara', label: 'Biashara (merchant product)' },
+      { id: 'wakala', label: 'Agent float' },
       { id: 'swap', label: 'Swap' },
       { id: 'ramp', label: 'Ramp' },
     ],
@@ -1233,6 +1234,91 @@ POST /api/v1/biashara/financing/withdraw   // draw against it`}
               <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/wallet</code>, then withdraw it
               back out. Everything else on this page <em>does</em> have a full sandbox — build those
               against a test key while your Biashara account is being set up.
+            </Note>
+          </DocSection>
+
+          {/* Agent float */}
+          <DocSection
+            id="wakala"
+            isActive={activeSection === 'wakala'}
+            step="Step 11"
+            title="Agent float — one balance, every rail"
+            description="For platforms serving mobile-money agents (wakalas). Each agent gets one nTZS float that pays any mobile wallet, any Lipa Namba on any network, and any biller — from a single balance, with no per-network float placement and no counterparty to find. You set the retail price; your margin is configured on your account."
+          >
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">Access:</span> requires the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">wakala</code> capability and approved
+              KYB. <span className="font-semibold text-amber-300">And read Limits below before planning a
+              rollout</span> — each float is capped as one sandbox participant.
+            </Note>
+
+            <CodeBlock
+              title="1 · Provision a float per agent"
+              code={`POST /api/v1/partners/sub-wallets
+{ "label": "Agent 042 — Kariakoo" }
+// → { id, address, label }   ← keep id against your agent record`}
+            />
+
+            <CodeBlock
+              title="2 · Disburse — pass subWalletId instead of userId"
+              code={`// Pay a bill (LUKU, GEPG, water, TV…)
+POST /api/v1/spend/quote
+{ "subWalletId": "…", "kind": "bill",
+  "amountTzs": 20000, "utilityCode": "LUKU", "utilityRef": "01234567890" }
+POST /api/v1/spend        { …same…, "quoteId": "…" }
+
+// Pay a merchant till on any network
+POST /api/v1/spend/quote  { "subWalletId": "…", "kind": "lipa",
+                            "amountTzs": 5000, "payNumber": "61115582" }
+
+// Pay out to a customer's mobile wallet
+POST /api/v1/withdrawals/quote
+{ "subWalletId": "…", "amountTzs": 50000, "phoneNumber": "0744277496" }
+
+// Everything else is identical to the user-funded flow — same quotes,
+// same fees, same errors. Quotes bind to the float they were priced for,
+// and failures revert to the float, never to a user wallet.`}
+            />
+
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">What this is not:</span> moving float between
+              networks is already free and instant via TIPS, and we don&apos;t compete with that. The value is
+              the transactions an agent turns away today — bills, bank transfers, any-network tills — out of one
+              balance. Price for new revenue, not cheaper revenue.
+            </Note>
+
+            <div className="mt-6 overflow-x-auto rounded-xl border border-amber-400/20">
+              <table className="w-full min-w-[420px] text-left text-sm">
+                <thead className="bg-amber-400/[0.06] text-amber-200/80">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Sandbox limit</th>
+                    <th className="px-4 py-2.5 font-medium">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06] text-white/75">
+                  {[
+                    ['Per transaction', '1,000,000 TZS'],
+                    ['Per float, per day', '2,000,000 TZS'],
+                    ['Per float, 30 days', '60,000,000 TZS'],
+                    ['Participants total', '100'],
+                  ].map(([k, v]) => (
+                    <tr key={k}>
+                      <td className="px-4 py-2.5">{k}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-emerald-300/90">{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Note variant="warning">
+              Each float counts as <span className="font-semibold text-amber-300">one participant</span> — a
+              second sub-wallet is another participant, not extra headroom. A busy agent turns over more than
+              2,000,000 a day, so these limits do not yet support production volume: phase one is a named pilot
+              cohort, and that cohort&apos;s evidence is what supports raising them. Limit errors carry{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">limit</code>,{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">requested</code> and{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">usedInPeriod</code> so you can render
+              &ldquo;agent limit reached&rdquo; properly.
             </Note>
           </DocSection>
 

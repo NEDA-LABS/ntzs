@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
@@ -8,7 +8,7 @@ import { isTestMode, testCreateSpend } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
-import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
+import { burnRequests, partners } from '@ntzs/db'
 import {
   computeSpendTotals,
   verifySpendQuoteToken,

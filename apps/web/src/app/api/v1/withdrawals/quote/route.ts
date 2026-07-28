@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
@@ -6,9 +6,10 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { isTestMode, testWithdrawalQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
+import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import { isValidTanzanianPhone, normalizePhone, lookupRecipientName } from '@/lib/psp'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
-import { wallets, partnerUsers, partners } from '@ntzs/db'
+import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { partners } from '@ntzs/db'
 import { computeWithdrawalGrossUp, createQuoteToken, DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
@@ -41,16 +42,16 @@ export async function POST(request: NextRequest) {
 
   if (isTestMode(partner)) return testWithdrawalQuote(partner, request)
 
-  let body: { userId: string; amountTzs: number; phoneNumber: string }
+  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, amountTzs: receiveAmountRaw, phoneNumber } = body
-  if (!userId || !receiveAmountRaw || !phoneNumber) {
-    return NextResponse.json({ error: 'userId, amountTzs, and phoneNumber are required' }, { status: 400 })
+  const { amountTzs: receiveAmountRaw, phoneNumber } = body
+  if (!receiveAmountRaw || !phoneNumber) {
+    return NextResponse.json({ error: 'amountTzs and phoneNumber are required' }, { status: 400 })
   }
 
   const receiveAmountTzs = Math.trunc(Number(receiveAmountRaw))
@@ -63,14 +64,10 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  const [mapping] = await db
-    .select({ externalId: partnerUsers.externalId })
-    .from(partnerUsers)
-    .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, userId)))
-    .limit(1)
-  if (!mapping) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
+  // The user's wallet, or — for agent-float partners — a partner sub-wallet.
+  const funding = await resolveFundingSource(partner, body)
+  if ('error' in funding) return funding.error
+  const { source } = funding
 
   // Same fee resolution as the execute route — a quote must price exactly
   // what execution will charge.
@@ -88,17 +85,8 @@ export async function POST(request: NextRequest) {
   // executable withdrawal.
   const perTxnErr = checkPerTransactionCap(grossUp.burnAmountTzs)
   if (perTxnErr) return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  const periodErr = await checkUserPeriodLimits(userId, grossUp.burnAmountTzs)
+  const periodErr = await checkFundingSourcePeriodLimits(source.subject, grossUp.burnAmountTzs)
   if (periodErr) return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
-
-  const [wallet] = await db
-    .select({ id: wallets.id, address: wallets.address })
-    .from(wallets)
-    .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
-    .limit(1)
-  if (!wallet || wallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json({ error: 'User wallet is not provisioned yet' }, { status: 400 })
-  }
 
   if (!BASE_RPC_URL || !NTZS_CONTRACT_ADDRESS_BASE) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
@@ -108,7 +96,7 @@ export async function POST(request: NextRequest) {
   try {
     const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
     const token = new ethers.Contract(NTZS_CONTRACT_ADDRESS_BASE, NTZS_BALANCE_ABI, provider)
-    const balanceWei: bigint = await token.balanceOf(wallet.address)
+    const balanceWei: bigint = await token.balanceOf(source.address)
     availableTzs = Number(balanceWei / BigInt(10) ** BigInt(18))
   } catch (err) {
     console.error('[v1/withdrawals/quote] Balance check failed:', err instanceof Error ? err.message : err)
@@ -133,7 +121,8 @@ export async function POST(request: NextRequest) {
   const quoteId = sufficient
     ? createQuoteToken({
         partnerId: partner.id,
-        userId,
+        userId: source.kind === 'user' ? source.userId : '',
+        src: fundingSourceKey(source),
         phone,
         receiveAmountTzs,
         burnAmountTzs: grossUp.burnAmountTzs,

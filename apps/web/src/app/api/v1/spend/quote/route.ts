@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
@@ -10,7 +10,7 @@ import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-sourc
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
 import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
-import { wallets, partnerUsers, partners } from '@ntzs/db'
+import { partners } from '@ntzs/db'
 import { QUOTE_TTL_MS } from '@/lib/waas/quote'
 import {
   computeSpendTotals,

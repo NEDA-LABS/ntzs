@@ -54,7 +54,14 @@ export function computeWithdrawalGrossUp(receiveAmountTzs: number, feePercent: n
 export interface QuotePayload {
   v: 1
   partnerId: string
+  /** Empty when the quote was funded by a sub-wallet — see `src`. */
   userId: string
+  /**
+   * Funding source the quote was priced for, as `user:<id>` or
+   * `sub_wallet:<id>`. Optional for tokens minted before agent floats existed;
+   * execute falls back to comparing `userId` when absent.
+   */
+  src?: string
   /** Normalized recipient phone the quote was issued for. */
   phone: string
   receiveAmountTzs: number

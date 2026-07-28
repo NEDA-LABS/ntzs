@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { isTestMode, testCreateWithdrawal } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
+import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import {
   ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
   isMobilePspConfigured,
@@ -15,8 +16,8 @@ import {
   checkPayoutStatus,
   lookupRecipientName,
 } from '@/lib/psp'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
-import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
+import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import {
   computeWithdrawalGrossUp,
@@ -50,18 +51,18 @@ export async function POST(request: NextRequest) {
   // TEST MODE: simulated burn + payout, real fee math and real quote checks.
   if (isTestMode(partner)) return testCreateWithdrawal(partner, request)
 
-  let body: { userId: string; amountTzs: number; phoneNumber: string; quoteId?: string }
+  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber: string; quoteId?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, amountTzs: receiveAmountRaw, phoneNumber, quoteId } = body
+  const { amountTzs: receiveAmountRaw, phoneNumber, quoteId } = body
 
-  if (!userId || !receiveAmountRaw || !phoneNumber) {
+  if (!receiveAmountRaw || !phoneNumber) {
     return NextResponse.json(
-      { error: 'userId, amountTzs, and phoneNumber are required' },
+      { error: 'amountTzs and phoneNumber are required' },
       { status: 400 }
     )
   }
@@ -84,16 +85,10 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  // Verify user belongs to this partner
-  const [mapping] = await db
-    .select({ externalId: partnerUsers.externalId })
-    .from(partnerUsers)
-    .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, userId)))
-    .limit(1)
-
-  if (!mapping) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
+  // The user's wallet, or — for agent-float partners — a partner sub-wallet.
+  const funding = await resolveFundingSource(partner, body)
+  if ('error' in funding) return funding.error
+  const { source } = funding
 
   // Load partner fee config + treasury
   const [partnerRow] = await db
@@ -130,7 +125,8 @@ export async function POST(request: NextRequest) {
     }
     const q = v.payload
     const normalizedPhone = normalizePhone(phoneNumber)
-    if (q.partnerId !== partner.id || q.userId !== userId || q.phone !== normalizedPhone || q.receiveAmountTzs !== receiveAmountTzs) {
+    const quoteSrc = q.src ?? `user:${q.userId}`
+    if (q.partnerId !== partner.id || quoteSrc !== fundingSourceKey(source) || q.phone !== normalizedPhone || q.receiveAmountTzs !== receiveAmountTzs) {
       return NextResponse.json(
         { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/phone/amount). Request a new quote.' },
         { status: 400 }
@@ -162,23 +158,9 @@ export async function POST(request: NextRequest) {
   }
 
   // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
-  const periodErr = await checkUserPeriodLimits(userId, burnAmountTzs)
+  const periodErr = await checkFundingSourcePeriodLimits(source.subject, burnAmountTzs)
   if (periodErr) {
     return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
-  }
-
-  // Get wallet
-  const [wallet] = await db
-    .select({ id: wallets.id, address: wallets.address })
-    .from(wallets)
-    .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
-    .limit(1)
-
-  if (!wallet || wallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json(
-      { error: 'User wallet is not provisioned yet' },
-      { status: 400 }
-    )
   }
 
   // Check on-chain balance
@@ -192,7 +174,7 @@ export async function POST(request: NextRequest) {
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
     const token = new ethers.Contract(contractAddress, NTZS_BALANCE_ABI, provider)
-    const balanceWei: bigint = await token.balanceOf(wallet.address)
+    const balanceWei: bigint = await token.balanceOf(source.address)
     const balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
 
     if (balanceTzs < burnAmountTzs) {
@@ -215,14 +197,18 @@ export async function POST(request: NextRequest) {
     const [burn] = await db
       .insert(burnRequests)
       .values({
-        userId,
-        walletId: wallet.id,
+        // Record-keeping FKs for a sub-wallet float; burnFromAddress is the
+        // real source and subWalletId is the cap subject.
+        userId: source.userId,
+        walletId: source.walletId,
+        burnFromAddress: source.address,
+        ...(source.kind === 'sub_wallet' ? { subWalletId: source.subWalletId } : {}),
         chain: 'base',
         contractAddress,
         amountTzs: burnAmountTzs,
         reason: 'WaaS withdrawal',
         status: 'requested',
-        requestedByUserId: userId,
+        requestedByUserId: source.userId,
         recipientPhone: phoneNumber,
         platformFeeTzs,
         nedaFeeTzs,
@@ -258,14 +244,16 @@ export async function POST(request: NextRequest) {
   const [burn] = await db
     .insert(burnRequests)
     .values({
-      userId,
-      walletId: wallet.id,
+      userId: source.userId,
+      walletId: source.walletId,
+      burnFromAddress: source.address,
+      ...(source.kind === 'sub_wallet' ? { subWalletId: source.subWalletId } : {}),
       chain: 'base',
       contractAddress,
       amountTzs: burnAmountTzs,
       reason: 'WaaS withdrawal',
       status: 'burn_submitted',
-      requestedByUserId: userId,
+      requestedByUserId: source.userId,
       recipientPhone: phoneNumber,
       platformFeeTzs,
       nedaFeeTzs,
@@ -292,7 +280,7 @@ export async function POST(request: NextRequest) {
     }
 
     const amountWei = BigInt(String(burnAmountTzs)) * BigInt(10) ** BigInt(18)
-    const tx = await token.burn(wallet.address, amountWei)
+    const tx = await token.burn(source.address, amountWei)
 
     await db.update(burnRequests).set({ txHash: tx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
 
@@ -399,7 +387,9 @@ export async function POST(request: NextRequest) {
     if (!claimed) return // already finalized by another path
     const res = await revertOffRampBurn({
       burnRequestId,
-      userAddress: wallet.address,
+      // Revert re-mints to the SOURCE of funds — the agent float for a
+      // sub-wallet withdrawal, the user's wallet otherwise.
+      userAddress: source.address,
       burnAmountTzs,
       platformFeeTzs,
       feeRecipientAddress: feeRecipient,
