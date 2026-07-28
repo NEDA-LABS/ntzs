@@ -57,11 +57,17 @@ describe('checkPerTransactionCap (Parameter 3 — TZS 1,000,000 per transaction)
 describe('every enforced cap leaves evidence', () => {
   const APP = path.join(__dirname, '../../app/api')
 
-  /** Routes that legitimately check a cap with no sandbox participant to count against. */
-  const EXEMPT: Record<string, string> = {
-    'merchant/pay/route.ts':
-      'Public payer-facing endpoint — the payer pays a merchant from their own mobile money, so there is no nTZS participant for a period cap. Per-transaction only.',
-  }
+  /**
+   * Routes that legitimately check a cap with no sandbox participant to count
+   * against. Currently none — and the bar for adding one is high.
+   *
+   * merchant/pay was listed here on the reasoning that "the payer pays from
+   * their own mobile money, so there is no nTZS participant." That was wrong:
+   * the payer is not the participant, the MERCHANT is — the collection mints
+   * nTZS into the merchant's wallet. An exemption is a claim about who holds
+   * the token, so check where the tokens land before writing one.
+   */
+  const EXEMPT: Record<string, string> = {}
 
   function walk(dir: string, base = ''): string[] {
     const out: string[] = []
@@ -87,6 +93,16 @@ describe('every enforced cap leaves evidence', () => {
       offenders,
       `Use enforceSandboxLimits(), or add the route to EXEMPT with a reason:\n  ${offenders.join('\n  ')}`
     ).toEqual([])
+  })
+
+  it('merchant collections count against the merchant, not the payer', () => {
+    const src = fs.readFileSync(path.join(APP, 'merchant/pay/route.ts'), 'utf8')
+    const at = src.indexOf('enforceSandboxLimits(')
+    expect(at, 'merchant/pay must enforce the participant caps').toBeGreaterThan(-1)
+    // The subject has to be the merchant's participant record. The payer funds
+    // the collection from their own mobile money and never holds nTZS; the
+    // merchant is who the minted balance lands on.
+    expect(src.slice(at, at + 160)).toContain('mUser.id')
   })
 
   it('the recorder is fail-soft, and loud when it fails', () => {
