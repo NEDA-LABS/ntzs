@@ -1999,3 +1999,66 @@ export const sandboxLimitEvents = pgTable(
     occurredIdx: index('sandbox_limit_events_occurred_idx').on(t.occurredAt),
   })
 )
+
+/**
+ * The curated incident register — see drizzle/0070.
+ *
+ * Not an event feed (that is `activity`). An incident is a human judgement
+ * that something went wrong enough to write down, so entries are prose,
+ * written by a person, and each one has to name the control that was added.
+ *
+ * There is deliberately no delete path in the application: entries are updated
+ * and every update writes an audit log. `funds_lost_tzs` is explicit including
+ * zero, because "no customer lost funds" should be the sum of a column rather
+ * than an assurance — NULL means unknown, not none.
+ */
+export const incidents = pgTable(
+  'incidents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** Human key, e.g. INC-2026-07-006. */
+    ref: text('ref').notNull().unique(),
+    title: text('title').notNull(),
+    /** 'sev1' | 'sev2' | 'sev3' | 'sev4' */
+    severity: text('severity').notNull(),
+    /** 'money' | 'availability' | 'compliance' | 'security' | 'data' */
+    category: text('category').notNull(),
+    /** 'open' | 'mitigated' | 'resolved' */
+    status: text('status').notNull().default('open'),
+
+    /** Start of the exposure window, or the detection date when it cannot be dated honestly. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    detectedAt: timestamp('detected_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    /** 'monitoring' | 'log_review' | 'customer' | 'partner' | 'internal_review' | 'regulator' */
+    detectedBy: text('detected_by'),
+
+    whatHappened: text('what_happened').notNull(),
+    customerImpact: text('customer_impact').notNull(),
+    customersAffected: integer('customers_affected'),
+    fundsAtRiskTzs: bigint('funds_at_risk_tzs', { mode: 'number' }),
+    fundsLostTzs: bigint('funds_lost_tzs', { mode: 'number' }),
+
+    rootCause: text('root_cause'),
+    resolution: text('resolution'),
+    /** What now makes recurrence structurally harder — a test, a gate, a chokepoint. */
+    controlAdded: text('control_added'),
+    /** Where to verify it: PR number, commit, log query. */
+    evidenceRef: text('evidence_ref'),
+
+    /** Disclosure is a decision, not a default — this starts false on every row. */
+    reportedToBot: boolean('reported_to_bot').notNull().default(false),
+    reportedToBotAt: timestamp('reported_to_bot_at', { withTimezone: true }),
+    botReportRef: text('bot_report_ref'),
+
+    createdByUserId: uuid('created_by_user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    occurredIdx: index('incidents_occurred_idx').on(t.occurredAt),
+    statusIdx: index('incidents_status_idx').on(t.status),
+    severityIdx: index('incidents_severity_idx').on(t.severity),
+    reportedIdx: index('incidents_reported_idx').on(t.reportedToBot),
+  })
+)
