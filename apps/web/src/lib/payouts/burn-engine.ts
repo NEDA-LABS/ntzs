@@ -50,6 +50,7 @@ interface BurnJob {
   recipient_phone: string | null
   user_id: string
   burn_from_address: string | null
+  sub_wallet_id: string | null
 }
 
 /** Claim the oldest approved burn request atomically (skip-locked). */
@@ -65,7 +66,7 @@ async function claimNextBurnJob(sql: SqlClient): Promise<BurnJob | null> {
       for update skip locked
       limit 1
     )
-    returning id, wallet_id, amount_tzs, platform_fee_tzs, neda_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address
+    returning id, wallet_id, amount_tzs, platform_fee_tzs, neda_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address, sub_wallet_id
   `
   return rows[0] ?? null
 }
@@ -105,13 +106,25 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
   // else the global platform treasury). Best-effort: a fee failure must not
   // block the recipient's payout.
   if (job.platform_fee_tzs != null && job.platform_fee_tzs > 0) {
-    const partnerTreasuryRows = await sql<{ treasury_wallet_address: string | null }[]>`
-      select p.treasury_wallet_address
-      from partner_users pu
-      join partners p on p.id = pu.partner_id
-      where pu.user_id = ${job.user_id}
-      limit 1
-    `
+    // An agent-float burn's user_id is the partner's SYNTHETIC treasury user,
+    // which is not in partner_users — so the ordinary lookup finds nothing and
+    // the partner's own margin would be minted to the platform treasury
+    // instead of theirs. Resolve through the funding sub-wallet when present.
+    const partnerTreasuryRows = job.sub_wallet_id
+      ? await sql<{ treasury_wallet_address: string | null }[]>`
+          select p.treasury_wallet_address
+          from partner_sub_wallets sw
+          join partners p on p.id = sw.partner_id
+          where sw.id = ${job.sub_wallet_id}
+          limit 1
+        `
+      : await sql<{ treasury_wallet_address: string | null }[]>`
+          select p.treasury_wallet_address
+          from partner_users pu
+          join partners p on p.id = pu.partner_id
+          where pu.user_id = ${job.user_id}
+          limit 1
+        `
     const partnerTreasury = partnerTreasuryRows[0]?.treasury_wallet_address
     const platformTreasury = (process.env.PLATFORM_TREASURY_ADDRESS || '').replace(/^["']|["']$/g, '')
     const feeRecipient = isAddressLike(partnerTreasury) ? partnerTreasury : isAddressLike(platformTreasury) ? platformTreasury : null

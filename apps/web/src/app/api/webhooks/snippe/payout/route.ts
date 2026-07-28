@@ -212,6 +212,7 @@ export async function POST(request: NextRequest) {
       nedaFeeTxHash: burnRequests.nedaFeeTxHash,
       rampSettlementId: burnRequests.rampSettlementId,
       walletId: burnRequests.walletId,
+      burnFromAddress: burnRequests.burnFromAddress,
     })
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
@@ -282,14 +283,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: 'ignored', reason: 'already_reverting' })
     }
 
-    // Look up the user's wallet address so we can re-mint.
+    // Re-mint to WHERE THE FUNDS CAME FROM. burn_from_address is set whenever
+    // the source was not the request's own wallet — an agent float, a ramp
+    // settlement address, a lender treasury. Reverting to wallet_id in those
+    // cases would credit a different account than was debited: the float stays
+    // short while some other balance runs long, silently.
     const [userWallet] = await db
       .select({ address: wallets.address })
       .from(wallets)
       .where(eq(wallets.id, burn.walletId))
       .limit(1)
+    const revertToAddress = burn.burnFromAddress ?? userWallet?.address
 
-    if (!userWallet) {
+    if (!revertToAddress) {
       console.error('[snippe/payout webhook] CRITICAL: wallet missing for burn request', { burnRequestId })
       await db
         .update(burnRequests)
@@ -305,7 +311,7 @@ export async function POST(request: NextRequest) {
 
     const revert = await revertOffRampBurn({
       burnRequestId,
-      userAddress: userWallet.address,
+      userAddress: revertToAddress,
       burnAmountTzs: burn.amountTzs,
       platformFeeTzs: burn.platformFeeTzs,
       feeRecipientAddress: burn.feeRecipientAddress,

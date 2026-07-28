@@ -195,6 +195,7 @@ export async function POST(request: NextRequest) {
       nedaFeeTzs: burnRequests.nedaFeeTzs,
       nedaFeeTxHash: burnRequests.nedaFeeTxHash,
       walletId: burnRequests.walletId,
+      burnFromAddress: burnRequests.burnFromAddress,
     })
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
@@ -252,13 +253,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: 'ignored', reason: 'already_reverting' })
     }
 
+    // Re-mint to WHERE THE FUNDS CAME FROM — see the snippe webhook for why
+    // reverting to wallet_id would credit a different account than was debited.
     const [userWallet] = await db
       .select({ address: wallets.address })
       .from(wallets)
       .where(eq(wallets.id, burn.walletId))
       .limit(1)
+    const revertToAddress = burn.burnFromAddress ?? userWallet?.address
 
-    if (!userWallet) {
+    if (!revertToAddress) {
       console.error('[azampay/payout webhook] CRITICAL: wallet missing for burn request', { burnRequestId })
       await db
         .update(burnRequests)
@@ -274,7 +278,7 @@ export async function POST(request: NextRequest) {
 
     const revert = await revertOffRampBurn({
       burnRequestId,
-      userAddress: userWallet.address,
+      userAddress: revertToAddress,
       burnAmountTzs: burn.amountTzs,
       platformFeeTzs: burn.platformFeeTzs,
       feeRecipientAddress: burn.feeRecipientAddress,
