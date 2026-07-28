@@ -93,9 +93,29 @@ describe('sandbox caps follow the funding source', () => {
   })
 
   it('every sub-wallet funded burn is tagged with its float (the cap subject)', () => {
-    const src = fs.readFileSync(path.join(V1, 'spend/route.ts'), 'utf8')
-    expect(src).toContain('subWalletId: source.subWalletId')
-    expect(src).toContain('burnFromAddress: source.address')
+    for (const rel of ['spend/route.ts', 'withdrawals/route.ts']) {
+      const src = fs.readFileSync(path.join(V1, rel), 'utf8')
+      expect(src, `${rel} must tag the burn with its funding float`).toContain('subWalletId: source.subWalletId')
+      expect(src, `${rel} must record the real source of funds`).toContain('burnFromAddress: source.address')
+    }
+  })
+
+  it('a failed disbursement reverts to the float, not to a user wallet', () => {
+    // Re-minting a reverted agent-float burn into someone's personal wallet
+    // would be a silent transfer of value between participants.
+    for (const rel of ['spend/route.ts', 'withdrawals/route.ts']) {
+      const src = fs.readFileSync(path.join(V1, rel), 'utf8')
+      expect(src, `${rel} must revert to the funding source`).toContain('userAddress: source.address')
+    }
+  })
+
+  it('both quote routes bind the funding source into the token', () => {
+    for (const rel of ['spend/quote/route.ts', 'withdrawals/quote/route.ts']) {
+      const src = fs.readFileSync(path.join(V1, rel), 'utf8')
+      expect(src, `${rel} must bind the source so a quote cannot be replayed`).toContain(
+        'src: fundingSourceKey(source)'
+      )
+    }
   })
 
   it('the per-float checker counts burns against the sub-wallet, not the user', () => {
