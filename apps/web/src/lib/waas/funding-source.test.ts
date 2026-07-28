@@ -127,3 +127,41 @@ describe('sandbox caps follow the funding source', () => {
     expect(src).toContain('SANDBOX_MONTHLY_USER_CAP_TZS')
   })
 })
+
+/**
+ * Regression tests for two defects found reviewing the agent-float work
+ * (28 Jul), both in the QUEUED (≥1M) path rather than the inline one — which
+ * is why neither showed up in the inline tests.
+ *
+ * Reachable today only at exactly burnAmountTzs === 1,000,000 (the
+ * per-transaction cap rejects above it, the safe-mint threshold queues at it),
+ * but they open wide the moment the per-transaction cap is raised — which is
+ * precisely the sandbox variation we are asking for.
+ */
+describe('queued (≥1M) path — money lands in the right account', () => {
+  it('a failed payout re-mints to where the funds came from, not to wallet_id', () => {
+    // An agent-float burn's wallet_id is the partner's synthetic TREASURY
+    // wallet. Reverting there would leave the agent's float short while the
+    // partner treasury ran long — a silent transfer between accounts.
+    // Same defect applied to ramp settlement burns, which also set
+    // burn_from_address.
+    for (const rel of ['snippe/payout/route.ts', 'azampay/payout/route.ts']) {
+      const src = fs.readFileSync(path.join(__dirname, '../../app/api/webhooks', rel), 'utf8')
+      expect(src, `${rel} must select burn_from_address`).toContain('burnFromAddress: burnRequests.burnFromAddress')
+      expect(src, `${rel} must prefer it when reverting`).toContain(
+        'const revertToAddress = burn.burnFromAddress ?? userWallet?.address'
+      )
+      expect(src, `${rel} must revert to that address`).toContain('userAddress: revertToAddress')
+    }
+  })
+
+  it("the partner's own margin is resolved through the float, not through partner_users", () => {
+    // user_id on an agent-float burn is the synthetic treasury user, which is
+    // absent from partner_users — so the ordinary join returns nothing and the
+    // partner's fee would mint to the PLATFORM treasury instead of theirs.
+    const src = fs.readFileSync(path.join(__dirname, '../payouts/burn-engine.ts'), 'utf8')
+    expect(src).toContain('sub_wallet_id')
+    expect(src).toContain('from partner_sub_wallets sw')
+    expect(src).toContain('join partners p on p.id = sw.partner_id')
+  })
+})
