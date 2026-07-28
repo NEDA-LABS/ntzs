@@ -13,7 +13,7 @@ import crypto from 'crypto'
 
 import { getDb } from '@/lib/db'
 import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { users, wallets, depositRequests } from '@ntzs/db'
 
 function verifySecret(req: NextRequest): boolean {
@@ -43,12 +43,6 @@ export async function POST(request: NextRequest) {
 
   if (amountTzs < 500) {
     return NextResponse.json({ error: 'Minimum deposit is 500 TZS' }, { status: 400 })
-  }
-
-  // BoT Sandbox Parameter #3 — per-transaction cap
-  const perTxnErr = checkPerTransactionCap(amountTzs)
-  if (perTxnErr) {
-    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
   }
 
   if (!isValidTanzanianPhone(phoneNumber)) {
@@ -86,10 +80,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
-  const periodErr = await checkUserPeriodLimits(lpUser.id, amountTzs)
-  if (periodErr) {
-    return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  // BoT Parameters #3/#4/#5 — enforced AND recorded in one call, so evidence
+  // of the control binding cannot be forgotten at a call site. Enforced here
+  // rather than earlier because the participant is only known once the LP user
+  // is resolved, and the caps are counted per participant.
+  const limitErr = await enforceSandboxLimits({ kind: 'user', id: lpUser.id }, amountTzs, {
+    endpoint: 'internal/lp-deposit', stage: 'execute',
+  })
+  if (limitErr) {
+    return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
   }
 
   // Resolve or create wallet record for this LP address

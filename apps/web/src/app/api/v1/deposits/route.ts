@@ -8,7 +8,7 @@ import { writeAuditLog } from '@/lib/audit'
 import { initiateCollection, initiateCardPayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
 import { W2B_CHANNEL } from '@/lib/psp/selcom-statement'
 import { getW2bConfig } from '@/lib/psp/selcom-w2b'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { isTestMode, testCreateDeposit } from '@/lib/testmode'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
@@ -85,16 +85,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // BoT Sandbox Parameter #3 — per-transaction cap
-  const perTxnErr = checkPerTransactionCap(amountTzs)
-  if (perTxnErr) {
-    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  }
-
-  // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
-  const periodErr = await checkUserPeriodLimits(userId, amountTzs)
-  if (periodErr) {
-    return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  // BoT Parameters #3/#4/#5 — enforced AND recorded in one call, so
+  // evidence of the control binding cannot be forgotten at a call site.
+  const limitErr = await enforceSandboxLimits({ kind: 'user', id: userId }, amountTzs, {
+    endpoint: 'v1/deposits', stage: 'execute', partnerId: partner.id,
+  })
+  if (limitErr) {
+    return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
   }
 
   if (paymentMethod !== 'mobile_money' && paymentMethod !== 'card' && paymentMethod !== 'lipa_namba') {

@@ -7,7 +7,7 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PR
 import { isTestMode, testCreateSpend } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
-import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { burnRequests, partners } from '@ntzs/db'
 import {
   computeSpendTotals,
@@ -189,10 +189,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Caps (applied to nTZS burned)
-  const perTxnErr = checkPerTransactionCap(burnAmountTzs)
-  if (perTxnErr) return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  const periodErr = await checkFundingSourcePeriodLimits(source.subject, burnAmountTzs)
-  if (periodErr) return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  // One call enforces BoT Parameters #3/#4/#5 AND records the block —
+  // evidence cannot be forgotten at a call site.
+  const limitErr = await enforceSandboxLimits(source.subject, burnAmountTzs, {
+    endpoint: 'v1/spend', stage: 'execute', partnerId: partner.id,
+  })
+  if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
   if (!BASE_RPC_URL || !NTZS_CONTRACT_ADDRESS_BASE) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
