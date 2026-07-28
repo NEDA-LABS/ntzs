@@ -16,7 +16,7 @@ import {
   checkPayoutStatus,
   lookupRecipientName,
 } from '@/lib/psp'
-import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import {
@@ -151,16 +151,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // BoT Sandbox Parameter #3 — per-transaction cap (applied to nTZS burned)
-  const perTxnErr = checkPerTransactionCap(burnAmountTzs)
-  if (perTxnErr) {
-    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  }
-
-  // BoT Sandbox Parameters #4 & #5 — daily and monthly per-user caps
-  const periodErr = await checkFundingSourcePeriodLimits(source.subject, burnAmountTzs)
-  if (periodErr) {
-    return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  // BoT Parameters #3/#4/#5 — enforced AND recorded in one call, so
+  // evidence of the control binding cannot be forgotten at a call site.
+  const limitErr = await enforceSandboxLimits(source.subject, burnAmountTzs, {
+    endpoint: 'v1/withdrawals', stage: 'execute', partnerId: partner.id,
+  })
+  if (limitErr) {
+    return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
   }
 
   // Check on-chain balance

@@ -8,7 +8,7 @@ import { isTestMode, testWithdrawalQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import { isValidTanzanianPhone, normalizePhone, lookupRecipientName } from '@/lib/psp'
-import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { partners } from '@ntzs/db'
 import { computeWithdrawalGrossUp, createQuoteToken, DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
 
@@ -83,10 +83,12 @@ export async function POST(request: NextRequest) {
 
   // Caps behave exactly like execution so a quotable withdrawal is an
   // executable withdrawal.
-  const perTxnErr = checkPerTransactionCap(grossUp.burnAmountTzs)
-  if (perTxnErr) return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  const periodErr = await checkFundingSourcePeriodLimits(source.subject, grossUp.burnAmountTzs)
-  if (periodErr) return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  // One call enforces BoT Parameters #3/#4/#5 AND records the block —
+  // evidence cannot be forgotten at a call site.
+  const limitErr = await enforceSandboxLimits(source.subject, grossUp.burnAmountTzs, {
+    endpoint: 'v1/withdrawals/quote', stage: 'quote', partnerId: partner.id,
+  })
+  if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
   if (!BASE_RPC_URL || !NTZS_CONTRACT_ADDRESS_BASE) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })

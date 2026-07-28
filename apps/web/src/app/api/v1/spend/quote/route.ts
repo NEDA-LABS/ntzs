@@ -9,7 +9,7 @@ import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
-import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { partners } from '@ntzs/db'
 import { QUOTE_TTL_MS } from '@/lib/waas/quote'
 import {
@@ -148,10 +148,12 @@ export async function POST(request: NextRequest) {
   const totals = computeSpendTotals(kind, principalTzs, feePercent, utilityCode)
 
   // Caps behave exactly like execution (applied to the burn total).
-  const perTxnErr = checkPerTransactionCap(totals.burnAmountTzs)
-  if (perTxnErr) return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  const periodErr = await checkFundingSourcePeriodLimits(source.subject, totals.burnAmountTzs)
-  if (periodErr) return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+  // One call enforces BoT Parameters #3/#4/#5 AND records the block —
+  // evidence cannot be forgotten at a call site.
+  const limitErr = await enforceSandboxLimits(source.subject, totals.burnAmountTzs, {
+    endpoint: 'v1/spend/quote', stage: 'quote', partnerId: partner.id,
+  })
+  if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
 
   if (!BASE_RPC_URL || !NTZS_CONTRACT_ADDRESS_BASE) {

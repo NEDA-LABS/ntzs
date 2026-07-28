@@ -1962,3 +1962,40 @@ export const testModeTransactions = pgTable(
     dueIdx: index('test_mode_transactions_due_idx').on(t.status, t.settlesAt),
   })
 )
+
+/**
+ * Evidence that the BoT Testing Parameters bind (drizzle/0069).
+ *
+ * One row per BLOCKED attempt. The caps were always enforced; until this table
+ * they were never recorded, so a periodic return could assert compliance but
+ * not evidence it. A supervisor asks "show me it working" — these rows are the
+ * answer.
+ *
+ * Evidence only: nothing reads this to make a decision, so the recorder is
+ * fail-soft and a write failure can never affect a money path.
+ */
+export const sandboxLimitEvents = pgTable(
+  'sandbox_limit_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    /** 'per_txn_cap' (#3) | 'daily_user_cap' (#4) | 'monthly_user_cap' (#5) */
+    code: text('code').notNull(),
+    /** The participant the limit was counted against: 'user' | 'sub_wallet'. */
+    subjectKind: text('subject_kind').notNull(),
+    subjectId: uuid('subject_id'),
+    partnerId: uuid('partner_id'),
+    endpoint: text('endpoint'),
+    /** 'quote' | 'execute' — the same attempt can be blocked at both stages. */
+    stage: text('stage'),
+    requestedTzs: bigint('requested_tzs', { mode: 'number' }).notNull(),
+    limitTzs: bigint('limit_tzs', { mode: 'number' }).notNull(),
+    usedInPeriodTzs: bigint('used_in_period_tzs', { mode: 'number' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    codeOccurredIdx: index('sandbox_limit_events_code_occurred_idx').on(t.code, t.occurredAt),
+    subjectIdx: index('sandbox_limit_events_subject_idx').on(t.subjectKind, t.subjectId),
+    occurredIdx: index('sandbox_limit_events_occurred_idx').on(t.occurredAt),
+  })
+)

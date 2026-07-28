@@ -8,7 +8,7 @@ import { isTestMode, testCreateTransfer } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { signAndSendTransfer, fundWalletWithGas } from '@/lib/waas/hd-wallets'
 import { sendTransaction as sendCdpTransaction } from '@/lib/waas/cdp-server'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, transfers, auditLogs, partners, users } from '@ntzs/db'
 
 const TRANSFER_ABI = [
@@ -149,13 +149,13 @@ export async function POST(request: NextRequest) {
 
   // BoT Sandbox Parameters #3, #4, #5 — limits apply to nTZS only (USDC/USDT are not TZS-pegged)
   if (token === 'ntzs') {
-    const perTxnErr = checkPerTransactionCap(amountNum)
-    if (perTxnErr) {
-      return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-    }
-    const periodErr = await checkUserPeriodLimits(fromUserId, amountNum)
-    if (periodErr) {
-      return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
+    // BoT Parameters #3/#4/#5 — enforced AND recorded in one call, so
+    // evidence of the control binding cannot be forgotten at a call site.
+    const limitErr = await enforceSandboxLimits({ kind: 'user', id: fromUserId }, amountNum, {
+      endpoint: 'v1/transfers', stage: 'execute', partnerId: partner.id,
+    })
+    if (limitErr) {
+      return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
     }
   }
 

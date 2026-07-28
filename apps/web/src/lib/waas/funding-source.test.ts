@@ -82,8 +82,10 @@ describe('sandbox caps follow the funding source', () => {
     for (const rel of walk(V1)) {
       const src = fs.readFileSync(path.join(V1, rel), 'utf8')
       if (!src.includes('subWalletId')) continue
-      if (!src.includes('checkFundingSourcePeriodLimits')) {
-        offenders.push(`${rel} — accepts subWalletId but does not use checkFundingSourcePeriodLimits`)
+      // enforceSandboxLimits() counts against the funding source's own subject
+      // AND records the block — routes must go through it.
+      if (!src.includes('enforceSandboxLimits(')) {
+        offenders.push(`${rel} — accepts subWalletId but does not use enforceSandboxLimits`)
       }
       if (src.includes('checkUserPeriodLimits(')) {
         offenders.push(`${rel} — still calls checkUserPeriodLimits, which cannot see a sub-wallet`)

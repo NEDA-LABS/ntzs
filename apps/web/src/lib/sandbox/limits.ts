@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
-import { depositRequests, burnRequests } from '@ntzs/db'
+import { depositRequests, burnRequests, sandboxLimitEvents } from '@ntzs/db'
 
 // BoT Testing Parameters #2, #3, #4, #5
 export const SANDBOX_USER_CAP = Number(process.env.SANDBOX_USER_CAP ?? '100')
@@ -227,4 +227,84 @@ export function limitErrorResponse(err: LimitError) {
       ...(err.used !== undefined ? { usedInPeriod: err.used } : {}),
     },
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enforcement + evidence
+//
+// The caps above were always enforced, but nothing recorded a block — so the
+// system could assert compliance to the Bank without evidencing it. Routes now
+// call ONE function that checks every applicable parameter AND records any
+// block, so evidence cannot be forgotten at a call site.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type LimitSubject = { kind: 'user'; id: string } | { kind: 'sub_wallet'; id: string }
+
+export interface LimitContext {
+  /** Route that enforced it, e.g. 'v1/spend'. */
+  endpoint: string
+  /** 'quote' rejects before money moves; 'execute' rejects at the attempt. */
+  stage: 'quote' | 'execute'
+  partnerId?: string
+}
+
+/**
+ * Record a blocked attempt. FAIL-SOFT BY DESIGN: this is evidence, never a
+ * decision input, so a write failure must not turn a clean rejection into a
+ * 500. A failure is logged loudly because silent non-recording is exactly the
+ * gap this table exists to close — if drizzle/0069 is unapplied we want that
+ * visible in the logs, not swallowed.
+ */
+async function recordLimitBlock(err: LimitError, subject: LimitSubject, ctx: LimitContext): Promise<void> {
+  try {
+    const { db } = getDb()
+    await db.insert(sandboxLimitEvents).values({
+      code: err.code,
+      subjectKind: subject.kind,
+      subjectId: subject.id,
+      partnerId: ctx.partnerId ?? null,
+      endpoint: ctx.endpoint,
+      stage: ctx.stage,
+      requestedTzs: err.requested,
+      limitTzs: err.limit,
+      usedInPeriodTzs: err.used ?? null,
+    })
+  } catch (e) {
+    console.error(
+      '[sandbox/limits] FAILED to record a limit block — regulatory evidence lost.',
+      { code: err.code, endpoint: ctx.endpoint, error: e instanceof Error ? e.message : String(e) }
+    )
+  }
+}
+
+/**
+ * Enforce every BoT Testing Parameter applicable to a money movement, and
+ * record the block if one bites.
+ *
+ * Per-transaction (#3) is checked first, then the period caps (#4/#5) counted
+ * against the funding source's own subject — a user for a user wallet, the
+ * float itself for an agent sub-wallet.
+ *
+ * Returns the LimitError to hand to limitErrorResponse(), or null to proceed.
+ * Routes should call THIS rather than the individual checkers, so that
+ * enforcement and evidence can never drift apart.
+ */
+export async function enforceSandboxLimits(
+  subject: LimitSubject,
+  amountTzs: number,
+  ctx: LimitContext,
+): Promise<LimitError | null> {
+  const perTxn = checkPerTransactionCap(amountTzs)
+  if (perTxn) {
+    await recordLimitBlock(perTxn, subject, ctx)
+    return perTxn
+  }
+
+  const period = await checkFundingSourcePeriodLimits(subject, amountTzs)
+  if (period) {
+    await recordLimitBlock(period, subject, ctx)
+    return period
+  }
+
+  return null
 }
