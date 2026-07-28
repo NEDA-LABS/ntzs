@@ -19,6 +19,7 @@ export type Capability =
   | 'swap'
   | 'ramp'
   | 'biashara'
+  | 'wakala'
 
 export interface CapabilityDef {
   id: Capability
@@ -64,6 +65,10 @@ export const CAPABILITIES: Record<Capability, CapabilityDef> = {
     id: 'biashara', label: 'Biashara', docsSlug: 'biashara', kybRequired: true,
     description: 'Embed a full merchant product — payment links, sales, settlement and working capital — in your app.',
   },
+  wakala: {
+    id: 'wakala', label: 'Agent float', docsSlug: 'wakala', kybRequired: true,
+    description: 'Give each of your agents one digital float that pays any mobile wallet, bank or biller.',
+  },
 }
 
 export const ALL_CAPABILITIES = Object.keys(CAPABILITIES) as Capability[]
@@ -90,7 +95,7 @@ export const CAPABILITY_PRESETS: Record<string, { label: string; capabilities: C
  * Only add a capability here when it is NEW. Moving an existing one in would
  * revoke access somebody already has.
  */
-export const OPT_IN_CAPABILITIES: readonly Capability[] = ['biashara']
+export const OPT_IN_CAPABILITIES: readonly Capability[] = ['biashara', 'wakala']
 
 /**
  * Resolve a partner's effective capabilities. NULL/empty = legacy partner →

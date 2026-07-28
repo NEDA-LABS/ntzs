@@ -6,7 +6,8 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { isTestMode, testCreateSpend } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
+import { checkPerTransactionCap, checkFundingSourcePeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
 import {
   computeSpendTotals,
@@ -65,7 +66,9 @@ export async function POST(request: NextRequest) {
   }
 
   let body: {
-    userId: string
+    userId?: string
+    /** Agent float (SmartWakala) — funds the spend from a partner sub-wallet. */
+    subWalletId?: string
     quoteId?: string
     kind: SpendKind
     amountTzs: number
@@ -80,9 +83,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userId, quoteId, kind } = body
-  if (!userId || !kind || !body.amountTzs) {
-    return NextResponse.json({ error: 'userId, kind, and amountTzs are required' }, { status: 400 })
+  const { quoteId, kind } = body
+  if (!kind || !body.amountTzs) {
+    return NextResponse.json({ error: 'kind and amountTzs are required' }, { status: 400 })
   }
   if (kind !== 'lipa' && kind !== 'bill') {
     return NextResponse.json({ error: "kind must be 'lipa' or 'bill'" }, { status: 400 })
@@ -100,6 +103,13 @@ export async function POST(request: NextRequest) {
   const utilityCode = body.utilityCode ? String(body.utilityCode).trim().toUpperCase() : undefined
   const utilityRef = body.utilityRef ? String(body.utilityRef).trim() : undefined
   const target = spendTarget(kind, { payNumber, utilityCode, utilityRef })
+
+  // Funds come from the user's wallet, or — for agent-float partners — a
+  // partner sub-wallet. Resolved before the quote check so the quote can be
+  // verified against the source it was priced for.
+  const funding = await resolveFundingSource(partner, body)
+  if ('error' in funding) return funding.error
+  const { source } = funding
 
   // ── Quote verification — MANDATORY (the disclosure contract) ──────────────
   if (!quoteId) {
@@ -120,7 +130,14 @@ export async function POST(request: NextRequest) {
     )
   }
   const q = v.payload
-  if (q.partnerId !== partner.id || q.userId !== userId || q.kind !== kind || q.target !== target || q.principalTzs !== principalTzs) {
+  const quoteSrc = q.src ?? `user:${q.userId}`
+  if (
+    q.partnerId !== partner.id ||
+    quoteSrc !== fundingSourceKey(source) ||
+    q.kind !== kind ||
+    q.target !== target ||
+    q.principalTzs !== principalTzs
+  ) {
     return NextResponse.json(
       { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/destination/amount). Request a new quote.' },
       { status: 400 }
@@ -129,15 +146,8 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  const [mapping] = await db
-    .select({ externalId: partnerUsers.externalId })
-    .from(partnerUsers)
-    .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, userId)))
-    .limit(1)
-  if (!mapping) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
-  const externalId = mapping.externalId
+  // A sub-wallet float has no end-user externalId; the label identifies the agent.
+  const externalId = source.kind === 'user' ? source.externalId : source.label
 
   // Re-derive totals with CURRENT fee config — quote_stale on drift, so the
   // user always confirms the live price, never a stale one.
@@ -181,17 +191,8 @@ export async function POST(request: NextRequest) {
   // Caps (applied to nTZS burned)
   const perTxnErr = checkPerTransactionCap(burnAmountTzs)
   if (perTxnErr) return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 })
-  const periodErr = await checkUserPeriodLimits(userId, burnAmountTzs)
+  const periodErr = await checkFundingSourcePeriodLimits(source.subject, burnAmountTzs)
   if (periodErr) return NextResponse.json(limitErrorResponse(periodErr), { status: 400 })
-
-  const [wallet] = await db
-    .select({ id: wallets.id, address: wallets.address })
-    .from(wallets)
-    .where(and(eq(wallets.userId, userId), eq(wallets.chain, 'base')))
-    .limit(1)
-  if (!wallet || wallet.address.startsWith('0x_pending_')) {
-    return NextResponse.json({ error: 'User wallet is not provisioned yet' }, { status: 400 })
-  }
 
   if (!BASE_RPC_URL || !NTZS_CONTRACT_ADDRESS_BASE) {
     return NextResponse.json({ error: 'Blockchain configuration missing' }, { status: 500 })
@@ -200,7 +201,7 @@ export async function POST(request: NextRequest) {
   try {
     const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
     const token = new ethers.Contract(NTZS_CONTRACT_ADDRESS_BASE, NTZS_BALANCE_ABI, provider)
-    const balanceWei: bigint = await token.balanceOf(wallet.address)
+    const balanceWei: bigint = await token.balanceOf(source.address)
     const balanceTzs = Number(balanceWei / (BigInt(10) ** BigInt(18)))
     if (balanceTzs < burnAmountTzs) {
       return NextResponse.json(
@@ -233,19 +234,25 @@ export async function POST(request: NextRequest) {
     // so the settlement cron can notify without a schema change.
     partnerId: partner.id,
     externalId,
+    ...(source.kind === 'sub_wallet' ? { subWalletId: source.subWalletId, agentFloat: true } : {}),
   }
 
   const [burn] = await db
     .insert(burnRequests)
     .values({
-      userId,
-      walletId: wallet.id,
+      // For a sub-wallet float these two are record-keeping FKs only (the
+      // columns are NOT NULL); burnFromAddress is the real source of funds and
+      // subWalletId is the participant the sandbox caps are counted against.
+      userId: source.userId,
+      walletId: source.walletId,
+      burnFromAddress: source.address,
+      ...(source.kind === 'sub_wallet' ? { subWalletId: source.subWalletId } : {}),
       chain: 'base',
       contractAddress: NTZS_CONTRACT_ADDRESS_BASE,
       amountTzs: burnAmountTzs,
       reason: `WaaS spend (${kind})`,
       status: 'burn_submitted',
-      requestedByUserId: userId,
+      requestedByUserId: source.userId,
       platformFeeTzs,
       nedaFeeTzs,
       payoutProvider: 'selcom',
@@ -273,7 +280,7 @@ export async function POST(request: NextRequest) {
     }
 
     const amountWei = BigInt(String(burnAmountTzs)) * BigInt(10) ** BigInt(18)
-    const tx = await token.burn(wallet.address, amountWei)
+    const tx = await token.burn(source.address, amountWei)
     await db.update(burnRequests).set({ txHash: tx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
     await tx.wait(1)
     await db.update(burnRequests).set({ status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
@@ -337,7 +344,9 @@ export async function POST(request: NextRequest) {
     spendDescriptor,
     burnAmountTzs,
     revert: {
-      userAddress: wallet.address,
+      // Revert re-mints to the SOURCE of funds — the agent float for a
+      // sub-wallet spend, the user's wallet otherwise.
+      userAddress: source.address,
       burnAmountTzs,
       platformFeeTzs,
       feeRecipientAddress: feeRecipient,

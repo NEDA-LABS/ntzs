@@ -134,6 +134,89 @@ export async function checkUserPeriodLimits(
   return null
 }
 
+/**
+ * BoT Parameters #4 & #5 counted against an AGENT FLOAT (partner sub-wallet)
+ * instead of a user.
+ *
+ * ⚠ WHY THIS EXISTS. Sub-wallets sit under a partner treasury, so
+ * checkUserPeriodLimits never sees them — which would make an agent float a
+ * route around the daily/monthly caps. Counting per sub-wallet keeps a float
+ * capped exactly as a user is, so provisioning a second float creates another
+ * participant rather than fresh headroom. Any new funding source must get the
+ * same treatment before it ships.
+ *
+ * Only burns are summed: sub-wallets are funded by the partner, not by an
+ * end-user deposit, so there is no deposit leg attributable to the float.
+ */
+export async function checkSubWalletPeriodLimits(
+  subWalletId: string,
+  amountTzs: number,
+): Promise<LimitError | null> {
+  const { db } = getDb()
+  const now = new Date()
+
+  const startOfToday = new Date(now)
+  startOfToday.setUTCHours(0, 0, 0, 0)
+
+  const thirtyDaysAgo = new Date(now)
+  thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30)
+
+  const sumBurnsSince = async (since: Date) => {
+    const [row] = await db
+      .select({ total: sql<number>`coalesce(sum(${burnRequests.amountTzs}), 0)`.mapWith(Number) })
+      .from(burnRequests)
+      .where(
+        and(
+          eq(burnRequests.subWalletId, subWalletId),
+          gte(burnRequests.createdAt, since),
+          inArray(burnRequests.status, COUNTED_BURN_STATUSES),
+        )
+      )
+    return row?.total ?? 0
+  }
+
+  const [dailyUsed, monthlyUsed] = await Promise.all([
+    sumBurnsSince(startOfToday),
+    sumBurnsSince(thirtyDaysAgo),
+  ])
+
+  if (dailyUsed + amountTzs > SANDBOX_DAILY_USER_CAP_TZS) {
+    return {
+      code: 'daily_user_cap',
+      message: `This transaction would exceed the float's daily limit of TZS ${SANDBOX_DAILY_USER_CAP_TZS.toLocaleString()}. Used today: TZS ${dailyUsed.toLocaleString()}.`,
+      limit: SANDBOX_DAILY_USER_CAP_TZS,
+      requested: amountTzs,
+      used: dailyUsed,
+    }
+  }
+
+  if (monthlyUsed + amountTzs > SANDBOX_MONTHLY_USER_CAP_TZS) {
+    return {
+      code: 'monthly_user_cap',
+      message: `This transaction would exceed the float's 30-day limit of TZS ${SANDBOX_MONTHLY_USER_CAP_TZS.toLocaleString()}. Used in last 30 days: TZS ${monthlyUsed.toLocaleString()}.`,
+      limit: SANDBOX_MONTHLY_USER_CAP_TZS,
+      requested: amountTzs,
+      used: monthlyUsed,
+    }
+  }
+
+  return null
+}
+
+/**
+ * Period limits for whichever funding source a disbursement uses. Routes should
+ * call THIS rather than picking a checker, so a new source cannot ship without
+ * a cap.
+ */
+export async function checkFundingSourcePeriodLimits(
+  subject: { kind: 'user'; id: string } | { kind: 'sub_wallet'; id: string },
+  amountTzs: number,
+): Promise<LimitError | null> {
+  return subject.kind === 'sub_wallet'
+    ? checkSubWalletPeriodLimits(subject.id, amountTzs)
+    : checkUserPeriodLimits(subject.id, amountTzs)
+}
+
 export function limitErrorResponse(err: LimitError) {
   return {
     error: err.code,
