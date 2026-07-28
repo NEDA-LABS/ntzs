@@ -64,15 +64,10 @@ function FigureCard({ figure }: { figure: Figure }) {
       {figure.unavailable ? (
         <p className="mt-1 text-xs text-amber-400/80">{figure.unavailable}</p>
       ) : (
-        figure.note && (
-          <p
-            className={`mt-1 text-xs ${
-              /ABOVE|NOT |before filing|establish them/i.test(figure.note) ? 'text-rose-400' : 'text-zinc-500'
-            }`}
-          >
-            {figure.note}
-          </p>
-        )
+        <>
+          {figure.warn && <p className="mt-1 text-xs font-medium text-rose-400">{figure.warn}</p>}
+          {figure.note && <p className="mt-1 text-xs text-zinc-500">{figure.note}</p>}
+        </>
       )}
 
       {/* The provenance line is the point of the page: a number in a supervisory

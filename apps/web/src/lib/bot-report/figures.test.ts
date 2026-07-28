@@ -59,7 +59,7 @@ describe('pre-filing warnings', () => {
             label: 'Largest single transaction (Parameter 3)',
             value: 1_400_000,
             provenance: 'max(amount_tzs)',
-            note: 'ABOVE the per-transaction cap — investigate before filing',
+            warn: 'a transaction exceeded the per-transaction cap — establish how before filing',
           },
         ],
       }),
@@ -77,7 +77,7 @@ describe('pre-filing warnings', () => {
             label: 'Customer funds lost',
             value: 0,
             provenance: 'sum(funds_lost_tzs)',
-            note: '2 incident(s) have no established figure — establish them before filing, do not file this as a clean zero',
+            warn: '2 incident(s) have no established figure — establish them before filing, do not file this as a clean zero',
           },
         ],
       }),
@@ -85,7 +85,14 @@ describe('pre-filing warnings', () => {
     expect(preFilingWarnings(r)).toHaveLength(1)
   })
 
-  it('leaves ordinary explanatory notes alone', () => {
+  /**
+   * Severity is an explicit field, never inferred from the wording of a note.
+   * These are the real strings the generator emits — an earlier version matched
+   * prose and warned on this one, because "whether or not they transacted"
+   * contains the word "not". A banner that cries wolf is one people learn to
+   * click past, which is worse than no banner.
+   */
+  it('leaves ordinary explanatory notes alone, however they are worded', () => {
     const r = report([
       section({
         figures: [
@@ -93,12 +100,39 @@ describe('pre-filing warnings', () => {
             label: 'Participants transacting',
             value: 12,
             provenance: 'distinct user_id',
-            note: 'Distinct from the Parameter 2 cohort, which counts everyone holding a wallet.',
+            note: 'Distinct from the Parameter 2 cohort, which counts everyone holding a wallet whether or not they transacted.',
+          },
+          {
+            label: 'Identities verified',
+            value: 40,
+            provenance: 'kyc_cases reaching approved',
+            note: 'Verification is a structural prerequisite for issuing a wallet — an unverified person cannot hold nTZS.',
           },
         ],
       }),
     ])
     expect(preFilingWarnings(r)).toEqual([])
+  })
+})
+
+/**
+ * The notes the generator actually ships have to survive the warning rule —
+ * this asserts against the real source rather than a fixture, which is the gap
+ * that let the prose-matching bug through in the first place.
+ */
+describe('shipped notes do not accidentally trip the warning rule', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+
+  it('classifies severity by field, not by wording', () => {
+    expect(src).toContain('warn?: string')
+    // No regex over prose anywhere in the warning path.
+    expect(src).not.toMatch(/test\(f\.note\)/)
+  })
+
+  it('emits at least one real warning path per computed section', () => {
+    // Parameters, incidents and reserve each have a condition that must stop a
+    // filing; if one loses its warn field the return goes out looking clean.
+    expect((src.match(/^\s+warn:/gm) ?? []).length).toBeGreaterThanOrEqual(5)
   })
 })
 

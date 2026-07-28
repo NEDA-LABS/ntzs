@@ -40,6 +40,16 @@ export interface Figure {
   unavailable?: string
   /** Optional plain-language reading of what the number means. */
   note?: string
+  /**
+   * Something that must be dealt with before this is filed — a breached
+   * parameter, an unestablished figure, a gap in the series.
+   *
+   * Deliberately its own field rather than something inferred from the wording
+   * of `note`. Pattern-matching prose for severity is how you end up warning on
+   * the phrase "whether or not they transacted", and a warning banner that
+   * cries wolf is one people learn to click past.
+   */
+  warn?: string
 }
 
 export interface Section {
@@ -159,21 +169,22 @@ async function parameterSection(range: DateRange): Promise<Section> {
           value: participantCount,
           unit: `of ${SANDBOX_USER_CAP} permitted`,
           provenance: 'count(distinct wallets.user_id) joined to users where role = end_user and the wallet existed on or before the period end',
-          note: participantCount > SANDBOX_USER_CAP ? 'ABOVE the permitted cohort — investigate before filing' : undefined,
+          note: 'Includes merchants: a collection mints nTZS to the merchant, so they hold the token and count as a participant.',
+          warn: participantCount > SANDBOX_USER_CAP ? 'above the permitted cohort of ' + SANDBOX_USER_CAP : undefined,
         },
         {
           label: 'Largest single transaction (Parameter 3)',
           value: maxTxn,
           unit: `TZS · cap ${SANDBOX_PER_TXN_CAP_TZS.toLocaleString()}`,
           provenance: 'max(amount_tzs) across deposit_requests and burn_requests in the period, excluding terminal failures',
-          note: maxTxn > SANDBOX_PER_TXN_CAP_TZS ? 'ABOVE the per-transaction cap — investigate before filing' : undefined,
+          warn: maxTxn > SANDBOX_PER_TXN_CAP_TZS ? 'a transaction exceeded the per-transaction cap — establish how before filing' : undefined,
         },
         {
           label: 'Largest participant day (Parameter 4)',
           value: maxDay,
           unit: `TZS · cap ${SANDBOX_DAILY_USER_CAP_TZS.toLocaleString()}`,
           provenance: 'deposits and burns summed per user per UTC day — the same arithmetic the live enforcement applies',
-          note: maxDay > SANDBOX_DAILY_USER_CAP_TZS ? 'ABOVE the daily cap — investigate before filing' : undefined,
+          warn: maxDay > SANDBOX_DAILY_USER_CAP_TZS ? 'a participant exceeded the daily cap — establish how before filing' : undefined,
         },
         {
           label: 'Largest participant total for the period (Parameter 5)',
@@ -261,7 +272,7 @@ async function incidentSection(range: DateRange): Promise<Section> {
           value: num(row?.lost),
           unit: 'TZS',
           provenance: 'sum of funds_lost_tzs over incidents in the period; entries where the answer is not established are excluded, not counted as zero',
-          note:
+          warn:
             unknownLoss > 0
               ? `${unknownLoss} incident(s) have no established figure — establish them before filing, do not file this as a clean zero`
               : undefined,
@@ -433,14 +444,14 @@ async function reserveSection(range: DateRange): Promise<Section> {
           label: 'Days attested',
           value: days,
           provenance: 'count of attestation rows with report_date inside the period (one immutable row per EAT day)',
-          note: days === 0 ? 'No attestations in this period — check the daily cron before filing' : undefined,
+          warn: days === 0 ? 'no attestations in this period — check the daily cron before filing' : undefined,
         },
         {
           label: 'Days fully backed',
           value: backed,
           unit: days ? `of ${days}` : undefined,
           provenance: 'attestations where fully_backed is true, i.e. reserve_total >= nTZS in circulation',
-          note: days > 0 && backed < days ? `${days - backed} day(s) were NOT fully backed — each needs an explanation in the return` : undefined,
+          warn: days > 0 && backed < days ? `${days - backed} day(s) were not fully backed — each needs an explanation in the return` : undefined,
         },
         {
           label: 'Worst peg deviation',
@@ -572,15 +583,21 @@ export function hasUnavailableFigures(report: Report): boolean {
   return report.sections.some((s) => s.figures.some((f) => f.unavailable))
 }
 
-/** Figures carrying a warning note that must be dealt with before the return is filed. */
+/**
+ * Everything that must be dealt with before the return is filed: figures that
+ * could not be computed, and figures that raised a warning.
+ *
+ * Both are explicit fields. An earlier version inferred severity from the
+ * wording of `note`, which warned on any figure whose explanation happened to
+ * contain the word "not" — and a banner that cries wolf is one people learn to
+ * click past, which is worse than no banner at all.
+ */
 export function preFilingWarnings(report: Report): Array<{ section: string; label: string; note: string }> {
   const out: Array<{ section: string; label: string; note: string }> = []
   for (const s of report.sections) {
     for (const f of s.figures) {
       if (f.unavailable) out.push({ section: s.title, label: f.label, note: f.unavailable })
-      else if (f.note && /ABOVE|NOT |before filing|establish them/i.test(f.note)) {
-        out.push({ section: s.title, label: f.label, note: f.note })
-      }
+      else if (f.warn) out.push({ section: s.title, label: f.label, note: f.warn })
     }
   }
   return out
