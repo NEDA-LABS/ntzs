@@ -102,6 +102,13 @@ export function estimateBillPayFee(utilityCode: string, amount: number): number 
   return tiers[tiers.length - 1][1]
 }
 
+/** Selcom's charge for a spend by destination kind — lipa uses the Lipa/TanQR
+ * tariff, bill uses the biller-group tariff. Single entry point for both the
+ * domestic spend product and the ramp off-ramp. */
+export function estimateSpendFee(kind: 'lipa' | 'bill', amount: number, utilityCode?: string): number {
+  return kind === 'lipa' ? estimateSendMoneyFee(amount) : estimateBillPayFee(utilityCode ?? '', amount)
+}
+
 /**
  * The PSP fee (TZS) for a mobile/bank payout where the recipient receives
  * `receiveAmountTzs`. Unknown/legacy provider tags fall back to the Snippe

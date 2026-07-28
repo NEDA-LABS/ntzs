@@ -9,6 +9,7 @@ import { initiateCollection, initiateCardPayment, isValidTanzanianPhone, normali
 import { W2B_CHANNEL } from '@/lib/psp/selcom-statement'
 import { getW2bConfig } from '@/lib/psp/selcom-w2b'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { isTestMode, testCreateDeposit } from '@/lib/testmode'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
 type PaymentMethod = 'mobile_money' | 'card' | 'lipa_namba'
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // TEST MODE: simulated collection, no PSP call and no mint.
+  if (isTestMode(partner)) return testCreateDeposit(partner, request)
 
   let body: DepositBody
   try {

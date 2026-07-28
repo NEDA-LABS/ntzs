@@ -3,25 +3,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { rampQuotes } from '@ntzs/db'
 import { requireRampPartner } from '@/lib/ramp/auth'
-import { computeRampQuote, RAMP_QUOTE_TTL_MS, type RampDirection } from '@/lib/ramp/quote'
+import { computeRampQuote, RAMP_QUOTE_TTL_MS, rampSpendEnabled, type RampDirection, type RampOfframpDestination } from '@/lib/ramp/quote'
+import { nedaAccountLookup } from '@/lib/psp/selcom'
+import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
+import { spendKindEnabled } from '@/lib/waas/spend-quote'
 
 export const runtime = 'nodejs'
 
 /**
  * POST /api/v1/ramp/quote
  *
- * Body: { direction: 'offramp' | 'onramp', usdcAmount?, tzsAmount? }
+ * Body: { direction: 'offramp' | 'onramp', usdcAmount?, tzsAmount?, destination? }
  *   - offramp: pass usdcAmount (USDC to spend) → recipient TZS net.
  *   - onramp:  pass tzsAmount (TZS to collect) → USDC delivered.
+ *   - destination (off-ramp only): where the TZS goes.
+ *       omitted / { kind:'wallet' } → mobile-money payout (default)
+ *       { kind:'lipa', payNumber, network? } → merchant Lipa Namba
+ *       { kind:'bill', utilityCode, utilityRef } → biller (LUKU, GEPG, …)
  *
- * Returns a locked quote (rate held until expiresAt) the partner consumes when
- * initiating an off/on-ramp settlement.
+ * For lipa/bill the response includes the destination's registered name so the
+ * partner can show "Paying: ENZI COFFEE" before consuming the quote. The
+ * destination is BOUND to the quote — the off-ramp executes exactly it.
  */
 export async function POST(req: NextRequest) {
   const auth = await requireRampPartner(req)
   if ('error' in auth) return auth.error
 
-  let body: { direction?: RampDirection; usdcAmount?: number; tzsAmount?: number }
+  let body: {
+    direction?: RampDirection
+    usdcAmount?: number
+    tzsAmount?: number
+    destination?: { kind?: string; payNumber?: string; network?: string; utilityCode?: string; utilityRef?: string }
+  }
   try {
     body = await req.json()
   } catch {
@@ -33,7 +46,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "direction must be 'offramp' or 'onramp'" }, { status: 400 })
   }
 
-  const quote = await computeRampQuote({ direction, usdcAmount, tzsAmount })
+  // ── Resolve + validate the off-ramp destination (spend rails) ─────────────
+  let destination: RampOfframpDestination = { kind: 'wallet' }
+  let recipientName: string | null = null
+  const rawKind = body.destination?.kind
+  if (direction === 'offramp' && rawKind && rawKind !== 'wallet') {
+    // Dedicated, BoT-gated switch — independent of the (already-live) domestic
+    // spend gate, so cross-border merchant/bill off-ramps stay dark until BoT
+    // green-lights them, whatever the migration / domestic-spend state.
+    if (!rampSpendEnabled()) {
+      return NextResponse.json({ error: 'ramp_spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled yet (pending regulatory approval).' }, { status: 503 })
+    }
+    if (rawKind !== 'lipa' && rawKind !== 'bill') {
+      return NextResponse.json({ error: "destination.kind must be 'wallet', 'lipa' or 'bill'" }, { status: 400 })
+    }
+    if (!spendKindEnabled(rawKind)) {
+      return NextResponse.json({ error: 'spend_kind_disabled', message: `The ${rawKind} rail is not enabled on this environment yet.` }, { status: 503 })
+    }
+
+    if (rawKind === 'lipa') {
+      const payNumber = String(body.destination?.payNumber ?? '').replace(/\s+/g, '')
+      if (!/^\d{4,12}$/.test(payNumber)) {
+        return NextResponse.json({ error: 'destination.payNumber must be the merchant Lipa Namba (4–12 digits)' }, { status: 400 })
+      }
+      const network = body.destination?.network?.trim() || undefined
+      destination = { kind: 'lipa', payNumber, ...(network ? { network } : {}) }
+      const info = await nedaAccountLookup('SB2LIPA', payNumber).catch(() => ({ name: null as string | null }))
+      recipientName = info.name
+    } else {
+      const utilityCode = String(body.destination?.utilityCode ?? '').trim().toUpperCase()
+      const utilityRef = String(body.destination?.utilityRef ?? '').trim()
+      const biller = getBiller(utilityCode)
+      if (!biller) {
+        return NextResponse.json({ error: 'unknown_biller', message: `utilityCode '${utilityCode}' is not in the catalogue.`, supportedCodes: SELCOM_BILLERS.map((b) => b.code) }, { status: 400 })
+      }
+      const refCheck = validateUtilityRef(utilityCode, utilityRef)
+      if (!refCheck.ok) return NextResponse.json({ error: 'invalid_utility_ref', message: refCheck.reason }, { status: 400 })
+      destination = { kind: 'bill', utilityCode, utilityRef }
+      const info = await nedaAccountLookup(utilityCode, utilityRef).catch(() => ({ name: null as string | null }))
+      recipientName = info.name
+    }
+  }
+
+  const quote = await computeRampQuote({ direction, usdcAmount, tzsAmount, destination })
   if ('error' in quote) return NextResponse.json({ error: quote.error }, { status: 400 })
 
   if (quote.lowLiquidity) {
@@ -42,6 +97,11 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     )
   }
+
+  // Store the destination (+ resolved name) on the quote so the off-ramp
+  // executes exactly what was priced and disclosed.
+  const storedDestination =
+    destination.kind === 'wallet' ? null : { ...destination, recipientName }
 
   const expiresAt = new Date(Date.now() + RAMP_QUOTE_TTL_MS)
   const { db } = getDb()
@@ -54,6 +114,7 @@ export async function POST(req: NextRequest) {
       usdcAmount: quote.usdcAmount.toString(),
       tzsAmount: quote.tzsAmount,
       feeTzs: quote.feeTzs,
+      destination: storedDestination,
       expiresAt,
     })
     .returning({ id: rampQuotes.id })
@@ -65,6 +126,9 @@ export async function POST(req: NextRequest) {
     tzsAmount: quote.tzsAmount,
     feeTzs: quote.feeTzs,
     rateUsdTzs: quote.rateUsdTzs,
+    ...(destination.kind !== 'wallet'
+      ? { destination: destination.kind === 'lipa' ? { kind: 'lipa', payNumber: destination.payNumber, network: destination.network ?? null } : { kind: 'bill', utilityCode: destination.utilityCode, utilityRef: destination.utilityRef }, recipientName }
+      : {}),
     expiresAt: expiresAt.toISOString(),
   })
 }

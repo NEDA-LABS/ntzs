@@ -10,28 +10,38 @@ import {
 import { createQuoteToken } from './quote'
 
 const SAVED_SECRET = process.env.WAAS_QUOTE_SECRET
+const SAVED_BPS = process.env.NEDA_PROTOCOL_FEE_BPS
+const SAVED_FLOOR = process.env.NEDA_PROTOCOL_FEE_FLOOR_TZS
 
 beforeAll(() => {
   process.env.WAAS_QUOTE_SECRET = 'test-spend-secret'
+  // Pin the protocol fee to its shipped defaults so the burn-amount math is
+  // deterministic regardless of ambient env.
+  process.env.NEDA_PROTOCOL_FEE_BPS = '30'
+  process.env.NEDA_PROTOCOL_FEE_FLOOR_TZS = '30'
 })
 afterAll(() => {
   process.env.WAAS_QUOTE_SECRET = SAVED_SECRET
+  process.env.NEDA_PROTOCOL_FEE_BPS = SAVED_BPS
+  process.env.NEDA_PROTOCOL_FEE_FLOOR_TZS = SAVED_FLOOR
 })
 
-describe('computeSpendTotals (burn = principal + selcomFee + platformFee)', () => {
-  it('prices the measured live case: 1,000 TZS lipa → 30 TZS selcom fee', () => {
+describe('computeSpendTotals (burn = principal + selcomFee + platformFee + nedaFee)', () => {
+  it('prices the measured live case: 1,000 TZS lipa → 30 selcom + 5 platform + 30 NEDA', () => {
     // Live evidence 25 Jul (ref 202607250630): principal 1000, charges 30.
     const t = computeSpendTotals('lipa', 1000, 0.5)
     expect(t.selcomFeeTzs).toBe(30)
     expect(t.platformFeeTzs).toBe(5) // ceil(1000 * 0.5%)
-    expect(t.burnAmountTzs).toBe(1035)
+    expect(t.nedaFeeTzs).toBe(30) // max(1000×30bps=3, floor 30) → 30
+    expect(t.burnAmountTzs).toBe(1065) // 1000 + 30 + 5 + 30
   })
 
-  it('scales through lipa tariff tiers and always ceils the platform fee', () => {
+  it('scales through lipa tariff tiers; NEDA fee is 30 bps above the floor', () => {
     const t = computeSpendTotals('lipa', 50_000, 0.5)
     expect(t.selcomFeeTzs).toBe(550) // published Lipa/TanQR tier
     expect(t.platformFeeTzs).toBe(250)
-    expect(t.burnAmountTzs).toBe(50_800)
+    expect(t.nedaFeeTzs).toBe(150) // max(50000×30bps=150, 30) → 150
+    expect(t.burnAmountTzs).toBe(50_950) // 50000 + 550 + 250 + 150
 
     const odd = computeSpendTotals('lipa', 501, 1)
     expect(odd.platformFeeTzs).toBe(6) // ceil(5.01)
@@ -74,7 +84,8 @@ describe('spend quote tokens', () => {
     principalTzs: 1000,
     selcomFeeTzs: 30,
     platformFeeTzs: 5,
-    burnAmountTzs: 1035,
+    nedaFeeTzs: 30,
+    burnAmountTzs: 1065,
     recipientName: 'ENZI COFFEE COMPANY LIMITED',
   }
 
@@ -86,7 +97,7 @@ describe('spend quote tokens', () => {
     if (v.ok) {
       expect(v.payload.k).toBe('spend')
       expect(v.payload.target).toBe('lipa:61115582')
-      expect(v.payload.burnAmountTzs).toBe(1035)
+      expect(v.payload.burnAmountTzs).toBe(1065)
       expect(v.payload.recipientName).toBe('ENZI COFFEE COMPANY LIMITED')
     }
   })

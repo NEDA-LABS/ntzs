@@ -104,6 +104,7 @@ const NAV = [
     items: [
       { id: 'capabilities', label: 'Overview' },
       { id: 'auth', label: 'Authentication' },
+      { id: 'testmode', label: 'Test mode' },
       { id: 'users', label: 'Create users' },
       { id: 'kyc', label: 'Identity (KYC)' },
       { id: 'balance', label: 'Get balance' },
@@ -115,6 +116,8 @@ const NAV = [
       { id: 'deposits', label: 'Collections' },
       { id: 'transfers', label: 'Transfers' },
       { id: 'withdrawals', label: 'Disbursements' },
+      { id: 'spend', label: 'Spend (bills & merchants)' },
+      { id: 'biashara', label: 'Biashara (merchant product)' },
       { id: 'swap', label: 'Swap' },
       { id: 'ramp', label: 'Ramp' },
     ],
@@ -134,7 +137,8 @@ const USE_CASES = [
   { name: 'Insurance', caps: ['Collections', 'Treasury'] },
   { name: 'Payroll', caps: ['Disbursements', 'Treasury'] },
   { name: 'Settlement', caps: ['Ramp'] },
-  { name: 'Neobank', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap'] },
+  { name: 'Neobank', caps: ['Wallets', 'Collections', 'Disbursements', 'Transfers', 'Swap', 'Spend'] },
+  { name: 'Super-app', caps: ['Wallets', 'Collections', 'Spend'] },
 ]
 
 // Capability cards — scannable, each jumps to its reference section.
@@ -378,11 +382,84 @@ export default function DevelopersPage() {
             </Note>
           </DocSection>
 
+          {/* Test mode */}
+          <DocSection
+            id="testmode"
+            isActive={activeSection === 'testmode'}
+            step="Step 2"
+            title="Test mode"
+            description="Build the whole integration before a single shilling moves. Test keys hit the same endpoints and return the same shapes — with simulated money, simulated identity and simulated payment providers."
+          >
+            <CodeBlock
+              title="Get sandbox credentials — no contract, no waiting"
+              code={`curl -X POST https://www.ntzs.co.tz/api/v1/testmode/signup \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Acme Bank","email":"dev@acme.co.tz"}'
+
+# → { "apiKey": "ntzs_test_…", "webhookSecret": "whsec_…" }
+# Then point every call below at that key. Start with:
+curl https://www.ntzs.co.tz/api/v1/testmode \\
+  -H "Authorization: Bearer ntzs_test_xxxxxxxxxxxx"`}
+            />
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">What is real:</span> the fee maths, the quote
+              signatures and expiry, every validation rule and error code, and the webhooks (really delivered,
+              really signed, carrying <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">livemode: false</code>).
+              What is simulated: the blockchain, the payment providers and the identity registry. Test data lives in
+              its own tables and can never touch the nTZS reserve or supply.
+            </Note>
+
+            <div className="mt-6 overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="bg-white/[0.04] text-white/60">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Use this value…</th>
+                    <th className="px-4 py-2.5 font-medium">…and you get</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06] text-white/75">
+                  {[
+                    ['Amount (deposit) or destination (payout) ending 13', 'Fails — a payout reverts and the balance comes back'],
+                    ['Destination ending 02', 'reconcile_required — burned, unconfirmed, no refund'],
+                    ['Amount or destination ending 99', 'Stays pending forever — test your timeouts'],
+                    ['Destination ending 00', 'No registered name — the unverified-destination warning'],
+                    ['Lipa till 61115582 / 70031820', 'ENZI COFFEE COMPANY LIMITED / NEDA LABS LIMITED'],
+                    ['NIDA ending 0000', '202 kyc_pending_review — clear it with the approve endpoint'],
+                    ['Anything else', 'Completes'],
+                  ].map(([trigger, result]) => (
+                    <tr key={trigger}>
+                      <td className="px-4 py-2.5"><code className="text-xs text-emerald-300/90">{trigger}</code></td>
+                      <td className="px-4 py-2.5">{result}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <CodeBlock
+              title="Drive the simulation"
+              code={`# Settle every pending transaction now (instead of waiting ~3s)
+POST /api/v1/testmode/advance
+
+# Clear a simulated manual KYC review
+POST /api/v1/testmode/users/{userId}/approve
+
+# Wipe every test user and transaction on this key
+POST /api/v1/testmode/reset`}
+            />
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">One deliberate difference:</span> test mode runs
+              every rail, including ones not yet switched on in production.
+              <code className="mx-1 rounded bg-white/10 px-1.5 py-0.5 text-xs">GET /api/v1/testmode</code>
+              reports which rails are actually live, so build ahead — but check there before you promise a launch date.
+            </Note>
+          </DocSection>
+
           {/* Users */}
           <DocSection
             id="users"
             isActive={activeSection === 'users'}
-            step="Step 2"
+            step="Step 3"
             title="Create users"
             description="Register a user and provision an on-chain wallet in a single call. Wallets are deterministically derived from your partner seed — no blockchain transaction required."
           >
@@ -462,7 +539,7 @@ export default function DevelopersPage() {
           <DocSection
             id="kyc"
             isActive={activeSection === 'kyc'}
-            step="Step 3"
+            step="Step 4"
             title="Identity verification (KYC)"
             description="Every wallet is backed by a verified identity, checked on a risk-tiered ladder. Most users pass instantly at create-user; the rest finish in ~2 minutes with a document-capture session — nobody waits on a human unless something genuinely needs review."
           >
@@ -611,7 +688,7 @@ await fetch(
           <DocSection
             id="balance"
             isActive={activeSection === 'balance'}
-            step="Step 4"
+            step="Step 5"
             title="Get user profile &amp; balance"
             description="Fetch a user's on-chain nTZS balance alongside their profile. The balance is read live from Base mainnet at request time."
           >
@@ -655,7 +732,7 @@ const user = await res.json()
           <DocSection
             id="deposits"
             isActive={activeSection === 'deposits'}
-            step="Step 5"
+            step="Step 6"
             title="Accept deposits (On-Ramp)"
             description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
           >
@@ -728,7 +805,7 @@ body: JSON.stringify({
           <DocSection
             id="transfers"
             isActive={activeSection === 'transfers'}
-            step="Step 6"
+            step="Step 7"
             title="Transfers"
             description="Move nTZS or USDC between platform users or to any external wallet address. Settlement is on-chain and synchronous — the API responds only after the transaction is confirmed."
           >
@@ -844,7 +921,7 @@ const transfer = await res.json()
           <DocSection
             id="withdrawals"
             isActive={activeSection === 'withdrawals'}
-            step="Step 7"
+            step="Step 8"
             title="Cash out to mobile money (Off-Ramp)"
             description="Two-step flow: quote, then execute. The quote returns the recipient's registered name, the fee breakdown and the net amount — everything your confirmation screen must show — plus a signed quoteId that authorizes execution at exactly those terms. amountTzs is always the amount the recipient RECEIVES (net)."
           >
@@ -924,6 +1001,114 @@ const withdrawal = await res2.json()
             </div>
           </DocSection>
 
+          {/* Spend */}
+          <DocSection
+            id="spend"
+            isActive={activeSection === 'spend'}
+            step="Step 9"
+            title="Spend — pay merchants & bills"
+            description="Burn a user's nTZS and pay a merchant Lipa Namba on any network (M-Pesa, Tigo, Airtel, Selcom) or a biller (LUKU electricity, GEPG government control numbers, DSTV, airtime and more) directly from the reserve. Same quote → confirm → execute shape as Disbursements. amountTzs is always the PRINCIPAL the destination receives; fees are added on top. Quote-first by design — execution ALWAYS requires a quoteId."
+          >
+            <CodeBlock
+              title="1 · POST /api/v1/spend/quote"
+              code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/spend/quote', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:    user.id,
+    kind:      'lipa',          // 'lipa' (merchant till) | 'bill' (biller)
+    amountTzs: 1000,            // PRINCIPAL the till receives, minimum 500
+    payNumber: '61115582',     // merchant Lipa Namba (lipa)
+    // for kind: 'bill' send instead:
+    //   utilityCode: 'LUKU',   // from GET /api/v1/spend/billers
+    //   utilityRef:  '01234567890',  // meter / control / smartcard number
+  }),
+})
+const quote = await res.json()
+// {
+//   quoteId: "eyJ2IjoxLCJr…",           // null if balance.sufficient is false
+//   expiresAt: "…",                      // valid 5 minutes
+//   recipientName: "ENZI COFFEE COMPANY LIMITED",  // null = registry had no answer
+//   principalTzs: 1000,
+//   burnAmountTzs: 1035,                 // deducted from the user's balance
+//   fees: { selcomFeeTzs: 30, platformFeeTzs: 5, totalFeeTzs: 35 },
+//   balance: { availableTzs: 25000, sufficient: true }
+// }`}
+            />
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Required confirmation screen:</span>{' '}
+              before the user&apos;s final tap, show <em>who they are paying</em>{' '}
+              (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">recipientName</code> + number),{' '}
+              <em>the fee</em> (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">fees.totalFeeTzs</code>) and{' '}
+              <em>the total burned</em> (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">burnAmountTzs</code>).
+              When <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">recipientName</code> is null, show the raw
+              number with an &ldquo;unverified destination&rdquo; caution. This is a Bank of Tanzania consumer-disclosure requirement.
+            </Note>
+            <CodeBlock
+              title="2 · POST /api/v1/spend — execute with the quoteId"
+              code={`const res2 = await fetch('https://www.ntzs.co.tz/api/v1/spend', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:    user.id,
+    kind:      'lipa',
+    amountTzs: 1000,             // must match the quote
+    payNumber: '61115582',      // must match the quote
+    quoteId:   quote.quoteId,   // ALWAYS required
+  }),
+})
+const spend = await res2.json()
+// { id, status: "burned", payoutStatus: "completed", reference: "202607259999",
+//   recipientName: "ENZI COFFEE COMPANY LIMITED", principalTzs: 1000,
+//   fees: { totalFeeTzs: 35 }, message: "Payment of 1000 TZS dispatched…" }
+//
+// payoutStatus "pending" settles server-side within a minute; a failed
+// payment AUTO-REVERTS the burn (balance restored) — no partner action.
+// Subscribe to the spend.updated webhook to hear the final state.
+//
+// Errors to handle (fetch a fresh quote and re-confirm):
+//   400 quote_required   — no quoteId sent (spend has no un-quoted path)
+//   400 invalid_quote    — expired (> 5 min) or malformed
+//   400 quote_mismatch   — user/destination/amount differ from the quote
+//   409 quote_stale      — pricing changed since the quote was issued
+//   400 unknown_biller   — utilityCode not in the catalogue (see supportedCodes)
+//   400 invalid_utility_ref — reference fails the biller's format
+//   503 spend_disabled / spend_kind_disabled — rail not enabled yet`}
+            />
+            <CodeBlock
+              title="Biller catalogue — GET /api/v1/spend/billers"
+              code={`// Render your bill-payment picker from live data, never a hardcoded list.
+const { categories } = await (await fetch(
+  'https://www.ntzs.co.tz/api/v1/spend/billers',
+  { headers: { 'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx' } }
+)).json()
+// categories: [{ key, label, billers: [{ code, referenceLabel,
+//   referenceKind, referenceMinLength, referenceMaxLength, feeFreeUnder20k }] }]
+// e.g. LUKU → referenceLabel "Meter No", 11 digits; GEPG → feeFreeUnder20k: true`}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { label: 'Minimum', value: '500 TZS (principal)' },
+                { label: 'Networks', value: 'Lipa works on any network — M-Pesa, Tigo, Airtel, Selcom tills' },
+                { label: 'Government bills', value: 'GEPG, DAWASA, NHC, Traffic Fine, water bills are FREE up to 20,000 TZS' },
+                { label: 'Quote', value: 'Always mandatory — there is no un-quoted spend path' },
+                { label: 'Settlement', value: 'Usually seconds; failures auto-revert the burn' },
+                { label: 'Large spend threshold', value: '>= 1,000,000 TZS burn total is refused (amount_too_large)' },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-xs font-medium text-white/50">{label}</div>
+                  <div className="mt-2 text-sm text-white/80">{value}</div>
+                </div>
+              ))}
+            </div>
+          </DocSection>
+
           {/* Swap Rate */}
           <DocSection
             id="rate"
@@ -974,6 +1159,109 @@ const crossRate = await fetch(
                 <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">SLIPPAGE_EXCEEDED</code>.
               </Note>
             </div>
+          </DocSection>
+
+          {/* Biashara */}
+          <DocSection
+            id="biashara"
+            isActive={activeSection === 'biashara'}
+            step="Step 10"
+            title="Biashara — a merchant product inside your app"
+            description="Turn your customers into merchants: they collect payments by QR or link, watch their sales, control how much auto-settles to mobile money, cash out — and, where a lender is attached, draw working capital against their sales history. All under your UI, your brand. You hold no wallet, no key and no float."
+          >
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">Access:</span> Biashara requires the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">biashara</code> capability and
+              approved KYB — it issues merchant wallets and moves merchant money. Ask us to enable it.
+              A key without it gets <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">403</code>.
+            </Note>
+
+            <CodeBlock
+              title="1 · Activate a customer as a merchant"
+              code={`// Provision the user first (Step 3), then:
+const res = await fetch('https://www.ntzs.co.tz/api/v1/biashara/accounts', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    userId:          user.id,          // from POST /api/v1/users
+    email:           'shop@example.co.tz',
+    businessName:    'Duka la Asha',
+    settlementPhone: '0744277496',
+  }),
+})
+const merchant = await res.json()
+// {
+//   merchantId:    "…",           // send as x-merchant-id on every call below
+//   handle:        "dukalaasha",  // PUBLIC payment identity — read it back!
+//   walletAddress: "0x…",
+// }
+
+// Idempotent per userId/email WITHIN YOUR OWN BOOK — calling again returns the
+// same merchant with alreadyExists: true.
+//
+// handle is globally unique across the platform. If yours is taken we assign
+// the next free variant and return it, so activation never fails on a
+// collision — never assume the handle you asked for.`}
+            />
+
+            <CodeBlock
+              title="2 · Every other call carries the merchant id"
+              code={`const headers = {
+  'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+  'x-merchant-id': merchant.merchantId,
+  'Content-Type': 'application/json',
+}
+
+// Collect
+POST   /api/v1/biashara/links      { amountTzs, label }   // payment link + QR
+GET    /api/v1/biashara/links
+DELETE /api/v1/biashara/links
+
+// Show them their business
+GET /api/v1/biashara/stats         // sales today / this month
+GET /api/v1/biashara/collections   // history, ?limit= up to 50, cursor-paginated
+GET /api/v1/biashara/wallet        // balance
+
+// Settlement + cash-out
+GET   /api/v1/biashara/settlement  // auto-settle % + payout phone
+PATCH /api/v1/biashara/settlement
+POST  /api/v1/biashara/withdraw    { amountTzs: 10000 }   // NET received, min 5,000
+
+// Working capital
+GET  /api/v1/biashara/financing/status     // facility, drawn, available
+POST /api/v1/biashara/financing/withdraw   // draw against it`}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Tenant isolation:</span> your key only ever
+                sees merchants it created. Another partner&apos;s merchant id returns{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">404</code>, never{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">403</code> — we don&apos;t
+                confirm that it exists.
+              </Note>
+              <Note variant="neutral">
+                <span className="font-semibold text-white/90">Lender-controlled settlement:</span> when a
+                lender funds the merchant, the merchant&apos;s own settlement controls go read-only.
+                Surface that in your UI rather than letting the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">PATCH</code> fail.
+              </Note>
+            </div>
+
+            <Note variant="warning">
+              <span className="font-semibold text-amber-300">No sandbox — deliberately.</span> A{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">ntzs_test_</code> key gets{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">501</code> here. The merchant
+              rails run against live payment providers, so the meaningful test is a real one: activate a
+              merchant, create a link, push a small payment (1,000 TZS) to a phone you control, and watch
+              it land in <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/collections</code>,{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/stats</code> and{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">/wallet</code>, then withdraw it
+              back out. Everything else on this page <em>does</em> have a full sandbox — build those
+              against a test key while your Biashara account is being set up.
+            </Note>
           </DocSection>
 
           {/* Swap */}
@@ -1075,7 +1363,7 @@ while (true) {
             isActive={activeSection === 'ramp'}
             step="Capability · Ramp"
             title="Ramp — wallet-less settlement"
-            description="Convert USDC ⇄ mobile money (TZS) over the API with no per-end-user wallets. You keep a USDC float with us; off-ramps debit it, on-ramps deliver USDC to you. nTZS is an internal rail you never touch."
+            description="Convert USDC ⇄ mobile money (TZS) over the API with no per-end-user wallets — or pay a merchant Lipa Namba or bill straight from USDC. You keep a USDC float with us; off-ramps debit it, on-ramps deliver USDC to you. nTZS is an internal rail you never touch."
           >
             <Note variant="info">
               <span className="font-semibold text-blue-200">Access:</span> Ramp requires the{' '}
@@ -1110,6 +1398,21 @@ fetch('https://www.ntzs.co.tz/api/v1/ramp/quote', {
   body: JSON.stringify({ quoteId, phoneNumber: '0744000000' }),
 })
 // 201/202 { settlementId, status: "completed" | "paying_out" }`}
+            />
+            <CodeBlock
+              title="Off-ramp straight to a merchant or bill — USDC → Lipa / bill"
+              code={`// Pass a destination on the QUOTE — it's priced on the Selcom tariff and
+// returns the merchant/biller's registered name to show before you confirm.
+const q = await fetch('.../api/v1/ramp/quote', { method: 'POST', headers,
+  body: JSON.stringify({ direction: 'offramp', usdcAmount: 10,
+    destination: { kind: 'lipa', payNumber: '61115582' } }) }).then(r => r.json())
+// { quoteId, tzsAmount, feeTzs, recipientName: 'ENZI COFFEE COMPANY LIMITED', … }
+
+// bill example: destination: { kind: 'bill', utilityCode: 'LUKU', utilityRef: '<meter>' }
+
+await fetch('.../api/v1/ramp/offramp', { method: 'POST', headers,
+  body: JSON.stringify({ quoteId: q.quoteId }) })   // no phoneNumber for lipa/bill
+// 201/202 { settlementId, status, destination, recipientName }`}
             />
             <CodeBlock
               title="POST /api/v1/ramp/onramp — mobile money → USDC"
@@ -1175,6 +1478,14 @@ app.post('/webhooks/ntzs', express.raw({ type: 'application/json' }), (req, res)
       // kycStatus: 'approved' | 'rejected' | 'pending_review'
       // On 'approved': re-call POST /api/v1/users (idempotent) — the
       // response now carries the user's walletAddress.
+      break
+    case 'spend.updated':
+      // event.data: { spendId, externalId, reference, status, kind,
+      //   recipientName, principalTzs, burnAmountTzs, actualChargesTzs,
+      //   selcomReceipt }
+      // status: 'completed' | 'reverted' | 'reconcile_required'
+      // Fires when a spend that returned payoutStatus 'pending' reaches its
+      // terminal state. 'reverted' = the burn was refunded (payment failed).
       break
   }
 

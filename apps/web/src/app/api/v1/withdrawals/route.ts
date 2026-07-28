@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
+import { isTestMode, testCreateWithdrawal } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import {
   ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const { partner } = authResult
+
+  // TEST MODE: simulated burn + payout, real fee math and real quote checks.
+  if (isTestMode(partner)) return testCreateWithdrawal(partner, request)
 
   let body: { userId: string; amountTzs: number; phoneNumber: string; quoteId?: string }
   try {
@@ -105,10 +109,12 @@ export async function POST(request: NextRequest) {
     : ethers.isAddress(PLATFORM_TREASURY_ADDRESS)
       ? PLATFORM_TREASURY_ADDRESS
       : null
+  // NEDA protocol fee → the platform (NEDA) treasury, always — never the partner's.
+  const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
 
-  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate)) —
-  // shared with the quote endpoint so quotes price exactly what executes.
-  const { burnAmountTzs, platformFeeTzs } = computeWithdrawalGrossUp(receiveAmountTzs, feePercent)
+  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate)) + nedaFee
+  // — shared with the quote endpoint so quotes price exactly what executes.
+  const { burnAmountTzs, platformFeeTzs, nedaFeeTzs } = computeWithdrawalGrossUp(receiveAmountTzs, feePercent)
 
   // ── Quote verification (the name+fee disclosure contract) ─────────────────
   // A valid quoteId proves the client fetched recipient name + fee breakdown
@@ -219,6 +225,7 @@ export async function POST(request: NextRequest) {
         requestedByUserId: userId,
         recipientPhone: phoneNumber,
         platformFeeTzs,
+        nedaFeeTzs,
       })
       .returning({ id: burnRequests.id, status: burnRequests.status, amountTzs: burnRequests.amountTzs })
 
@@ -234,6 +241,7 @@ export async function POST(request: NextRequest) {
         receiveAmountTzs,
         platformFeeTzs,
         pspFeeTzs: PSP_FLAT_FEE_TZS,
+        nedaFeeTzs,
         message: 'Withdrawal requires admin approval for amounts >= 1,000,000 TZS.',
       },
       { status: 201 }
@@ -260,6 +268,7 @@ export async function POST(request: NextRequest) {
       requestedByUserId: userId,
       recipientPhone: phoneNumber,
       platformFeeTzs,
+      nedaFeeTzs,
     })
     .returning({ id: burnRequests.id, amountTzs: burnRequests.amountTzs })
 
@@ -308,6 +317,22 @@ export async function POST(request: NextRequest) {
     } else if (platformFeeTzs > 0) {
       console.warn('[v1/withdrawals] no treasury address configured — platform fee kept as implicit reserve surplus', { burnRequestId, platformFeeTzs })
     }
+
+    // ── Mint the NEDA protocol fee to the platform (NEDA) treasury ──────────
+    if (nedaFeeTzs > 0 && nedaRecipient) {
+      try {
+        const nedaTx = await token.mint(nedaRecipient, BigInt(nedaFeeTzs) * BigInt(10) ** BigInt(18))
+        await nedaTx.wait(1)
+        await db
+          .update(burnRequests)
+          .set({ nedaFeeTxHash: nedaTx.hash, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+      } catch (nedaErr) {
+        console.error('[v1/withdrawals] NEDA fee mint failed (non-fatal):', nedaErr instanceof Error ? nedaErr.message : nedaErr)
+      }
+    } else if (nedaFeeTzs > 0) {
+      console.warn('[v1/withdrawals] no platform treasury — NEDA protocol fee kept as reserve surplus', { burnRequestId, nedaFeeTzs })
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     await db.update(burnRequests).set({ status: 'failed', error: errorMessage, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
@@ -315,19 +340,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Burn failed', detail: errorMessage }, { status: 500 })
   }
 
-  // Track whether the platform fee was actually minted so a later revert
-  // knows whether to burn it back.
+  // Track whether the platform / NEDA fees were actually minted so a later
+  // revert knows whether to burn them back.
   const feeMintedRef = { occurred: false }
+  const nedaFeeMintedRef = { occurred: false }
 
-  // Re-read flag from DB (since the fee mint block above only set this
-  // conditionally); cheaper to just read it back once.
+  // Re-read flags from DB (the mint blocks above only set them conditionally).
   {
     const [row] = await db
-      .select({ feeTxHash: burnRequests.feeTxHash })
+      .select({ feeTxHash: burnRequests.feeTxHash, nedaFeeTxHash: burnRequests.nedaFeeTxHash })
       .from(burnRequests)
       .where(eq(burnRequests.id, burnRequestId))
       .limit(1)
     feeMintedRef.occurred = Boolean(row?.feeTxHash)
+    nedaFeeMintedRef.occurred = Boolean(row?.nedaFeeTxHash)
   }
 
   // Helper: transition payoutStatus 'pending' → 'reverted' atomically.
@@ -378,6 +404,9 @@ export async function POST(request: NextRequest) {
       platformFeeTzs,
       feeRecipientAddress: feeRecipient,
       feeMintOccurred: feeMintedRef.occurred,
+      nedaFeeTzs,
+      nedaFeeRecipientAddress: nedaRecipient,
+      nedaFeeMintOccurred: nedaFeeMintedRef.occurred,
       reason,
     })
     await finalizeRevert(reason, res.remintTxHash, res.feeBurnTxHash, res.error)
@@ -506,9 +535,10 @@ export async function POST(request: NextRequest) {
       recipientName: verifiedRecipientName,
       platformFeeTzs,
       pspFeeTzs: PSP_FLAT_FEE_TZS,
-      totalFeeTzs: platformFeeTzs + PSP_FLAT_FEE_TZS,
+      nedaFeeTzs,
+      totalFeeTzs: platformFeeTzs + PSP_FLAT_FEE_TZS + nedaFeeTzs,
       feeRecipient,
-      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + PSP_FLAT_FEE_TZS} TZS in fees).`,
+      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + PSP_FLAT_FEE_TZS + nedaFeeTzs} TZS in fees).`,
     },
     { status: 201 }
   )

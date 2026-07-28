@@ -2,6 +2,7 @@ import { eq, and } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
+import { isTestMode, testGetDeposit } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { depositRequests, mintTransactions, partnerUsers } from '@ntzs/db'
 
@@ -17,6 +18,8 @@ export async function GET(
 
   const { partner } = authResult
   const { id: depositId } = await params
+
+  if (isTestMode(partner)) return testGetDeposit(partner, depositId)
 
   const { db } = getDb()
 

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { eq, or } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts, users } from '@ntzs/db'
-import { requireServiceKey } from '@/lib/service-auth'
+import { findMerchantForActivation, requireBiasharaCaller, reserveHandle } from '@/lib/biashara/caller'
 import { provisionMerchantWallet, slugFromEmail } from '@/lib/merchant/wallet'
 
 /**
@@ -22,8 +22,9 @@ import { provisionMerchantWallet, slugFromEmail } from '@/lib/merchant/wallet'
  * }
  */
 export async function POST(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
+  const authResult = await requireBiasharaCaller(req)
+  if ('error' in authResult) return authResult.error
+  const { caller } = authResult
 
   let body: {
     userId: string
@@ -58,17 +59,12 @@ export async function POST(req: NextRequest) {
 
   // Idempotency: check by userId first, then fall back to email for legacy rows
   // that were created before the user_id column existed (userId = NULL).
-  const [existing] = await db
-    .select({
-      id: merchantAccounts.id,
-      handle: merchantAccounts.handle,
-      walletAddress: merchantAccounts.walletAddress,
-      businessName: merchantAccounts.businessName,
-      userId: merchantAccounts.userId,
-    })
-    .from(merchantAccounts)
-    .where(or(eq(merchantAccounts.userId, userId), eq(merchantAccounts.email, normalized)))
-    .limit(1)
+  //
+  // ⚠ TENANT-CRITICAL. This lookup must be confined to the caller's own book.
+  // Unscoped, a partner activating a merchant whose email already exists
+  // first-party would be handed back SOMEONE ELSE'S merchantId — every
+  // subsequent call would then read and move another tenant's money.
+  const existing = await findMerchantForActivation(caller, userId, normalized)
 
   if (existing) {
     // Backfill userId on legacy rows so future lookups hit the fast path
@@ -90,14 +86,12 @@ export async function POST(req: NextRequest) {
   // Provision merchant wallet
   const { address, index } = await provisionMerchantWallet()
 
-  // Derive handle: prefer caller-supplied, else slug from email, else fallback
-  let handle = rawHandle?.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || slugFromEmail(normalized) || `merchant${index}`
-  const [handleConflict] = await db
-    .select({ id: merchantAccounts.id })
-    .from(merchantAccounts)
-    .where(eq(merchantAccounts.handle, handle))
-    .limit(1)
-  if (handleConflict) handle = `${handle}${index}`
+  // Handle is the PUBLIC payment identity (/pay/:alias resolves it with no
+  // tenant context), so it stays globally unique — and a collision must never
+  // surface as an error: we suffix until one is free and return what was
+  // actually assigned.
+  const preferred = rawHandle?.trim().toLowerCase() || slugFromEmail(normalized)
+  const handle = await reserveHandle(preferred, index)
 
   const [merchant] = await db
     .insert(merchantAccounts)
@@ -111,6 +105,10 @@ export async function POST(req: NextRequest) {
       userId,
       onboardingStep: 1,
       isActive: true,
+      // Omitted entirely on the service path so the column is never named
+      // there — that is what keeps NEDApay working if this deploys ahead of
+      // drizzle/0067.
+      ...(caller.scope === 'partner' ? { partnerId: caller.partnerId } : {}),
     })
     .returning({
       id: merchantAccounts.id,

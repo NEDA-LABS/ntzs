@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/merchant/db'
 import { merchantAccounts } from '@ntzs/db'
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 
 export async function GET(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) {
-    return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
-  }
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const [account] = await db
     .select({
@@ -37,13 +33,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) {
-    return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
-  }
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const body = await req.json()
   const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : undefined

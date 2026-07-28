@@ -1625,6 +1625,39 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
   const [showRotateConfirm, setShowRotateConfirm] = useState(false)
   const [rotating, setRotating] = useState(false)
 
+  // Sandbox (test mode) key — a paired test account, issued on demand.
+  const [testKeyInfo, setTestKeyInfo] = useState<{ available: boolean; hasTestKey?: boolean; apiKeyPrefix?: string | null } | null>(null)
+  const [newTestKey, setNewTestKey] = useState<string | null>(null)
+  const [testKeyBusy, setTestKeyBusy] = useState(false)
+  const [testKeyError, setTestKeyError] = useState('')
+  const [testKeyCopied, setTestKeyCopied] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/v1/partners/test-key', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((j) => setTestKeyInfo(j))
+      .catch(() => setTestKeyInfo(null))
+  }, [])
+
+  const handleTestKey = async () => {
+    setTestKeyBusy(true)
+    setTestKeyError('')
+    try {
+      const res = await fetch('/api/v1/partners/test-key', { method: 'POST', credentials: 'include' })
+      const json = await res.json()
+      if (!res.ok) {
+        setTestKeyError(json.message || json.error || 'Failed to issue a test key')
+        return
+      }
+      setNewTestKey(json.apiKey)
+      setTestKeyInfo({ available: true, hasTestKey: true, apiKeyPrefix: json.apiKeyPrefix })
+    } catch {
+      setTestKeyError('Failed to issue a test key')
+    } finally {
+      setTestKeyBusy(false)
+    }
+  }
+
   const handleRevealSecret = async () => {
     setRevealing(true)
     setSecretError('')
@@ -1798,6 +1831,70 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
           </>
         )}
       </div>
+
+      {/* Test-mode (sandbox) key */}
+      {testKeyInfo?.available !== false && (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold">Test key</h3>
+            <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300">
+              Sandbox
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-white/50">
+            Same API, simulated money. Build and test the full integration — deposits, payouts, bill payments,
+            webhooks — without moving a shilling.
+          </p>
+
+          {newTestKey ? (
+            <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+              <p className="mb-2 text-xs font-medium text-amber-300">
+                Test key issued! Copy it now — it will not be shown again.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 break-all rounded bg-black/30 px-3 py-2 font-mono text-sm text-white/90">
+                  {newTestKey}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(newTestKey)
+                    setTestKeyCopied(true)
+                    setTimeout(() => setTestKeyCopied(false), 2000)
+                  }}
+                  className="shrink-0 rounded-lg bg-amber-400/20 px-3 py-2 text-xs font-medium text-amber-200 transition-colors hover:bg-amber-400/30"
+                >
+                  {testKeyCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <p className="mt-3 text-xs text-white/50">
+                Start with <code className="rounded bg-white/10 px-1.5 py-0.5">GET /api/v1/testmode</code> — it lists
+                every test scenario and control.
+              </p>
+            </div>
+          ) : (
+            <>
+              {testKeyInfo?.hasTestKey && testKeyInfo.apiKeyPrefix && (
+                <p className="mt-3 text-sm text-white/50">
+                  Your test key starts with{' '}
+                  <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">{testKeyInfo.apiKeyPrefix}...</code>
+                </p>
+              )}
+              {testKeyError && <p className="mt-3 text-xs text-red-400">{testKeyError}</p>}
+              <button
+                onClick={handleTestKey}
+                disabled={testKeyBusy}
+                className="mt-4 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 disabled:opacity-50"
+              >
+                {testKeyBusy
+                  ? 'Working…'
+                  : testKeyInfo?.hasTestKey
+                    ? 'Rotate test key'
+                    : 'Create test key'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Webhook */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-6">

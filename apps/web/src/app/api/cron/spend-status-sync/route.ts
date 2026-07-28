@@ -8,6 +8,8 @@ import { queryTransactionRaw } from '@/lib/psp/selcom'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { spendEnabled } from '@/lib/waas/spend-quote'
+import { emitSpendWebhook } from '@/lib/waas/spend-webhook'
+import { finalizeRampSettlementForBurn } from '@/lib/ramp/offramp'
 
 export const maxDuration = 60
 
@@ -78,19 +80,25 @@ export async function GET(request: NextRequest) {
         if (status === 'COMPLETED' || raw.body.result === 'SUCCESS') {
           const d = raw.body.data as Record<string, unknown> | undefined
           const descriptor = (row.spend ?? {}) as Record<string, unknown>
-          await db
+          const settled = {
+            ...descriptor,
+            actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : descriptor.actualChargesTzs,
+            selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : descriptor.selcomReceipt,
+          }
+          const done = await db
             .update(burnRequests)
-            .set({
-              status: 'burned',
-              payoutStatus: 'completed',
-              spend: {
-                ...descriptor,
-                actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : descriptor.actualChargesTzs,
-                selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : descriptor.selcomReceipt,
-              },
-              updatedAt: new Date(),
-            })
+            .set({ status: 'burned', payoutStatus: 'completed', spend: settled, updatedAt: new Date() })
             .where(and(eq(burnRequests.id, row.id), eq(burnRequests.payoutStatus, 'pending')))
+            .returning({ id: burnRequests.id })
+          if (done.length > 0) {
+            await emitSpendWebhook(settled, { burnRequestId: row.id, reference: row.payoutReference, status: 'completed', burnAmountTzs: row.amountTzs })
+            // Ramp off-ramp tail: close the linked settlement + fire ramp.settlement.completed.
+            await finalizeRampSettlementForBurn({
+              burnRequestId: row.id,
+              outcome: 'completed',
+              evidence: { actualChargesTzs: settled.actualChargesTzs as number | null, selcomReceipt: settled.selcomReceipt as string | null },
+            }).catch((e) => console.error('[cron/spend-status-sync] ramp finalize (completed) failed:', e instanceof Error ? e.message : e))
+          }
           results.push({ id: row.id, outcome: 'completed' })
           console.log(`[cron/spend-status-sync] spend ${row.id} completed (${row.payoutReference})`)
           continue
@@ -139,6 +147,16 @@ export async function GET(request: NextRequest) {
             amountTzs: row.amountTzs,
             remintError: res.error ?? null,
           })
+          await emitSpendWebhook(row.spend as Record<string, unknown> | null, {
+            burnRequestId: row.id,
+            reference: row.payoutReference,
+            status: res.error ? 'reconcile_required' : 'reverted',
+            burnAmountTzs: row.amountTzs,
+          })
+          await finalizeRampSettlementForBurn({
+            burnRequestId: row.id,
+            outcome: res.error ? 'reconcile_required' : 'reverted',
+          }).catch((e) => console.error('[cron/spend-status-sync] ramp finalize (failed) failed:', e instanceof Error ? e.message : e))
           results.push({ id: row.id, outcome: res.error ? 'reconcile_required' : 'reverted' })
           console.warn(`[cron/spend-status-sync] spend ${row.id} failed → ${res.error ? 'reconcile_required' : 'reverted'}`)
           continue

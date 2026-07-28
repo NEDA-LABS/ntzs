@@ -12,7 +12,9 @@ import {
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
 import { getSettlementSigner } from '@/lib/ramp/wallet'
-import { PSP_FLAT_FEE_TZS } from '@/lib/ramp/quote'
+import { PSP_FLAT_FEE_TZS, type RampOfframpDestination } from '@/lib/ramp/quote'
+import { estimateSpendFee } from '@/lib/psp/selcom-fees'
+import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 const NTZS_BURN_ABI = [
@@ -74,10 +76,15 @@ export async function runOfframpSettlement(args: {
   usdcAmount: number
   recipientTzs: number
   feeTzs: number
-  recipientPhone: string
+  /** Wallet payout: the recipient phone. Lipa/bill: unused. */
+  recipientPhone?: string
+  /** Terminal destination — defaults to wallet (mobile-money) payout. */
+  destination?: RampOfframpDestination
 }): Promise<{ ok: boolean; status: string; error?: string }> {
   const { db } = getDb()
-  const { settlementId, settlementAddress, recipientPhone } = args
+  const { settlementId, settlementAddress } = args
+  const recipientPhone = args.recipientPhone
+  const destination: RampOfframpDestination = args.destination ?? { kind: 'wallet' }
 
   const rpcUrl = BASE_RPC_URL
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
@@ -91,7 +98,14 @@ export async function runOfframpSettlement(args: {
   }
 
   const grossTzs = args.recipientTzs + args.feeTzs       // nTZS we expect from the swap
-  const totalPlatformFeeTzs = args.feeTzs - PSP_FLAT_FEE_TZS  // the 0.5% the customer already pays
+  // PSP portion of the fee depends on the destination (must match how the
+  // quote priced it — estimated on gross): wallet = flat PSP fee; lipa/bill =
+  // Selcom tariff. The platform's 0.5% is whatever remains of feeTzs.
+  const pspFeeTzs =
+    destination.kind === 'wallet'
+      ? PSP_FLAT_FEE_TZS
+      : estimateSpendFee(destination.kind, grossTzs, destination.kind === 'bill' ? destination.utilityCode : undefined)
+  const totalPlatformFeeTzs = args.feeTzs - pspFeeTzs
 
   // ── Verify settlement float holds enough USDC ──────────────────────────────
   const provider = new ethers.JsonRpcProvider(rpcUrl)
@@ -161,6 +175,24 @@ export async function runOfframpSettlement(args: {
   if (!partnerRecipient && nedaRecipient) nedaFeeTzs = totalPlatformFeeTzs
   if (!nedaRecipient && partnerRecipient) partnerFeeTzs = totalPlatformFeeTzs
 
+  // Spend-descriptor for lipa/bill off-ramps so the spend-status-sync cron and
+  // the burns backstage treat this row like any Selcom spend. NO partnerId in
+  // the descriptor → the spend.updated webhook no-ops; ramp partners are
+  // notified via ramp.settlement.* instead.
+  const spendDescriptor =
+    destination.kind === 'wallet'
+      ? null
+      : {
+          kind: destination.kind,
+          ...(destination.kind === 'lipa'
+            ? { payNumber: destination.payNumber, ...(destination.network ? { network: destination.network } : {}) }
+            : { utilityCode: destination.utilityCode, utilityRef: destination.utilityRef }),
+          recipientName: destination.recipientName ?? null,
+          principalTzs: args.recipientTzs,
+          selcomFeeEstimateTzs: pspFeeTzs,
+          ramp: true,
+        }
+
   const [burn] = await db.insert(burnRequests).values({
     userId: fk.userId,
     walletId: fk.walletId,
@@ -170,11 +202,14 @@ export async function runOfframpSettlement(args: {
     reason: 'ramp_offramp',
     status: 'burn_submitted',
     requestedByUserId: fk.userId,
-    recipientPhone,
+    recipientPhone: destination.kind === 'wallet' ? recipientPhone : null,
     platformFeeTzs: partnerFeeTzs,
     nedaFeeTzs,
     burnFromAddress: settlementAddress,
     rampSettlementId: settlementId,
+    ...(destination.kind === 'wallet'
+      ? {}
+      : { payoutProvider: 'selcom' as const, pspFeeTzs, payoutKind: destination.kind, spend: spendDescriptor }),
   }).returning({ id: burnRequests.id })
   const burnRequestId = burn!.id
   await setStatus(settlementId, { burnRequestId })
@@ -248,7 +283,63 @@ export async function runOfframpSettlement(args: {
     await queuePartnerWebhook(args.partnerId, 'ramp.settlement.failed', { settlementId, reason, returnedAsNtzsTo: settlementAddress })
   }
 
-  // ── Payout ─────────────────────────────────────────────────────────────────
+  // ── Payout: Selcom Lipa / bill destination ──────────────────────────────────
+  // The reserve pays a merchant till or biller directly. Same shared money-path
+  // as the domestic spend product (idempotent dispatch, awaited poll, claim-once
+  // revert with the NEDA/partner fee split, reconcile_required on ambiguity).
+  if (destination.kind === 'lipa' || destination.kind === 'bill') {
+    const result = await dispatchSpendPayment({
+      burnRequestId,
+      kind: destination.kind,
+      principalTzs: args.recipientTzs,
+      payNumber: destination.kind === 'lipa' ? destination.payNumber : undefined,
+      network: destination.kind === 'lipa' ? destination.network : undefined,
+      utilityCode: destination.kind === 'bill' ? destination.utilityCode : undefined,
+      utilityRef: destination.kind === 'bill' ? destination.utilityRef : undefined,
+      spendDescriptor: spendDescriptor as Record<string, unknown>,
+      burnAmountTzs: grossTzs,
+      revert: {
+        userAddress: settlementAddress,
+        burnAmountTzs: grossTzs,
+        platformFeeTzs: partnerFeeTzs,
+        feeRecipientAddress: partnerRecipient,
+        feeMintOccurred: feeMinted,
+        nedaFeeTzs,
+        nedaFeeRecipientAddress: nedaRecipient,
+        nedaFeeMintOccurred: nedaFeeMinted,
+      },
+      label: 'ramp/offramp',
+    })
+
+    const destOut = destination.kind === 'lipa'
+      ? { kind: 'lipa', payNumber: destination.payNumber, network: destination.network ?? null }
+      : { kind: 'bill', utilityCode: destination.utilityCode, utilityRef: destination.utilityRef }
+
+    if (result.payoutStatus === 'completed') {
+      await setStatus(settlementId, {
+        status: 'completed',
+        pspReference: result.reference,
+        destination: { ...destOut, recipientName: destination.recipientName ?? null, actualChargesTzs: result.settledDescriptor.actualChargesTzs ?? null, selcomReceipt: result.settledDescriptor.selcomReceipt ?? null },
+      })
+      await queuePartnerWebhook(args.partnerId, 'ramp.settlement.completed', { settlementId, tzsAmount: args.recipientTzs, destination: destOut, pspReference: result.reference })
+      return { ok: true, status: 'completed' }
+    }
+    if (result.payoutStatus === 'reverted' || result.payoutStatus === 'reconcile_required') {
+      await setStatus(settlementId, { status: result.payoutStatus === 'reverted' ? 'reverted' : 'failed', pspReference: result.reference, error: result.error ?? 'Selcom payment failed' })
+      await queuePartnerWebhook(args.partnerId, 'ramp.settlement.failed', { settlementId, reason: result.error ?? 'Selcom payment failed', ...(result.payoutStatus === 'reverted' ? { returnedAsNtzsTo: settlementAddress } : {}) })
+      return { ok: false, status: result.payoutStatus, error: result.error }
+    }
+    // Still in flight — spend-status-sync (+ finalizeRampSettlementForBurn)
+    // finalizes the settlement row and fires the webhook.
+    await setStatus(settlementId, { status: 'paying_out', pspReference: result.reference })
+    return { ok: true, status: 'paying_out' }
+  }
+
+  // ── Payout: mobile-money wallet (default) ───────────────────────────────────
+  if (!recipientPhone) {
+    await setStatus(settlementId, { status: 'failed', error: 'recipientPhone missing for wallet payout' })
+    return { ok: false, status: 'failed', error: 'recipientPhone missing for wallet payout' }
+  }
   if (!isMobilePspConfigured()) {
     await setStatus(settlementId, { status: 'failed', error: 'PSP not configured' })
     return { ok: false, status: 'failed', error: 'PSP not configured' }
@@ -303,5 +394,47 @@ export async function runOfframpSettlement(args: {
     await db.update(burnRequests).set({ payoutStatus: 'reconcile_required', payoutError: msg, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
     await setStatus(settlementId, { status: 'failed', error: `reconcile_required: ${msg}` })
     return { ok: false, status: 'failed', error: msg }
+  }
+}
+
+/**
+ * Durable finalizer for a lipa/bill off-ramp whose inline poll timed out and
+ * whose burn row was settled by the spend-status-sync cron. Self-resolves the
+ * linked ramp_settlements row from the burn id, maps the terminal state onto
+ * it, and fires the ramp.settlement.* webhook — so the corridor closes even on
+ * the slow tail. No-ops when the burn isn't a ramp settlement or the settlement
+ * is already terminal (idempotent vs a concurrent inline finish).
+ */
+export async function finalizeRampSettlementForBurn(args: {
+  burnRequestId: string
+  outcome: 'completed' | 'reverted' | 'reconcile_required'
+  evidence?: { actualChargesTzs?: number | null; selcomReceipt?: string | null }
+}): Promise<void> {
+  const { db } = getDb()
+  const [settlement] = await db
+    .select({ id: rampSettlements.id, partnerId: rampSettlements.partnerId, tzsAmount: rampSettlements.tzsAmount })
+    .from(rampSettlements)
+    .where(eq(rampSettlements.burnRequestId, args.burnRequestId))
+    .limit(1)
+  if (!settlement) return // not a ramp settlement
+
+  const nextStatus = args.outcome === 'completed' ? 'completed' : args.outcome === 'reverted' ? 'reverted' : 'failed'
+  const updated = await db
+    .update(rampSettlements)
+    .set({
+      status: nextStatus,
+      ...(args.outcome === 'completed' && args.evidence
+        ? { destination: sql`coalesce(${rampSettlements.destination}, '{}'::jsonb) || ${JSON.stringify({ actualChargesTzs: args.evidence.actualChargesTzs ?? null, selcomReceipt: args.evidence.selcomReceipt ?? null })}::jsonb` }
+        : {}),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(rampSettlements.id, settlement.id), inArray(rampSettlements.status, ['paying_out', 'processing'])))
+    .returning({ id: rampSettlements.id })
+  if (updated.length === 0) return // already finalized inline
+
+  if (args.outcome === 'completed') {
+    await queuePartnerWebhook(settlement.partnerId, 'ramp.settlement.completed', { settlementId: settlement.id, tzsAmount: settlement.tzsAmount, pspReference: null })
+  } else {
+    await queuePartnerWebhook(settlement.partnerId, 'ramp.settlement.failed', { settlementId: settlement.id, reason: `Selcom payment ${args.outcome}` })
   }
 }

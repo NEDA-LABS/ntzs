@@ -1,14 +1,13 @@
-import { eq, and, or } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
+import { isTestMode, testCreateSpend } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
-import { payLipa, payBill, makeNumericTransId, queryTransactionRaw, checkPayoutStatus as selcomPayoutStatus } from '@/lib/psp/selcom'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { wallets, partnerUsers, burnRequests, partners } from '@ntzs/db'
-import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import {
   computeSpendTotals,
   verifySpendQuoteToken,
@@ -18,6 +17,9 @@ import {
   DEFAULT_PLATFORM_FEE_PERCENT,
   type SpendKind,
 } from '@/lib/waas/spend-quote'
+import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
+
+export const maxDuration = 60
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
@@ -49,6 +51,11 @@ export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
   const { partner } = authResult
+
+  // TEST MODE: simulated burn + Selcom dispatch. Deliberately ABOVE the rail
+  // flag — partners build against spend in the sandbox before it is switched
+  // on in production.
+  if (isTestMode(partner)) return testCreateSpend(partner, request)
 
   if (!spendEnabled()) {
     return NextResponse.json(
@@ -130,6 +137,7 @@ export async function POST(request: NextRequest) {
   if (!mapping) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
+  const externalId = mapping.externalId
 
   // Re-derive totals with CURRENT fee config — quote_stale on drift, so the
   // user always confirms the live price, never a stale one.
@@ -147,13 +155,20 @@ export async function POST(request: NextRequest) {
       : null
 
   const totals = computeSpendTotals(kind, principalTzs, feePercent, utilityCode)
-  if (q.burnAmountTzs !== totals.burnAmountTzs || q.selcomFeeTzs !== totals.selcomFeeTzs || q.platformFeeTzs !== totals.platformFeeTzs) {
+  if (
+    q.burnAmountTzs !== totals.burnAmountTzs ||
+    q.selcomFeeTzs !== totals.selcomFeeTzs ||
+    q.platformFeeTzs !== totals.platformFeeTzs ||
+    q.nedaFeeTzs !== totals.nedaFeeTzs
+  ) {
     return NextResponse.json(
       { error: 'quote_stale', message: 'Pricing changed since this quote was issued. Request a new quote.' },
       { status: 409 }
     )
   }
-  const { burnAmountTzs, platformFeeTzs, selcomFeeTzs } = totals
+  const { burnAmountTzs, platformFeeTzs, selcomFeeTzs, nedaFeeTzs } = totals
+  // NEDA protocol fee → the platform (NEDA) treasury, always — never the partner's.
+  const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
 
   // Spends above the safe threshold are an ops flow, not an API flow.
   if (burnAmountTzs >= SAFE_MINT_THRESHOLD_TZS) {
@@ -214,6 +229,10 @@ export async function POST(request: NextRequest) {
     recipientName: q.recipientName,
     principalTzs,
     selcomFeeEstimateTzs: selcomFeeTzs,
+    // Partner link for the spend.updated webhook — carried in the descriptor
+    // so the settlement cron can notify without a schema change.
+    partnerId: partner.id,
+    externalId,
   }
 
   const [burn] = await db
@@ -228,6 +247,7 @@ export async function POST(request: NextRequest) {
       status: 'burn_submitted',
       requestedByUserId: userId,
       platformFeeTzs,
+      nedaFeeTzs,
       payoutProvider: 'selcom',
       pspFeeTzs: selcomFeeTzs,
       payoutKind: kind,
@@ -272,6 +292,23 @@ export async function POST(request: NextRequest) {
         console.error('[v1/spend] fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
       }
     }
+
+    // Mint the NEDA protocol fee to the platform (NEDA) treasury — the rail
+    // operator's earn. Best-effort; with no treasury it stays reserve surplus.
+    if (nedaFeeTzs > 0 && nedaRecipient) {
+      try {
+        const nedaTx = await token.mint(nedaRecipient, BigInt(nedaFeeTzs) * BigInt(10) ** BigInt(18))
+        await nedaTx.wait(1)
+        await db
+          .update(burnRequests)
+          .set({ nedaFeeTxHash: nedaTx.hash, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+      } catch (feeErr) {
+        console.error('[v1/spend] NEDA fee mint failed (non-fatal):', feeErr instanceof Error ? feeErr.message : feeErr)
+      }
+    } else if (nedaFeeTzs > 0) {
+      console.warn('[v1/spend] no platform treasury — NEDA protocol fee kept as reserve surplus', { burnRequestId, nedaFeeTzs })
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     await db.update(burnRequests).set({ status: 'failed', error: errorMessage, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
@@ -279,157 +316,52 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Burn failed', detail: errorMessage }, { status: 500 })
   }
 
-  const feeMintedRef = { occurred: false }
-  {
-    const [row] = await db
-      .select({ feeTxHash: burnRequests.feeTxHash })
-      .from(burnRequests)
-      .where(eq(burnRequests.id, burnRequestId))
-      .limit(1)
-    feeMintedRef.occurred = Boolean(row?.feeTxHash)
-  }
-
-  const claimRevert = async (): Promise<boolean> => {
-    const updated = await db
-      .update(burnRequests)
-      .set({ payoutStatus: 'reverting', updatedAt: new Date() })
-      .where(
-        and(
-          eq(burnRequests.id, burnRequestId),
-          or(eq(burnRequests.payoutStatus, 'pending'), eq(burnRequests.payoutStatus, 'failed'))
-        )
-      )
-      .returning({ id: burnRequests.id })
-    return updated.length > 0
-  }
-
-  const finalizeRevert = async (reason: string, remintError?: string) => {
-    await db
-      .update(burnRequests)
-      .set({
-        status: 'failed',
-        payoutStatus: remintError ? 'reconcile_required' : 'reverted',
-        payoutError: remintError ? `${reason} | remint_error: ${remintError}` : reason,
-        updatedAt: new Date(),
-      })
-      .where(eq(burnRequests.id, burnRequestId))
-    console.log('[v1/spend] burn reverted', { burnRequestId, reason, remintError })
-  }
-
-  const revertBurnForUser = async (reason: string) => {
-    const claimed = await claimRevert()
-    if (!claimed) return
-    const res = await revertOffRampBurn({
-      burnRequestId,
-      userAddress: wallet.address,
-      burnAmountTzs,
-      platformFeeTzs,
-      feeRecipientAddress: feeRecipient,
-      feeMintOccurred: feeMintedRef.occurred,
-      reason,
-    })
-    await finalizeRevert(reason, res.error)
-  }
-
-  // ── Dispatch the Selcom payment ───────────────────────────────────────────
-  // transId generated ONCE and persisted BEFORE dispatch: if we crash between
-  // dispatch and the DB write, the reference is still on the row for the
-  // reconciler; retries inside payLipa/payBill reuse it (idempotent at Selcom).
-  const transId = makeNumericTransId()
-  await db
-    .update(burnRequests)
-    .set({ payoutReference: transId, payoutStatus: 'pending', updatedAt: new Date() })
-    .where(eq(burnRequests.id, burnRequestId))
-
-  let dispatchOutcome: 'accepted' | 'failed_clean' | 'ambiguous' = 'ambiguous'
-  let dispatchError: string | undefined
-  try {
-    const dispatch =
-      kind === 'lipa'
-        ? await payLipa({ payNumber: payNumber as string, network, amountTzs: principalTzs, transId })
-        : await payBill({ utilityCode: utilityCode as string, utilityRef: utilityRef as string, amountTzs: principalTzs, transId })
-
-    if (dispatch.success) {
-      dispatchOutcome = 'accepted'
-    } else {
-      dispatchError = dispatch.error
-      // Decisive vs ambiguous: ask the authoritative query. A FAILED (or
-      // absent) transaction cannot pay out later → clean revert. Anything
-      // else stays for the operator / status cron.
-      const st = await selcomPayoutStatus(transId)
-      dispatchOutcome = st.status === 'failed' ? 'failed_clean' : 'ambiguous'
-    }
-  } catch (err) {
-    dispatchError = err instanceof Error ? err.message : String(err)
-    dispatchOutcome = 'ambiguous'
-  }
-
-  if (dispatchOutcome === 'failed_clean') {
-    await revertBurnForUser(dispatchError || 'Selcom rejected the payment')
-  } else if (dispatchOutcome === 'ambiguous' && dispatchError) {
-    await db
-      .update(burnRequests)
-      .set({ payoutStatus: 'reconcile_required', payoutError: dispatchError, updatedAt: new Date() })
-      .where(eq(burnRequests.id, burnRequestId))
-  } else if (dispatchOutcome === 'accepted') {
-    // Quick completion poll — settlement measured at ~4s on the live rail.
-    // The spend-status-sync cron is the durable path.
-    void (async () => {
-      const delays = [3000, 6000, 12000]
-      for (const delay of delays) {
-        await new Promise((r) => setTimeout(r, delay))
-        try {
-          const raw = await queryTransactionRaw(transId)
-          if ('error' in raw) continue
-          const status = String(raw.body.data?.status ?? '').toUpperCase()
-          if (status === 'COMPLETED' || raw.body.result === 'SUCCESS') {
-            const d = raw.body.data as Record<string, unknown> | undefined
-            await db
-              .update(burnRequests)
-              .set({
-                status: 'burned',
-                payoutStatus: 'completed',
-                spend: {
-                  ...spendDescriptor,
-                  actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : undefined,
-                  selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : undefined,
-                },
-                updatedAt: new Date(),
-              })
-              .where(eq(burnRequests.id, burnRequestId))
-            console.log(`[v1/spend] ${transId} completed (polled)`)
-            break
-          }
-          if (status === 'FAILED' || raw.body.result === 'FAIL') {
-            await revertBurnForUser('Selcom payment failed (polled)')
-            break
-          }
-        } catch {
-          // next interval
-        }
-      }
-    })()
-  }
-
-  const [finalRow] = await db
-    .select({ status: burnRequests.status, payoutStatus: burnRequests.payoutStatus, payoutError: burnRequests.payoutError })
+  const [feeRow] = await db
+    .select({ feeTxHash: burnRequests.feeTxHash, nedaFeeTxHash: burnRequests.nedaFeeTxHash })
     .from(burnRequests)
     .where(eq(burnRequests.id, burnRequestId))
     .limit(1)
 
-  if (finalRow?.payoutStatus === 'reverted') {
+  // ── Dispatch the Selcom payment via the shared money-path ─────────────────
+  // Same helper the ramp off-ramp uses: idempotent transId persisted before
+  // dispatch, awaited quick poll, claim-once revert on decisive failure,
+  // reconcile_required on ambiguity, spend.updated webhook on terminal state.
+  const dispatch = await dispatchSpendPayment({
+    burnRequestId,
+    kind,
+    principalTzs,
+    payNumber,
+    network,
+    utilityCode,
+    utilityRef,
+    spendDescriptor,
+    burnAmountTzs,
+    revert: {
+      userAddress: wallet.address,
+      burnAmountTzs,
+      platformFeeTzs,
+      feeRecipientAddress: feeRecipient,
+      feeMintOccurred: Boolean(feeRow?.feeTxHash),
+      nedaFeeTzs,
+      nedaFeeRecipientAddress: nedaRecipient,
+      nedaFeeMintOccurred: Boolean(feeRow?.nedaFeeTxHash),
+    },
+    label: 'v1/spend',
+  })
+
+  if (dispatch.payoutStatus === 'reverted') {
     return NextResponse.json(
-      { id: burnRequestId, status: finalRow.status, payoutStatus: finalRow.payoutStatus, error: finalRow.payoutError || 'Payment failed; burn reverted — balance restored.' },
+      { id: burnRequestId, status: 'failed', payoutStatus: 'reverted', error: dispatch.error || 'Payment failed; burn reverted — balance restored.' },
       { status: 502 }
     )
   }
-  if (finalRow?.payoutStatus === 'reconcile_required') {
+  if (dispatch.payoutStatus === 'reconcile_required') {
     return NextResponse.json(
       {
         id: burnRequestId,
-        status: finalRow.status,
-        payoutStatus: finalRow.payoutStatus,
-        error: finalRow.payoutError || 'Payment could not be confirmed',
+        status: 'failed',
+        payoutStatus: 'reconcile_required',
+        error: dispatch.error || 'Payment could not be confirmed',
         message:
           'Spend is under review. The burn completed but Selcom did not confirm the payment. Do not retry — an operator will confirm and either complete the payment or restore the balance.',
       },
@@ -441,15 +373,15 @@ export async function POST(request: NextRequest) {
     {
       id: burnRequestId,
       status: 'burned',
-      payoutStatus: finalRow?.payoutStatus ?? 'pending',
-      reference: transId,
+      payoutStatus: dispatch.payoutStatus,
+      reference: dispatch.reference,
       kind,
       target: kind === 'lipa' ? { payNumber, network: network ?? null } : { utilityCode, utilityRef },
       recipientName: q.recipientName,
       principalTzs,
       burnAmountTzs,
-      fees: { selcomFeeTzs, platformFeeTzs, totalFeeTzs: selcomFeeTzs + platformFeeTzs },
-      message: `Payment of ${principalTzs} TZS dispatched${q.recipientName ? ` to ${q.recipientName}` : ''} (${selcomFeeTzs + platformFeeTzs} TZS in fees).`,
+      fees: { selcomFeeTzs, platformFeeTzs, nedaFeeTzs, totalFeeTzs: selcomFeeTzs + platformFeeTzs + nedaFeeTzs },
+      message: `Payment of ${principalTzs} TZS dispatched${q.recipientName ? ` to ${q.recipientName}` : ''} (${selcomFeeTzs + platformFeeTzs + nedaFeeTzs} TZS in fees).`,
     },
     { status: 201 }
   )

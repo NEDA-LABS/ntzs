@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/merchant/db'
 import { merchantPaymentLinks } from '@ntzs/db'
-import { requireServiceKey } from '@/lib/service-auth'
+import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 
 export async function GET(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) {
-    return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
-  }
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const links = await db
     .select()
@@ -23,13 +19,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) {
-    return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
-  }
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const body = await req.json()
   const type = body.type === 'fixed' ? 'fixed' : 'open'
@@ -78,13 +70,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const authError = requireServiceKey(req)
-  if (authError) return authError
-
-  const merchantId = req.headers.get('x-merchant-id')
-  if (!merchantId) {
-    return NextResponse.json({ error: 'x-merchant-id header required' }, { status: 400 })
-  }
+  const authResult = await requireBiasharaMerchant(req)
+  if ('error' in authResult) return authResult.error
+  const { merchantId } = authResult
 
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
