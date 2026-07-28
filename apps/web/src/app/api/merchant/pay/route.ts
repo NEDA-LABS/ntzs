@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { merchantAccounts, merchantCollections, merchantPaymentLinks, users, wallets, depositRequests } from '@ntzs/db';
 import { db } from '@/lib/merchant/db';
 import { initiatePayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp';
-import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits';
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits';
 import { getDb } from '@/lib/db';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz';
@@ -25,12 +25,6 @@ export async function POST(req: NextRequest) {
 
   if (!amountTzs || !Number.isFinite(amountTzs) || amountTzs < 100) {
     return NextResponse.json({ error: 'amountTzs must be at least 100' }, { status: 400 });
-  }
-
-  // BoT Sandbox Parameter #3 — per-transaction cap
-  const perTxnErr = checkPerTransactionCap(amountTzs);
-  if (perTxnErr) {
-    return NextResponse.json(limitErrorResponse(perTxnErr), { status: 400 });
   }
 
   if (!isValidTanzanianPhone(phone)) {
@@ -123,6 +117,32 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const amountInt = Math.trunc(amountTzs);
+
+  // BoT Testing Parameters #3/#4/#5, counted against the MERCHANT.
+  //
+  // The payer pays from their own mobile money and never holds nTZS, so they
+  // are not the participant here. The merchant is: this collection creates a
+  // deposit_requests row, and a confirmed deposit mints nTZS into the
+  // merchant's wallet. Their collections therefore consume the same daily and
+  // 30-day participant allowance as any other holder — and the sum is already
+  // consistent, because checkUserPeriodLimits totals exactly the
+  // deposit_requests rows written below.
+  //
+  // Deliberately placed AFTER the merchant's participant record is resolved:
+  // a block cannot be recorded against a subject that does not exist yet, and
+  // an unrecorded block is the gap drizzle/0069 exists to close. The cost is
+  // that a rejected collection may create the merchant's synthetic user/wallet
+  // rows — idempotent, one per already-active merchant, and they would be
+  // created by their first successful collection anyway.
+  const limitErr = await enforceSandboxLimits({ kind: 'user', id: mUser.id }, amountInt, {
+    endpoint: 'merchant/pay',
+    stage: 'execute',
+  });
+  if (limitErr) {
+    return NextResponse.json(limitErrorResponse(limitErr), { status: 400 });
+  }
+
   // Resolve sentinel bank for merchant collections
   const bankRows = await sql<{ id: string }[]>`
     insert into banks (name, status) values ('nTZS Merchant', 'active')
@@ -132,7 +152,6 @@ export async function POST(req: NextRequest) {
   const bankId = bankRows[0]?.id;
   if (!bankId) return NextResponse.json({ error: 'Failed to resolve bank' }, { status: 500 });
 
-  const amountInt = Math.trunc(amountTzs);
   const idempotencyKey = crypto.randomUUID();
 
   const [deposit] = await mainDb

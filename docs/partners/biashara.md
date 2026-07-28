@@ -133,3 +133,20 @@ sandbox — see the Test Mode section of the partner API reference.
 nTZS operates under the Bank of Tanzania regulatory sandbox, which caps pilot participants and
 per-transaction amounts. Merchant cohorts are agreed before launch — talk to us about numbers
 before you plan a rollout.
+
+**A collection mints nTZS to the merchant, so the merchant is the capped participant** — not the
+payer, who pays out of their own mobile money and never holds the token. Three limits apply to
+every collection, counted against the merchant's total nTZS activity (collections *and*
+withdrawals) in the period:
+
+| Limit | Amount | Error code |
+|---|---|---|
+| Per transaction | 1,000,000 TZS | `per_txn_cap` |
+| Per day | 2,000,000 TZS | `daily_user_cap` |
+| Per 30 days | 60,000,000 TZS | `monthly_user_cap` |
+
+A blocked collection returns `400` with the code above plus
+`details.limit` / `details.requested` / `details.usedInPeriod`, so your UI can tell the merchant
+exactly how much headroom is left rather than showing a generic failure. Design for it: a busy
+till reaches the daily limit, and the right experience is "you can collect X more today", not an
+error toast.
