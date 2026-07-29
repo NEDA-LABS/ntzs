@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  getSmileIdJobStatus,
+  isValidSmileIdJobId,
+  replaySmileIdCallback,
   computeSmileIdWebhookSignature,
   interpretSmileIdResult,
   isSmileIdConfigured,
@@ -198,5 +201,38 @@ describe('supportsEnhancedKyc — coverage set', () => {
   it('handles lowercase and junk', () => {
     expect(supportsEnhancedKyc('ng')).toBe(true)
     expect(supportsEnhancedKyc('')).toBe(false)
+  })
+})
+
+describe('isValidSmileIdJobId — TypeID shape', () => {
+  it('accepts a real SmileID job id', () => {
+    expect(isValidSmileIdJobId('job_01ky75gtkeebnag7xen2bxgdcx')).toBe(true)
+  })
+  it('rejects wrong prefix, wrong length, uppercase, and junk', () => {
+    expect(isValidSmileIdJobId('user_01ky75gtkeebnag7xen2bxgdcx')).toBe(false)
+    expect(isValidSmileIdJobId('job_tooshort')).toBe(false)
+    expect(isValidSmileIdJobId('job_01KY75GTKEEBNAG7XEN2BXGDCX')).toBe(false)
+    expect(isValidSmileIdJobId('')).toBe(false)
+    // No path traversal into the status/replay URLs.
+    expect(isValidSmileIdJobId('job_01ky75gtkeebnag7xen2bxgdcx/../../v3/token')).toBe(false)
+  })
+})
+
+describe('getSmileIdJobStatus / replaySmileIdCallback — fail-closed', () => {
+  it('refuse to call out when credentials are missing', async () => {
+    await expect(getSmileIdJobStatus('job_01ky75gtkeebnag7xen2bxgdcx')).resolves.toMatchObject({ status: 'unavailable' })
+    await expect(replaySmileIdCallback('job_01ky75gtkeebnag7xen2bxgdcx')).resolves.toMatchObject({ status: 'unavailable' })
+  })
+
+  it('reject a malformed job id before any network call', async () => {
+    vi.stubEnv('SMILEID_PARTNER_ID', PARTNER_ID)
+    vi.stubEnv('SMILEID_API_KEY', API_KEY)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const status = await getSmileIdJobStatus('../v3/token')
+    const replay = await replaySmileIdCallback('../v3/token')
+    expect(status).toMatchObject({ status: 'unavailable' })
+    expect(replay).toMatchObject({ status: 'unavailable' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
   })
 })

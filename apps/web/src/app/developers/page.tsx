@@ -593,7 +593,9 @@ const res = await fetch(
 //   document         ID front photo (JPEG/PNG)
 //   document_back    optional back photo
 //   selfie_image     one selfie (JPEG)
-//   liveness_images  6-8 JPEG frames (short selfie burst)
+//   liveness_images  short selfie burst — frame count and image
+//                    dimensions/quality come from the token's
+//                    sdk_config claim (currently 7 frames)
 //   user_details     JSON string: { given_names, last_name, email | phone_number }
 //   consent          JSON string: { granted: true, granted_at,
 //                      notice_language, notice_privacy_policy_url }
@@ -601,6 +603,24 @@ const res = await fetch(
 //
 // Response is 202 Accepted — the VERDICT arrives on the
 // kyc.updated webhook, not in this response.`}
+            />
+            <CodeBlock
+              title="PATCH /api/v1/users/:id/kyc/session — report the job id"
+              code={`// SmileID returns job_id to YOUR client, not to us. Send it over
+// so a callback that gets lost in transit can heal itself instead
+// of turning into a manual review.
+await fetch(
+  'https://www.ntzs.co.tz/api/v1/users/14e17d04-ec7f-4d99-91a3-dfbaca19fba1/kyc/session',
+  {
+    method: 'PATCH',
+    headers: {
+      'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ jobId: 'job_01ky75gtkeebnag7xen2bxgdcx' }),
+  }
+)
+// 200 { recorded: true, caseId, jobId }`}
             />
             <div className="overflow-x-auto rounded-xl border border-white/10">
               <table className="w-full text-sm">
@@ -635,6 +655,14 @@ const res = await fetch(
               <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">approved</code>, re-call{' '}
               <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/users</code> (idempotent) — the
               response now carries the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">walletAddress</code>.
+            </Note>
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Always report the job id.</span> After the capture submit
+              returns <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">202</code>,{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">PATCH</code> its{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">job_id</code> to the session endpoint. We
+              reconcile quiet verifications against SmileID and replay any callback that never arrived, so a completed
+              check resolves on its own — typically within ten minutes, with no human in the loop.
             </Note>
             <div className="grid gap-3 sm:grid-cols-2">
               <Note variant="neutral">

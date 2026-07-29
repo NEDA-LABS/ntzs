@@ -6,6 +6,7 @@ import { isTestMode, testNotSupported } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import {
   isSmileIdConfigured,
+  isValidSmileIdJobId,
   mintSmileIdToken,
   smileIdApiBaseUrl,
   smileIdEnvironment,
@@ -182,6 +183,108 @@ export async function POST(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[v1/users/:id/kyc/session] Unhandled error:', message)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * PATCH /api/v1/users/:id/kyc/session — report the SmileID job id returned by
+ * the client's capture submit (the `job_id` in SmileID's 202 response).
+ *
+ * WHY THIS MATTERS: the capture is submitted client-side, so SmileID hands the
+ * job id to the partner's frontend and never to us. Without it, a webhook that
+ * is lost in transit strands the case in 'pending' forever and only a human in
+ * Backstage can clear it. With it, the reconcile cron can ask SmileID for the
+ * job's state and request a callback replay — self-healing, no manual review.
+ *
+ * Idempotent: re-reporting the same job id is a no-op; never overwrites a job
+ * id already on the case, and never touches a case that has reached a verdict.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const authResult = await authenticatePartner(request)
+    if ('error' in authResult) return authResult.error
+
+    const { partner } = authResult
+    const { id: userId } = await params
+
+    // TEST MODE: no SmileID job exists to reconcile — identity is simulated.
+    if (isTestMode(partner)) return testNotSupported('Document-verification sessions')
+
+    let body: { jobId?: string; caseId?: string }
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const jobId = (body.jobId ?? '').trim()
+    if (!jobId) {
+      return NextResponse.json({ error: 'jobId is required.', code: 'job_id_required' }, { status: 400 })
+    }
+    if (!isValidSmileIdJobId(jobId)) {
+      return NextResponse.json(
+        { error: "Malformed jobId — expected SmileID's job_… identifier from the capture response.", code: 'invalid_job_id' },
+        { status: 400 }
+      )
+    }
+
+    const { db } = getDb()
+
+    // Scope: the user must belong to this partner.
+    const [mapping] = await db
+      .select({ externalId: partnerUsers.externalId })
+      .from(partnerUsers)
+      .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, userId)))
+      .limit(1)
+    if (!mapping) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Target the caller's case when given (a partner may run more than one
+    // attempt), else the user's newest open one.
+    const [kase] = body.caseId
+      ? await db
+          .select({ id: kycCases.id, status: kycCases.status, providerReference: kycCases.providerReference })
+          .from(kycCases)
+          .where(and(eq(kycCases.id, body.caseId), eq(kycCases.userId, userId)))
+          .limit(1)
+      : await db
+          .select({ id: kycCases.id, status: kycCases.status, providerReference: kycCases.providerReference })
+          .from(kycCases)
+          .where(and(eq(kycCases.userId, userId), eq(kycCases.status, 'pending')))
+          .orderBy(desc(kycCases.createdAt))
+          .limit(1)
+
+    if (!kase) {
+      return NextResponse.json({ error: 'No open verification case for this user.', code: 'no_open_case' }, { status: 404 })
+    }
+    if (kase.status !== 'pending') {
+      // Already decided — the webhook won the race. Nothing to reconcile.
+      return NextResponse.json({ id: userId, externalId: mapping.externalId, caseId: kase.id, kycStatus: kase.status, recorded: false })
+    }
+
+    if (!kase.providerReference) {
+      await db
+        .update(kycCases)
+        .set({ providerReference: jobId, updatedAt: new Date() })
+        .where(and(eq(kycCases.id, kase.id), eq(kycCases.status, 'pending')))
+    }
+
+    return NextResponse.json({
+      id: userId,
+      externalId: mapping.externalId,
+      caseId: kase.id,
+      kycStatus: 'pending_review',
+      recorded: true,
+      jobId: kase.providerReference ?? jobId,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[v1/users/:id/kyc/session PATCH] Unhandled error:', message)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -428,3 +428,113 @@ export async function submitEnhancedKyc(input: {
     return { status: 'unavailable', error: err instanceof Error ? err.message : 'Network error' }
   }
 }
+
+// ── Recovery: status polling + callback replay ────────────────────────────────
+//
+// The capture submit happens CLIENT-side, so SmileID hands the job_id to the
+// partner's frontend — not to us. A webhook that is never delivered (or is
+// delivered without our correlation params) therefore strands the case in
+// 'pending' forever, and only a human in Backstage can clear it. Both recovery
+// endpoints below are job_id-keyed, which is why partners report the job_id
+// back via PATCH /api/v1/users/:id/kyc/session.
+
+/** SmileID job ids are TypeIDs: 'job_' + 26 lowercase base32 chars. */
+export function isValidSmileIdJobId(jobId: string): boolean {
+  return /^job_[0-9a-z]{26}$/.test(jobId ?? '')
+}
+
+export type SmileIdJobStatus =
+  /** Terminal — the verification has a verdict (HTTP 200). */
+  | { status: 'terminal'; verdict: 'clear' | 'block' | 'attention' | 'error'; smileUserId: string | null; message: string | null }
+  /** Still processing (HTTP 202) — check again later. */
+  | { status: 'processing' }
+  /** Unknown to SmileID, or not ours (HTTP 404). */
+  | { status: 'not_found' }
+  | { status: 'unavailable'; error: string }
+
+/**
+ * GET /v3/status/{jobId} — the current lifecycle state of a submitted job.
+ *
+ * NOTE: this response carries only status/message — NO id_fields, antifraud,
+ * or receipt. It is a signal to trigger a replay, never a substitute for the
+ * webhook: approving from it would bypass the document-consistency,
+ * uniqueness, and fraud guards in the webhook handler.
+ */
+export async function getSmileIdJobStatus(jobId: string): Promise<SmileIdJobStatus> {
+  const cfg = smileIdConfig()
+  if (!cfg) return { status: 'unavailable', error: 'SMILEID_PARTNER_ID / SMILEID_API_KEY not configured' }
+  if (!isValidSmileIdJobId(jobId)) return { status: 'unavailable', error: `Malformed job id '${jobId}'` }
+
+  const minted = await mintSmileIdToken()
+  if (minted.status !== 'ok') return { status: 'unavailable', error: minted.error }
+
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    const res = await fetch(`${cfg.baseUrl}/v3/status/${jobId}`, {
+      headers: { 'SmileID-Partner-ID': cfg.partnerId, 'SmileID-Token': minted.token },
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+
+    if (res.status === 404) return { status: 'not_found' }
+
+    let json: unknown = null
+    try {
+      json = await res.json()
+    } catch {
+      return { status: 'unavailable', error: `Non-JSON status response (HTTP ${res.status})` }
+    }
+    const body = json && typeof json === 'object' ? (json as Record<string, unknown>) : {}
+    const raw = asString(body.status)?.toLowerCase() ?? null
+
+    if (res.status === 202 || raw === 'processing') return { status: 'processing' }
+    if (raw === 'not_found') return { status: 'not_found' }
+    if (raw === 'clear' || raw === 'block' || raw === 'attention' || raw === 'error') {
+      return { status: 'terminal', verdict: raw, smileUserId: asString(body.user_id), message: asString(body.message) }
+    }
+    return { status: 'unavailable', error: `Unrecognized status '${raw ?? '<missing>'}' (HTTP ${res.status})` }
+  } catch (err) {
+    return { status: 'unavailable', error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export type SmileIdReplay = { status: 'queued' } | { status: 'unavailable'; error: string }
+
+/**
+ * POST /v3/replay/{job_id} — ask SmileID to re-send a completed job's callback.
+ *
+ * This is the recovery path: the FULL result payload arrives at our webhook
+ * over the normal signed route, so every guard applies exactly as it would
+ * have on first delivery. The job must already be terminal.
+ */
+export async function replaySmileIdCallback(jobId: string, callbackUrl?: string): Promise<SmileIdReplay> {
+  const cfg = smileIdConfig()
+  if (!cfg) return { status: 'unavailable', error: 'SMILEID_PARTNER_ID / SMILEID_API_KEY not configured' }
+  if (!isValidSmileIdJobId(jobId)) return { status: 'unavailable', error: `Malformed job id '${jobId}'` }
+
+  const minted = await mintSmileIdToken()
+  if (minted.status !== 'ok') return { status: 'unavailable', error: minted.error }
+
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    const res = await fetch(`${cfg.baseUrl}/v3/replay/${jobId}`, {
+      method: 'POST',
+      headers: {
+        'SmileID-Partner-ID': cfg.partnerId,
+        'SmileID-Token': minted.token,
+        'Content-Type': 'application/json',
+      },
+      // Omitting the body uses the job's stored callback URL. An override must
+      // be on the account's callback-domain allowlist.
+      body: callbackUrl ? JSON.stringify({ callback_url: callbackUrl }) : undefined,
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+    if (res.status === 202 || (res.status >= 200 && res.status < 300)) return { status: 'queued' }
+    return { status: 'unavailable', error: `Replay refused (HTTP ${res.status})` }
+  } catch (err) {
+    return { status: 'unavailable', error: err instanceof Error ? err.message : 'Network error' }
+  }
+}

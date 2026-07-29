@@ -61,6 +61,23 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.13.0 (28 Jul 2026)
+
+### Report the capture `job_id` — one line that ends stuck verifications
+
+Document capture is submitted **from your client straight to SmileID**, so SmileID hands the resulting `job_id` to your frontend and never to us. If that job's result callback is then lost in transit, the verification sits at `pending_review` forever and only a human can clear it manually.
+
+Send us the `job_id` and that stops happening: `PATCH /api/v1/users/:id/kyc/session` with `{ "jobId": "job_…" }` right after SmileID's `202`. Our reconciler then asks SmileID for any verification that has gone quiet and replays the missing callback, so a completed verification resolves itself — usually within 10 minutes, with no manual review. See [Reporting the capture job id](#patch-apiv1usersidkycsession).
+
+**Do you need to update your integration?**
+
+| Scenario | Action required |
+|----------|----------------|
+| You run document capture (`kyc/session`) | **Yes — one call.** After the SmileID submit returns `202 { job_id }`, `PATCH` it to us. Without it, a lost callback can only be resolved by hand. |
+| You do not use document capture | **None.** |
+
+---
+
 ## What's New — v1.12.0 (27 Jul 2026)
 
 ### Biashara is now a partner capability — embed a merchant product in your app
@@ -627,13 +644,38 @@ Opens an **instant document-verification session** for an existing user — the 
 #### Capture flow
 
 1. **Open the session server-side** (your API key never reaches a browser) and hand the `session` object to your frontend. The `token` is short-lived and safe for the client.
-2. **Capture with the device camera**: document **front** photo (back optional where relevant), one **selfie**, and **6–8 liveness frames** (a short burst). On mobile, the SmileID v12 mobile SDKs handle all capture; on web you own the camera UI.
+2. **Capture with the device camera**: document **front** photo (back optional where relevant), one **selfie**, and a short **liveness burst**. Read the exact specs from the session token itself — its `sdk_config` claim carries the frame count and image dimensions/quality provisioned for your account (currently 7 liveness frames, 480×640 selfie at quality 95, document at quality 85). On mobile, the SmileID v12 mobile SDKs handle all capture; on web you own the camera UI.
 3. **Submit directly from the client to SmileID** — `POST {session.apiBaseUrl}{session.submitPath}` as `multipart/form-data`, headers `SmileID-Partner-ID: {session.smilePartnerId}` + `SmileID-Token: {session.token}`, parts: `country`, `document`, `document_back` (optional), `selfie_image`, `liveness_images` (repeated), plus `user_details`, `consent`, and `partner_params` as **JSON-string parts**. `partner_params` must be exactly `session.partnerParams`; `consent` records the user's explicit agreement: `{ "granted": true, "granted_at": ISO-8601, "notice_language": "EN", "notice_privacy_policy_url": "…" }`.
 4. SmileID responds `202 Accepted` — that is an acknowledgement, **not** the verdict.
-5. The verdict lands on our platform webhook; we move the case and notify you via the `kyc.updated` partner webhook (signed + retried, configured from your partner dashboard): `{ externalId, kycStatus: "approved" | "rejected" | "pending_review", provider: "smileid" }`.
-6. On `approved`, re-call `POST /api/v1/users` (idempotent) — the response now carries `walletAddress`. On `pending_review`, the document needs a human look (expired, glare, photocopy) — usually < 1 business day. On `rejected`, show the reason and allow a fresh attempt with a new session.
+5. **Report the `job_id` back to us** — `PATCH /api/v1/users/:id/kyc/session` with `{ "jobId": "<job_id from step 4>" }`. One call, and it is what lets a lost callback heal itself instead of becoming a manual review.
+6. The verdict lands on our platform webhook; we move the case and notify you via the `kyc.updated` partner webhook (signed + retried, configured from your partner dashboard): `{ externalId, kycStatus: "approved" | "rejected" | "pending_review", provider: "smileid" }`.
+7. On `approved`, re-call `POST /api/v1/users` (idempotent) — the response now carries `walletAddress`. On `pending_review`, the document needs a human look (expired, glare, photocopy) — usually < 1 business day. On `rejected`, show the reason and allow a fresh attempt with a new session.
 
 Re-calling the endpoint reuses the user's open case with a fresh token, so an abandoned capture can simply be restarted.
+
+### `PATCH /api/v1/users/:id/kyc/session`
+
+Records the SmileID `job_id` for the user's open verification, so a result that never arrives can be recovered automatically.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `jobId` | string | ✓ | The `job_id` from SmileID's `202` capture response (`job_…`) |
+| `caseId` | string | — | Target a specific case; defaults to the user's newest open one |
+
+#### Responses
+
+| Status | Body highlights | Meaning |
+|--------|-----------------|---------|
+| `200` | `recorded: true`, `caseId`, `jobId` | Recorded — the verification is now self-healing |
+| `200` | `recorded: false`, `kycStatus` | The verdict already landed; nothing to reconcile |
+| `400` | `job_id_required` / `invalid_job_id` | Missing or malformed job id |
+| `404` | `no_open_case` | No open verification for this user |
+
+Idempotent: re-reporting the same job id is a no-op, and a job id already on the case is never overwritten.
+
+**What happens next.** Our reconciler checks verifications that have gone quiet, asks SmileID for their state, and replays any callback that never reached us — the full result then flows through the normal path, evidence and fraud checks included. Recovery typically completes within ten minutes and needs nothing from you.
 
 ### Suggested UX copy
 
