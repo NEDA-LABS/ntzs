@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     throw err
   }
 
-  let body: { kind?: unknown; payNumber?: unknown; utilityCode?: unknown; utilityRef?: unknown }
+  let body: { kind?: unknown; payNumber?: unknown; utilityCode?: unknown; utilityRef?: unknown; amountTzs?: unknown }
   try {
     body = await request.json()
   } catch {
@@ -115,10 +115,17 @@ export async function POST(request: NextRequest) {
     echo = { utilityCode, utilityRef }
   }
 
+  // Biller validation is amount-aware. Clients that know the purchase amount
+  // send it for an exact answer; the default is the biller floor LUKU itself
+  // stated when probed without one. Ignored for lipa.
+  const amountRaw = Number(body.amountTzs)
+  const amountTzs =
+    kind === 'bill' ? (Number.isFinite(amountRaw) && amountRaw > 0 ? Math.trunc(amountRaw) : 1000) : undefined
+
   let name: string | null = null
   let reason: string | undefined
   try {
-    const info = await nedaAccountLookup(lookupBank, lookupAccount)
+    const info = await nedaAccountLookup(lookupBank, lookupAccount, { amountTzs })
     name = info.name
     if (!info.name) reason = info.reason
   } catch (err) {

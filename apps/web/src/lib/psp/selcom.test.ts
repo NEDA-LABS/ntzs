@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
 
-import { signRequest, detectWalletFiCode, normalizePhone, buildBillPayFields, buildLipaFields } from './selcom'
+import { signRequest, detectWalletFiCode, normalizePhone, buildBillPayFields, buildLipaFields, buildNedaLookupFields } from './selcom'
 import { estimateSendMoneyFee, getPayoutFeeTzs, SNIPPE_FLAT_FEE_TZS } from './selcom-fees'
 
 // signRequest reads SELCOM_API_KEY + SELCOM_PRIVATE_KEY from the environment —
@@ -254,5 +254,39 @@ describe('selcom-fees (published send-money tariff)', () => {
     expect(getPayoutFeeTzs('azampay', 10_000)).toBe(100)
     expect(getPayoutFeeTzs('snippe', 10_000)).toBe(SNIPPE_FLAT_FEE_TZS)
     expect(getPayoutFeeTzs(null, 10_000)).toBe(SNIPPE_FLAT_FEE_TZS)
+  })
+})
+
+/**
+ * The LUKU probe (30 Jul 2026) established that biller validation is
+ * AMOUNT-AWARE: with no amount, bank=LUKU answers 651 "The minimum amount is
+ * 1,000." while a genuinely wrong code answers "Invalid or inactive bank/FI
+ * code". These pin the request shape so the field can neither vanish nor leak
+ * into the wallet/till lookups that work without it.
+ */
+describe('buildNedaLookupFields (biller lookups carry the amount)', () => {
+  it('appends amount for a biller lookup, after the collection-order fields', () => {
+    const fields = buildNedaLookupFields('LUKU', '24219217817', 'T123', 1000)
+    expect(fields.map((f) => f.name)).toEqual(['bank', 'account', 'transId', 'amount'])
+    expect(fields[3].value).toBe(1000)
+  })
+
+  it('truncates a fractional amount — Selcom prices whole shillings', () => {
+    const fields = buildNedaLookupFields('LUKU', '24219217817', 'T123', 1500.75)
+    expect(fields[3].value).toBe(1500)
+  })
+
+  it('omits the field entirely when no amount is given (wallet/till lookups)', () => {
+    for (const amount of [undefined, 0, -5, NaN]) {
+      const fields = buildNedaLookupFields('SB2LIPA', '61115582', 'T123', amount as number | undefined)
+      expect(fields.map((f) => f.name)).toEqual(['bank', 'account', 'transId'])
+    }
+  })
+
+  it('signs exactly the fields sent, amount included', () => {
+    const fields = buildNedaLookupFields('LUKU', '24219217817', 'T9', 1000)
+    const { headers, body } = signRequest(fields)
+    expect(headers['signed-fields']).toBe('bank,account,transId,amount')
+    expect(body).toEqual({ bank: 'LUKU', account: '24219217817', transId: 'T9', amount: 1000 })
   })
 })

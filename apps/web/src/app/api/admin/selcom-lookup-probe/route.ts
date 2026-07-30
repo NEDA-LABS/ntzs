@@ -64,6 +64,10 @@ export async function GET(request: NextRequest) {
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean)
   const bankOverride = request.nextUrl.searchParams.get('bank')?.trim().toUpperCase() || null
+  // Biller validators are amount-aware (LUKU: "The minimum amount is 1,000.")
+  // — ?amount=1000 lets a probe satisfy them without code changes.
+  const amountRaw = Number(request.nextUrl.searchParams.get('amount'))
+  const amountTzs = Number.isFinite(amountRaw) && amountRaw > 0 ? Math.trunc(amountRaw) : undefined
 
   // Attempts run against BOTH lookup endpoints where sensible:
   //  - legacy GET /v1/account/lookup — inter-transfer scope (wallets, banks,
@@ -74,7 +78,7 @@ export async function GET(request: NextRequest) {
   type Attempt = { endpoint: 'neda-lookup' | 'lookup'; bank: string; name: string | null; operator?: string; reason?: string }
   const attempts: Attempt[] = []
   const runNeda = async (bank: string) => {
-    const r = await nedaAccountLookup(bank, account)
+    const r = await nedaAccountLookup(bank, account, { amountTzs })
     attempts.push({ endpoint: 'neda-lookup', bank, name: r.name, operator: r.operator, reason: r.reason })
   }
   const runLegacy = async (bank: string) => {

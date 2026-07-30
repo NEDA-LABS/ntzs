@@ -181,7 +181,13 @@ export async function POST(request: NextRequest) {
   let recipientName: string | null = null
   let nameUnavailableReason: string | undefined
   try {
-    const info = await nedaAccountLookup(lookupBank, lookupAccount)
+    // Biller validation is amount-aware (LUKU refuses a lookup with no
+    // amount) — send the actual principal so the answer prices the real
+    // purchase. Below the biller's own minimum the name comes back null with
+    // Selcom's reason, which is the honest answer.
+    const info = await nedaAccountLookup(lookupBank, lookupAccount, {
+      amountTzs: kind === 'bill' ? principalTzs : undefined,
+    })
     recipientName = info.name
     if (!info.name) nameUnavailableReason = info.reason
   } catch {
