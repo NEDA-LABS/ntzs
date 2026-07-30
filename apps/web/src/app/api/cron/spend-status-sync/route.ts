@@ -5,6 +5,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
 import { burnRequests, wallets } from '@ntzs/db'
 import { queryTransactionRaw } from '@/lib/psp/selcom'
+import { mergeSettlement, readSelcomSettlement } from '@/lib/psp/selcom-settlement'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { spendEnabled } from '@/lib/waas/spend-quote'
@@ -78,13 +79,11 @@ export async function GET(request: NextRequest) {
         const status = String(raw.body.data?.status ?? '').toUpperCase()
 
         if (status === 'COMPLETED' || raw.body.result === 'SUCCESS') {
-          const d = raw.body.data as Record<string, unknown> | undefined
           const descriptor = (row.spend ?? {}) as Record<string, unknown>
-          const settled = {
-            ...descriptor,
-            actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : descriptor.actualChargesTzs,
-            selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : descriptor.selcomReceipt,
-          }
+          // One tolerant reader (see selcom-settlement.ts) — the hand-rolled
+          // version read camelCase keys off a snake_case payload, so charges,
+          // receipts and utility TOKENS were silently never recorded.
+          const settled = mergeSettlement(descriptor, readSelcomSettlement(raw.body.data))
           const done = await db
             .update(burnRequests)
             .set({ status: 'burned', payoutStatus: 'completed', spend: settled, updatedAt: new Date() })

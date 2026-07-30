@@ -175,3 +175,14 @@ export const TEST_SCENARIOS = [
   },
   { trigger: 'anything else', result: 'completes', detail: 'The happy path.' },
 ] as const
+
+/**
+ * Deterministic 20-digit utility voucher (the LUKU-style "token") for a test
+ * bill settlement — the product of the purchase, present so partners can build
+ * and assert on the token-display path without real money.
+ */
+export function testUtilityToken(seed: string): string {
+  const digest = crypto.createHash('sha256').update(`utility-token:${seed}`).digest('hex')
+  const digits = digest.replace(/\D/g, '').padEnd(20, '0').slice(0, 20)
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ')
+}

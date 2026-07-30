@@ -43,6 +43,7 @@ import {
   testKycStatus,
   testMerchantName,
   testReceipt,
+  testUtilityToken,
   testRecipientName,
   testTxHash,
 } from './scenarios'
@@ -818,6 +819,15 @@ export async function testCreateSpend(partner: AuthenticatedPartner, request: Ne
       burnAmountTzs: totals.burnAmountTzs,
       actualChargesTzs: totals.selcomFeeTzs,
       selcomReceipt: testReceipt(reference),
+      // A bill settlement carries its voucher — the product of the purchase.
+      // Deterministic, so a partner can assert on it in their own tests.
+      ...(kind === 'bill'
+        ? {
+            utilityToken: testUtilityToken(reference),
+            utilityUnits: `${(principalTzs / 357).toFixed(1)}kWh`,
+            utilityReceipt: `9${reference.replace(/\D/g, '').padEnd(17, '0').slice(0, 17)}`,
+          }
+        : {}),
     },
     instant: decisive,
   })
@@ -1010,6 +1020,49 @@ export async function testLookupMerchant(request: NextRequest): Promise<NextResp
   return NextResponse.json({
     kind, target: `bill:${utilityCode}:${utilityRef}`, utilityCode, utilityRef,
     name: testMerchantName(utilityRef),
+    livemode: false,
+  })
+}
+
+/**
+ * GET /api/v1/spend/:id in test mode — status + settlement including the
+ * utility voucher. The retrieval path a client uses after an ambiguous POST,
+ * instead of retrying the POST and paying twice.
+ */
+export async function testGetSpend(partner: AuthenticatedPartner, id: string): Promise<NextResponse> {
+  await settleDue(partner.id)
+  const tx = await getTransaction(partner.id, id)
+  if (!tx || tx.kind !== 'spend') {
+    return NextResponse.json({ error: 'Spend not found' }, { status: 404 })
+  }
+  const detail = (tx.detail ?? {}) as Record<string, unknown>
+  const str = (k: string) => (typeof detail[k] === 'string' ? (detail[k] as string) : null)
+  const num = (k: string) => (typeof detail[k] === 'number' ? (detail[k] as number) : null)
+  const payoutStatus =
+    tx.status === 'completed' ? 'completed'
+    : tx.status === 'failed' ? 'reverted'
+    : tx.status === 'reconcile_required' ? 'reconcile_required'
+    : 'pending'
+  const settled = payoutStatus === 'completed'
+  const target = String(detail.target ?? '')
+  const [tkind, a, b] = target.split(':')
+  return NextResponse.json({
+    id: tx.id,
+    status: payoutStatus === 'reverted' ? 'failed' : 'burned',
+    payoutStatus,
+    payoutError: payoutStatus === 'reverted' ? 'Payment failed; burn reverted — balance restored.' : null,
+    reference: str('reference'),
+    kind: tkind || null,
+    target: tkind === 'lipa' ? { payNumber: a ?? null, network: null } : { utilityCode: a ?? null, utilityRef: b ?? null },
+    recipientName: str('recipientName'),
+    principalTzs: tx.amountTzs,
+    burnAmountTzs: num('burnAmountTzs') ?? tx.amountTzs,
+    utilityToken: settled ? str('utilityToken') : null,
+    utilityUnits: settled ? str('utilityUnits') : null,
+    utilityReceipt: settled ? str('utilityReceipt') : null,
+    selcomReceipt: settled ? str('selcomReceipt') : null,
+    actualChargesTzs: settled ? num('actualChargesTzs') : null,
+    createdAt: tx.createdAt,
     livemode: false,
   })
 }

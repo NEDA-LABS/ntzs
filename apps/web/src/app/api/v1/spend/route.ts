@@ -19,8 +19,18 @@ import {
   type SpendKind,
 } from '@/lib/waas/spend-quote'
 import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
+import { DUPLICATE_WINDOW_MS, duplicateSpendResponse, findDuplicateSpend } from '@/lib/waas/spend-duplicate'
 
 export const maxDuration = 60
+
+/**
+ * How much of `maxDuration` the handler may spend before it must be writing a
+ * response. The awaited settle poll is bounded by what is left of this after
+ * the on-chain burn, so the request cannot be killed mid-flight AFTER Selcom
+ * has been paid — the failure mode that made a customer pay twice on
+ * 30 July 2026.
+ */
+const RESPONSE_BUDGET_MS = 45_000
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
@@ -49,6 +59,7 @@ const NTZS_BURN_ABI = [
  *    (never auto-reverted, the withdrawal lesson)
  */
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now()
   const authResult = await authenticatePartner(request)
   if ('error' in authResult) return authResult.error
   const { partner } = authResult
@@ -76,6 +87,8 @@ export async function POST(request: NextRequest) {
     network?: string
     utilityCode?: string
     utilityRef?: string
+    /** Deliberately repeat an identical payment inside the duplicate window. */
+    allowDuplicate?: boolean
   }
   try {
     body = await request.json()
@@ -225,6 +238,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Burn executor not configured' }, { status: 500 })
   }
 
+  // ── Refuse an accidental repeat BEFORE burning anything ───────────────────
+  // Placed here on purpose: past this point the customer's nTZS is destroyed,
+  // so a duplicate detected later is a refund conversation rather than a
+  // prevented mistake. `allowDuplicate` lets a client proceed deliberately.
+  if (body.allowDuplicate !== true) {
+    try {
+      const dup = await findDuplicateSpend({
+        burnFromAddress: source.address,
+        target: spendTarget(kind, { payNumber, utilityCode, utilityRef }),
+        burnAmountTzs,
+      })
+      if (dup) {
+        console.warn('[v1/spend] duplicate spend refused', {
+          existing: dup.burnRequestId, reference: dup.reference, status: dup.payoutStatus,
+        })
+        return NextResponse.json(duplicateSpendResponse(dup, DUPLICATE_WINDOW_MS), { status: 409 })
+      }
+    } catch (err) {
+      // Fail OPEN: this guard prevents a mistake, it is not an authorisation
+      // decision, and a lookup failure must not block a legitimate payment.
+      console.error('[v1/spend] duplicate check failed — proceeding', err instanceof Error ? err.message : err)
+    }
+  }
+
   // ── Create the burn row (spend descriptor + disclosure snapshot) ──────────
   const spendDescriptor = {
     kind,
@@ -358,6 +395,9 @@ export async function POST(request: NextRequest) {
       nedaFeeMintOccurred: Boolean(feeRow?.nedaFeeTxHash),
     },
     label: 'v1/spend',
+    // Whatever remains of the response budget after the burn — never a fixed
+    // ladder that can overrun the route's own limit.
+    pollDeadlineMs: startedAt + RESPONSE_BUDGET_MS,
   })
 
   if (dispatch.payoutStatus === 'reverted') {
@@ -392,6 +432,17 @@ export async function POST(request: NextRequest) {
       principalTzs,
       burnAmountTzs,
       fees: { selcomFeeTzs, platformFeeTzs, nedaFeeTzs, totalFeeTzs: selcomFeeTzs + platformFeeTzs + nedaFeeTzs },
+      // When the awaited poll saw settlement, the voucher rides the same
+      // response — for LUKU the token IS the product, and a client that only
+      // gets it here never needs the webhook to make the customer whole.
+      ...(typeof dispatch.settledDescriptor.utilityToken === 'string'
+        ? {
+            utilityToken: dispatch.settledDescriptor.utilityToken,
+            ...(typeof dispatch.settledDescriptor.utilityUnits === 'string'
+              ? { utilityUnits: dispatch.settledDescriptor.utilityUnits }
+              : {}),
+          }
+        : {}),
       message: `Payment of ${principalTzs} TZS dispatched${q.recipientName ? ` to ${q.recipientName}` : ''} (${selcomFeeTzs + platformFeeTzs + nedaFeeTzs} TZS in fees).`,
     },
     { status: 201 }

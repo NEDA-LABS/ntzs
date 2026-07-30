@@ -62,6 +62,18 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.13.0 (30 Jul 2026)
+
+**Never pay twice, and always get your token.** Three changes born from a real production incident (a LUKU purchase whose response was lost in transport — the client showed a failure, the user retried, and paid twice):
+
+- **`GET /api/v1/spend/:id`** — retrieve a spend's status **and its settlement**, including the utility `utilityToken` / `utilityUnits` for bill purchases. After any ambiguous `POST /api/v1/spend` outcome (network error, timeout), **poll this — never retry the POST.**
+- **`409 duplicate_spend`** — an identical payment (same wallet, same destination, same amount) within **5 minutes** of one still in flight or completed is refused, and the response carries the original transaction *with its token*. Show the user their existing payment. To repeat deliberately, resend with `"allowDuplicate": true`.
+- **Utility vouchers in every surface** — the LUKU/utility token now rides the `201` response when settlement is fast, the `spend.updated` webhook, and the GET. For a bill purchase the token **is** the product; treat a completed bill payment without showing the token as a broken flow.
+
+Also: test-mode bill spends now settle with a deterministic `utilityToken`, so you can build and assert on the token-display path with a test key.
+
+---
+
 ## What's New — v1.12.0 (27 Jul 2026)
 
 ### Biashara is now a partner capability — embed a merchant product in your app
@@ -920,6 +932,35 @@ Execute at the quoted terms. Send the **same** destination fields plus the `quot
 | `insufficient_balance` | 400 | Balance below burn amount | Show shortfall |
 | `amount_too_large` | 400 | Burn total ≥ 1,000,000 TZS | Route the user to support |
 | `spend_disabled` / `spend_kind_disabled` | 503 | Rail not enabled on this environment | Hide the feature |
+| `duplicate_spend` | 409 | Identical payment made moments ago and still holding funds | Show `existing` (it carries the token where we have it); resend with `"allowDuplicate": true` only on the user's explicit say-so |
+
+#### Ambiguous outcomes — the rule that prevents double payment
+
+If the POST times out or the connection drops, **the payment may still have succeeded.** Never re-POST on a network failure. Call `GET /api/v1/spend/:id` (you have the id only if the response arrived) or simply re-attempt the POST **without** `allowDuplicate`: if the first attempt landed, the 409 hands you its reference, status and token.
+
+### `GET /api/v1/spend/:id`
+
+Status + settlement of a spend. For bill purchases the settlement includes the voucher:
+
+```json
+{
+  "id": "b3f1…",
+  "status": "burned",
+  "payoutStatus": "completed",
+  "reference": "202607301258",
+  "kind": "bill",
+  "target": { "utilityCode": "LUKU", "utilityRef": "24219217817" },
+  "recipientName": "CHRISTINA R. MWANJALI",
+  "principalTzs": 1000,
+  "burnAmountTzs": 1047,
+  "utilityToken": "5373 0001 9365 2741 2169",
+  "utilityUnits": "2.8kWh",
+  "selcomReceipt": "SB1234ABCD",
+  "actualChargesTzs": 47
+}
+```
+
+`utilityToken` is `null` until Selcom reports settlement (typically seconds; poll on `payoutStatus: "pending"`). **Display it prominently and persist it on your side** — it is what the customer types into their meter.
 
 ---
 
