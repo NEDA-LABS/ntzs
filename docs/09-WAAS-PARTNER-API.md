@@ -48,6 +48,7 @@ sequenceDiagram
 | Withdrawal quote (name + fees + net) | `POST /api/v1/withdrawals/quote` |
 | Execute withdrawal (cash-out) | `POST /api/v1/withdrawals` |
 | Recipient name check before withdrawal | `POST /api/v1/lookup/recipient-name` |
+| Merchant / TANQR / biller name check before payment | `POST /api/v1/lookup/merchant-name` |
 | Create org/treasury sub-wallet | `POST /api/v1/partners/sub-wallets` |
 | List sub-wallets | `GET /api/v1/partners/sub-wallets` |
 | LP pool balances | `GET /api/v1/mm/balances` |
@@ -697,6 +698,55 @@ Resolves the mobile-money-registered name for a Tanzanian number so your app can
 | Name unavailable | "Confirm the number {phone} is correct before continuing." | "Hakikisha namba {phone} ni sahihi kabla ya kuendelea." |
 
 Lookups are rate-limited and audit-logged: the endpoint resolves registered names (PII) and must only be called from user-initiated withdrawal flows — bulk or speculative querying will trip the limiter and our audit review.
+
+---
+
+## Merchant Name Lookup
+
+### `POST /api/v1/lookup/merchant-name`
+
+Resolves the **registered trading name** behind a merchant Lipa Namba — including a **TANQR** scan, which resolves to one — or a bill account, so your app can show **"Paying: KARIAKOO HARDWARE LIMITED"** on the confirmation screen.
+
+**Why this is separate from the quote.** `/v1/spend/quote` and `/v1/ramp/quote` already return this name, but a quote is a priced, single-use, expiring commitment and a scan is not: a user points a camera at a QR long before choosing an amount. Use this endpoint at scan time, then quote once they have entered the amount.
+
+**Available regardless of which payment rails are enabled for you.** It resolves a name; it moves no money. You can build and test your confirmation screen before a rail is switched on.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `kind` | string | ✓ | `lipa` (merchant till / TANQR) or `bill` (biller account) |
+| `payNumber` | string | `lipa` | Merchant Lipa Namba, 4–12 digits |
+| `utilityCode` | string | `bill` | Biller code — see `GET /api/v1/spend/billers` |
+| `utilityRef` | string | `bill` | Meter / control / smartcard number |
+
+#### Response — `200`
+
+```json
+{ "kind": "lipa", "target": "lipa:61115582", "payNumber": "61115582", "name": "ENZI COFFEE COMPANY LIMITED" }
+```
+
+```json
+{ "kind": "bill", "target": "bill:LUKU:01234567890", "utilityCode": "LUKU", "utilityRef": "01234567890", "name": null, "reason": "not_found" }
+```
+
+**The null contract is the same as the recipient lookup:** `name: null` means "no confirmation available", not "invalid merchant". Show the raw number with a caution and let the user proceed. `reason` distinguishes an unregistered destination from an enquiry service that is temporarily down.
+
+A **malformed** request is still an error — an unknown `utilityCode` is a bug in the caller, not an unverifiable merchant.
+
+#### Other responses
+
+| Status | Meaning |
+|--------|---------|
+| `400` | `payNumber` not 4–12 digits, `unknown_biller`, or `invalid_utility_ref` |
+| `401` | Bad/missing bearer token |
+| `429` | Rate limited (60 lookups/min per partner) — honor `Retry-After` |
+
+#### Test mode
+
+Test keys return deterministic **trading** names with no PSP call and no quota. A destination ending `00` resolves to `name: null`, so you can build the "we could not verify this merchant" branch without hunting for an unregistered till.
+
+Lookups are rate-limited and audit-logged. Trading names are less sensitive than personal ones, but this endpoint must not be used to enumerate the national till directory.
 
 ---
 

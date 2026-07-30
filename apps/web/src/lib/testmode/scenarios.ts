@@ -75,6 +75,36 @@ export function testRecipientName(destination: string): string | null {
 }
 
 /**
+ * Registered name for a MERCHANT destination — a Lipa till (incl. TANQR, which
+ * resolves to one) or a bill account.
+ *
+ * Separate pool from `testRecipientName` on purpose. A till belongs to a
+ * business, and a partner building the "you are paying …" confirmation screen
+ * should be laying it out against a trading name, not a person's name. Same
+ * `00` rule: a destination ending `00` has no registered name, which is the
+ * branch every client must handle before it reaches a real unregistered till.
+ */
+const MERCHANT_NAME_POOL = [
+  'MAMA NTILIE GROCERY',
+  'KARIAKOO HARDWARE LIMITED',
+  'UPENDO PHARMACY',
+  'SAFARI FUEL STATION',
+  'BARAKA ELECTRONICS',
+  'TWIGA GENERAL SUPPLIES',
+  'MLIMANI FASHION HOUSE',
+  'SIMBA BUTCHERY & GRILL',
+] as const
+
+export function testMerchantName(destination: string): string | null {
+  const key = String(destination ?? '').replace(/\D/g, '')
+  if (!key) return null
+  if (KNOWN_NAMES[key]) return KNOWN_NAMES[key]
+  if (lastTwoDigits(key) === '00') return null // unverifiable merchant
+  const idx = crypto.createHash('sha256').update(`merchant:${key}`).digest()[0] % MERCHANT_NAME_POOL.length
+  return MERCHANT_NAME_POOL[idx]
+}
+
+/**
  * A NIDA ending in `0000` lands in manual review (the `202 kyc_pending_review`
  * contract). Every other well-formed NIDA verifies instantly — test mode never
  * calls the real identity registry.

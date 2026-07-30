@@ -40,6 +40,7 @@ export {
   testCreateSpend,
   testCreateTransfer,
   testLookupName,
+  testLookupMerchant,
   testNotSupported,
 } from './handlers'
 

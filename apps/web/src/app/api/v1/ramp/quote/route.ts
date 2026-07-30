@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { rampQuotes } from '@ntzs/db'
+import { eq } from 'drizzle-orm'
+
+import { partners, rampQuotes } from '@ntzs/db'
 import { requireRampPartner } from '@/lib/ramp/auth'
 import { computeRampQuote, RAMP_QUOTE_TTL_MS, rampSpendEnabled, type RampDirection, type RampOfframpDestination } from '@/lib/ramp/quote'
 import { nedaAccountLookup } from '@/lib/psp/selcom'
@@ -88,7 +90,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const quote = await computeRampQuote({ direction, usdcAmount, tzsAmount, destination })
+  // The partner's negotiated margin. Ramp pricing used to be a hard-coded
+  // 0.5% regardless of the partner row, so a rate agreed commercially had no
+  // effect on what was actually charged. Resolved the same way spend and
+  // withdrawal quotes resolve it, so one partner cannot be priced differently
+  // by different products.
+  const { db: pricingDb } = getDb()
+  const [partnerRow] = await pricingDb
+    .select({ feePercent: partners.feePercent })
+    .from(partners)
+    .where(eq(partners.id, auth.partner.id))
+    .limit(1)
+  const feePercent = partnerRow ? parseFloat(String(partnerRow.feePercent ?? '0')) : 0
+
+  const quote = await computeRampQuote({ direction, usdcAmount, tzsAmount, destination, feePercent })
   if ('error' in quote) return NextResponse.json({ error: quote.error }, { status: 400 })
 
   if (quote.lowLiquidity) {
