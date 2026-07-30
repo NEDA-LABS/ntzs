@@ -40,13 +40,24 @@ The controls are the ones already operating on our domestic rails, unchanged:
 | **Approved testing parameters** | All limits the Bank has approved apply unchanged, per transaction and per participant, and every refusal is recorded. |
 | **Failed-payment reversal** | If settlement fails, value is returned to its source automatically. The merchant is never partially paid. |
 
-## 4. What has already been built and held back
+## 4. Both halves of this flow are already live and proven
 
-The capability is implemented, tested and deployed to production **behind a control that is switched off**, and has been since it was written. It is deliberately governed by a separate switch from our domestic merchant payments, so that enabling domestic bill payment cannot enable this by accident.
+This is not an untested capability. The flow consists of two legs, and each already operates in production under the Bank's existing approval:
 
-We are raising this before operating, not after. We would switch it on only on the Bank's written approval, and we would report on it in the periodic return for the period in which it operates.
+| Leg | Status today |
+|---|---|
+| Inbound value converted to Tanzanian shillings and paid out | **Live** — operating under the approved off-ramp, settling to mobile money |
+| Tanzanian shillings paid to a registered merchant till or biller | **Live** — operating as domestic customer payment, settled through our licensed payment service provider |
 
-We mention this because it is the same posture we have taken throughout: the constraint we have encountered is one we chose to keep.
+What is not yet permitted is **joining them**: routing an approved off-ramp's shillings to the second destination instead of the first. There is no new capability here, no new provider, and no new custody arrangement — it is a routing decision applied to money that is already moving through channels the Bank has approved.
+
+We have also exercised the merchant leg directly, with our own funds, to our own registered till, through the production rail, and can produce the settlement record.MERCHANT_TEST_REF
+
+The joined path is implemented and deployed to production **behind a control that is switched off**, and has been since it was written. It is deliberately governed by a separate switch from our domestic merchant payments, so that enabling domestic bill payment cannot enable this by accident.
+
+We are raising this before operating it, not after. We would switch it on only on the Bank's written approval, and would report on it in the periodic return for the period in which it operates.
+
+This is the same posture we have taken throughout: the constraint we have encountered is one we chose to keep.
 
 ## 5. Demand, and why we are asking now
 

@@ -347,6 +347,15 @@ def main():
     ap.add_argument(
         "--title", default="Chief Executive Officer", help="Signatory's title."
     )
+    ap.add_argument(
+        "--test-ref",
+        help=(
+            "Reference for the merchant-leg test, e.g. "
+            "'Test payment of TZS 5,000 on 30 July 2026, Selcom reference ABC123.' "
+            "Omit and the sentence claiming a test is dropped entirely — the "
+            "letter must never assert a test that has not happened."
+        ),
+    )
     args = ap.parse_args()
 
     letter_date = args.date or datetime.date.today().strftime("%-d %B %Y")
@@ -357,6 +366,16 @@ def main():
     # A PDF cannot be hand-edited, so the placeholders in the markdown are
     # resolved here rather than shipped as blanks for someone to work around.
     md = md.replace("**Date:** [ ]", f"**Date:** {letter_date}")
+
+    # The evidence sentence is present only when there is evidence. Dropping it
+    # is the safe default: a letter to a regulator must never claim a test that
+    # has not been run, and a forgotten placeholder is how that happens.
+    if args.test_ref:
+        md = md.replace("MERCHANT_TEST_REF", f" {args.test_ref.strip()}")
+    else:
+        md = re.sub(
+            r"\nWe have also exercised the merchant leg[^\n]*MERCHANT_TEST_REF\n", "\n", md
+        )
 
     # The markdown carries its own signature lines; the PDF lays them out.
     md = md.split("---\n\n**[Name]**")[0]
