@@ -844,6 +844,12 @@ export async function nedaAccountLookup(
   account: string,
   opts?: { amountTzs?: number }
 ): Promise<SelcomAccountLookup> {
+  // Wallet/till lookups answer in ~1s; 8s is generous. A BILLER lookup with an
+  // amount goes upstream to the utility itself (probed 30 Jul: with the amount
+  // attached, LUKU stopped refusing and started timing out at 8s — Selcom was
+  // genuinely validating the meter with TANESCO). Utilities are slow; give
+  // them a budget of their own. Callers must declare maxDuration ≥ this.
+  const timeoutMs = opts?.amountTzs != null ? 25_000 : 8_000
   try {
     const { headers, body } = signRequest(
       buildNedaLookupFields(bank, account, makeNumericTransId(), opts?.amountTzs)
@@ -852,7 +858,7 @@ export async function nedaAccountLookup(
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     const result = (await response.json()) as {
       success?: boolean

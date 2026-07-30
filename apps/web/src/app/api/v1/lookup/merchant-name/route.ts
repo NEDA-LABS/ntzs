@@ -7,6 +7,11 @@ import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
 import { enforceRateLimit, RateLimitError } from '@/lib/rate-limit'
 
+// Biller name validation goes upstream to the utility and can take ~25s
+// (see nedaAccountLookup). Without this the platform default would kill the
+// route before its own lookup answers.
+export const maxDuration = 60
+
 const LOOKUPS_PER_MINUTE = 60
 
 /**

@@ -23,6 +23,11 @@ import {
   type SpendKind,
 } from '@/lib/waas/spend-quote'
 
+// Biller name validation goes upstream to the utility and can take ~25s
+// (see nedaAccountLookup). Without this the platform default would kill the
+// route before its own lookup answers.
+export const maxDuration = 60
+
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 
 /**
