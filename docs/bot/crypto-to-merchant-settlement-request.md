@@ -1,89 +1,137 @@
-# Request to test settlement of inbound digital-asset value directly to Tanzanian merchants
+# Request to Extend an Approved Off-Ramp Destination — Registered Merchant Tills and Billers
 
+**To:** Bank of Tanzania — Regulatory Sandbox / National Payment Systems
 **From:** NEDA Labs Limited
-**To:** Bank of Tanzania — Directorate of Financial Sector Supervision / Regulatory Sandbox
-**Date:** [ ]
-**Subject:** Request to extend approved off-ramp testing to include direct settlement to registered merchant tills and billers
+**Subject:** Proposed extension of the approved off-ramp to permit settlement to
+registered merchant tills (Lipa Namba, including TANQR) and registered billers
+**Classification:** Regulatory — Bank of Tanzania Sandbox Submission
 
 ---
 
-## 1. What is being requested
+## 1. Purpose
 
-We request approval to test one additional **destination** on an off-ramp flow the Bank has already approved.
+NEDA Labs requests confirmation that an approved off-ramp may settle to a
+**registered merchant till or registered biller account** in addition to a
+mobile money wallet.
 
-Today, an approved off-ramp converts inbound value into Tanzanian shillings and pays a **mobile money wallet**. We are asking to also pay a **registered merchant till (Lipa Namba, including TANQR) or a registered biller account**, through our licensed payment service provider, exactly as any domestic customer payment is settled.
+We are not requesting a change to any approved Testing Parameter, an increase in
+value at risk, a new payment service provider, or any change to the custody of
+the reserve.
 
-No new counterparty, no new rail, no new custody arrangement. The shillings originate from the same reserve, move through the same provider, and settle to a destination that provider already serves. The only change is who receives them.
+## 2. What the flow consists of
 
-## 2. Why it matters, stated plainly
+The flow has two legs. Each already operates in production under the Bank's
+existing approval:
 
-A Tanzanian merchant accepting payment from a foreign visitor or a diaspora customer today has two options. The customer converts to shillings first, incurring a conversion cost and a cash-out fee before anything reaches the till. Or the merchant is paid outside the formal system entirely.
+| Leg | Status |
+| --- | --- |
+| Inbound value converted to Tanzanian shillings and paid out | Operating under the approved off-ramp, settling to mobile money |
+| Tanzanian shillings settled to a registered merchant till or biller | Operating as domestic customer payment, settled through our licensed payment service provider |
 
-The second option is the one this request is really about. **The value is arriving in the country either way.** What is at stake is whether it arrives through a supervised, reported, name-verified channel with a settlement record, or through an informal one that leaves no trace.
+What is not yet permitted is joining them: directing an approved off-ramp's
+shillings to the second destination instead of the first. It is a routing
+decision applied to funds already moving through approved channels.
 
-Under the arrangement we are requesting:
+## 3. Position of the merchant
 
-- **The merchant is paid in shillings, into their existing registered till.** They hold no digital asset at any point, need no new account, and change nothing about how they operate.
-- **Every payment is name-verified before it executes.** The payer is shown the merchant's registered trading name and the full fee breakdown, and must confirm.
-- **Every payment produces a settlement record** in the same reconciliation and daily attestation the Bank already receives from us.
+The merchant is paid in Tanzanian shillings, into the till or biller account
+they already hold with our licensed payment service provider.
 
-## 3. Consumer and merchant protection
+The merchant holds no digital asset at any point, opens no new account, and
+makes no change to how they operate or reconcile. From the merchant's side the
+settlement is indistinguishable from any other payment received through that
+provider.
 
-The controls are the ones already operating on our domestic rails, unchanged:
+## 4. What we have built
 
-| Control | How it applies here |
-|---|---|
-| **Name disclosure before payment** | The merchant's registered name is resolved and shown on the confirmation screen. A payment cannot execute against a destination the payer has not seen named. |
-| **Full fee disclosure** | Every charge is itemised at quote time. The quote is binding — execution charges exactly what was quoted, or it does not execute. |
-| **Destination binding** | The destination is fixed at quote time and cannot be substituted at execution. |
-| **Single-use, expiring authorisation** | A quote is consumed once and expires in 60 seconds. |
-| **Approved testing parameters** | All limits the Bank has approved apply unchanged, per transaction and per participant, and every refusal is recorded. |
-| **Failed-payment reversal** | If settlement fails, value is returned to its source automatically. The merchant is never partially paid. |
+The joined path is complete, tested, and deployed behind a control flag. It is
+**not enabled**, and will not be enabled without the Bank's confirmation of the
+terms under which it may operate.
 
-## 4. Both halves of this flow are already live and proven
+Prospective deployment partner: a licensed digital payments provider that has
+integrated our on-ramp and off-ramp. No merchant settlement has been executed
+for any customer.
 
-This is not an untested capability. The flow consists of two legs, and each already operates in production under the Bank's existing approval:
+## 5. Design decision we wish to draw to the Bank's attention
 
-| Leg | Status today |
-|---|---|
-| Inbound value converted to Tanzanian shillings and paid out | **Live** — operating under the approved off-ramp, settling to mobile money |
-| Tanzanian shillings paid to a registered merchant till or biller | **Live** — operating as domestic customer payment, settled through our licensed payment service provider |
+Settlement to merchant tills and billers is already enabled for domestic
+customer payments. The capability requested here uses the same rail and the
+same provider, and could therefore have been implemented so that the existing
+domestic permission governed it — placing cross-border settlement beyond a
+separate decision by the Bank.
 
-What is not yet permitted is **joining them**: routing an approved off-ramp's shillings to the second destination instead of the first. There is no new capability here, no new provider, and no new custody arrangement — it is a routing decision applied to money that is already moving through channels the Bank has approved.
+**We did not implement it that way.** The joined path is governed by its own
+control, independent of the domestic one, so that enabling domestic bill payment
+cannot enable cross-border merchant settlement as a side effect. Neither control
+can be switched on by the other.
 
-We have also exercised the merchant leg directly, with our own funds, to our own registered till, through the production rail, and can produce the settlement record.MERCHANT_TEST_REF
+We mention this because it explains why we are before the Bank at all: the
+constraint we have encountered is one we chose to keep.
 
-The joined path is implemented and deployed to production **behind a control that is switched off**, and has been since it was written. It is deliberately governed by a separate switch from our domestic merchant payments, so that enabling domestic bill payment cannot enable this by accident.
+## 6. Controls applying to merchant settlement
 
-We are raising this before operating it, not after. We would switch it on only on the Bank's written approval, and would report on it in the periodic return for the period in which it operates.
+1. **Name disclosure.** The merchant's registered trading name is resolved and
+   presented to the payer before authorisation. A payment cannot execute against
+   a destination the payer has not been shown by name.
+2. **Fee disclosure.** Every charge is itemised at quotation. The quotation is
+   binding: execution charges exactly what was quoted, or does not execute.
+3. **Destination binding.** The destination is fixed at quotation and cannot be
+   substituted at execution.
+4. **Single-use authorisation.** A quotation is consumed once and expires after
+   sixty seconds.
+5. **Testing parameters.** All approved parameters apply unchanged, per
+   transaction and per participant. Every refusal is recorded.
+6. **Reversal.** Where settlement fails, value is returned to its source
+   automatically. A merchant is never partially paid.
+7. **Reporting.** Settlement records enter the same reconciliation and daily
+   reserve attestation the Bank already receives.
+8. **Suspension.** The capability is governed by a single control. It can be
+   withdrawn immediately, and doing so halts merchant settlement without
+   affecting any other activity.
 
-This is the same posture we have taken throughout: the constraint we have encountered is one we chose to keep.
+## 7. Proposed conditions
 
-## 5. Demand, and why we are asking now
+We propose to operate under whatever conditions the Bank considers appropriate,
+and suggest the following:
 
-A licensed digital payments provider has integrated our on-ramp and off-ramp and has asked specifically for merchant settlement — tills, TANQR and bills — for their own wallet customers. They have told us plainly that if this takes too long they will route the volume through another provider.
+1. **Approved Testing Parameters apply unchanged**, per transaction and per
+   participant.
+2. **Destinations limited to tills and billers already registered** with our
+   licensed payment service provider. We introduce no merchants of our own.
+3. **Separate reporting** in the periodic return: volume, value and counts by
+   destination type, and any failed settlements, distinct from domestic
+   activity.
+4. **A defined initial period**, after which we report and the Bank determines
+   whether it continues.
+5. **Suspension on request**, effective immediately.
 
-We think that is the more important sentence in this request. The demand exists and will be served. The question in front of the Bank is whether it is served through a supervised Tanzanian channel that reports to it, or through one that does not.
+## 8. What the pilot would evidence
 
-## 6. Proposed testing conditions
+A supervised period would produce direct evidence on:
 
-We propose to operate under whatever conditions the Bank considers appropriate, and suggest the following as a starting point:
+- settlement success rates and settlement times by destination type
+- the proportion of inbound value reaching merchants directly rather than being
+  converted and cashed out before purchase
+- the cost to the payer compared with converting and cashing out
+- whether merchants reconcile such settlements without difficulty
 
-1. **The approved per-transaction and per-participant limits apply unchanged.**
-2. **Merchant destinations are limited to tills and billers already registered with our licensed payment service provider** — we introduce no merchants of our own.
-3. **A dedicated line in the periodic return** covering volume, value, counts by destination type, and any failed settlements, separate from domestic activity.
-4. **A defined initial test period**, after which we report and the Bank decides whether it continues.
-5. **Immediate suspension on request** — the control is a single switch and takes effect at once.
+We would share this data with the Bank in full, including results that do not
+support the proposition.
 
-## 7. What we would ask the Bank to confirm
+## 9. Requested next step
 
-- That settlement of inbound value to a registered merchant till or biller is within the scope of our approved off-ramp, on the conditions above; and
-- Any additional reporting or limits the Bank wishes to attach.
+Confirmation that settlement of approved off-ramp value to a registered merchant
+till or biller falls within the scope of our approved off-ramp on the conditions
+above, together with any additional reporting or limits the Bank wishes to
+attach.
 
-We are happy to demonstrate the flow end to end, including the confirmation screen the payer sees and the settlement record it produces, at the Bank's convenience.
+We are able to demonstrate the flow end to end, including the authorisation
+screen presented to the payer and the settlement record produced, at the Bank's
+convenience.
 
 ---
 
-**[Name]**
-Chief Executive Officer
+**Contact**
 NEDA Labs Limited
+Victor A. Muhagachi, Chief Technology Officer
+victor@nedapay.xyz

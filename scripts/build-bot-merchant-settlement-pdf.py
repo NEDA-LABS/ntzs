@@ -12,7 +12,6 @@ the body, and tables that survive being printed in black and white.
 """
 
 import argparse
-import datetime
 import os
 import re
 
@@ -25,6 +24,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     HRFlowable,
+    KeepTogether,
     NextPageTemplate,
     PageTemplate,
     Paragraph,
@@ -123,6 +123,14 @@ def inline(md: str) -> str:
     return s
 
 
+def is_continuation(line: str) -> bool:
+    """An indented, non-empty line that does not start a new construct."""
+    if not line.strip() or not line[:1].isspace():
+        return False
+    t = line.lstrip()
+    return not (t.startswith(("- ", "|", "#")) or re.match(r"^\d+\.\s", t))
+
+
 def split_row(line: str):
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
@@ -181,9 +189,20 @@ def parse(md: str):
     while i < len(lines):
         line = lines[i].rstrip()
 
-        # Signature block: everything from the last rule onward.
-        if line.strip() == "---" and i > len(lines) - 8:
-            break
+        # Contact block — stacked lines, not a reflowed paragraph, and held
+        # together so the name never lands alone on a new page.
+        if line.strip() == "**Contact**":
+            block = [Paragraph("<b>Contact</b>", SIGN)]
+            i += 1
+            while i < len(lines):
+                if not lines[i].strip():
+                    i += 1
+                    continue
+                block.append(Paragraph(inline(lines[i].strip()), SIGN))
+                i += 1
+            flow.append(Spacer(1, 10))
+            flow.append(KeepTogether(block))
+            continue
 
         if not line.strip():
             i += 1
@@ -204,11 +223,22 @@ def parse(md: str):
             i += 1
             continue
 
-        # The From/To/Date/Subject block — tighter leading, no justification.
-        if re.match(r"^\*\*(From|To|Date|Subject):\*\*", line):
+        # The To/From/Subject/Classification block — tighter leading, no
+        # justification. Fields wrap in the source, so continuation lines are
+        # folded in here; otherwise the next field gets swallowed into a
+        # paragraph and stops looking like a field at all.
+        if re.match(r"^\*\*(To|From|Subject|Classification):\*\*", line):
             in_meta = True
-            flow.append(Paragraph(inline(line), META))
+            buf = [line.strip()]
             i += 1
+            while (
+                i < len(lines)
+                and lines[i].strip()
+                and not re.match(r"^\*\*(To|From|Subject|Classification):\*\*", lines[i])
+            ):
+                buf.append(lines[i].strip())
+                i += 1
+            flow.append(Paragraph(inline(" ".join(buf)), META))
             continue
         if in_meta:
             in_meta = False
@@ -232,10 +262,12 @@ def parse(md: str):
         # Bullets
         if line.lstrip().startswith("- "):
             while i < len(lines) and lines[i].lstrip().startswith("- "):
-                flow.append(
-                    Paragraph(inline(lines[i].lstrip()[2:]), BULLET, bulletText="•")
-                )
+                buf = [lines[i].lstrip()[2:].strip()]
                 i += 1
+                while i < len(lines) and is_continuation(lines[i]):
+                    buf.append(lines[i].strip())
+                    i += 1
+                flow.append(Paragraph(inline(" ".join(buf)), BULLET, bulletText="•"))
             flow.append(Spacer(1, 4))
             continue
 
@@ -246,10 +278,12 @@ def parse(md: str):
                 m = re.match(r"^(\d+)\.\s+(.*)$", lines[i].lstrip())
                 if not m:
                     break
-                flow.append(
-                    Paragraph(inline(m.group(2)), BULLET, bulletText=f"{m.group(1)}.")
-                )
+                num, buf = m.group(1), [m.group(2).strip()]
                 i += 1
+                while i < len(lines) and is_continuation(lines[i]):
+                    buf.append(lines[i].strip())
+                    i += 1
+                flow.append(Paragraph(inline(" ".join(buf)), BULLET, bulletText=f"{num}."))
             flow.append(Spacer(1, 4))
             continue
 
@@ -259,7 +293,7 @@ def parse(md: str):
         while (
             i < len(lines)
             and lines[i].strip()
-            and not lines[i].startswith(("#", "|", "-", "---"))
+            and not lines[i].lstrip().startswith(("#", "|", "- "))
             and not re.match(r"^\d+\.\s", lines[i].lstrip())
         ):
             buf.append(lines[i].strip())
@@ -327,26 +361,8 @@ def letterhead(canvas, doc):
     canvas.restoreState()
 
 
-def signature_block(name: str, title: str):
-    return [
-        Spacer(1, 14),
-        HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=12),
-        Paragraph("Yours faithfully,", SIGN),
-        Spacer(1, 20),
-        Paragraph("__________________________", SIGN),
-        Paragraph(f"<b>{name}</b>", SIGN),
-        Paragraph(title, SIGN),
-        Paragraph("NEDA Labs Limited", SIGN),
-    ]
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--date", help="Letter date, e.g. '30 July 2026'. Defaults to today.")
-    ap.add_argument("--name", default="[Name]", help="Signatory's full name.")
-    ap.add_argument(
-        "--title", default="Chief Executive Officer", help="Signatory's title."
-    )
     ap.add_argument(
         "--test-ref",
         help=(
@@ -358,14 +374,8 @@ def main():
     )
     args = ap.parse_args()
 
-    letter_date = args.date or datetime.date.today().strftime("%-d %B %Y")
-
     with open(SRC, "r", encoding="utf-8") as f:
         md = f.read()
-
-    # A PDF cannot be hand-edited, so the placeholders in the markdown are
-    # resolved here rather than shipped as blanks for someone to work around.
-    md = md.replace("**Date:** [ ]", f"**Date:** {letter_date}")
 
     # The evidence sentence is present only when there is evidence. Dropping it
     # is the safe default: a letter to a regulator must never claim a test that
@@ -378,7 +388,6 @@ def main():
         )
 
     # The markdown carries its own signature lines; the PDF lays them out.
-    md = md.split("---\n\n**[Name]**")[0]
 
     doc = BaseDocTemplate(
         OUT,
@@ -416,7 +425,7 @@ def main():
         ]
     )
 
-    story = [NextPageTemplate("rest")] + parse(md) + signature_block(args.name, args.title)
+    story = [NextPageTemplate("rest")] + parse(md)
     doc.build(story)
 
     size_kb = os.path.getsize(OUT) / 1024
