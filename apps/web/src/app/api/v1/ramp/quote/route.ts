@@ -10,6 +10,11 @@ import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
 import { spendKindEnabled } from '@/lib/waas/spend-quote'
 
+// Biller name validation goes upstream to the utility and can take ~25s
+// (see nedaAccountLookup). Without this the platform default would kill the
+// route before its own lookup answers.
+export const maxDuration = 60
+
 export const runtime = 'nodejs'
 
 /**

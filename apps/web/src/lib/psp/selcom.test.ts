@@ -290,3 +290,31 @@ describe('buildNedaLookupFields (biller lookups carry the amount)', () => {
     expect(body).toEqual({ bank: 'LUKU', account: '24219217817', transId: 'T9', amount: 1000 })
   })
 })
+
+/**
+ * The biller timeout and the routes' declared durations must move together:
+ * a 25s lookup inside a route on the platform default duration dies with the
+ * route, and the caller sees a 504 instead of a fail-soft null name. Source
+ * assertions, same style as the sandbox coverage tests.
+ */
+describe('biller lookups get a utility-sized budget, and their routes outlive it', () => {
+  const fs = require('node:fs') as typeof import('node:fs')
+  const path = require('node:path') as typeof import('node:path')
+
+  it('nedaAccountLookup branches the timeout on the amount', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'selcom.ts'), 'utf8')
+    expect(src).toContain("opts?.amountTzs != null ? 25_000 : 8_000")
+    expect(src).toContain('AbortSignal.timeout(timeoutMs)')
+  })
+
+  it('every route that resolves biller names declares maxDuration ≥ 60', () => {
+    for (const rel of [
+      '../../app/api/v1/spend/quote/route.ts',
+      '../../app/api/v1/ramp/quote/route.ts',
+      '../../app/api/v1/lookup/merchant-name/route.ts',
+    ]) {
+      const src = fs.readFileSync(path.join(__dirname, rel), 'utf8')
+      expect(src, `${rel} must declare maxDuration`).toMatch(/export const maxDuration = 60/)
+    }
+  })
+})
