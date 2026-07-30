@@ -67,8 +67,14 @@ export interface MatchedTransfer {
 export interface AnomalousTransfer {
   log: TransferLog
   direction: ReconDirection
-  /** 'unmatched' = no ledger row shares the tx hash; 'mismatched' = a row shares the hash but token/direction/amount disagree. */
-  kind: 'unmatched' | 'mismatched'
+  /**
+   * 'unmatched' = no ledger row shares the tx hash; 'mismatched' = a row shares
+   * the hash but token/direction/amount disagree; 'dust' = unmatched INBOUND at
+   * or below the dust threshold — external spam/address-poisoning noise that is
+   * reported for visibility but must never page anyone (30 Jul 2026: a
+   * 0.000026 USDC spray to the solver fired the full red-alert email).
+   */
+  kind: 'unmatched' | 'mismatched' | 'dust'
   detail?: string
 }
 
@@ -279,6 +285,13 @@ export interface MatchOptions {
   solver: string
   /** Absolute tolerance in raw units per token address; defaults to exact match. */
   toleranceRaw?: (tokenAddressLower: string) => bigint
+  /**
+   * Dust ceiling in raw units per token address. An unmatched INBOUND transfer
+   * at or below this classifies as 'dust' instead of 'unmatched'. Outbound
+   * transfers never dust-classify — money leaving the pool is always paged,
+   * no matter how small. Default: no dust classification.
+   */
+  dustRaw?: (tokenAddressLower: string) => bigint
 }
 
 /**
@@ -311,7 +324,12 @@ export function matchTransfers(
     const candidates = byHash.get(log.txHash) ?? []
 
     if (candidates.length === 0) {
-      anomalies.push({ log, direction, kind: 'unmatched' })
+      const dustLimit = options.dustRaw?.(log.tokenAddress)
+      if (direction === 'in' && dustLimit !== undefined && log.amountRaw <= dustLimit) {
+        anomalies.push({ log, direction, kind: 'dust', detail: 'inbound below dust threshold — external spam/poisoning transfer' })
+      } else {
+        anomalies.push({ log, direction, kind: 'unmatched' })
+      }
       continue
     }
 
@@ -417,7 +435,7 @@ export interface ReconSweepAnomaly {
   direction: ReconDirection
   token: string
   amount: string
-  kind: 'unmatched' | 'mismatched'
+  kind: 'unmatched' | 'mismatched' | 'dust'
   detail?: string
 }
 

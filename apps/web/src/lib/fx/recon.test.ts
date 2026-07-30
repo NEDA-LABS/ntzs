@@ -193,6 +193,42 @@ describe('matchTransfers', () => {
     ])
   })
 
+  it('classifies unmatched inbound micro-transfers as dust (spam sprays must not page)', () => {
+    const { anomalies } = matchTransfers(
+      [log({ txHash: HASH_C, tokenAddress: USDC, from: USER, to: SOLVER.toLowerCase(), amountRaw: bn(26) })], // 0.000026 USDC
+      fillExpected,
+      { solver: SOLVER, dustRaw: () => bn(10_000) }, // 0.01 USDC ceiling
+    )
+    expect(anomalies).toEqual([expect.objectContaining({ kind: 'dust', direction: 'in' })])
+  })
+
+  it('never dust-classifies outbound transfers, however small', () => {
+    const { anomalies } = matchTransfers(
+      [log({ txHash: HASH_C, tokenAddress: USDC, from: SOLVER.toLowerCase(), to: USER, amountRaw: bn(1) })],
+      fillExpected,
+      { solver: SOLVER, dustRaw: () => bn(10_000) },
+    )
+    expect(anomalies).toEqual([expect.objectContaining({ kind: 'unmatched', direction: 'out' })])
+  })
+
+  it('keeps unmatched inbound transfers above the dust ceiling as unmatched', () => {
+    const { anomalies } = matchTransfers(
+      [log({ txHash: HASH_C, tokenAddress: USDC, from: USER, to: SOLVER.toLowerCase(), amountRaw: bn(10_001) })],
+      fillExpected,
+      { solver: SOLVER, dustRaw: () => bn(10_000) },
+    )
+    expect(anomalies).toEqual([expect.objectContaining({ kind: 'unmatched', direction: 'in' })])
+  })
+
+  it('without dustRaw every unmatched transfer stays unmatched (backward compat)', () => {
+    const { anomalies } = matchTransfers(
+      [log({ txHash: HASH_C, tokenAddress: USDC, from: USER, to: SOLVER.toLowerCase(), amountRaw: bn(1) })],
+      fillExpected,
+      { solver: SOLVER },
+    )
+    expect(anomalies).toEqual([expect.objectContaining({ kind: 'unmatched', direction: 'in' })])
+  })
+
   it('flags a shared-hash transfer whose amount disagrees beyond tolerance', () => {
     const { anomalies } = matchTransfers(
       [log({ txHash: HASH_B, tokenAddress: NTZS, from: SOLVER.toLowerCase(), to: USER, amountRaw: bn('2000000000000000000000') })],

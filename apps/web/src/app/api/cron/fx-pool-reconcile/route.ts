@@ -21,6 +21,7 @@ import {
   expectedFromWalletTxs,
   matchTransfers,
   parseTransferLogs,
+  toRawAmount,
   topicForAddress,
   type AnomalousTransfer,
   type ExpectedTransfer,
@@ -40,6 +41,12 @@ const ERC20_ABI = ['function balanceOf(address) view returns (uint256)']
 // Drift larger than this (in token units) is flagged. Generous enough to absorb
 // rounding dust across many fills, tight enough to catch a real accounting leak.
 const TOLERANCE: Record<string, number> = { nTZS: 50, USDC: 0.5, USDT: 0.5 }
+
+// Unmatched INBOUND transfers at or below this (token units) classify as spam
+// "dust" — address-poisoning bots spray micro-amounts at busy wallets (30 Jul
+// 2026: 0.000026 USDC paged three people). Dust stays visible in the summary
+// and backstage but never triggers the alert email. Outbound never dusts.
+const DUST: Record<string, number> = { nTZS: 10, USDC: 0.01, USDT: 0.01 }
 
 // Only scan blocks this far behind the tip so shallow reorgs can't produce
 // phantom transfers that a later run would never see again.
@@ -77,6 +84,14 @@ for (const tokens of Object.values(CHAIN_TOKENS)) {
 function toleranceRaw(tokenAddressLower: string): bigint {
   const decimals = DECIMALS_BY_TOKEN[tokenAddressLower] ?? 18
   return BigInt(10) ** BigInt(Math.max(0, decimals - 4))
+}
+
+function dustRaw(tokenAddressLower: string): bigint {
+  const symbol = SYMBOL_BY_TOKEN[tokenAddressLower]
+  const decimals = DECIMALS_BY_TOKEN[tokenAddressLower]
+  const limit = symbol !== undefined ? DUST[symbol] : undefined
+  if (limit === undefined || decimals === undefined) return BigInt(0)
+  return toRawAmount(limit.toString(), decimals) ?? BigInt(0)
 }
 
 function reconRecipients(): string[] {
@@ -294,7 +309,7 @@ async function sweepChain(
 
   const logs = dedupeLogs(parseTransferLogs(raw))
   const expected = await loadExpected(db, [...new Set(logs.map((l) => l.txHash))])
-  const { matched, anomalies } = matchTransfers(logs, expected, { solver, toleranceRaw })
+  const { matched, anomalies } = matchTransfers(logs, expected, { solver, toleranceRaw, dustRaw })
 
   return {
     sweep: {
@@ -468,8 +483,12 @@ export async function GET(request: NextRequest) {
 
   const deficits = tokens.filter((t) => t.status === 'deficit')
   const surpluses = tokens.filter((t) => t.status === 'surplus')
+  // Dust never pages: it stays visible in the summary and backstage but caps
+  // the run status at 'info'. Everything else alerts as before.
+  const pagingAnomalies = allAnomalies.filter((a) => a.kind !== 'dust')
+  const dustCount = allAnomalies.length - pagingAnomalies.length
   const status: ReconRunSummary['status'] =
-    deficits.length || allAnomalies.length ? 'critical' : surpluses.length ? 'info' : 'ok'
+    deficits.length || pagingAnomalies.length ? 'critical' : surpluses.length || dustCount ? 'info' : 'ok'
   const reportedAnomalies = allAnomalies.slice(0, MAX_ANOMALIES_REPORTED)
 
   // Alert on CRITICAL, deduped by fingerprint: a new deficit token or a new
@@ -478,15 +497,15 @@ export async function GET(request: NextRequest) {
   let alerted = false
   let alertFailed = false
   if (status === 'critical') {
-    const fingerprint = alertFingerprint(deficits, allAnomalies)
+    const fingerprint = alertFingerprint(deficits, pagingAnomalies)
     const last = stateOk ? await readReconState<{ fingerprint: string; at: string }>(db, 'last_alert') : null
     const due = !last || last.fingerprint !== fingerprint || Date.now() - Date.parse(last.at) > ALERT_COOLDOWN_MS
     if (due) {
       const { subject, html } = buildAlertEmail({
         tokens,
         deficits,
-        anomalies: reportedAnomalies,
-        anomalyTotal: allAnomalies.length,
+        anomalies: pagingAnomalies.slice(0, MAX_ANOMALIES_REPORTED),
+        anomalyTotal: pagingAnomalies.length,
         sweeps,
         solvers: chains.map((c) => ({ chain: c.chain, solver: c.solver })),
       })
