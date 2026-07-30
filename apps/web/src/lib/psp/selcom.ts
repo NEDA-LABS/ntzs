@@ -803,13 +803,30 @@ export async function accountLookup(fiCode: string, account: string, amount?: nu
   }
 }
 
-/** Field order defines body + signature — exactly the collection's order. */
-export function buildNedaLookupFields(bank: string, account: string, transId: string): SignedField[] {
-  return [
+/** Field order defines body + signature — exactly the collection's order.
+ *
+ * `amountTzs` exists because of the LUKU probe (30 Jul 2026): biller
+ * validation is AMOUNT-AWARE. Probing the failed meter under bank=LUKU
+ * refused with "The minimum amount is 1,000." — i.e. Selcom recognised the
+ * code and found the meter, then rejected the lookup for missing a purchase
+ * amount. (A wrong code answers "Invalid or inactive bank/FI code", as
+ * TANESCO did.) So biller lookups must carry the intended amount; wallet and
+ * till lookups (SELCOM / SB2LIPA) work without one and are left untouched. */
+export function buildNedaLookupFields(
+  bank: string,
+  account: string,
+  transId: string,
+  amountTzs?: number
+): SignedField[] {
+  const fields: SignedField[] = [
     { name: 'bank', value: bank },
     { name: 'account', value: account },
     { name: 'transId', value: transId },
   ]
+  if (amountTzs != null && Number.isFinite(amountTzs) && amountTzs > 0) {
+    fields.push({ name: 'amount', value: Math.trunc(amountTzs) })
+  }
+  return fields
 }
 
 /**
@@ -822,9 +839,15 @@ export function buildNedaLookupFields(bank: string, account: string, transId: st
  *   SELCOM | CRDB | … → same inter-transfer codes as legacy
  * Never throws — returns { name: null, reason } on any failure.
  */
-export async function nedaAccountLookup(bank: string, account: string): Promise<SelcomAccountLookup> {
+export async function nedaAccountLookup(
+  bank: string,
+  account: string,
+  opts?: { amountTzs?: number }
+): Promise<SelcomAccountLookup> {
   try {
-    const { headers, body } = signRequest(buildNedaLookupFields(bank, account, makeNumericTransId()))
+    const { headers, body } = signRequest(
+      buildNedaLookupFields(bank, account, makeNumericTransId(), opts?.amountTzs)
+    )
     const response = await fetch(`${getBaseUrl()}/v1/account/neda-lookup`, {
       method: 'POST',
       headers,

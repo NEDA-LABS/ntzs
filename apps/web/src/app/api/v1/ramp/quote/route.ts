@@ -85,7 +85,10 @@ export async function POST(req: NextRequest) {
       const refCheck = validateUtilityRef(utilityCode, utilityRef)
       if (!refCheck.ok) return NextResponse.json({ error: 'invalid_utility_ref', message: refCheck.reason }, { status: 400 })
       destination = { kind: 'bill', utilityCode, utilityRef }
-      const info = await nedaAccountLookup(utilityCode, utilityRef).catch(() => ({ name: null as string | null }))
+      // The TZS amount is derived from the rate later, so validate the name
+      // with the biller minimum — the lookup is for the owner's name, and
+      // 1,000 is the floor LUKU itself stated when probed without an amount.
+      const info = await nedaAccountLookup(utilityCode, utilityRef, { amountTzs: 1000 }).catch(() => ({ name: null as string | null }))
       recipientName = info.name
     }
   }

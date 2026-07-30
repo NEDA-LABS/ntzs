@@ -731,6 +731,7 @@ Resolves the **registered trading name** behind a merchant Lipa Namba — includ
 | `payNumber` | string | `lipa` | Merchant Lipa Namba, 4–12 digits |
 | `utilityCode` | string | `bill` | Biller code — see `GET /api/v1/spend/billers` |
 | `utilityRef` | string | `bill` | Meter / control / smartcard number |
+| `amountTzs` | number | – | `bill` only: intended purchase amount. Biller validation is amount-aware (LUKU requires ≥ 1,000 TZS); defaults to 1,000 when omitted. Send the real amount when you have it. |
 
 #### Response — `200`
 
