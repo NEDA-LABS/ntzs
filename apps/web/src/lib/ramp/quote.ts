@@ -11,6 +11,34 @@ export const RAMP_QUOTE_TTL_MS = 60_000
 export const PSP_FLAT_FEE_TZS = 1500
 export const PLATFORM_FEE_PCT = 0.005 // 0.5% on the gross TZS (off-ramp)
 
+/**
+ * Our margin as a PERCENT (0.5 = 0.5%), matching `partners.fee_percent` and
+ * DEFAULT_PLATFORM_FEE_PERCENT everywhere else in the codebase.
+ *
+ * ⚠ TWO UNITS, ONE CONCEPT. `PLATFORM_FEE_PCT` above is a FRACTION (0.005);
+ * the partners table stores a PERCENT (0.5). They differ by 100×, which on a
+ * money path is not a rounding difference — it is charging a partner a hundred
+ * times too much or too little. Every conversion goes through
+ * `rampPlatformFeeTzs` so there is exactly one place to get it wrong, and a
+ * test pins the two representations to the same number.
+ */
+export const DEFAULT_RAMP_FEE_PERCENT = PLATFORM_FEE_PCT * 100
+
+/**
+ * Our margin on a ramp, in TZS.
+ *
+ * `feePercent` is a percent. Anything absent, non-finite or non-positive falls
+ * back to the default — a partner row with no explicit price is priced at the
+ * standard rate, never at zero. Ramp pricing previously ignored the partner
+ * entirely, so this is the first point at which a negotiated rate has any
+ * effect; partners on the default see byte-identical pricing.
+ */
+export function rampPlatformFeeTzs(grossTzs: number, feePercent?: number | null): number {
+  const pct = Number(feePercent)
+  const effective = Number.isFinite(pct) && pct > 0 ? pct : DEFAULT_RAMP_FEE_PERCENT
+  return Math.ceil((grossTzs * effective) / 100)
+}
+
 export type RampDirection = 'offramp' | 'onramp'
 
 /**
@@ -111,6 +139,11 @@ export async function computeRampQuote(params: {
   tzsAmount?: number
   /** Off-ramp only — the terminal destination. Defaults to wallet payout. */
   destination?: RampOfframpDestination
+  /**
+   * Partner's negotiated margin as a PERCENT (0.5 = 0.5%). Omit for the
+   * standard rate — see rampPlatformFeeTzs.
+   */
+  feePercent?: number | null
 }): Promise<RampQuote | { error: string }> {
   const { direction } = params
   const ps = await getPairAndSpread(direction)
@@ -123,7 +156,7 @@ export async function computeRampQuote(params: {
 
     // USDC → nTZS (1 nTZS == 1 TZS). Gross TZS the swap yields.
     const grossTzs = calcMinOutput({ fromToken: 'USDC', toToken: 'NTZS', amount: usdcAmount, midRate, bidBps, askBps, slippageBps: 0 })
-    const platformFee = Math.ceil(grossTzs * PLATFORM_FEE_PCT)
+    const platformFee = rampPlatformFeeTzs(grossTzs, params.feePercent)
 
     // PSP fee depends on the destination: mobile-money wallet = the flat PSP
     // fee; Selcom Lipa/bill = the Selcom tariff. Tariff estimated on gross
@@ -152,7 +185,7 @@ export async function computeRampQuote(params: {
 
   // Platform fee skimmed in nTZS after the swap; the customer pays tzsAmount and
   // receives USDC for the net. Mirrors the off-ramp's PLATFORM_FEE_PCT.
-  const platformFee = Math.ceil(tzsAmount * PLATFORM_FEE_PCT)
+  const platformFee = rampPlatformFeeTzs(tzsAmount, params.feePercent)
   const netTzs = tzsAmount - platformFee
 
   // nTZS (== TZS minted) → USDC, on the net after the platform fee.

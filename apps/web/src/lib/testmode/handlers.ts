@@ -41,6 +41,7 @@ import {
   depositOutcome,
   payoutOutcome,
   testKycStatus,
+  testMerchantName,
   testReceipt,
   testRecipientName,
   testTxHash,
@@ -966,4 +967,49 @@ export async function testLookupName(request: NextRequest): Promise<NextResponse
   }
   const phone = normalizePhone(phoneNumber)
   return NextResponse.json({ phone, network: detectNetwork(phone), name: testRecipientName(phone), livemode: false })
+}
+
+/**
+ * POST /api/v1/lookup/merchant-name in test mode — deterministic trading names,
+ * no PSP call. A till ending `00` resolves to null so the "we could not verify
+ * this merchant" branch is reachable without hunting for an unregistered till.
+ */
+export async function testLookupMerchant(request: NextRequest): Promise<NextResponse> {
+  const body = await readJson<{ kind?: unknown; payNumber?: unknown; utilityCode?: unknown; utilityRef?: unknown }>(request)
+  if (!body) return invalidJson()
+
+  const kind = body.kind === 'bill' ? 'bill' : body.kind === 'lipa' ? 'lipa' : null
+  if (!kind) return NextResponse.json({ error: "kind must be 'lipa' or 'bill'" }, { status: 400 })
+
+  if (kind === 'lipa') {
+    const payNumber = String(body.payNumber ?? '').replace(/\s+/g, '')
+    if (!/^\d{4,12}$/.test(payNumber)) {
+      return NextResponse.json({ error: 'payNumber must be the merchant Lipa Namba (4–12 digits)' }, { status: 400 })
+    }
+    return NextResponse.json({
+      kind, target: `lipa:${payNumber}`, payNumber,
+      name: testMerchantName(payNumber),
+      livemode: false,
+    })
+  }
+
+  const utilityCode = String(body.utilityCode ?? '').trim().toUpperCase()
+  const utilityRef = String(body.utilityRef ?? '').trim()
+  const biller = getBiller(utilityCode)
+  if (!biller) {
+    return NextResponse.json(
+      { error: 'unknown_biller', message: `utilityCode '${utilityCode}' is not in the biller catalogue.`, supportedCodes: SELCOM_BILLERS.map((b) => b.code) },
+      { status: 400 }
+    )
+  }
+  const refCheck = validateUtilityRef(utilityCode, utilityRef)
+  if (!refCheck.ok) {
+    return NextResponse.json({ error: 'invalid_utility_ref', message: refCheck.reason }, { status: 400 })
+  }
+
+  return NextResponse.json({
+    kind, target: `bill:${utilityCode}:${utilityRef}`, utilityCode, utilityRef,
+    name: testMerchantName(utilityRef),
+    livemode: false,
+  })
 }
