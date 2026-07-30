@@ -38,6 +38,7 @@ export {
   testGetWithdrawal,
   testSpendQuote,
   testCreateSpend,
+  testGetSpend,
   testCreateTransfer,
   testLookupName,
   testLookupMerchant,

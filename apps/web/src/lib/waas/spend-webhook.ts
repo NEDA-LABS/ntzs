@@ -40,6 +40,12 @@ export async function emitSpendWebhook(
       burnAmountTzs: args.burnAmountTzs,
       actualChargesTzs: typeof spend?.actualChargesTzs === 'number' ? spend.actualChargesTzs : null,
       selcomReceipt: typeof spend?.selcomReceipt === 'string' ? spend.selcomReceipt : null,
+      // For a utility purchase the TOKEN is the product — a completed webhook
+      // without it is a payment whose deliverable went missing (30 Jul 2026:
+      // the customer's LUKU tokens reached only our own Selcom Biz SMS).
+      utilityToken: typeof spend?.utilityToken === 'string' ? spend.utilityToken : null,
+      utilityUnits: typeof spend?.utilityUnits === 'string' ? spend.utilityUnits : null,
+      utilityReceipt: typeof spend?.utilityReceipt === 'string' ? spend.utilityReceipt : null,
     })
   } catch (err) {
     console.error('[spend-webhook] queue failed (non-fatal):', err instanceof Error ? err.message : err)

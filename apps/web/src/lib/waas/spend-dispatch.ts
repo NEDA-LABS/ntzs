@@ -9,6 +9,7 @@ import {
   queryTransactionRaw,
   checkPayoutStatus,
 } from '@/lib/psp/selcom'
+import { mergeSettlement, readSelcomSettlement } from '@/lib/psp/selcom-settlement'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { emitSpendWebhook } from '@/lib/waas/spend-webhook'
 import type { SpendKind } from '@/lib/waas/spend-quote'
@@ -48,6 +49,25 @@ export interface SpendDispatchArgs {
   revert: Omit<Parameters<typeof revertOffRampBurn>[0], 'burnRequestId' | 'reason'>
   /** Log prefix, e.g. 'v1/spend' or 'ramp/offramp'. */
   label?: string
+  /**
+   * Absolute epoch-ms deadline for the awaited settle poll.
+   *
+   * ⚠ WHY A DEADLINE AND NOT A FIXED LADDER. This poll used to sleep a flat
+   * 3+6+12 = 21 seconds. On a route capped at 60s, after an on-chain burn and
+   * up to two fee mints, that was enough to push the whole request past its
+   * limit — the platform killed the function AFTER Selcom had been paid, the
+   * client saw a network failure, and the customer retried and paid twice
+   * (30 July 2026).
+   *
+   * The poll is worth keeping: when settlement is quick the caller gets a
+   * synchronous `completed` and, for a utility purchase, the token in the same
+   * response. But it must never plan to overrun the caller's own budget. Pass a
+   * deadline computed from when the REQUEST started, not from here — by this
+   * point the burn has already spent an unknown slice of it.
+   *
+   * Omit to poll the full ladder (callers with a generous limit, e.g. ramp).
+   */
+  pollDeadlineMs?: number
 }
 
 export interface SpendDispatchResult {
@@ -142,21 +162,26 @@ export async function dispatchSpendPayment(args: SpendDispatchArgs): Promise<Spe
     return { reference: transId, payoutStatus: 'reconcile_required', settledDescriptor: spendDescriptor, error: dispatchError }
   }
 
-  // ── Accepted → awaited quick poll (cron is the durable backstop) ────────────
+  // ── Accepted → awaited quick poll, bounded by the caller's budget ──────────
+  // The cron is the durable backstop, so giving up early costs nothing but a
+  // synchronous answer; overrunning costs a double charge.
   const delays = [3000, 6000, 12000]
+  const deadline = args.pollDeadlineMs
   for (const delay of delays) {
+    if (deadline != null && Date.now() + delay > deadline) {
+      console.log(`${tag} ${transId} poll budget exhausted — leaving it to the cron`)
+      break
+    }
     await new Promise((r) => setTimeout(r, delay))
     try {
       const raw = await queryTransactionRaw(transId)
       if ('error' in raw) continue
       const status = String(raw.body.data?.status ?? '').toUpperCase()
       if (status === 'COMPLETED' || raw.body.result === 'SUCCESS') {
-        const d = raw.body.data as Record<string, unknown> | undefined
-        const settled = {
-          ...spendDescriptor,
-          actualChargesTzs: d?.totalCharges != null ? Number(d.totalCharges) : spendDescriptor.actualChargesTzs,
-          selcomReceipt: typeof d?.selcomReceipt === 'string' ? d.selcomReceipt : spendDescriptor.selcomReceipt,
-        }
+        // One reader for the payload, tolerant of naming, and it keeps the raw
+        // answer — the previous code read camelCase keys off a snake_case body,
+        // so charges and receipts were silently never recorded.
+        const settled = mergeSettlement(spendDescriptor, readSelcomSettlement(raw.body.data))
         const done = await db
           .update(burnRequests)
           .set({ status: 'burned', payoutStatus: 'completed', spend: settled, updatedAt: new Date() })
