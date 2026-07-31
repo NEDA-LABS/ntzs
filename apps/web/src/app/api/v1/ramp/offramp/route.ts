@@ -9,7 +9,7 @@ import { runOfframpSettlement } from '@/lib/ramp/offramp'
 import { rampSpendEnabled } from '@/lib/ramp/quote'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 import { isValidTanzanianPhone } from '@/lib/psp'
-import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse, rampCounterpartySubject } from '@/lib/sandbox/limits'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -69,13 +69,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'ramp_spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled yet (pending regulatory approval).' }, { status: 503 })
     }
 
-    // BoT Parameters #3/#4/#5 at the point of execution, against the ramp
-    // float. The quote stage already enforced this, so a block here means
-    // usage moved between quote and execute (or the quote predates the
-    // control). The consumed quote is spent either way — nothing has moved,
-    // and quotes are 60-second ephemera. Gross leg = recipient net + fee.
+    // BoT Parameters #3/#4/#5 at the point of execution, counted per
+    // TANZANIAN-SIDE WALLET — the till, bill account or mobile wallet being
+    // paid (a per-wallet limit, not a platform one). For wallet payouts this
+    // is the first point the phone is known, so it is where the period caps
+    // can bind. A block spends the consumed quote, but nothing has moved and
+    // quotes are 60-second ephemera. Gross leg = recipient net + fee.
+    const cp =
+      destination.kind === 'lipa'
+        ? rampCounterpartySubject({ kind: 'lipa', payNumber: destination.payNumber })
+        : destination.kind === 'bill'
+          ? rampCounterpartySubject({ kind: 'bill', utilityCode: destination.utilityCode, utilityRef: destination.utilityRef })
+          : rampCounterpartySubject({ kind: 'phone', phone: phoneNumber! })
     const limitErr = await enforceSandboxLimits(
-      { kind: 'ramp_float', id: partner.id },
+      cp,
       quote.tzsAmount + quote.feeTzs,
       { endpoint: 'v1/ramp/offramp', stage: 'execute', partnerId: partner.id },
     )

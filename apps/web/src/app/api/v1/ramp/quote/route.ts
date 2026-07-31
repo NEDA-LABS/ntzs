@@ -9,7 +9,7 @@ import { computeRampQuote, RAMP_QUOTE_TTL_MS, rampSpendEnabled, type RampDirecti
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
 import { spendKindEnabled } from '@/lib/waas/spend-quote'
-import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { enforceSandboxLimits, limitErrorResponse, rampCounterpartySubject } from '@/lib/sandbox/limits'
 
 // Biller name validation goes upstream to the utility and can take ~25s
 // (see nedaAccountLookup). Without this the platform default would kill the
@@ -122,16 +122,23 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // BoT Parameters #3/#4/#5, counted against the partner's ramp float — the
-  // participant for USDC⇄TZS activity. Enforced on the GROSS TZS leg: an
-  // off-ramp quote's tzsAmount is the recipient net after feeTzs, so the value
-  // moved is their sum; an on-ramp quote's tzsAmount is already the gross the
-  // payer pays. Must match checkRampFloatPeriodLimits' usage accounting.
-  const grossTzsLeg = direction === 'offramp' ? quote.tzsAmount + quote.feeTzs : quote.tzsAmount
-  const limitErr = await enforceSandboxLimits({ kind: 'ramp_float', id: auth.partner.id }, grossTzsLeg, {
-    endpoint: 'v1/ramp/quote', stage: 'quote', partnerId: auth.partner.id,
-  })
-  if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
+  // BoT Parameters #3/#4/#5, counted per TANZANIAN-SIDE WALLET — the till or
+  // bill account being paid. A per-wallet limit, NOT a platform one: a partner
+  // paying many different merchants is not throttled as if it were one user.
+  // Enforceable at quote time only when the counterparty is bound to the quote
+  // (lipa/bill); wallet off-ramps and on-ramps learn their phone at execute,
+  // where the same enforcement runs before any money moves. Gross TZS leg: an
+  // off-ramp's tzsAmount is the recipient net after feeTzs.
+  if (destination.kind !== 'wallet') {
+    const cp =
+      destination.kind === 'lipa'
+        ? rampCounterpartySubject({ kind: 'lipa', payNumber: destination.payNumber })
+        : rampCounterpartySubject({ kind: 'bill', utilityCode: destination.utilityCode, utilityRef: destination.utilityRef })
+    const limitErr = await enforceSandboxLimits(cp, quote.tzsAmount + quote.feeTzs, {
+      endpoint: 'v1/ramp/quote', stage: 'quote', partnerId: auth.partner.id,
+    })
+    if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
+  }
 
   // Store the destination (+ resolved name) on the quote so the off-ramp
   // executes exactly what was priced and disclosed.

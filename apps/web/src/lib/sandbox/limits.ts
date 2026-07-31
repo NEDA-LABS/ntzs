@@ -204,25 +204,80 @@ export async function checkSubWalletPeriodLimits(
 }
 
 /**
- * BoT Parameters #4 & #5 counted against a partner's RAMP FLOAT.
- *
- * ⚠ WHY THIS EXISTS. Ramp settlements never touch checkUserPeriodLimits (no
- * end-user) nor checkSubWalletPeriodLimits (no sub-wallet row) — so until this
- * checker, the ramp path had NO period accounting at all, discovered the day
- * RAMP_SPEND_ENABLED went on for supervised testing. The float is the
- * participant: both directions' TZS legs sum against the same daily/30-day
- * allowance, exactly as a user's deposits and burns do.
- *
- * Reverted/failed settlements are excluded — money that came back is not
- * activity, same as the deposit/burn status filters above.
- *
- * Usage is the GROSS TZS leg. An off-ramp row stores the recipient NET in
- * tzs_amount with the fee split out in fee_tzs, so the fee is added back; an
- * on-ramp row's tzs_amount is already the gross the payer paid (the fee comes
- * out of it). Callers must pass the same gross, or check and accounting drift.
+ * The Tanzanian-side wallet a ramp settlement touches: the recipient till,
+ * bill account, or mobile wallet for an off-ramp; the payer's mobile wallet
+ * for an on-ramp.
  */
-export async function checkRampFloatPeriodLimits(
-  partnerId: string,
+export type RampCounterparty =
+  | { kind: 'phone'; phone: string }
+  | { kind: 'lipa'; payNumber: string }
+  | { kind: 'bill'; utilityCode: string; utilityRef: string }
+
+/** Canonical ref for a counterparty — the LimitSubject id and the evidence key. */
+export function rampCounterpartyRef(cp: RampCounterparty): string {
+  if (cp.kind === 'lipa') return `lipa:${cp.payNumber}`
+  if (cp.kind === 'bill') return `bill:${cp.utilityCode}:${cp.utilityRef}`
+  return `phone:${cp.phone}`
+}
+
+export function parseRampCounterpartyRef(ref: string): RampCounterparty {
+  const [kind, ...rest] = ref.split(':')
+  if (kind === 'lipa') return { kind: 'lipa', payNumber: rest.join(':') }
+  if (kind === 'bill') {
+    const [utilityCode, ...r] = rest
+    return { kind: 'bill', utilityCode, utilityRef: r.join(':') }
+  }
+  return { kind: 'phone', phone: rest.join(':') }
+}
+
+/**
+ * Spellings of the same Tanzanian MSISDN ('0744…', '+255744…', '255744…').
+ * Settlement rows store the phone as the partner sent it, so the usage query
+ * must match every spelling or one wallet gets a fresh allowance per format.
+ */
+export function rampPhoneVariants(phone: string): string[] {
+  const p = phone.replace(/[\s-]/g, '')
+  const out = new Set<string>([p])
+  if (p.startsWith('+255')) {
+    out.add(p.slice(1))
+    out.add(`0${p.slice(4)}`)
+  } else if (p.startsWith('255')) {
+    out.add(`+${p}`)
+    out.add(`0${p.slice(3)}`)
+  } else if (p.startsWith('0')) {
+    out.add(`+255${p.slice(1)}`)
+    out.add(`255${p.slice(1)}`)
+  }
+  return [...out]
+}
+
+/**
+ * BoT Parameters #4 & #5 on the RAMP, counted per TANZANIAN-SIDE COUNTERPARTY.
+ *
+ * ⚠ WHY PER COUNTERPARTY AND NOT PER FLOAT. The parameters cap what one
+ * WALLET may do in a period; they are not a platform throughput cap. The first
+ * version of this checker aggregated a partner's whole float against a single
+ * daily allowance, which turned a per-wallet limit into a per-platform limit —
+ * a partner paying two hundred different merchants 50,000 each would have been
+ * refused after the fortieth, exactly as if one user had spent 2,000,000.
+ * Counting per counterparty keeps the approved per-wallet semantics: no till,
+ * bill account or mobile wallet sees more than the daily/30-day allowance
+ * through this rail, whichever partner routes it — the key is deliberately NOT
+ * scoped to the partner, so two partners cannot stack allowances onto one
+ * wallet.
+ *
+ * What this deliberately does NOT bound is the platform aggregate. The
+ * approved parameters do not answer that question for a rail with no end-user,
+ * and it is being put to the Bank in writing rather than answered here with an
+ * invented number. Per-transaction (#3) still binds on every settlement.
+ *
+ * Reverted/failed settlements are excluded; usage is the GROSS TZS leg
+ * (off-ramp rows store the recipient net with the fee split out, so the fee is
+ * added back; on-ramp rows already store the payer's gross). Callers must pass
+ * the same gross, or check and accounting drift.
+ */
+export async function checkRampCounterpartyPeriodLimits(
+  cp: RampCounterparty,
   amountTzs: number,
 ): Promise<LimitError | null> {
   const { db } = getDb()
@@ -234,6 +289,18 @@ export async function checkRampFloatPeriodLimits(
   const thirtyDaysAgo = new Date(now)
   thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30)
 
+  // lipa/bill rows carry the target in `destination`; wallet off-ramps and
+  // on-ramps carry only recipient_phone (their destination is null), so the
+  // phone match cannot accidentally sweep in lipa/bill rows.
+  const counterpartyWhere =
+    cp.kind === 'lipa'
+      ? sql`${rampSettlements.destination}->>'payNumber' = ${cp.payNumber}`
+      : cp.kind === 'bill'
+        ? sql`${rampSettlements.destination}->>'utilityCode' = ${cp.utilityCode} and ${rampSettlements.destination}->>'utilityRef' = ${cp.utilityRef}`
+        : inArray(rampSettlements.recipientPhone, rampPhoneVariants(cp.phone))
+
+  const noun = cp.kind === 'lipa' ? 'this till' : cp.kind === 'bill' ? 'this bill account' : 'this wallet'
+
   const sumSince = async (since: Date) => {
     const [row] = await db
       .select({
@@ -242,7 +309,7 @@ export async function checkRampFloatPeriodLimits(
       .from(rampSettlements)
       .where(
         and(
-          eq(rampSettlements.partnerId, partnerId),
+          counterpartyWhere,
           gte(rampSettlements.createdAt, since),
           notInArray(rampSettlements.status, ['failed', 'reverted']),
         )
@@ -258,7 +325,7 @@ export async function checkRampFloatPeriodLimits(
   if (dailyUsed + amountTzs > SANDBOX_DAILY_USER_CAP_TZS) {
     return {
       code: 'daily_user_cap',
-      message: `This transaction would exceed the ramp float's daily limit of TZS ${SANDBOX_DAILY_USER_CAP_TZS.toLocaleString()}. Used today: TZS ${dailyUsed.toLocaleString()}.`,
+      message: `This transaction would exceed ${noun}'s daily sandbox limit of TZS ${SANDBOX_DAILY_USER_CAP_TZS.toLocaleString()}. Used today: TZS ${dailyUsed.toLocaleString()}.`,
       limit: SANDBOX_DAILY_USER_CAP_TZS,
       requested: amountTzs,
       used: dailyUsed,
@@ -268,7 +335,7 @@ export async function checkRampFloatPeriodLimits(
   if (monthlyUsed + amountTzs > SANDBOX_MONTHLY_USER_CAP_TZS) {
     return {
       code: 'monthly_user_cap',
-      message: `This transaction would exceed the ramp float's 30-day limit of TZS ${SANDBOX_MONTHLY_USER_CAP_TZS.toLocaleString()}. Used in last 30 days: TZS ${monthlyUsed.toLocaleString()}.`,
+      message: `This transaction would exceed ${noun}'s 30-day sandbox limit of TZS ${SANDBOX_MONTHLY_USER_CAP_TZS.toLocaleString()}. Used in last 30 days: TZS ${monthlyUsed.toLocaleString()}.`,
       limit: SANDBOX_MONTHLY_USER_CAP_TZS,
       requested: amountTzs,
       used: monthlyUsed,
@@ -287,7 +354,9 @@ export async function checkFundingSourcePeriodLimits(
   subject: LimitSubject,
   amountTzs: number,
 ): Promise<LimitError | null> {
-  if (subject.kind === 'ramp_float') return checkRampFloatPeriodLimits(subject.id, amountTzs)
+  if (subject.kind === 'ramp_counterparty') {
+    return checkRampCounterpartyPeriodLimits(parseRampCounterpartyRef(subject.id), amountTzs)
+  }
   return subject.kind === 'sub_wallet'
     ? checkSubWalletPeriodLimits(subject.id, amountTzs)
     : checkUserPeriodLimits(subject.id, amountTzs)
@@ -317,8 +386,16 @@ export function limitErrorResponse(err: LimitError) {
 export type LimitSubject =
   | { kind: 'user'; id: string }
   | { kind: 'sub_wallet'; id: string }
-  /** A partner's ramp settlement float — the participant for USDC⇄TZS activity. */
-  | { kind: 'ramp_float'; id: string }
+  /**
+   * A Tanzanian-side wallet on the ramp — id is a rampCounterpartyRef()
+   * ('lipa:61115582', 'bill:LUKU:24219…', 'phone:0744…'), NOT a uuid.
+   */
+  | { kind: 'ramp_counterparty'; id: string }
+
+/** Sugar for routes: a counterparty as an enforceable LimitSubject. */
+export function rampCounterpartySubject(cp: RampCounterparty): LimitSubject {
+  return { kind: 'ramp_counterparty', id: rampCounterpartyRef(cp) }
+}
 
 export interface LimitContext {
   /** Route that enforced it, e.g. 'v1/spend'. */
@@ -335,20 +412,34 @@ export interface LimitContext {
  * gap this table exists to close — if drizzle/0069 is unapplied we want that
  * visible in the logs, not swallowed.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 async function recordLimitBlock(err: LimitError, subject: LimitSubject, ctx: LimitContext): Promise<void> {
+  const row = {
+    code: err.code,
+    subjectKind: subject.kind,
+    // ramp counterparty ids are canonical refs, not uuids — those go in
+    // subject_ref (drizzle/0073) so the uuid column stays honest.
+    subjectId: UUID_RE.test(subject.id) ? subject.id : null,
+    subjectRef: subject.id,
+    partnerId: ctx.partnerId ?? null,
+    endpoint: ctx.endpoint,
+    stage: ctx.stage,
+    requestedTzs: err.requested,
+    limitTzs: err.limit,
+    usedInPeriodTzs: err.used ?? null,
+  }
   try {
     const { db } = getDb()
-    await db.insert(sandboxLimitEvents).values({
-      code: err.code,
-      subjectKind: subject.kind,
-      subjectId: subject.id,
-      partnerId: ctx.partnerId ?? null,
-      endpoint: ctx.endpoint,
-      stage: ctx.stage,
-      requestedTzs: err.requested,
-      limitTzs: err.limit,
-      usedInPeriodTzs: err.used ?? null,
-    })
+    try {
+      await db.insert(sandboxLimitEvents).values(row)
+    } catch (e) {
+      // Pre-0073 window: better a record without subject_ref than none.
+      if (!/subject_ref/i.test(e instanceof Error ? e.message : String(e))) throw e
+      const { subjectRef: _dropped, ...legacy } = row
+      await db.insert(sandboxLimitEvents).values(legacy)
+      console.warn('[sandbox/limits] recorded a limit block WITHOUT subject_ref — apply drizzle/0073.')
+    }
   } catch (e) {
     console.error(
       '[sandbox/limits] FAILED to record a limit block — regulatory evidence lost.',
