@@ -73,7 +73,7 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 **The Ramp API is now documented, and the sandbox caps bind on it.** Partners settling cross-border USDC ⇄ TZS get the full reference below — including **how to fund your settlement float** (`GET /api/v1/ramp/balance` returns your dedicated deposit address; native USDC on Base only).
 
 - **Merchant & bill off-ramp destinations** (`destination.kind: "lipa" | "bill"`) are enabled for **supervised testing** under our regulatory sandbox. The recipient's registered name is disclosed on the quote; the destination is bound to it.
-- **Regulatory sandbox limits now apply to ramp settlements**: 1,000,000 TZS per transaction, 2,000,000 TZS per day and 60,000,000 TZS per 30 days across your float, both directions combined. Exceeding one returns `400` with `per_txn_cap` / `daily_user_cap` / `monthly_user_cap` and your current usage — see the Ramp section's limits table. Test with small amounts; we are formally engaging the Bank of Tanzania on scaling these.
+- **Regulatory sandbox limits now apply to ramp settlements**: 1,000,000 TZS per transaction, and 2,000,000 TZS per day / 60,000,000 TZS per 30 days **per recipient wallet** — each till, bill account or mobile wallet you pay has its own allowance (the payer's wallet, for on-ramps), so paying many different merchants is not throttled. Exceeding a limit returns `400` with `per_txn_cap` / `daily_user_cap` / `monthly_user_cap` and current usage — see the Ramp section's limits table. We are formally engaging the Bank of Tanzania on scaling these parameters.
 
 ---
 
@@ -1053,25 +1053,25 @@ One settlement, or your newest-first list. Statuses: `processing` → `swapping`
 
 ### Regulatory sandbox limits
 
-nTZS operates in the Bank of Tanzania regulatory sandbox. The approved testing parameters apply to ramp settlements, counted against your settlement float across **both directions combined** (the gross TZS leg of each settlement):
+nTZS operates in the Bank of Tanzania regulatory sandbox. The approved testing parameters are **per-wallet** limits, and on the ramp the wallet is the Tanzanian-side counterparty: the till, bill account or mobile wallet receiving an off-ramp (or the payer's mobile wallet, for an on-ramp). Each counterparty has its **own** daily and 30-day allowance — paying many different merchants is not throttled — and one counterparty's allowance is shared across every partner and both directions (the gross TZS leg of each settlement):
 
 | Limit | Value | Error code |
 |-------|-------|------------|
 | Per transaction | 1,000,000 TZS | `per_txn_cap` |
-| Per day (your float, both directions) | 2,000,000 TZS | `daily_user_cap` |
-| Per 30 days (your float, both directions) | 60,000,000 TZS | `monthly_user_cap` |
+| Per day, per recipient / payer wallet | 2,000,000 TZS | `daily_user_cap` |
+| Per 30 days, per recipient / payer wallet | 60,000,000 TZS | `monthly_user_cap` |
 
-A request over a limit returns `400` with the cap, the amount you requested, and your usage in the period:
+A request over a limit returns `400` with the cap, the amount you requested, and that wallet's usage in the period:
 
 ```json
 {
   "error": "daily_user_cap",
-  "message": "This transaction would exceed the ramp float's daily limit of TZS 2,000,000. Used today: TZS 1,850,000.",
+  "message": "This transaction would exceed this till's daily sandbox limit of TZS 2,000,000. Used today: TZS 1,850,000.",
   "details": { "limit": 2000000, "requested": 500000, "usedInPeriod": 1850000 }
 }
 ```
 
-Limits are enforced at quote **and** execute, so you find out at pricing time, before anything is consumed. Failed and reverted settlements do not count against your usage. These are regulator-approved testing parameters, not commercial terms — we are formally engaging the Bank of Tanzania on scaling them, and partner volume evidence helps that case.
+Lipa/bill destinations are checked at quote time (the destination is bound to the quote); wallet off-ramps and on-ramps are checked at execute, when the phone number is known — always before any money moves. Failed and reverted settlements do not count against usage. These are regulator-approved testing parameters, not commercial terms — we are formally engaging the Bank of Tanzania on scaling them, and partner volume evidence helps that case.
 
 ### Errors specific to ramp
 

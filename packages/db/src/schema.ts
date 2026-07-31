@@ -1981,9 +1981,17 @@ export const sandboxLimitEvents = pgTable(
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
     /** 'per_txn_cap' (#3) | 'daily_user_cap' (#4) | 'monthly_user_cap' (#5) */
     code: text('code').notNull(),
-    /** The participant the limit was counted against: 'user' | 'sub_wallet'. */
+    /** Counted against: 'user' | 'sub_wallet' | 'ramp_counterparty'. */
     subjectKind: text('subject_kind').notNull(),
+    /** Set only when the subject is a row of ours (user / sub-wallet). */
     subjectId: uuid('subject_id'),
+    /**
+     * The subject's canonical ref, always set (drizzle/0073). For a ramp
+     * counterparty this is the only identity — 'lipa:61115582',
+     * 'bill:LUKU:24219217817', 'phone:0744…' — a wallet in the country, not a
+     * row in our database, which is why subject_id alone could not hold it.
+     */
+    subjectRef: text('subject_ref'),
     partnerId: uuid('partner_id'),
     endpoint: text('endpoint'),
     /** 'quote' | 'execute' — the same attempt can be blocked at both stages. */

@@ -10,6 +10,9 @@ import {
   SANDBOX_MONTHLY_USER_CAP_TZS,
   checkPerTransactionCap,
   limitErrorResponse,
+  rampCounterpartyRef,
+  parseRampCounterpartyRef,
+  rampPhoneVariants,
 } from './limits'
 
 describe('BoT sandbox limit constants (Testing Parameters 2–5)', () => {
@@ -112,15 +115,38 @@ describe('every enforced cap leaves evidence', () => {
    * BoT cap on it, found the day RAMP_SPEND_ENABLED went on. Every money
    * route therefore also gets a POSITIVE assertion naming its subject.
    */
-  it('the ramp routes enforce the caps against the ramp float', () => {
+  it('the ramp routes enforce the caps per Tanzanian-side counterparty', () => {
     for (const rel of ['v1/ramp/quote/route.ts', 'v1/ramp/offramp/route.ts', 'v1/ramp/onramp/route.ts']) {
       const src = fs.readFileSync(path.join(APP, rel), 'utf8')
-      const at = src.indexOf('enforceSandboxLimits(')
-      expect(at, `${rel} must enforce the BoT caps`).toBeGreaterThan(-1)
-      // The participant for USDC⇄TZS activity is the partner's float — there
-      // is no end-user and no sub-wallet on this path to count against.
-      expect(src.slice(at, at + 220), `${rel} must count against the ramp float`).toContain("kind: 'ramp_float'")
+      expect(src.indexOf('enforceSandboxLimits('), `${rel} must enforce the BoT caps`).toBeGreaterThan(-1)
+      // Parameters #4/#5 cap what one WALLET does in a period. The subject is
+      // therefore the till / bill account / phone wallet the settlement
+      // touches — never the partner or its whole float, which would turn a
+      // per-wallet parameter into a platform throughput cap (the first
+      // shipped version's mistake: 200 merchants paid 50,000 each would have
+      // been refused after the 40th, as if one user had spent it all).
+      expect(src, `${rel} must count per counterparty`).toContain('rampCounterpartySubject(')
+      expect(src, `${rel} must not aggregate the float as one participant`).not.toContain('ramp_float')
     }
+  })
+
+  it('a ramp counterparty keeps one identity across formats and round-trips', () => {
+    // The subject id doubles as the evidence key (subject_ref), so the ref
+    // must survive a round-trip — including bill refs, which follow a second
+    // ':' — and every spelling of one MSISDN must resolve to one wallet.
+    for (const cp of [
+      { kind: 'lipa', payNumber: '115045768' },
+      { kind: 'bill', utilityCode: 'LUKU', utilityRef: '24219217817' },
+      { kind: 'phone', phone: '0744277496' },
+    ] as const) {
+      expect(parseRampCounterpartyRef(rampCounterpartyRef(cp))).toEqual(cp)
+    }
+    expect(new Set(rampPhoneVariants('0744277496'))).toEqual(
+      new Set(['0744277496', '+255744277496', '255744277496'])
+    )
+    expect(new Set(rampPhoneVariants('+255 744 277 496'))).toEqual(
+      new Set(['+255744277496', '255744277496', '0744277496'])
+    )
   })
 
   it('ramp enforcement and ramp usage accounting agree on the gross TZS leg', () => {
