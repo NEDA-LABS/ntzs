@@ -51,6 +51,12 @@ sequenceDiagram
 | Merchant / TANQR / biller name check before payment | `POST /api/v1/lookup/merchant-name` |
 | Create org/treasury sub-wallet | `POST /api/v1/partners/sub-wallets` |
 | List sub-wallets | `GET /api/v1/partners/sub-wallets` |
+| Ramp: settlement float address + USDC balance | `GET /api/v1/ramp/balance` |
+| Ramp: price USDC ⇄ TZS | `POST /api/v1/ramp/quote` |
+| Ramp: execute off-ramp (USDC → TZS payout) | `POST /api/v1/ramp/offramp` |
+| Ramp: execute on-ramp (TZS → USDC) | `POST /api/v1/ramp/onramp` |
+| Ramp: settlement status | `GET /api/v1/ramp/:id` |
+| Ramp: list settlements | `GET /api/v1/ramp/settlements` |
 | LP pool balances | `GET /api/v1/mm/balances` |
 | LP withdraw | `POST /api/v1/mm/withdraw` |
 | LP activate/deactivate pool | `PATCH /api/v1/mm/activate` |
@@ -59,6 +65,15 @@ sequenceDiagram
 ---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
+
+---
+
+## What's New — v1.14.0 (31 Jul 2026)
+
+**The Ramp API is now documented, and the sandbox caps bind on it.** Partners settling cross-border USDC ⇄ TZS get the full reference below — including **how to fund your settlement float** (`GET /api/v1/ramp/balance` returns your dedicated deposit address; native USDC on Base only).
+
+- **Merchant & bill off-ramp destinations** (`destination.kind: "lipa" | "bill"`) are enabled for **supervised testing** under our regulatory sandbox. The recipient's registered name is disclosed on the quote; the destination is bound to it.
+- **Regulatory sandbox limits now apply to ramp settlements**: 1,000,000 TZS per transaction, 2,000,000 TZS per day and 60,000,000 TZS per 30 days across your float, both directions combined. Exceeding one returns `400` with `per_txn_cap` / `daily_user_cap` / `monthly_user_cap` and your current usage — see the Ramp section's limits table. Test with small amounts; we are formally engaging the Bank of Tanzania on scaling these.
 
 ---
 
@@ -314,7 +329,7 @@ For a **deposit** the digits come from the amount; for anything that **pays out*
 ### Two deliberate differences
 
 1. **Test mode runs every rail**, including capabilities not yet switched on in production — so you can build ahead of a rollout. `GET /api/v1/testmode` reports what is actually live; check it before committing to a launch date.
-2. **Ramp and Swap are not simulated** (`501 not_available_in_test_mode`). Both settle against live counterparties; ramp is additionally gated pending regulatory sign-off.
+2. **Ramp and Swap are not simulated** (`501 not_available_in_test_mode`). Both settle against live counterparties, so there is no honest way to fake them — verify with small live amounts instead (see the Ramp section, including its sandbox limits).
 
 ### Isolation
 
@@ -962,6 +977,111 @@ Status + settlement of a spend. For bill purchases the settlement includes the v
 ```
 
 `utilityToken` is `null` until Selcom reports settlement (typically seconds; poll on `payoutStatus: "pending"`). **Display it prominently and persist it on your side** — it is what the customer types into their meter.
+
+---
+
+## Ramp (USDC ⇄ TZS)
+
+Cross-border settlement rails for partners holding USDC. **Off-ramp**: your USDC → a recipient paid in Tanzanian shillings (mobile-money wallet, merchant Lipa Namba, or biller). **On-ramp**: a payer's TZS (mobile money) → USDC delivered on Base. In both directions the recipient side never touches a digital asset — merchants and billers are paid plain TZS into accounts they already hold.
+
+> **Live only.** The Ramp API is **not simulated in test mode** — a test key gets `501 not_available_in_test_mode`. Both directions settle against live counterparties (a real DEX swap, a real PSP payout), so there is no honest way to fake them. Use a **live key** with the `ramp` capability and approved KYB. Build your screens against the domestic Spend test mode (same destination shapes, same name-lookup), then verify the ramp itself with small live amounts.
+
+### Your settlement float
+
+Every ramp partner gets a **dedicated settlement wallet on Base**. You pre-fund it with USDC; off-ramps debit it, on-ramps credit it, so with two-way volume it partially self-replenishes. The float is **your segregated property** — it is not part of the nTZS reserve and never appears in our attestation.
+
+#### `GET /api/v1/ramp/balance`
+
+```json
+{
+  "settlementAddress": "0xYourDedicatedAddress…",
+  "chain": "base",
+  "token": { "symbol": "USDC", "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "decimals": 6 },
+  "usdcBalance": 1250.5
+}
+```
+
+**Funding it:**
+
+1. Call `GET /api/v1/ramp/balance` with your live key — the `settlementAddress` is yours alone and never changes.
+2. Send **native USDC on Base** (token contract above) to that address. Nothing else: no USDbC, no bridged variants, no other chains — tokens sent on the wrong chain or wrong contract are not recoverable by us.
+3. **Send a small test amount first** (e.g. 10 USDC), confirm it appears in `usdcBalance`, then fund your working float.
+4. Re-check `usdcBalance` before large off-ramps — an off-ramp larger than the float fails cleanly before any money moves.
+
+### Quote → execute
+
+Ramp is quote-first, like Spend. A quote is **single-use, expires in 60 seconds**, and is bound to the destination it priced. Execute consumes it atomically — a quote can never pay out twice.
+
+#### `POST /api/v1/ramp/quote`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `direction` | string | ✓ | `offramp` (USDC → TZS) or `onramp` (TZS → USDC) |
+| `usdcAmount` | number | offramp | USDC you will spend |
+| `tzsAmount` | number | onramp | TZS to collect from the payer (≥ 5,000) |
+| `destination` | object | – | Off-ramp only. Omit for a mobile-money wallet payout. `{ "kind": "lipa", "payNumber": "…" }` pays a merchant till; `{ "kind": "bill", "utilityCode": "LUKU", "utilityRef": "…" }` pays a biller |
+
+```json
+{
+  "quoteId": "7c0e…",
+  "direction": "offramp",
+  "usdcAmount": 40,
+  "tzsAmount": 101300,
+  "feeTzs": 2450,
+  "rateUsdTzs": 2593.75,
+  "destination": { "kind": "lipa", "payNumber": "61115582", "network": null },
+  "recipientName": "ENZI COFFEE COMPANY LIMITED",
+  "expiresAt": "2026-07-31T10:05:00.000Z"
+}
+```
+
+For an off-ramp, `tzsAmount` is the **net the recipient receives** after `feeTzs`. For an on-ramp, `tzsAmount` is what the payer pays and `usdcAmount` is what you receive. For lipa/bill destinations the response carries the destination's **registered name** — show it on your confirmation screen; the off-ramp executes exactly the destination the quote priced.
+
+#### `POST /api/v1/ramp/offramp`
+
+Body: `{ "quoteId": "…", "phoneNumber": "07…" }`. `phoneNumber` is required for a wallet payout and ignored for lipa/bill (the destination is bound to the quote). Send an `Idempotency-Key` header — retries with the same key return the original settlement instead of paying twice.
+
+Responses: `201` settled (`status: "completed"`), `202` payout in flight (`status: "paying_out"` — poll `GET /api/v1/ramp/:id`), `502` failed and **auto-reverted** (`status: "reverted"` — your USDC is back in the float; safe to retry).
+
+#### `POST /api/v1/ramp/onramp`
+
+Body: `{ "quoteId": "…", "phoneNumber": "07…", "destinationAddress": "0x…?" }`. The payer's phone receives a mobile-money prompt; once paid, USDC is delivered to `destinationAddress` (optional) or credited to your settlement float. Responds `202` with `status: "minting"`; track via `GET /api/v1/ramp/:id`. Idempotent via `Idempotency-Key`.
+
+#### `GET /api/v1/ramp/:id` and `GET /api/v1/ramp/settlements?limit=&offset=`
+
+One settlement, or your newest-first list. Statuses: `processing` → `swapping` → `paying_out` → `completed` (off-ramp) and `minting` → `swapping` → `completed` (on-ramp); terminal failures are `failed` or `reverted` (off-ramp reverts return the USDC to your float).
+
+### Regulatory sandbox limits
+
+nTZS operates in the Bank of Tanzania regulatory sandbox. The approved testing parameters apply to ramp settlements, counted against your settlement float across **both directions combined** (the gross TZS leg of each settlement):
+
+| Limit | Value | Error code |
+|-------|-------|------------|
+| Per transaction | 1,000,000 TZS | `per_txn_cap` |
+| Per day (your float, both directions) | 2,000,000 TZS | `daily_user_cap` |
+| Per 30 days (your float, both directions) | 60,000,000 TZS | `monthly_user_cap` |
+
+A request over a limit returns `400` with the cap, the amount you requested, and your usage in the period:
+
+```json
+{
+  "error": "daily_user_cap",
+  "message": "This transaction would exceed the ramp float's daily limit of TZS 2,000,000. Used today: TZS 1,850,000.",
+  "details": { "limit": 2000000, "requested": 500000, "usedInPeriod": 1850000 }
+}
+```
+
+Limits are enforced at quote **and** execute, so you find out at pricing time, before anything is consumed. Failed and reverted settlements do not count against your usage. These are regulator-approved testing parameters, not commercial terms — we are formally engaging the Bank of Tanzania on scaling them, and partner volume evidence helps that case.
+
+### Errors specific to ramp
+
+| Error | Status | Meaning |
+|-------|--------|---------|
+| `not_available_in_test_mode` | 501 | Ramp needs a live key — see the note at the top of this section |
+| `ramp_capability_required` / KYB errors | 403 | Your live key lacks the `ramp` capability or KYB is not approved — contact us |
+| `ramp_spend_disabled` | 503 | Lipa/bill off-ramp destinations are switched off in this environment (wallet payouts unaffected) |
+| Quote consumed / expired | 409 | The quote was already used, expired (60 s), or is for the other direction — fetch a fresh quote |
+| `per_txn_cap` / `daily_user_cap` / `monthly_user_cap` | 400 | Sandbox limit — see table above |
 
 ---
 
