@@ -34,8 +34,30 @@ const ERC20_BAL = ['function balanceOf(address) view returns (uint256)'] as cons
  * values.
  */
 export async function GET(request: NextRequest) {
-  await requireAnyRole(['super_admin'])
+  // requireAnyRole THROWS on a missing session or wrong role, which a bare
+  // route turns into a blank 500 — indistinguishable from the probe being
+  // broken. A diagnostic tool must diagnose its own preconditions too.
+  try {
+    await requireAnyRole(['super_admin'])
+  } catch {
+    return NextResponse.json(
+      { error: 'not_signed_in', message: 'Sign in to Backstage as a super admin in this browser, then reload this URL.' },
+      { status: 401 },
+    )
+  }
 
+  try {
+    return await runReadiness(request)
+  } catch (err) {
+    // Super-admin diagnostic: the real message IS the product here.
+    return NextResponse.json(
+      { error: 'probe_failed', message: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    )
+  }
+}
+
+async function runReadiness(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('partner')?.trim()
   if (!q) {
     return NextResponse.json({ error: 'partner query param required — a partner uuid or a name fragment' }, { status: 400 })
