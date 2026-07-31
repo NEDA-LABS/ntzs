@@ -5,7 +5,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
 import { burnRequests, wallets } from '@ntzs/db'
 import { queryTransactionRaw } from '@/lib/psp/selcom'
-import { mergeSettlement, readSelcomSettlement } from '@/lib/psp/selcom-settlement'
+import { mergeSettlement, readSelcomSettlement, selcomFailureReason } from '@/lib/psp/selcom-settlement'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { spendEnabled } from '@/lib/waas/spend-quote'
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
         if (status === 'FAILED' || raw.body.result === 'FAIL') {
           // Keep Selcom's verdict — see the dispatch path's polled-FAILED
           // branch for why failure evidence is captured like success evidence.
-          const why = [raw.body.resultcode, raw.body.message].filter(Boolean).join(' ')
+          const why = selcomFailureReason(raw.body)
           const failedDescriptor = mergeSettlement(
             (row.spend ?? {}) as Record<string, unknown>,
             readSelcomSettlement(raw.body.data)
@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
                 ? `Selcom payment failed${why ? `: ${why}` : ''} | remint_error: ${res.error}`
                 : why
                   ? `Selcom FAILED: ${why}`
-                  : 'Selcom payment failed (spend-status-sync)',
+                  : 'Selcom FAILED (no reason given in status query)',
               spend: failedDescriptor,
               updatedAt: new Date(),
             })

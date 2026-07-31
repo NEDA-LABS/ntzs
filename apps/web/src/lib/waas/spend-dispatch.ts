@@ -9,7 +9,7 @@ import {
   queryTransactionRaw,
   checkPayoutStatus,
 } from '@/lib/psp/selcom'
-import { mergeSettlement, readSelcomSettlement } from '@/lib/psp/selcom-settlement'
+import { mergeSettlement, readSelcomSettlement, selcomFailureReason } from '@/lib/psp/selcom-settlement'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { emitSpendWebhook } from '@/lib/waas/spend-webhook'
 import type { SpendKind } from '@/lib/waas/spend-quote'
@@ -197,13 +197,13 @@ export async function dispatchSpendPayment(args: SpendDispatchArgs): Promise<Spe
         // Selcom's verdict belongs ON THE ROW. 30 Jul: a reverted lipa spend
         // carried only "polled", and finding out WHY took an admin probe —
         // failure evidence deserves the same capture as success evidence.
-        const why = [raw.body.resultcode, raw.body.message].filter(Boolean).join(' ')
+        const why = selcomFailureReason(raw.body)
         const failed = mergeSettlement(spendDescriptor, readSelcomSettlement(raw.body.data))
         await db
           .update(burnRequests)
           .set({ spend: failed, updatedAt: new Date() })
           .where(eq(burnRequests.id, burnRequestId))
-        const s = await revertForUser(why ? `Selcom FAILED: ${why}` : 'Selcom payment failed (polled)')
+        const s = await revertForUser(why ? `Selcom FAILED: ${why}` : 'Selcom FAILED (no reason given in status query)')
         return { reference: transId, payoutStatus: s, settledDescriptor: failed, error: why || 'Selcom payment failed' }
       }
     } catch {

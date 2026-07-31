@@ -126,3 +126,20 @@ export function mergeSettlement(
 export function isUndeliveredUtilityPurchase(descriptor: Record<string, unknown>): boolean {
   return descriptor.kind === 'bill' && !descriptor.utilityToken
 }
+
+/**
+ * A failure reason from Selcom's envelope — ONLY when it actually carries one.
+ *
+ * A live FAILED verdict (30 Jul, ref 202607304073) showed the trap: on the
+ * status-query surface, resultcode/message describe the RETRIEVAL ("200",
+ * "Transaction status retrieved."), not the verdict. Stamping that into
+ * payout_error would be misleading evidence, which is worse than missing
+ * evidence. Dispatch-time FAIL envelopes do carry real reasons (e.g. 651 with
+ * a message) — those pass through.
+ */
+export function selcomFailureReason(body: { resultcode?: string; message?: string }): string {
+  const msg = (body.message ?? '').trim()
+  if (!msg || /status retrieved/i.test(msg)) return ''
+  const code = body.resultcode && body.resultcode !== '200' ? `${body.resultcode} ` : ''
+  return `${code}${msg}`
+}
