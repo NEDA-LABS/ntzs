@@ -9,6 +9,7 @@ import { runOfframpSettlement } from '@/lib/ramp/offramp'
 import { rampSpendEnabled } from '@/lib/ramp/quote'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 import { isValidTanzanianPhone } from '@/lib/psp'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -67,6 +68,18 @@ export async function POST(req: NextRequest) {
       // is on, but refuse execution too if it was switched off since.
       return NextResponse.json({ error: 'ramp_spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled yet (pending regulatory approval).' }, { status: 503 })
     }
+
+    // BoT Parameters #3/#4/#5 at the point of execution, against the ramp
+    // float. The quote stage already enforced this, so a block here means
+    // usage moved between quote and execute (or the quote predates the
+    // control). The consumed quote is spent either way — nothing has moved,
+    // and quotes are 60-second ephemera. Gross leg = recipient net + fee.
+    const limitErr = await enforceSandboxLimits(
+      { kind: 'ramp_float', id: partner.id },
+      quote.tzsAmount + quote.feeTzs,
+      { endpoint: 'v1/ramp/offramp', stage: 'execute', partnerId: partner.id },
+    )
+    if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
     if (!partner.encryptedHdSeed) {
       return NextResponse.json({ error: 'Partner HD seed not configured' }, { status: 400 })

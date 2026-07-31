@@ -1,6 +1,6 @@
-import { and, eq, gte, inArray, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, notInArray, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
-import { depositRequests, burnRequests, sandboxLimitEvents } from '@ntzs/db'
+import { depositRequests, burnRequests, rampSettlements, sandboxLimitEvents } from '@ntzs/db'
 
 // BoT Testing Parameters #2, #3, #4, #5
 export const SANDBOX_USER_CAP = Number(process.env.SANDBOX_USER_CAP ?? '100')
@@ -204,14 +204,90 @@ export async function checkSubWalletPeriodLimits(
 }
 
 /**
+ * BoT Parameters #4 & #5 counted against a partner's RAMP FLOAT.
+ *
+ * ⚠ WHY THIS EXISTS. Ramp settlements never touch checkUserPeriodLimits (no
+ * end-user) nor checkSubWalletPeriodLimits (no sub-wallet row) — so until this
+ * checker, the ramp path had NO period accounting at all, discovered the day
+ * RAMP_SPEND_ENABLED went on for supervised testing. The float is the
+ * participant: both directions' TZS legs sum against the same daily/30-day
+ * allowance, exactly as a user's deposits and burns do.
+ *
+ * Reverted/failed settlements are excluded — money that came back is not
+ * activity, same as the deposit/burn status filters above.
+ *
+ * Usage is the GROSS TZS leg. An off-ramp row stores the recipient NET in
+ * tzs_amount with the fee split out in fee_tzs, so the fee is added back; an
+ * on-ramp row's tzs_amount is already the gross the payer paid (the fee comes
+ * out of it). Callers must pass the same gross, or check and accounting drift.
+ */
+export async function checkRampFloatPeriodLimits(
+  partnerId: string,
+  amountTzs: number,
+): Promise<LimitError | null> {
+  const { db } = getDb()
+  const now = new Date()
+
+  const startOfToday = new Date(now)
+  startOfToday.setUTCHours(0, 0, 0, 0)
+
+  const thirtyDaysAgo = new Date(now)
+  thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30)
+
+  const sumSince = async (since: Date) => {
+    const [row] = await db
+      .select({
+        total: sql<number>`coalesce(sum(${rampSettlements.tzsAmount} + case when ${rampSettlements.direction} = 'offramp' then ${rampSettlements.feeTzs} else 0 end), 0)`.mapWith(Number),
+      })
+      .from(rampSettlements)
+      .where(
+        and(
+          eq(rampSettlements.partnerId, partnerId),
+          gte(rampSettlements.createdAt, since),
+          notInArray(rampSettlements.status, ['failed', 'reverted']),
+        )
+      )
+    return row?.total ?? 0
+  }
+
+  const [dailyUsed, monthlyUsed] = await Promise.all([
+    sumSince(startOfToday),
+    sumSince(thirtyDaysAgo),
+  ])
+
+  if (dailyUsed + amountTzs > SANDBOX_DAILY_USER_CAP_TZS) {
+    return {
+      code: 'daily_user_cap',
+      message: `This transaction would exceed the ramp float's daily limit of TZS ${SANDBOX_DAILY_USER_CAP_TZS.toLocaleString()}. Used today: TZS ${dailyUsed.toLocaleString()}.`,
+      limit: SANDBOX_DAILY_USER_CAP_TZS,
+      requested: amountTzs,
+      used: dailyUsed,
+    }
+  }
+
+  if (monthlyUsed + amountTzs > SANDBOX_MONTHLY_USER_CAP_TZS) {
+    return {
+      code: 'monthly_user_cap',
+      message: `This transaction would exceed the ramp float's 30-day limit of TZS ${SANDBOX_MONTHLY_USER_CAP_TZS.toLocaleString()}. Used in last 30 days: TZS ${monthlyUsed.toLocaleString()}.`,
+      limit: SANDBOX_MONTHLY_USER_CAP_TZS,
+      requested: amountTzs,
+      used: monthlyUsed,
+    }
+  }
+
+  return null
+}
+
+/**
  * Period limits for whichever funding source a disbursement uses. Routes should
  * call THIS rather than picking a checker, so a new source cannot ship without
  * a cap.
  */
 export async function checkFundingSourcePeriodLimits(
-  subject: { kind: 'user'; id: string } | { kind: 'sub_wallet'; id: string },
+  subject: LimitSubject,
   amountTzs: number,
 ): Promise<LimitError | null> {
+  if (subject.kind === 'ramp_float') return checkRampFloatPeriodLimits(subject.id, amountTzs)
   return subject.kind === 'sub_wallet'
     ? checkSubWalletPeriodLimits(subject.id, amountTzs)
     : checkUserPeriodLimits(subject.id, amountTzs)
@@ -238,7 +314,11 @@ export function limitErrorResponse(err: LimitError) {
 // block, so evidence cannot be forgotten at a call site.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type LimitSubject = { kind: 'user'; id: string } | { kind: 'sub_wallet'; id: string }
+export type LimitSubject =
+  | { kind: 'user'; id: string }
+  | { kind: 'sub_wallet'; id: string }
+  /** A partner's ramp settlement float — the participant for USDC⇄TZS activity. */
+  | { kind: 'ramp_float'; id: string }
 
 export interface LimitContext {
   /** Route that enforced it, e.g. 'v1/spend'. */

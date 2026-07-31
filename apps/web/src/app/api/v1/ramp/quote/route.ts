@@ -9,6 +9,7 @@ import { computeRampQuote, RAMP_QUOTE_TTL_MS, rampSpendEnabled, type RampDirecti
 import { nedaAccountLookup } from '@/lib/psp/selcom'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
 import { spendKindEnabled } from '@/lib/waas/spend-quote'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 
 // Biller name validation goes upstream to the utility and can take ~25s
 // (see nedaAccountLookup). Without this the platform default would kill the
@@ -120,6 +121,17 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     )
   }
+
+  // BoT Parameters #3/#4/#5, counted against the partner's ramp float — the
+  // participant for USDC⇄TZS activity. Enforced on the GROSS TZS leg: an
+  // off-ramp quote's tzsAmount is the recipient net after feeTzs, so the value
+  // moved is their sum; an on-ramp quote's tzsAmount is already the gross the
+  // payer pays. Must match checkRampFloatPeriodLimits' usage accounting.
+  const grossTzsLeg = direction === 'offramp' ? quote.tzsAmount + quote.feeTzs : quote.tzsAmount
+  const limitErr = await enforceSandboxLimits({ kind: 'ramp_float', id: auth.partner.id }, grossTzsLeg, {
+    endpoint: 'v1/ramp/quote', stage: 'quote', partnerId: auth.partner.id,
+  })
+  if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
   // Store the destination (+ resolved name) on the quote so the off-ramp
   // executes exactly what was priced and disclosed.
