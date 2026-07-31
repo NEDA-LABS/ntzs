@@ -1079,6 +1079,8 @@ Lipa/bill destinations are checked at quote time (the destination is bound to th
 |-------|--------|---------|
 | `not_available_in_test_mode` | 501 | Ramp needs a live key — see the note at the top of this section |
 | `ramp_capability_required` / KYB errors | 403 | Your live key lacks the `ramp` capability or KYB is not approved — contact us |
+| `ramp_not_provisioned` | 503 | Your settlement wallet is not provisioned yet — contact us; do not send funds until `/ramp/balance` returns your address |
+| `ramp_unavailable` | 502/503 | Internal error, nothing charged — the body carries a `requestId`; quote it to us and we can trace the exact failure |
 | `ramp_spend_disabled` | 503 | Lipa/bill off-ramp destinations are switched off in this environment (wallet payouts unaffected) |
 | Quote consumed / expired | 409 | The quote was already used, expired (60 s), or is for the other direction — fetch a fresh quote |
 | `per_txn_cap` / `daily_user_cap` / `monthly_user_cap` | 400 | Sandbox limit — see table above |

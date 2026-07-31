@@ -22,6 +22,22 @@ export const maxDuration = 300
  * and pays the recipient mobile money. Idempotent via the Idempotency-Key header.
  */
 export async function POST(req: NextRequest) {
+  try {
+    return await handleOfframp(req)
+  } catch (err) {
+    // withIdempotency releases its claim on a throw, so a clean retry stays
+    // possible — but the partner used to see only an opaque 500. The
+    // settlement engine records its own failures; this catches what escapes.
+    const requestId = crypto.randomUUID()
+    console.error(`[v1/ramp/offramp] ${requestId}`, err instanceof Error ? (err.stack ?? err.message) : err)
+    return NextResponse.json(
+      { error: 'ramp_unavailable', message: 'The ramp service hit an internal error. Check GET /api/v1/ramp/settlements before retrying, and contact NEDA Labs quoting the requestId.', requestId },
+      { status: 503 },
+    )
+  }
+}
+
+async function handleOfframp(req: NextRequest) {
   const auth = await requireRampPartner(req)
   if ('error' in auth) return auth.error
   const { partner } = auth
