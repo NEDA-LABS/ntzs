@@ -83,7 +83,9 @@ export async function GET(request: NextRequest) {
       deriveError = e instanceof Error ? e.message : String(e)
     }
   }
-  note(!seedPresent, 'no encrypted HD seed on the partner row — /ramp/balance returns ramp_not_provisioned; off-ramps refuse')
+  // Seed absence is NOT a blocker: it self-provisions on the partner's first
+  // /ramp/balance or off-ramp call. A seed that exists but will not decrypt is
+  // the real stopper — that is an encryption-env problem on this deployment.
   note(seedPresent && !seedDerives, `HD seed present but does not decrypt (${deriveError ?? 'unknown'}) — check the seed encryption env on this deployment`)
 
   const [wallet] = await db
@@ -154,8 +156,9 @@ export async function GET(request: NextRequest) {
     partner: { id: p.id, name: p.name, mode: p.mode, rampCapability, kybStatus: kyb?.status ?? null },
     provisioning: {
       encryptedHdSeedPresent: seedPresent,
-      seedDerives,
-      ...(deriveError ? { deriveError } : {}),
+      ...(seedPresent
+        ? { seedDerives, ...(deriveError ? { deriveError } : {}) }
+        : { note: "no seed yet — self-provisions on the partner's first /ramp/balance or off-ramp call" }),
       settlementWallet: wallet ? { address: wallet.address, walletIndex: wallet.walletIndex } : null,
       usdcFloatBalance: usdcFloat,
     },

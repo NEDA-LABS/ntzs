@@ -104,10 +104,7 @@ async function handleOfframp(req: NextRequest) {
     )
     if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
-    if (!partner.encryptedHdSeed) {
-      return NextResponse.json({ error: 'Partner HD seed not configured' }, { status: 400 })
-    }
-
+    // Self-provisions the seed for a first-time ramp partner (see wallet.ts).
     const wallet = await getOrCreateSettlementWallet(partner.id)
 
     const [settlement] = await db.insert(rampSettlements).values({
@@ -129,7 +126,7 @@ async function handleOfframp(req: NextRequest) {
       settlementId: settlement.id,
       settlementAddress: wallet.address,
       settlementWalletIndex: wallet.walletIndex,
-      encryptedHdSeed: partner.encryptedHdSeed,
+      encryptedHdSeed: wallet.encryptedHdSeed,
       usdcAmount: Number(quote.usdcAmount),
       recipientTzs: quote.tzsAmount,
       feeTzs: quote.feeTzs,

@@ -28,14 +28,16 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // This is the FIRST call a new ramp partner makes (it returns the funding
-    // address), so an onboarding gap surfaces here — as a told-what-to-do 503,
-    // not a bare 500. A live partner reported exactly that 500.
-    if (/HD seed not configured/i.test(msg)) {
+    // address), so a provisioning failure surfaces here — as a told-what-to-do
+    // 503, not a bare 500. A live partner reported exactly that 500. The
+    // wallet now self-provisions its seed, so reaching this branch means the
+    // provisioning itself failed (e.g. the seed encryption env).
+    if (/seed|encrypt/i.test(msg)) {
       return NextResponse.json(
         {
           error: 'ramp_not_provisioned',
           message:
-            'Your ramp settlement wallet has not been provisioned yet — contact NEDA Labs to complete ramp onboarding. Do not send funds anywhere until this endpoint returns your settlement address.',
+            'Your ramp settlement wallet could not be provisioned — contact NEDA Labs. Do not send funds anywhere until this endpoint returns your settlement address.',
         },
         { status: 503 },
       )
