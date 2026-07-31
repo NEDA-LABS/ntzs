@@ -194,8 +194,17 @@ export async function dispatchSpendPayment(args: SpendDispatchArgs): Promise<Spe
         return { reference: transId, payoutStatus: 'completed', settledDescriptor: settled }
       }
       if (status === 'FAILED' || raw.body.result === 'FAIL') {
-        const s = await revertForUser('Selcom payment failed (polled)')
-        return { reference: transId, payoutStatus: s, settledDescriptor: spendDescriptor, error: 'Selcom payment failed' }
+        // Selcom's verdict belongs ON THE ROW. 30 Jul: a reverted lipa spend
+        // carried only "polled", and finding out WHY took an admin probe —
+        // failure evidence deserves the same capture as success evidence.
+        const why = [raw.body.resultcode, raw.body.message].filter(Boolean).join(' ')
+        const failed = mergeSettlement(spendDescriptor, readSelcomSettlement(raw.body.data))
+        await db
+          .update(burnRequests)
+          .set({ spend: failed, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+        const s = await revertForUser(why ? `Selcom FAILED: ${why}` : 'Selcom payment failed (polled)')
+        return { reference: transId, payoutStatus: s, settledDescriptor: failed, error: why || 'Selcom payment failed' }
       }
     } catch {
       // next interval

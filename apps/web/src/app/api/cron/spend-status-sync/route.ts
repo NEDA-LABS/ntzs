@@ -104,6 +104,13 @@ export async function GET(request: NextRequest) {
         }
 
         if (status === 'FAILED' || raw.body.result === 'FAIL') {
+          // Keep Selcom's verdict — see the dispatch path's polled-FAILED
+          // branch for why failure evidence is captured like success evidence.
+          const why = [raw.body.resultcode, raw.body.message].filter(Boolean).join(' ')
+          const failedDescriptor = mergeSettlement(
+            (row.spend ?? {}) as Record<string, unknown>,
+            readSelcomSettlement(raw.body.data)
+          )
           // Claim-once revert — same discipline as the payout webhooks.
           const claim = await db
             .update(burnRequests)
@@ -135,8 +142,11 @@ export async function GET(request: NextRequest) {
               status: 'failed',
               payoutStatus: res.error ? 'reconcile_required' : 'reverted',
               payoutError: res.error
-                ? `Selcom payment failed | remint_error: ${res.error}`
-                : 'Selcom payment failed (spend-status-sync)',
+                ? `Selcom payment failed${why ? `: ${why}` : ''} | remint_error: ${res.error}`
+                : why
+                  ? `Selcom FAILED: ${why}`
+                  : 'Selcom payment failed (spend-status-sync)',
+              spend: failedDescriptor,
               updatedAt: new Date(),
             })
             .where(eq(burnRequests.id, row.id))
@@ -146,7 +156,7 @@ export async function GET(request: NextRequest) {
             amountTzs: row.amountTzs,
             remintError: res.error ?? null,
           })
-          await emitSpendWebhook(row.spend as Record<string, unknown> | null, {
+          await emitSpendWebhook(failedDescriptor, {
             burnRequestId: row.id,
             reference: row.payoutReference,
             status: res.error ? 'reconcile_required' : 'reverted',
