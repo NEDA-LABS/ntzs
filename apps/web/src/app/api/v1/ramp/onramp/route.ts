@@ -9,6 +9,7 @@ import { getOrCreateSettlementWallet } from '@/lib/ramp/wallet'
 import { initiateOnramp } from '@/lib/ramp/onramp'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 import { isValidTanzanianPhone } from '@/lib/psp'
+import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -52,6 +53,17 @@ export async function POST(req: NextRequest) {
     if (!quote) {
       return NextResponse.json({ error: 'Quote not found, already used, expired, or not an on-ramp quote' }, { status: 409 })
     }
+
+    // BoT Parameters #3/#4/#5 at the point of execution, against the ramp
+    // float. An on-ramp quote's tzsAmount is already the gross the payer pays
+    // (the fee comes out of it). Blocked = the consumed quote is spent, but
+    // nothing has moved and quotes are 60-second ephemera.
+    const limitErr = await enforceSandboxLimits(
+      { kind: 'ramp_float', id: partner.id },
+      quote.tzsAmount,
+      { endpoint: 'v1/ramp/onramp', stage: 'execute', partnerId: partner.id },
+    )
+    if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
     const wallet = await getOrCreateSettlementWallet(partner.id)
 

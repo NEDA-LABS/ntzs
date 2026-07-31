@@ -105,6 +105,37 @@ describe('every enforced cap leaves evidence', () => {
     expect(src.slice(at, at + 160)).toContain('mUser.id')
   })
 
+  /**
+   * The scanner above only catches a route that calls a RAW checker without
+   * the chokepoint. A route that never references the caps at all slips
+   * through silently — which is exactly how the ramp path went live with no
+   * BoT cap on it, found the day RAMP_SPEND_ENABLED went on. Every money
+   * route therefore also gets a POSITIVE assertion naming its subject.
+   */
+  it('the ramp routes enforce the caps against the ramp float', () => {
+    for (const rel of ['v1/ramp/quote/route.ts', 'v1/ramp/offramp/route.ts', 'v1/ramp/onramp/route.ts']) {
+      const src = fs.readFileSync(path.join(APP, rel), 'utf8')
+      const at = src.indexOf('enforceSandboxLimits(')
+      expect(at, `${rel} must enforce the BoT caps`).toBeGreaterThan(-1)
+      // The participant for USDC⇄TZS activity is the partner's float — there
+      // is no end-user and no sub-wallet on this path to count against.
+      expect(src.slice(at, at + 220), `${rel} must count against the ramp float`).toContain("kind: 'ramp_float'")
+    }
+  })
+
+  it('ramp enforcement and ramp usage accounting agree on the gross TZS leg', () => {
+    // An off-ramp row stores the recipient NET in tzs_amount with the fee
+    // split out; an on-ramp row's tzs_amount is already gross. If a route
+    // enforces on one convention and the checker sums the other, a partner
+    // gets silently more (or less) headroom than the Bank approved.
+    const offramp = fs.readFileSync(path.join(APP, 'v1/ramp/offramp/route.ts'), 'utf8')
+    expect(offramp).toContain('quote.tzsAmount + quote.feeTzs')
+    const onrampAt = fs.readFileSync(path.join(APP, 'v1/ramp/onramp/route.ts'), 'utf8').indexOf('enforceSandboxLimits(')
+    expect(fs.readFileSync(path.join(APP, 'v1/ramp/onramp/route.ts'), 'utf8').slice(onrampAt, onrampAt + 220)).not.toContain('feeTzs')
+    const checker = fs.readFileSync(path.join(__dirname, 'limits.ts'), 'utf8')
+    expect(checker).toContain("case when ${rampSettlements.direction} = 'offramp' then ${rampSettlements.feeTzs} else 0 end")
+  })
+
   it('the recorder is fail-soft, and loud when it fails', () => {
     const src = fs.readFileSync(path.join(__dirname, 'limits.ts'), 'utf8')
     expect(src).toContain('async function recordLimitBlock')
