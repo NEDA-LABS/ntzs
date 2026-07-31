@@ -4,6 +4,7 @@ import {
   isUndeliveredUtilityPurchase,
   mergeSettlement,
   readSelcomSettlement,
+  selcomFailureReason,
 } from './selcom-settlement'
 
 /**
@@ -78,5 +79,59 @@ describe('isUndeliveredUtilityPurchase', () => {
 
   it('does not flag lipa — a till payment has no voucher to deliver', () => {
     expect(isUndeliveredUtilityPurchase({ kind: 'lipa' })).toBe(false)
+  })
+})
+
+/**
+ * The live FAILED verdict of 30 Jul 2026 (ref 202607304073), verbatim. The
+ * envelope's resultcode/message describe the RETRIEVAL, not the failure —
+ * composing payout_error from them produced "Selcom FAILED: 200 Transaction
+ * status retrieved.", which reads like a reason and is not one.
+ */
+const LIVE_FAILED_ENVELOPE = {
+  success: true,
+  error_code: '000',
+  message: 'Transaction status retrieved.',
+  result: 'FAIL' as const,
+  resultcode: '200',
+  data: {
+    transId: '202607304073',
+    status: 'FAILED',
+    amount: '6150.00',
+    principalAmount: '6000.00',
+    totalCharges: '150.00',
+    chargesSummary: '-',
+    currency: 'TZS',
+    selcomReceipt: '-',
+  },
+}
+
+describe('selcomFailureReason (misleading evidence is worse than missing evidence)', () => {
+  it('returns nothing for the retrieval boilerplate', () => {
+    expect(selcomFailureReason(LIVE_FAILED_ENVELOPE)).toBe('')
+  })
+
+  it('passes a real dispatch-time verdict through, code included', () => {
+    expect(selcomFailureReason({ resultcode: '651', message: 'Insufficient balance' })).toBe(
+      '651 Insufficient balance'
+    )
+  })
+
+  it('drops the query-ok code but keeps a real message', () => {
+    expect(selcomFailureReason({ resultcode: '200', message: 'Destination till inactive' })).toBe(
+      'Destination till inactive'
+    )
+  })
+
+  it('returns nothing for an empty envelope', () => {
+    expect(selcomFailureReason({})).toBe('')
+  })
+})
+
+describe('readSelcomSettlement on the live FAILED payload', () => {
+  it('reads the charges and keeps the raw verdict', () => {
+    const s = readSelcomSettlement(LIVE_FAILED_ENVELOPE.data)
+    expect(s.actualChargesTzs).toBe(150)
+    expect(s.raw?.transId).toBe('202607304073')
   })
 })
