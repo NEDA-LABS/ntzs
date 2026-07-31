@@ -110,7 +110,16 @@ export async function runOfframpSettlement(args: {
   // ── Verify settlement float holds enough USDC ──────────────────────────────
   const provider = new ethers.JsonRpcProvider(rpcUrl)
   const usdc = new ethers.Contract(SWAP_TOKENS.USDC.address, ['function balanceOf(address) view returns (uint256)'], provider)
-  const usdcBal: bigint = await usdc.balanceOf(settlementAddress)
+  let usdcBal: bigint
+  try {
+    usdcBal = await usdc.balanceOf(settlementAddress)
+  } catch {
+    // An RPC hiccup here used to escape as an unhandled throw (opaque 500,
+    // settlement row stranded in 'processing'). Nothing has moved — fail the
+    // row cleanly and tell the partner it is retryable.
+    await setStatus(settlementId, { status: 'failed', error: 'Could not read the USDC float (RPC)' })
+    return { ok: false, status: 'failed', error: 'Could not read the settlement float — transient network issue; retry with a fresh quote' }
+  }
   const neededUsdc = ethers.parseUnits(args.usdcAmount.toString(), SWAP_TOKENS.USDC.decimals)
   if (usdcBal < neededUsdc) {
     await setStatus(settlementId, { status: 'failed', error: 'Insufficient USDC float' })
@@ -125,10 +134,12 @@ export async function runOfframpSettlement(args: {
 
   // ── Leg 1: swap USDC → nTZS from the settlement wallet back to itself ───────
   await setStatus(settlementId, { status: 'swapping' })
-  const signer = getSettlementSigner(args.encryptedHdSeed, args.settlementWalletIndex)
   let swapInTxHash: string | undefined
   let swapOutTxHash: string | undefined
   try {
+    // Inside the guarded region: seed decryption throws when the encryption
+    // env is wrong, and outside a try that stranded the row in 'swapping'.
+    const signer = getSettlementSigner(args.encryptedHdSeed, args.settlementWalletIndex)
     for await (const u of executeSwap({
       userPrivateKey: signer.privateKey as `0x${string}`,
       solverPrivateKey,

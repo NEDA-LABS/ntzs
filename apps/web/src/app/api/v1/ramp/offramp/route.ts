@@ -22,6 +22,22 @@ export const maxDuration = 300
  * and pays the recipient mobile money. Idempotent via the Idempotency-Key header.
  */
 export async function POST(req: NextRequest) {
+  try {
+    return await handleOfframp(req)
+  } catch (err) {
+    // withIdempotency releases its claim on a throw, so a clean retry stays
+    // possible — but the partner used to see only an opaque 500. The
+    // settlement engine records its own failures; this catches what escapes.
+    const requestId = crypto.randomUUID()
+    console.error(`[v1/ramp/offramp] ${requestId}`, err instanceof Error ? (err.stack ?? err.message) : err)
+    return NextResponse.json(
+      { error: 'ramp_unavailable', message: 'The ramp service hit an internal error. Check GET /api/v1/ramp/settlements before retrying, and contact NEDA Labs quoting the requestId.', requestId },
+      { status: 503 },
+    )
+  }
+}
+
+async function handleOfframp(req: NextRequest) {
   const auth = await requireRampPartner(req)
   if ('error' in auth) return auth.error
   const { partner } = auth
@@ -88,10 +104,7 @@ export async function POST(req: NextRequest) {
     )
     if (limitErr) return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
 
-    if (!partner.encryptedHdSeed) {
-      return NextResponse.json({ error: 'Partner HD seed not configured' }, { status: 400 })
-    }
-
+    // Self-provisions the seed for a first-time ramp partner (see wallet.ts).
     const wallet = await getOrCreateSettlementWallet(partner.id)
 
     const [settlement] = await db.insert(rampSettlements).values({
@@ -113,7 +126,7 @@ export async function POST(req: NextRequest) {
       settlementId: settlement.id,
       settlementAddress: wallet.address,
       settlementWalletIndex: wallet.walletIndex,
-      encryptedHdSeed: partner.encryptedHdSeed,
+      encryptedHdSeed: wallet.encryptedHdSeed,
       usdcAmount: Number(quote.usdcAmount),
       recipientTzs: quote.tzsAmount,
       feeTzs: quote.feeTzs,

@@ -23,6 +23,19 @@ export const maxDuration = 60
  * destinationAddress, else the partner's settlement float). Idempotent.
  */
 export async function POST(req: NextRequest) {
+  try {
+    return await handleOnramp(req)
+  } catch (err) {
+    const requestId = crypto.randomUUID()
+    console.error(`[v1/ramp/onramp] ${requestId}`, err instanceof Error ? (err.stack ?? err.message) : err)
+    return NextResponse.json(
+      { error: 'ramp_unavailable', message: 'The ramp service hit an internal error. Check GET /api/v1/ramp/settlements before retrying, and contact NEDA Labs quoting the requestId.', requestId },
+      { status: 503 },
+    )
+  }
+}
+
+async function handleOnramp(req: NextRequest) {
   const auth = await requireRampPartner(req)
   if ('error' in auth) return auth.error
   const { partner } = auth

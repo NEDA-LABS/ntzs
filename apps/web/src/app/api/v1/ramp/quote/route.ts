@@ -34,6 +34,21 @@ export const runtime = 'nodejs'
  * destination is BOUND to the quote — the off-ramp executes exactly it.
  */
 export async function POST(req: NextRequest) {
+  try {
+    return await handleQuote(req)
+  } catch (err) {
+    // A residual throw here used to surface as an opaque 500 — the partner
+    // saw nothing and we saw nothing. Fail with a coded, correlatable answer.
+    const requestId = crypto.randomUUID()
+    console.error(`[v1/ramp/quote] ${requestId}`, err instanceof Error ? (err.stack ?? err.message) : err)
+    return NextResponse.json(
+      { error: 'ramp_unavailable', message: 'The ramp service hit an internal error pricing this quote. Nothing was charged. Retry shortly, or contact NEDA Labs quoting the requestId.', requestId },
+      { status: 503 },
+    )
+  }
+}
+
+async function handleQuote(req: NextRequest) {
   const auth = await requireRampPartner(req)
   if ('error' in auth) return auth.error
 
