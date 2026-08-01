@@ -271,7 +271,7 @@ import {
 export { detectNetwork } from './routing'
 
 /** Rails with a live adapter. Selcom is capability-gated in routing.ts. */
-type LiveRail = 'snippe' | 'azampay' | 'selcom'
+export type LiveRail = 'snippe' | 'azampay' | 'selcom'
 const RAIL_IMPL = { snippe, azampay, selcom } as const
 
 export const PAYMENT_WEBHOOK_PATHS: Record<LiveRail, string> = {
@@ -372,6 +372,26 @@ export async function sendPayoutRouted(
   }
 
   return { payout: last, provider: attempted[attempted.length - 1] ?? ACTIVE_PSP_PROVIDER, attempted }
+}
+
+/**
+ * Status query on the SPECIFIC rail that dispatched a payout — the routed
+ * counterpart of checkPayoutStatus, which only ever asks the single
+ * ACTIVE_MOBILE_PSP. A payout that failed over to another rail must be
+ * polled where it actually went, or the poll answers for the wrong system.
+ */
+export async function checkPayoutStatusFor(
+  rail: LiveRail,
+  reference: string,
+): ReturnType<typeof snippe.checkPayoutStatus> {
+  return RAIL_IMPL[rail].checkPayoutStatus(reference)
+}
+
+/** True when at least one disbursement-capable rail is configured — the gate
+ * for attempting a routed payout at all. isMobilePspConfigured() only answers
+ * for the single active PSP, which under-reports once rails can fail over. */
+export function anyDisbursementRailConfigured(): boolean {
+  return liveRails(planDisbursementRails(readRailEnv())).length > 0
 }
 
 // ─── Rail health (burn gate + monitoring cron) ───────────────────────────────

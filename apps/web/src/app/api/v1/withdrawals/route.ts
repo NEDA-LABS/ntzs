@@ -1,4 +1,4 @@
-import { eq, and, or } from 'drizzle-orm'
+import { eq, and, or, ne, gte, isNull, desc } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
@@ -8,12 +8,11 @@ import { isTestMode, testCreateWithdrawal } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import {
-  ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
-  isMobilePspConfigured,
+  anyDisbursementRailConfigured,
   isValidTanzanianPhone,
   normalizePhone,
-  sendPayout,
-  checkPayoutStatus,
+  sendPayoutRouted,
+  checkPayoutStatusFor,
   lookupRecipientName,
 } from '@/lib/psp'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
@@ -51,7 +50,7 @@ export async function POST(request: NextRequest) {
   // TEST MODE: simulated burn + payout, real fee math and real quote checks.
   if (isTestMode(partner)) return testCreateWithdrawal(partner, request)
 
-  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber: string; quoteId?: string }
+  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber: string; quoteId?: string; allowDuplicate?: boolean }
   try {
     body = await request.json()
   } catch {
@@ -158,6 +157,48 @@ export async function POST(request: NextRequest) {
   })
   if (limitErr) {
     return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
+  }
+
+  // Duplicate guard — same source, same phone, same amount within 5 minutes.
+  // On 1 Aug 2026 a user whose payout initiation failed retried and burned
+  // TWICE for one intended cash-out: the "do not retry" message asked, but
+  // nothing enforced it. (The identical guard already protects Spend.) The
+  // repeat pattern is also what PSP risk engines read as structuring. A
+  // deliberate repeat passes allowDuplicate: true.
+  if (body.allowDuplicate !== true) {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+    const [dup] = await db
+      .select({
+        id: burnRequests.id,
+        status: burnRequests.status,
+        payoutStatus: burnRequests.payoutStatus,
+        payoutError: burnRequests.payoutError,
+        createdAt: burnRequests.createdAt,
+      })
+      .from(burnRequests)
+      .where(and(
+        eq(burnRequests.burnFromAddress, source.address),
+        eq(burnRequests.recipientPhone, phoneNumber),
+        eq(burnRequests.amountTzs, burnAmountTzs),
+        gte(burnRequests.createdAt, fiveMinAgo),
+        // Money still committed: anything except a burn that never happened
+        // or one already returned to the user.
+        ne(burnRequests.status, 'failed'),
+        or(isNull(burnRequests.payoutStatus), ne(burnRequests.payoutStatus, 'reverted')),
+      ))
+      .orderBy(desc(burnRequests.createdAt))
+      .limit(1)
+    if (dup) {
+      return NextResponse.json(
+        {
+          error: 'duplicate_withdrawal',
+          message:
+            'An identical withdrawal from this wallet to this number was made moments ago and is still holding funds. Do not retry — check its status. To deliberately withdraw the same amount again, resend with "allowDuplicate": true.',
+          existing: { id: dup.id, status: dup.status, payoutStatus: dup.payoutStatus, payoutError: dup.payoutError, createdAt: dup.createdAt },
+        },
+        { status: 409 },
+      )
+    }
   }
 
   // Check on-chain balance
@@ -399,11 +440,15 @@ export async function POST(request: NextRequest) {
     await finalizeRevert(reason, res.remintTxHash, res.feeBurnTxHash, res.error)
   }
 
-  // Trigger AzamPay payout
+  // Trigger the payout with RAIL FAILOVER. Cash-outs used to ride a single
+  // PSP (plain sendPayout): on 1 Aug 2026 Snippe flagged our merchant account
+  // and refused every initiation, so every user withdrawal died in
+  // reconcile_required while Selcom sat configured and untried. The routed
+  // dispatcher walks DISBURSEMENT_RAIL_PRIORITY and each attempt carries its
+  // own rail's webhook URL.
   let verifiedRecipientName: string | null = null
-  if (isMobilePspConfigured()) {
+  if (anyDisbursementRailConfigured()) {
     const phone = normalizePhone(phoneNumber)
-    const webhookUrl = `${APP_URL}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`
 
     // Name lookup — non-fatal, result stored for audit trail
     const recipientInfo = await lookupRecipientName(phone)
@@ -413,37 +458,41 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const payoutResult = await sendPayout({
+      const routed = await sendPayoutRouted({
         amountTzs: receiveAmountTzs,
         recipientPhone: phone,
         recipientName: recipientInfo.name || 'nTZS User',
         narration: 'nTZS withdrawal',
-        webhookUrl,
+        webhookBaseUrl: APP_URL,
         metadata: { burn_request_id: burnRequestId },
       })
 
-      if (payoutResult.success && payoutResult.reference) {
-        const payoutRef = payoutResult.reference
+      if (routed.payout.success && routed.payout.reference) {
+        const payoutRef = routed.payout.reference
+        const payoutRail = routed.provider
+        // The serving rail is persisted because webhooks and status queries
+        // are provider-scoped — a payout that failed over must be polled
+        // where it actually went.
         await db.update(burnRequests)
-          .set({ payoutReference: payoutRef, payoutStatus: 'pending', updatedAt: new Date() })
+          .set({ payoutReference: payoutRef, payoutProvider: payoutRail, payoutStatus: 'pending', updatedAt: new Date() })
           .where(eq(burnRequests.id, burnRequestId))
 
-        // Poll AzamPay for quick completions — webhook is the primary path
+        // Poll the SERVING rail for quick completions — webhook is the primary path
         // Checks at 3s, 6s, 12s intervals
         void (async () => {
           const delays = [3000, 6000, 12000]
           for (const delay of delays) {
             await new Promise((r) => setTimeout(r, delay))
             try {
-              const ps = await checkPayoutStatus(payoutRef)
+              const ps = await checkPayoutStatusFor(payoutRail, payoutRef)
               if (ps.status === 'completed') {
                 await db.update(burnRequests)
                   .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
                   .where(eq(burnRequests.id, burnRequestId))
-                console.log(`[v1/withdrawals] Payout ${payoutRef} completed (polled)`)
+                console.log(`[v1/withdrawals] Payout ${payoutRef} completed via ${payoutRail} (polled)`)
                 break
               } else if (ps.status === 'failed' || ps.status === 'reversed') {
-                console.warn(`[v1/withdrawals] Payout ${payoutRef} failed (polled): ${ps.failureReason}`)
+                console.warn(`[v1/withdrawals] Payout ${payoutRef} failed via ${payoutRail} (polled): ${ps.failureReason}`)
                 await revertBurnForUser(ps.failureReason || 'Payout failed (polled)')
                 break
               }
@@ -453,12 +502,13 @@ export async function POST(request: NextRequest) {
           }
         })()
       } else {
-        // PSP returned a failure. We do NOT auto-revert — a failed initiation
+        // EVERY rail refused. We do NOT auto-revert — a failed initiation
         // is ambiguous (could be a clean reject or a partial dispatch).
         // Only signed webhook events or status-endpoint values are authoritative.
         // Mark for reconciliation and let an operator verify before touching funds.
-        const reason = payoutResult.error ?? 'Payout initiation failed'
-        console.error('[v1/withdrawals] Payout initiation failed (NOT auto-reverting):', reason)
+        // The attempted-rail trail is part of the evidence.
+        const reason = `${routed.payout.error ?? 'Payout initiation failed'} (rails tried: ${routed.attempted.join(' → ') || 'none'})`
+        console.error('[v1/withdrawals] Payout initiation failed on every rail (NOT auto-reverting):', reason)
         await db
           .update(burnRequests)
           .set({ payoutStatus: 'reconcile_required', payoutError: reason, updatedAt: new Date() })
