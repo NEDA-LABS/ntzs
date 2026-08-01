@@ -3,6 +3,7 @@ import { ethers } from 'ethers'
 import { revalidatePath } from 'next/cache'
 
 import { requireRole, requireDbUser } from '@/lib/auth/rbac'
+import ReconcileButtons from './ReconcileButtons'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/lib/env'
 import { burnRequests, users, wallets } from '@ntzs/db'
@@ -525,6 +526,7 @@ export default async function BurnsPage() {
                             <button className="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-500/30">Execute Burn</button>
                           </form>
                         )}
+                        {r.payoutStatus === 'reconcile_required' && <ReconcileButtons burnId={r.id} />}
                       </div>
                     </td>
                   </tr>
