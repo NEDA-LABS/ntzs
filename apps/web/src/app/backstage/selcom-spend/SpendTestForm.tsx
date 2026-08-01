@@ -11,7 +11,7 @@ import {
   type BillerCategory,
 } from '@/lib/psp/selcom-billers'
 
-type Kind = 'bill' | 'lipa'
+type Kind = 'bill' | 'lipa' | 'wallet'
 const CUSTOM_CODE = '__custom'
 
 interface SpendResult {
@@ -35,9 +35,19 @@ const QUERY_BADGE: Record<string, string> = {
  * API route (not a server action) so the button exercises the exact same
  * path an engineer's curl would — one code path for the money movement.
  */
-export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnabled: boolean; lipaEnabled: boolean }) {
-  const anyEnabled = billEnabled || lipaEnabled
+export default function SpendTestForm({
+  billEnabled,
+  lipaEnabled,
+  walletEnabled,
+}: {
+  billEnabled: boolean
+  lipaEnabled: boolean
+  walletEnabled: boolean
+}) {
+  const anyEnabled = billEnabled || lipaEnabled || walletEnabled
   const [kind, setKind] = useState<Kind>(billEnabled || !lipaEnabled ? 'bill' : 'lipa')
+  const [phone, setPhone] = useState('')
+  const [fiCode, setFiCode] = useState('')
   const [amount, setAmount] = useState('1000')
   const [utilityCode, setUtilityCode] = useState('TOP')
   const [customCode, setCustomCode] = useState('')
@@ -148,14 +158,18 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
     }
   }
 
-  const kindEnabled = kind === 'bill' ? billEnabled : lipaEnabled
+  const kindEnabled = kind === 'bill' ? billEnabled : kind === 'lipa' ? lipaEnabled : walletEnabled
   const effectiveCode = utilityCode === CUSTOM_CODE ? customCode.trim().toUpperCase() : utilityCode
   const selectedBiller = getBiller(effectiveCode)
   const refCheck = validateUtilityRef(effectiveCode, utilityRef)
   const fieldsOk =
     Number(amount) > 0 &&
     Number(amount) <= 5000 &&
-    (kind === 'bill' ? Boolean(effectiveCode && utilityRef.trim() && refCheck.ok) : Boolean(payNumber.trim()))
+    (kind === 'bill'
+      ? Boolean(effectiveCode && utilityRef.trim() && refCheck.ok)
+      : kind === 'lipa'
+        ? Boolean(payNumber.trim())
+        : phone.trim().replace(/\D/g, '').length >= 9)
 
   const send = async () => {
     setBusy(true)
@@ -165,12 +179,19 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
       const body =
         kind === 'bill'
           ? { kind, amountTzs: Number(amount), utilityCode: effectiveCode, utilityRef: utilityRef.trim() }
-          : {
-              kind,
-              amountTzs: Number(amount),
-              payNumber: payNumber.trim(),
-              ...(network.trim() ? { network: network.trim() } : {}),
-            }
+          : kind === 'lipa'
+            ? {
+                kind,
+                amountTzs: Number(amount),
+                payNumber: payNumber.trim(),
+                ...(network.trim() ? { network: network.trim() } : {}),
+              }
+            : {
+                kind,
+                amountTzs: Number(amount),
+                phone: phone.trim(),
+                ...(fiCode.trim() ? { fiCode: fiCode.trim().toUpperCase() } : {}),
+              }
       const res = await fetch('/api/admin/selcom-spend-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,10 +237,39 @@ export default function SpendTestForm({ billEnabled, lipaEnabled }: { billEnable
       <div className="mb-5 flex gap-2">
         {tab('bill', 'Airtime / Bill', billEnabled)}
         {tab('lipa', 'Lipa Namba', lipaEnabled)}
+        {tab('wallet', 'Wallet payout', walletEnabled)}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {kind === 'bill' ? (
+        {kind === 'wallet' ? (
+          <>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                Phone (mobile wallet to pay)
+              </label>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="e.g. 0744277496"
+                className={inputCls}
+              />
+              <p className="mt-1.5 text-xs text-zinc-500">
+                The exact call the withdrawal rail makes — the result shows Selcom&apos;s raw verdict.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                FI code override <span className="text-zinc-600">(optional — blank uses the shortcode table, e.g. VMCASHIN)</span>
+              </label>
+              <input
+                value={fiCode}
+                onChange={(e) => setFiCode(e.target.value)}
+                placeholder="leave blank, or try MPESA"
+                className={inputCls}
+              />
+            </div>
+          </>
+        ) : kind === 'bill' ? (
           <>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">

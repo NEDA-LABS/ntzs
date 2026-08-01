@@ -23,6 +23,7 @@ export default async function SelcomSpendPage() {
   )
   const billEnabled = process.env.SELCOM_BILLPAY_ENABLED === 'true'
   const lipaEnabled = process.env.SELCOM_LIPA_ENABLED === 'true'
+  const walletEnabled = process.env.SELCOM_DISBURSEMENTS_ENABLED === 'true'
 
   // Live float check — read-only; the test bounces on an empty account.
   let balanceTzs: number | null = null
@@ -103,7 +104,7 @@ export default async function SelcomSpendPage() {
         </p>
       </div>
 
-      <SpendTestForm billEnabled={billEnabled} lipaEnabled={lipaEnabled} />
+      <SpendTestForm billEnabled={billEnabled} lipaEnabled={lipaEnabled} walletEnabled={walletEnabled} />
     </div>
   )
 }
