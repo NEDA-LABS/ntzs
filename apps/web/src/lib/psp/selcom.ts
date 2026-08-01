@@ -294,26 +294,25 @@ export function isValidTanzanianPhone(phone: string): boolean {
 /**
  * Map a Tanzanian mobile prefix → Selcom mobile-wallet FI code (recipientFiCode).
  *
- * ⚠ THE SHORTCODE TABLE WAS WRONG. The prelive docs' "Destination Shortcodes"
- * table said VMCASHIN-style codes; a live dispatch on 1 Aug 2026 answered
- * `651 Invalid or inactive bank/FI code: VMCASHIN`, and the same dispatch with
- * "MPESA" — the code from Selcom's own wallet-transfer example — was ACCEPTED
- * and the money arrived (ref 16437765-f972-49c4-9231-74f09d815298). Only codes
- * proven by a live dispatch get mapped here; the admin wallet probe
- * (/backstage/selcom-spend → Wallet payout, FI-code override) is how a
- * candidate gets proven. Unproven networks keep their table codes so they fail
- * with the same explicit 651 rather than an untested guess.
+ * Codes from the CANONICAL "Destination Shortcodes" table on Selcom's prelive
+ * developer portal (docs/psp/selcom-destination-shortcodes.md — committed
+ * 1 Aug 2026). The table self-validates: its Vodacom entry is MPESA, which a
+ * live dispatch proved that day (ref 16437765-f972-49c4-9231-74f09d815298)
+ * after the VMCASHIN-style codes the adapter originally shipped with answered
+ * `651 Invalid or inactive bank/FI code` — that first table was wrong, and it
+ * cost an afternoon of failed cash-outs. The lesson encoded here: a vendor
+ * code word is an empirical claim; prove one dispatch per network through the
+ * admin wallet probe (/backstage/selcom-spend → Wallet payout) before relying
+ * on it at volume.
  *
- * Candidates to probe / confirm with Selcom for the rest, by their example's
- * naming style: AIRTELMONEY, TIGOPESA, HALOPESA, TTCL.
  * detectWalletFiCode throws on an unmapped prefix so we fail loudly, never guess.
  */
 const MOBILE_FI_CODES: Record<string, string> = {
-  vodacom: 'MPESA', //    Vodacom M-Pesa — 74/75/760-7 — PROVEN LIVE 1 Aug 2026
-  airtel: 'AMCASHIN', //  Airtel Money — 68/69/78/768-9 — ⚠ unproven, expect 651
-  tigo: 'TPCASHIN', //    Mixx by Yas (ex Tigo Pesa) — 71/65/67/77 — ⚠ unproven, expect 651
-  halotel: 'HPCASHIN', // Halo Pesa — 61/62 — ⚠ unproven, expect 651
-  ttcl: 'TTCASHIN', //    TTCL Pesa — 73 — ⚠ unproven, expect 651
+  vodacom: 'MPESA', //       Vodacom M-Pesa — 74/75/760-7 — PROVEN LIVE 1 Aug 2026
+  airtel: 'AIRTELMONEY', //  Airtel Money — 68/69/78/768-9 — portal table; probe before volume
+  tigo: 'MIXXBYYAS', //      Mixx by Yas (ex Tigo Pesa) — 71/65/67/77 — portal table; probe before volume
+  halotel: 'HALOPESA', //    Halo Pesa — 61/62 — portal table; probe before volume
+  ttcl: 'TTCLPESA', //       TTCL Pesa — 73 — portal table; probe before volume
 }
 
 /** Exported for unit tests. */

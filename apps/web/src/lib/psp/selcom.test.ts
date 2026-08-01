@@ -230,13 +230,14 @@ describe('bill-pay / lipa field builders (order defines body + signature)', () =
 
 describe('detectWalletFiCode (prefix → Selcom FI code)', () => {
   it('maps every routable network and fails loudly on unmapped prefixes', () => {
-    // MPESA proven by live dispatch 1 Aug 2026 (VMCASHIN from the shortcode
-    // table answered 651 invalid/inactive — the table was wrong).
+    // Canonical portal table (docs/psp/selcom-destination-shortcodes.md).
+    // MPESA proven by live dispatch 1 Aug 2026; the VMCASHIN-style codes the
+    // adapter originally shipped answered 651 invalid/inactive.
     expect(detectWalletFiCode(normalizePhone('0744277496'))).toBe('MPESA') // Vodacom
-    expect(detectWalletFiCode(normalizePhone('0689000000'))).toBe('AMCASHIN') // Airtel
-    expect(detectWalletFiCode(normalizePhone('0714641171'))).toBe('TPCASHIN') // Yas/Tigo
-    expect(detectWalletFiCode(normalizePhone('0612345678'))).toBe('HPCASHIN') // Halotel
-    expect(detectWalletFiCode(normalizePhone('0731234567'))).toBe('TTCASHIN') // TTCL
+    expect(detectWalletFiCode(normalizePhone('0689000000'))).toBe('AIRTELMONEY') // Airtel
+    expect(detectWalletFiCode(normalizePhone('0714641171'))).toBe('MIXXBYYAS') // Mixx by Yas
+    expect(detectWalletFiCode(normalizePhone('0612345678'))).toBe('HALOPESA') // Halotel
+    expect(detectWalletFiCode(normalizePhone('0731234567'))).toBe('TTCLPESA') // TTCL
     expect(() => detectWalletFiCode(normalizePhone('0801234567'))).toThrow(/no wallet FI code/)
   })
 })
