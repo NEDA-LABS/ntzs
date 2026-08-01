@@ -4,7 +4,8 @@ import { merchantAccounts } from '@ntzs/db'
 import { eq } from 'drizzle-orm'
 import { requireBiasharaMerchant } from '@/lib/biashara/caller'
 import { JsonRpcProvider, Contract } from 'ethers'
-import { MIN_WITHDRAWAL_TZS, SNIPPE_FLAT_FEE_TZS, WITHDRAWAL_FEE_PCT } from '@/lib/payouts/payout-math'
+import { MIN_WITHDRAWAL_TZS, WITHDRAWAL_FEE_PCT } from '@/lib/payouts/payout-math'
+import { expectedDisbursementRail, expectedPayoutFeeTzs } from '@/lib/psp'
 
 const NTZS_ABI = ['function balanceOf(address) view returns (uint256)']
 
@@ -51,7 +52,11 @@ export async function GET(req: NextRequest) {
       enabled: true,
       endpoint: '/api/v1/biashara/withdraw',
       minReceiveTzs: MIN_WITHDRAWAL_TZS,
-      pspFlatFeeTzs: SNIPPE_FLAT_FEE_TZS,
+      // PSP fee is priced on the serving rail and varies with amount (Selcom
+      // is tiered); this figure is the fee AT THE MINIMUM withdrawal — the
+      // withdraw response returns the exact pspFeeTzs for the actual amount.
+      payoutRail: expectedDisbursementRail(),
+      pspFlatFeeTzs: expectedPayoutFeeTzs(MIN_WITHDRAWAL_TZS),
       platformFeePct: WITHDRAWAL_FEE_PCT,
     },
   })

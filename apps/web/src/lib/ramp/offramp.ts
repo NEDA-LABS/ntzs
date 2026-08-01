@@ -6,12 +6,12 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PR
 import { rampSettlements, burnRequests, users, wallets, partners, lpAccounts, lpFills } from '@ntzs/db'
 import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
 import {
-  anyDisbursementRailConfigured, normalizePhone, sendPayoutRouted, checkPayoutStatusFor, lookupRecipientName,
+  anyDisbursementRailConfigured, normalizePhone, sendPayoutRouted, checkPayoutStatusFor, lookupRecipientName, expectedPayoutFeeTzs,
 } from '@/lib/psp'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
 import { getSettlementSigner } from '@/lib/ramp/wallet'
-import { PSP_FLAT_FEE_TZS, type RampOfframpDestination } from '@/lib/ramp/quote'
+import { type RampOfframpDestination } from '@/lib/ramp/quote'
 import { estimateSpendFee } from '@/lib/psp/selcom-fees'
 import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
 
@@ -98,13 +98,16 @@ export async function runOfframpSettlement(args: {
 
   const grossTzs = args.recipientTzs + args.feeTzs       // nTZS we expect from the swap
   // PSP portion of the fee depends on the destination (must match how the
-  // quote priced it — estimated on gross): wallet = flat PSP fee; lipa/bill =
-  // Selcom tariff. The platform's 0.5% is whatever remains of feeTzs.
+  // quote priced it — estimated on gross): wallet = the expected serving
+  // rail's charge; lipa/bill = Selcom tariff. The platform's 0.5% is whatever
+  // remains of feeTzs. Clamped at 0: if the rail plan changed in the seconds
+  // between quote and execute the PSP charge can exceed the quoted fee — the
+  // platform absorbs that, the recipient's net never moves.
   const pspFeeTzs =
     destination.kind === 'wallet'
-      ? PSP_FLAT_FEE_TZS
+      ? expectedPayoutFeeTzs(grossTzs)
       : estimateSpendFee(destination.kind, grossTzs, destination.kind === 'bill' ? destination.utilityCode : undefined)
-  const totalPlatformFeeTzs = args.feeTzs - pspFeeTzs
+  const totalPlatformFeeTzs = Math.max(0, args.feeTzs - pspFeeTzs)
 
   // ── Verify settlement float holds enough USDC ──────────────────────────────
   const provider = new ethers.JsonRpcProvider(rpcUrl)

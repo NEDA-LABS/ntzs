@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
+import { expectedDisbursementRail } from '@/lib/psp'
+import { railLabel } from '@/lib/psp/selcom-fees'
 import { kycCases, wallets } from '@ntzs/db'
 
 import { WithdrawForm } from './WithdrawForm'
@@ -25,15 +27,19 @@ export default async function WithdrawPage() {
     .limit(1)
   if (!approvedKyc.length) redirect('/app/user/kyc')
 
+  // The rail the payout will be tried on first — prices the network fee shown
+  // in the form (Selcom is tiered; Snippe is a flat 1,500).
+  const expectedRail = expectedDisbursementRail()
+
   return (
     <div className="px-4 py-6 lg:p-8">
       <div className="mx-auto max-w-md sm:max-w-xl">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Withdraw</h1>
-          <p className="mt-1 text-sm text-muted-foreground">nTZS to TZS (1:1) — paid out via Snippe mobile money</p>
+          <p className="mt-1 text-sm text-muted-foreground">nTZS to TZS (1:1) — paid out via {railLabel(expectedRail)} mobile money</p>
         </div>
 
-        <WithdrawForm userPhone={dbUser.phone} />
+        <WithdrawForm userPhone={dbUser.phone} expectedRail={expectedRail} />
       </div>
     </div>
   )

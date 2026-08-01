@@ -26,6 +26,7 @@ const RECONCILE_BURN_COLUMNS = {
   txHash: burnRequests.txHash,
   amountTzs: burnRequests.amountTzs,
   platformFeeTzs: burnRequests.platformFeeTzs,
+  pspFeeTzs: burnRequests.pspFeeTzs,
   feeTxHash: burnRequests.feeTxHash,
   feeRecipientAddress: burnRequests.feeRecipientAddress,
   nedaFeeTzs: burnRequests.nedaFeeTzs,
@@ -231,7 +232,9 @@ export async function POST(
     if (!burn.recipientPhone) {
       return NextResponse.json({ error: 'no_recipient_phone' }, { status: 409 })
     }
-    const receiveAmountTzs = burn.amountTzs - (burn.platformFeeTzs ?? 0) - (burn.nedaFeeTzs ?? 0) - PSP_FLAT_FEE_TZS
+    // Back out the PSP fee THIS ROW was priced with (per-rail since 1 Aug
+    // 2026); legacy rows carry null = the Snippe flat fee.
+    const receiveAmountTzs = burn.amountTzs - (burn.platformFeeTzs ?? 0) - (burn.nedaFeeTzs ?? 0) - (burn.pspFeeTzs ?? PSP_FLAT_FEE_TZS)
     if (receiveAmountTzs <= 0) {
       return NextResponse.json({ error: 'non_positive_receive_amount', receiveAmountTzs }, { status: 409 })
     }

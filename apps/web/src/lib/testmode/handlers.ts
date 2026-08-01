@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
-import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, expectedPayoutFeeTzs } from '@/lib/psp'
 import { detectNetwork } from '@/lib/psp/routing'
 import { checkPerTransactionCap, limitErrorResponse } from '@/lib/sandbox/limits'
 import { partners } from '@ntzs/db'
@@ -12,7 +12,6 @@ import {
   createQuoteToken,
   verifyQuoteToken,
   quoteRequired,
-  PSP_FLAT_FEE_TZS,
   QUOTE_TTL_MS,
   DEFAULT_PLATFORM_FEE_PERCENT,
 } from '@/lib/waas/quote'
@@ -368,7 +367,8 @@ export async function testWithdrawalQuote(partner: AuthenticatedPartner, request
   const user = await findUserById(partner.id, userId)
   if (!user) return userNotFound()
 
-  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, await partnerFeePercent(partner.id))
+  // Sandbox prices EXACTLY like live: the PSP fee follows the serving rail.
+  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, await partnerFeePercent(partner.id), expectedPayoutFeeTzs(receiveAmountTzs))
   const sufficient = user.balanceTzs >= grossUp.burnAmountTzs
   const phone = normalizePhone(phoneNumber)
 
@@ -430,9 +430,10 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
   const user = await findUserById(partner.id, userId)
   if (!user) return userNotFound()
 
-  const { burnAmountTzs, platformFeeTzs, nedaFeeTzs } = computeWithdrawalGrossUp(
+  const { burnAmountTzs, platformFeeTzs, nedaFeeTzs, pspFeeTzs } = computeWithdrawalGrossUp(
     receiveAmountTzs,
-    await partnerFeePercent(partner.id)
+    await partnerFeePercent(partner.id),
+    expectedPayoutFeeTzs(receiveAmountTzs)
   )
   const phone = normalizePhone(phoneNumber)
 
@@ -497,7 +498,7 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
     amountTzs: receiveAmountTzs,
     // Only a failure refunds; reconcile_required deliberately does not.
     settlementDeltaTzs: outcome === 'fail' ? burnAmountTzs : 0,
-    fees: { platformFeeTzs, pspFeeTzs: PSP_FLAT_FEE_TZS, nedaFeeTzs },
+    fees: { platformFeeTzs, pspFeeTzs, nedaFeeTzs },
     detail: { phone, burnAmountTzs, recipientName: testRecipientName(phone) },
     // Decisive failures surface synchronously, exactly like live.
     instant: decisive,
@@ -538,11 +539,11 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
       receiveAmountTzs,
       recipientName: testRecipientName(phone),
       platformFeeTzs,
-      pspFeeTzs: PSP_FLAT_FEE_TZS,
+      pspFeeTzs,
       nedaFeeTzs,
-      totalFeeTzs: platformFeeTzs + PSP_FLAT_FEE_TZS + nedaFeeTzs,
+      totalFeeTzs: platformFeeTzs + pspFeeTzs + nedaFeeTzs,
       livemode: false,
-      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + PSP_FLAT_FEE_TZS + nedaFeeTzs} TZS in fees).`,
+      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + pspFeeTzs + nedaFeeTzs} TZS in fees).`,
     },
     { status: 201 }
   )

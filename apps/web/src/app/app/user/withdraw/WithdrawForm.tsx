@@ -4,15 +4,18 @@ import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 
+// Client-safe fee module — the SAME tariff the server action prices with, so
+// what the form shows is what the burn charges (rail-tiered, not flat).
+import { getPayoutFeeTzs, railLabel } from '@/lib/psp/selcom-fees'
+
 import { createWithdrawRequestAction } from './actions'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
-const SNIPPE_FLAT_FEE_TZS = 1500
 
-// Gross-up: nTZS to burn = ceil((receiveAmount + snippeFee) / (1 - platformFeeRate))
-function calcBurnAmount(receiveAmount: number): number {
-  return Math.ceil((receiveAmount + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
+// Gross-up: nTZS to burn = ceil((receiveAmount + pspFee) / (1 - platformFeeRate))
+function calcBurnAmount(receiveAmount: number, pspFee: number): number {
+  return Math.ceil((receiveAmount + pspFee) / (1 - PLATFORM_FEE_PERCENT / 100))
 }
 
 function Spinner({ className = '' }: { className?: string }) {
@@ -46,9 +49,12 @@ function SubmitButton({ disabled }: { disabled?: boolean }) {
 
 interface WithdrawFormProps {
   userPhone?: string | null
+  /** Rail the payout is expected to ride (from the server's disbursement
+   * plan) — prices the network fee and names the rail in the UI. */
+  expectedRail?: string | null
 }
 
-export function WithdrawForm({ userPhone }: WithdrawFormProps) {
+export function WithdrawForm({ userPhone, expectedRail }: WithdrawFormProps) {
   const [phone, setPhone] = useState(userPhone || '')
   const [amount, setAmount] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -56,9 +62,11 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
 
   const receiveNum = Number(amount)
   const validAmount = receiveNum >= 5000
-  const burnAmount = validAmount ? calcBurnAmount(receiveNum) : 0
-  const platformFee = burnAmount > 0 ? burnAmount - receiveNum - SNIPPE_FLAT_FEE_TZS : 0
+  const pspFee = validAmount ? getPayoutFeeTzs(expectedRail, receiveNum) : 0
+  const burnAmount = validAmount ? calcBurnAmount(receiveNum, pspFee) : 0
+  const platformFee = burnAmount > 0 ? burnAmount - receiveNum - pspFee : 0
   const requiresApproval = burnAmount >= SAFE_BURN_THRESHOLD_TZS
+  const railName = railLabel(expectedRail)
 
   if (submitted) {
     return (
@@ -162,7 +170,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
               <svg className="h-4 w-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 3h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V5a2 2 0 012-2zm4 16h.01" />
               </svg>
-              Snippe
+              {railName}
             </div>
             <input
               name="phone"
@@ -179,8 +187,8 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         {validAmount && (
           <div className="space-y-1.5 px-1 text-xs">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Network fee</span>
-              <span className="font-mono">+{SNIPPE_FLAT_FEE_TZS.toLocaleString()} TZS</span>
+              <span>Network fee ({railName})</span>
+              <span className="font-mono">+{pspFee.toLocaleString()} TZS</span>
             </div>
             <div className="flex items-center justify-between text-muted-foreground">
               <span>Platform fee ({PLATFORM_FEE_PERCENT}%)</span>
@@ -212,7 +220,7 @@ export function WithdrawForm({ userPhone }: WithdrawFormProps) {
         <SubmitButton disabled={!validAmount || !phone} />
 
         <p className="text-center text-[11px] text-muted-foreground">
-          1:1 burn — TZS sent to your mobile money via Snippe
+          1:1 burn — TZS sent to your mobile money via {railName}
         </p>
       </form>
     </div>

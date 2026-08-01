@@ -45,6 +45,8 @@ interface BurnJob {
   amount_tzs: number
   platform_fee_tzs: number | null
   neda_fee_tzs: number | null
+  // Per-rail PSP fee the gross-up charged (null on legacy rows = Snippe flat).
+  psp_fee_tzs: number | null
   chain: string
   contract_address: string
   recipient_phone: string | null
@@ -66,7 +68,7 @@ async function claimNextBurnJob(sql: SqlClient): Promise<BurnJob | null> {
       for update skip locked
       limit 1
     )
-    returning id, wallet_id, amount_tzs, platform_fee_tzs, neda_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address, sub_wallet_id
+    returning id, wallet_id, amount_tzs, platform_fee_tzs, neda_fee_tzs, psp_fee_tzs, chain, contract_address, recipient_phone, user_id, burn_from_address, sub_wallet_id
   `
   return rows[0] ?? null
 }
@@ -179,7 +181,7 @@ async function processOneBurn(sql: SqlClient, job: BurnJob): Promise<void> {
   // payout_status to 'completed' when the cash lands.
   if (job.recipient_phone) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
-    const payoutAmountTzs = netPayoutTzs({ amountTzs: job.amount_tzs, platformFeeTzs: job.platform_fee_tzs, nedaFeeTzs: job.neda_fee_tzs })
+    const payoutAmountTzs = netPayoutTzs({ amountTzs: job.amount_tzs, platformFeeTzs: job.platform_fee_tzs, nedaFeeTzs: job.neda_fee_tzs, pspFeeTzs: job.psp_fee_tzs })
 
     const routed = await sendPayoutRouted({
       amountTzs: payoutAmountTzs,

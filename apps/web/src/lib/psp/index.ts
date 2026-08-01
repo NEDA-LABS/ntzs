@@ -267,6 +267,7 @@ import {
   readRailEnv,
   type RailId,
 } from './routing'
+import { getPayoutFeeTzs } from './selcom-fees'
 
 export { detectNetwork } from './routing'
 
@@ -287,6 +288,28 @@ export const PAYOUT_WEBHOOK_PATHS: Record<LiveRail, string> = {
 
 const liveRails = (plan: RailId[]): LiveRail[] =>
   plan.filter((r): r is LiveRail => r === 'snippe' || r === 'azampay' || r === 'selcom')
+
+/**
+ * The rail a disbursement will be tried on FIRST right now — the head of the
+ * same env-gated plan sendPayoutRouted walks. Null when no rail is configured.
+ * Quotes must price against THIS: on 1 Aug 2026 the app quoted Snippe's flat
+ * 1,500 while Selcom (tier fee 150 at 5,000 TZS) actually served the payout.
+ */
+export function expectedDisbursementRail(env: NodeJS.ProcessEnv = process.env): LiveRail | null {
+  return liveRails(planDisbursementRails(readRailEnv(env)))[0] ?? null
+}
+
+/**
+ * PSP fee (TZS) for a payout where the recipient receives `receiveTzs`,
+ * priced on the expected serving rail (legacy Snippe flat fee when none
+ * resolves). If the primary rail is down and the payout fails over, the
+ * actual PSP charge can differ from what was quoted — the platform absorbs
+ * that difference: failover is the exception, and re-charging the user after
+ * the fact is not an option.
+ */
+export function expectedPayoutFeeTzs(receiveTzs: number, env: NodeJS.ProcessEnv = process.env): number {
+  return getPayoutFeeTzs(expectedDisbursementRail(env), receiveTzs)
+}
 
 import type { PaymentRequest as PaymentRequestT, PaymentResponse as PaymentResponseT, PayoutRequest as PayoutRequestT, PayoutResponse as PayoutResponseT } from './types'
 

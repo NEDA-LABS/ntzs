@@ -18,8 +18,11 @@ import { nedaProtocolFeeTzs } from '@/lib/waas/protocol-fee'
  * integrations keep working until partners adopt the quote step.
  */
 
-/** Snippe flat payout fee (TZS). ⚠ Single source of truth for the WaaS
- * withdrawal gross-up — keep in sync with the payout engine. */
+/** Legacy Snippe flat payout fee (TZS). Since 1 Aug 2026 the gross-up prices
+ * the PSP fee on the rail that will actually serve (expectedPayoutFeeTzs —
+ * Selcom's tariff is tiered, e.g. 150 at 5,000 TZS, not a flat 1,500); this
+ * constant remains the fallback for burn rows minted before per-rail pricing
+ * (null psp_fee_tzs) and for callers with no rail configured. */
 export const PSP_FLAT_FEE_TZS = 1500
 export const DEFAULT_PLATFORM_FEE_PERCENT = 0.5
 export const QUOTE_TTL_MS = 5 * 60 * 1000
@@ -39,14 +42,20 @@ export interface WithdrawalGrossUp {
 
 /** partnerBurn = ceil((receive + pspFee) / (1 − feePercent/100)); the NEDA
  * protocol fee is added on top. Identical math in quote and execute, or a
- * quote could mismatch its own execution. */
-export function computeWithdrawalGrossUp(receiveAmountTzs: number, feePercent: number): WithdrawalGrossUp {
-  const partnerBurn = Math.ceil((receiveAmountTzs + PSP_FLAT_FEE_TZS) / (1 - feePercent / 100))
+ * quote could mismatch its own execution. `pspFeeTzs` is the serving rail's
+ * charge (pass expectedPayoutFeeTzs(receive)); the default keeps legacy
+ * callers on the Snippe flat fee. */
+export function computeWithdrawalGrossUp(
+  receiveAmountTzs: number,
+  feePercent: number,
+  pspFeeTzs: number = PSP_FLAT_FEE_TZS,
+): WithdrawalGrossUp {
+  const partnerBurn = Math.ceil((receiveAmountTzs + pspFeeTzs) / (1 - feePercent / 100))
   const nedaFeeTzs = nedaProtocolFeeTzs(receiveAmountTzs)
   return {
     burnAmountTzs: partnerBurn + nedaFeeTzs,
-    platformFeeTzs: partnerBurn - receiveAmountTzs - PSP_FLAT_FEE_TZS,
-    pspFeeTzs: PSP_FLAT_FEE_TZS,
+    platformFeeTzs: partnerBurn - receiveAmountTzs - pspFeeTzs,
+    pspFeeTzs,
     nedaFeeTzs,
   }
 }
