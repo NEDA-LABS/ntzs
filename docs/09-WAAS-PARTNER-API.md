@@ -367,6 +367,10 @@ GET /api/v1/swap/rate?from=USDT&to=NTZS&amount=10
   "midRate": 3750,
   "bidBps": 120,
   "askBps": 150,
+  "spreadBps": 150,
+  "tzsBuyRate": 3693.75,
+  "tzsSellRate": 3795.0,
+  "protocolFeeBps": 20,
   "expectedOutput": 37443.75,
   "minOutput": 37069.31,
   "rate": 3744.375,
@@ -386,13 +390,19 @@ GET /api/v1/swap/rate?from=USDT&to=NTZS&fromChain=bnb&toChain=base&amount=50
 | Field | Description |
 |-------|-------------|
 | `midRate` | Reference market rate (TZS per stablecoin unit) |
-| `rate` | Effective rate after LP spread — what the user actually gets per unit |
+| `spreadBps` | The quoted LP's spread applied to THIS direction (ask when buying nTZS, bid when selling) |
+| `tzsBuyRate` | The LP's board rate when the user BUYS nTZS: nTZS received per 1 stablecoin (mid − ask spread) |
+| `tzsSellRate` | The LP's board rate when the user SELLS nTZS: nTZS paid per 1 stablecoin (mid + bid spread) |
+| `protocolFeeBps` | Platform fee charged on top of the LP spread (already inside `rate`/`expectedOutput`) |
+| `rate` | Effective rate after LP spread AND platform fee — what the user actually gets per unit |
 | `expectedOutput` | Best-case output at current rate |
 | `minOutput` | Minimum output including 1% slippage protection |
 | `expiresAt` | Rate is good for ~30 seconds — refresh before executing |
 | `lowLiquidity` | `true` if solver balance may be insufficient for this amount |
 
 > **Recommended flow:** call `/swap/rate` → show the user `expectedOutput` and `minOutput` → if confirmed, call `POST /api/v1/swap` within the `expiresAt` window using the same `slippageBps`.
+
+> **Rate transparency (v1.15.0):** the quote is priced off the **same LP the swap would execute against** (best spread among LPs whose pooled inventory covers your size), so `tzsBuyRate`/`tzsSellRate`/`spreadBps` are exactly the rates your user swaps at — render them next to the amount (e.g. "Rate: 1 USD = 3,693.75 TZS · LP spread 1.50% · platform fee 0.20%"). If no LP can cover the size, `lowLiquidity` is `true` and execution would refuse.
 
 ---
 

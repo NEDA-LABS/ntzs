@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getDb } from '@/lib/db'
-import { lpFxPairs, lpAccounts, lpFills } from '@ntzs/db'
-import { eq, inArray, sql } from 'drizzle-orm'
-import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
+import { lpFxPairs, lpAccounts, lpFills, lpPoolPositions } from '@ntzs/db'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { calcMinOutput, selectLPForSwap, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
 import { getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 import { PLATFORM_FX_FEE_BPS } from '@/lib/env'
 
@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
 
   let bidBps = 120
   let askBps = 150
+  let noCoveredLp = false
   if (activeLPs.length > 0) {
     const lpConfigs: LPConfig[] = activeLPs.map((lp) => ({
       id: lp.id,
@@ -96,7 +97,27 @@ export async function GET(req: NextRequest) {
       lastFillRows.map((r) => [r.lpId, r.lastAt ? new Date(r.lastAt).getTime() : 0]),
     )
     const direction = to === 'NTZS' ? 'STABLE_TO_NTZS' : 'NTZS_TO_STABLE'
-    const bestLP = selectLPForSwap(lpConfigs, direction, lastFillTimes)
+
+    // Mirror the execute route's inventory-aware selection: quote the LP that
+    // would actually fill. Quoting a thin LP's spread and then executing
+    // against a different (covered) LP would show the user one rate and
+    // deliver another.
+    const midOutput = to === 'NTZS' ? amount * midRate : amount / midRate
+    const outPositions = await db
+      .select({ lpId: lpPoolPositions.lpId, contributed: lpPoolPositions.contributed })
+      .from(lpPoolPositions)
+      .where(and(
+        eq(lpPoolPositions.chain, toChain),
+        eq(lpPoolPositions.tokenAddress, toAddr),
+        inArray(lpPoolPositions.lpId, lpConfigs.map((lp) => lp.id)),
+      ))
+    const inventoryByLpId = new Map(outPositions.map((p) => [p.lpId, parseFloat(p.contributed)]))
+    const coveredLPs = filterLPsByInventory(lpConfigs, inventoryByLpId, midOutput)
+
+    // No LP can cover this size: still quote off the best spread so the UI has
+    // a rate to show, but flag the quote — execution would refuse.
+    if (coveredLPs.length === 0) noCoveredLp = true
+    const bestLP = selectLPForSwap(coveredLPs.length ? coveredLPs : lpConfigs, direction, lastFillTimes)
     bidBps = bestLP.bidBps
     askBps = bestLP.askBps
   }
@@ -153,6 +174,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // The quoted LP's board rates in nTZS-per-stablecoin terms, matching the
+  // user-perspective BUY/SELL convention of consumer rate tickers:
+  //   tzsBuyRate  — nTZS the user RECEIVES per 1 stablecoin (LP sells nTZS at its ask)
+  //   tzsSellRate — nTZS the user PAYS for 1 stablecoin    (LP buys nTZS at its bid)
+  // Spread only — the platform fee (protocolFeeBps) is charged on top and is
+  // already inside expectedOutput/rate.
+  const tzsBuyRate = midRate * (1 - askBps / 10000)
+  const tzsSellRate = midRate * (1 + bidBps / 10000)
+  const spreadBps = to === 'NTZS' ? askBps : bidBps
+
   return NextResponse.json({
     from,
     to,
@@ -162,11 +193,14 @@ export async function GET(req: NextRequest) {
     midRate,
     bidBps,
     askBps,
+    spreadBps,
+    tzsBuyRate: +tzsBuyRate.toFixed(4),
+    tzsSellRate: +tzsSellRate.toFixed(4),
     protocolFeeBps: PLATFORM_FX_FEE_BPS,
     expectedOutput: +expectedOutput.toFixed(6),
     minOutput: +minOutput.toFixed(6),
     rate: +(expectedOutput / amount).toFixed(6),
     expiresAt: new Date(Date.now() + 30_000).toISOString(),
-    lowLiquidity,
+    lowLiquidity: lowLiquidity || noCoveredLp,
   })
 }
