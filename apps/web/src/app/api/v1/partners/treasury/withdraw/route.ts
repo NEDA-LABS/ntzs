@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { eq } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
@@ -10,6 +10,7 @@ import {
   MINTER_PRIVATE_KEY,
 } from '@/lib/env'
 import { sendPayoutRouted, sendBankPayout } from '@/lib/psp'
+import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 import { partners, auditLogs } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
@@ -127,6 +128,48 @@ export async function POST(request: NextRequest) {
   // (offramp.ts, revertOffRampBurn). Without this fallback, treasury withdrawal
   // was the ONLY burn path that broke when BURNER_PRIVATE_KEY is unset.
   const burnerKey = BURNER_PRIVATE_KEY || MINTER_PRIVATE_KEY
+
+  // Duplicate guard — the Idempotency-Key dedup below only helps clients that
+  // SEND a key; on 1 Aug 2026 a partner integration retried without one and
+  // every retry burned its treasury against dead rails. Same partner + same
+  // amount within 5 minutes is refused unless explicitly overridden.
+  let allowDuplicate = false
+  try {
+    const parsed = (await request.clone().json()) as { allowDuplicate?: boolean }
+    allowDuplicate = parsed?.allowDuplicate === true
+  } catch { /* body already validated upstream */ }
+  if (!allowDuplicate) {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+    const [dup] = await db
+      .select({ id: auditLogs.id, createdAt: auditLogs.createdAt })
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.action, 'treasury_withdraw_burned'),
+        eq(auditLogs.entityId, partner.id),
+        gte(auditLogs.createdAt, fiveMinAgo),
+        sql`${auditLogs.metadata}->>'amountTzs' = ${String(amountTzs)}`,
+      ))
+      .limit(1)
+    if (dup) {
+      return NextResponse.json(
+        {
+          error: 'duplicate_withdrawal',
+          message:
+            'An identical treasury withdrawal was initiated moments ago. Do not retry — failed payouts re-mint automatically. To deliberately withdraw the same amount again, resend with "allowDuplicate": true.',
+          existingAuditId: dup.id,
+        },
+        { status: 409 },
+      )
+    }
+  }
+
+  // Circuit breaker — when the rails are evidently refusing initiations,
+  // refuse BEFORE the burn (treasury untouched) instead of burn→remint churn.
+  const circuit = await payoutRailsLookDead()
+  if (circuit.dead) {
+    console.warn('[treasury/withdraw] circuit open — refusing pre-burn:', circuit.reason)
+    return NextResponse.json(CIRCUIT_OPEN_RESPONSE, { status: 503 })
+  }
 
   // Dedup the burn+payout so a client retry (same Idempotency-Key) can't
   // trigger a second withdrawal. A completed call replays its stored response.

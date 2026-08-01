@@ -10,6 +10,7 @@ import { rampSpendEnabled } from '@/lib/ramp/quote'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
 import { isValidTanzanianPhone } from '@/lib/psp'
 import { enforceSandboxLimits, limitErrorResponse, rampCounterpartySubject } from '@/lib/sandbox/limits'
+import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -83,6 +84,18 @@ async function handleOfframp(req: NextRequest) {
       // Defense in depth: a lipa/bill quote can only be minted while the flag
       // is on, but refuse execution too if it was switched off since.
       return NextResponse.json({ error: 'ramp_spend_disabled', message: 'Lipa/bill off-ramp destinations are not enabled yet (pending regulatory approval).' }, { status: 503 })
+    }
+
+    // Circuit breaker (wallet payouts only — lipa/bill ride the spend rail):
+    // when disbursement initiations are evidently being refused, fail before
+    // the swap/burn instead of stranding a settlement. Quote spent, nothing
+    // moved.
+    if (destination.kind === 'wallet') {
+      const circuit = await payoutRailsLookDead()
+      if (circuit.dead) {
+        console.warn('[v1/ramp/offramp] circuit open — refusing pre-swap:', circuit.reason)
+        return NextResponse.json(CIRCUIT_OPEN_RESPONSE, { status: 503 })
+      }
     }
 
     // BoT Parameters #3/#4/#5 at the point of execution, counted per
