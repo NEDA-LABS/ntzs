@@ -4,9 +4,9 @@ import { JsonRpcProvider, Contract } from 'ethers'
 import { db } from '@/lib/merchant/db'
 import { getDb } from '@/lib/db'
 import { merchantAccounts } from '@ntzs/db'
-import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, expectedPayoutFeeTzs } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
-import { grossUpWithdrawal, MIN_WITHDRAWAL_TZS, SNIPPE_FLAT_FEE_TZS } from '@/lib/payouts/payout-math'
+import { grossUpWithdrawal, MIN_WITHDRAWAL_TZS, WITHDRAWAL_FEE_PCT } from '@/lib/payouts/payout-math'
 
 const SAFE_APPROVAL_THRESHOLD_TZS = 1000000
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
@@ -66,7 +66,11 @@ export async function requestMerchantWithdrawal(opts: {
   const rpcUrl = process.env.BASE_RPC_URL
   if (!contractAddress || !rpcUrl) return { status: 500, body: { error: 'Blockchain configuration missing' } }
 
-  const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(receiveAmountTzs)
+  // PSP fee priced on the rail that will serve the payout; persisted below so
+  // the burn engine backs out the same figure at dispatch.
+  const { burnAmountTzs, platformFeeTzs, pspFeeTzs } = grossUpWithdrawal(
+    receiveAmountTzs, WITHDRAWAL_FEE_PCT, expectedPayoutFeeTzs(receiveAmountTzs),
+  )
 
   // BoT sandbox caps (applied to the nTZS burned, like the consumer off-ramp).
   const perTxnErr = checkPerTransactionCap(burnAmountTzs)
@@ -104,7 +108,7 @@ export async function requestMerchantWithdrawal(opts: {
         body: {
           error: 'insufficient_balance',
           message: `Insufficient balance. Available: ${balanceTzs.toLocaleString()} TZS, need ${burnAmountTzs.toLocaleString()} TZS to pay out ${receiveAmountTzs.toLocaleString()} TZS (incl. fees).`,
-          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: SNIPPE_FLAT_FEE_TZS },
+          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs },
         },
       }
     }
@@ -120,12 +124,12 @@ export async function requestMerchantWithdrawal(opts: {
   const burnRows = await rawSql<{ id: string }[]>`
     insert into burn_requests (
       user_id, wallet_id, chain, contract_address,
-      amount_tzs, platform_fee_tzs, reason, status,
+      amount_tzs, platform_fee_tzs, psp_fee_tzs, reason, status,
       requested_by_user_id, recipient_phone,
       created_at, updated_at
     ) values (
       ${userId}, ${walletId}, 'base', ${contractAddress},
-      ${burnAmountTzs}, ${platformFeeTzs}, 'merchant_balance_withdrawal', ${status},
+      ${burnAmountTzs}, ${platformFeeTzs}, ${pspFeeTzs}, 'merchant_balance_withdrawal', ${status},
       ${userId}, ${phone},
       now(), now()
     )
@@ -138,7 +142,7 @@ export async function requestMerchantWithdrawal(opts: {
     insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
     values (
       'merchant_withdrawal_requested', 'burn_request', ${burnId},
-      ${JSON.stringify({ merchantId: merchant.id, walletAddress: merchant.walletAddress, receiveAmountTzs, burnAmountTzs, platformFeeTzs, recipientPhone: phone, status })}::jsonb,
+      ${JSON.stringify({ merchantId: merchant.id, walletAddress: merchant.walletAddress, receiveAmountTzs, burnAmountTzs, platformFeeTzs, pspFeeTzs, recipientPhone: phone, status })}::jsonb,
       now()
     )
   `
@@ -152,7 +156,7 @@ export async function requestMerchantWithdrawal(opts: {
       receiveAmountTzs,
       burnAmountTzs,
       platformFeeTzs,
-      pspFeeTzs: SNIPPE_FLAT_FEE_TZS,
+      pspFeeTzs,
       phone,
       message: status === 'requested'
         ? 'Withdrawal requires admin approval for amounts >= 1,000,000 TZS.'

@@ -51,6 +51,17 @@ describe('computeWithdrawalGrossUp', () => {
     expect(g.nedaFeeTzs).toBe(30) // max(10000×30bps=30, 30)
     expect(g.burnAmountTzs).toBe(11_530) // 10000 + 1500 + 0 + 30
   })
+
+  it('prices the PSP fee per serving rail when passed (1 Aug 2026: quote said 1,500 while Selcom served at 150)', () => {
+    // receive 5,000 with Selcom's tier fee 150 at 0.5%:
+    // partnerBurn = ceil(5150 / 0.995) = 5176; NEDA fee 30 → burn 5206.
+    const g = computeWithdrawalGrossUp(5000, 0.5, 150)
+    expect(g.pspFeeTzs).toBe(150)
+    expect(g.platformFeeTzs).toBe(5176 - 5000 - 150)
+    expect(g.burnAmountTzs).toBe(5206)
+    // Identity holds for ANY rail fee: burn = receive + psp + platform + neda.
+    expect(g.burnAmountTzs).toBe(5000 + g.pspFeeTzs + g.platformFeeTzs + g.nedaFeeTzs)
+  })
 })
 
 describe('quote tokens', () => {

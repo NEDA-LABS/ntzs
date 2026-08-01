@@ -109,6 +109,19 @@ export function estimateSpendFee(kind: 'lipa' | 'bill', amount: number, utilityC
   return kind === 'lipa' ? estimateSendMoneyFee(amount) : estimateBillPayFee(utilityCode ?? '', amount)
 }
 
+/** Display names for payout rails — lives here (not psp/index) because UI
+ * components import this client-safe module for live fee quotes. */
+export const RAIL_LABELS: Record<string, string> = {
+  snippe: 'Snippe',
+  azampay: 'AzamPay',
+  selcom: 'Selcom',
+}
+
+/** Human label for a rail tag; falls back to 'mobile money' for unknown/null. */
+export function railLabel(provider: string | null | undefined): string {
+  return (provider && RAIL_LABELS[provider]) || 'mobile money'
+}
+
 /**
  * The PSP fee (TZS) for a mobile/bank payout where the recipient receives
  * `receiveAmountTzs`. Unknown/legacy provider tags fall back to the Snippe

@@ -14,7 +14,9 @@ import {
   sendPayoutRouted,
   checkPayoutStatusFor,
   lookupRecipientName,
+  expectedPayoutFeeTzs,
 } from '@/lib/psp'
+import { railLabel } from '@/lib/psp/selcom-fees'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 import { burnRequests, partners } from '@ntzs/db'
@@ -23,7 +25,6 @@ import {
   computeWithdrawalGrossUp,
   verifyQuoteToken,
   quoteRequired,
-  PSP_FLAT_FEE_TZS,
   DEFAULT_PLATFORM_FEE_PERCENT,
 } from '@/lib/waas/quote'
 
@@ -107,9 +108,12 @@ export async function POST(request: NextRequest) {
   // NEDA protocol fee → the platform (NEDA) treasury, always — never the partner's.
   const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
 
-  // Gross-up: burnAmount = ceil((receive + snippeFee) / (1 - feeRate)) + nedaFee
+  // Gross-up: burnAmount = ceil((receive + pspFee) / (1 - feeRate)) + nedaFee
   // — shared with the quote endpoint so quotes price exactly what executes.
-  const { burnAmountTzs, platformFeeTzs, nedaFeeTzs } = computeWithdrawalGrossUp(receiveAmountTzs, feePercent)
+  // The PSP fee is the expected serving rail's charge, not a flat constant;
+  // a rail flip between quote and execute surfaces as quote_stale below.
+  const pspFeeTzs = expectedPayoutFeeTzs(receiveAmountTzs)
+  const { burnAmountTzs, platformFeeTzs, nedaFeeTzs } = computeWithdrawalGrossUp(receiveAmountTzs, feePercent, pspFeeTzs)
 
   // ── Quote verification (the name+fee disclosure contract) ─────────────────
   // A valid quoteId proves the client fetched recipient name + fee breakdown
@@ -231,7 +235,7 @@ export async function POST(request: NextRequest) {
         {
           error: 'insufficient_balance',
           message: `Insufficient balance. Available: ${balanceTzs} TZS, need ${burnAmountTzs} TZS to pay out ${receiveAmountTzs} TZS (incl. fees).`,
-          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs: PSP_FLAT_FEE_TZS },
+          details: { available: balanceTzs, required: burnAmountTzs, receiveAmountTzs, platformFeeTzs, pspFeeTzs },
         },
         { status: 400 }
       )
@@ -261,6 +265,9 @@ export async function POST(request: NextRequest) {
         recipientPhone: phoneNumber,
         platformFeeTzs,
         nedaFeeTzs,
+        // What the gross-up charged for the PSP leg — the burn engine backs
+        // this exact figure out when it dispatches after approval.
+        pspFeeTzs,
       })
       .returning({ id: burnRequests.id, status: burnRequests.status, amountTzs: burnRequests.amountTzs })
 
@@ -275,7 +282,7 @@ export async function POST(request: NextRequest) {
         amountTzs: burn.amountTzs,
         receiveAmountTzs,
         platformFeeTzs,
-        pspFeeTzs: PSP_FLAT_FEE_TZS,
+        pspFeeTzs,
         nedaFeeTzs,
         message: 'Withdrawal requires admin approval for amounts >= 1,000,000 TZS.',
       },
@@ -306,6 +313,7 @@ export async function POST(request: NextRequest) {
       recipientPhone: phoneNumber,
       platformFeeTzs,
       nedaFeeTzs,
+      pspFeeTzs,
     })
     .returning({ id: burnRequests.id, amountTzs: burnRequests.amountTzs })
 
@@ -458,6 +466,12 @@ export async function POST(request: NextRequest) {
   // dispatcher walks DISBURSEMENT_RAIL_PRIORITY and each attempt carries its
   // own rail's webhook URL.
   let verifiedRecipientName: string | null = null
+  // Captured for the response's confirmation block — the partner app relays
+  // this to the withdrawing user (the PSP's own confirmation SMS goes only to
+  // the corporate account, never to them).
+  let dispatchedRail: string | null = null
+  let dispatchedRef: string | null = null
+  let dispatchedReceipt: string | null = null
   if (anyDisbursementRailConfigured()) {
     const phone = normalizePhone(phoneNumber)
 
@@ -481,6 +495,11 @@ export async function POST(request: NextRequest) {
       if (routed.payout.success && routed.payout.reference) {
         const payoutRef = routed.payout.reference
         const payoutRail = routed.provider
+        dispatchedRail = payoutRail
+        dispatchedRef = payoutRef
+        // Selcom returns its own receipt number on initiation (the id printed
+        // on the corporate confirmation SMS) — pass it through to the caller.
+        dispatchedReceipt = routed.payout.externalReference ?? null
         // The serving rail is persisted because webhooks and status queries
         // are provider-scoped — a payout that failed over must be polled
         // where it actually went.
@@ -574,6 +593,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // The user-facing confirmation. The PSP's own confirmation SMS goes only to
+  // the corporate account; this string carries the same substance (who was
+  // paid, how much, which rail, the reference) so the partner app can show or
+  // push it to the withdrawing user verbatim.
+  const confirmationMessage = dispatchedRef
+    ? `TZS ${receiveAmountTzs.toLocaleString('en-US')} sent to ${verifiedRecipientName ?? 'the recipient'} (${normalizePhone(phoneNumber)}) via ${railLabel(dispatchedRail)} — ref ${dispatchedRef}${dispatchedReceipt ? `, receipt ${dispatchedReceipt}` : ''}.`
+    : null
+
   return NextResponse.json(
     {
       id: burnRequestId,
@@ -582,11 +609,16 @@ export async function POST(request: NextRequest) {
       receiveAmountTzs,
       recipientName: verifiedRecipientName,
       platformFeeTzs,
-      pspFeeTzs: PSP_FLAT_FEE_TZS,
+      pspFeeTzs,
       nedaFeeTzs,
-      totalFeeTzs: platformFeeTzs + PSP_FLAT_FEE_TZS + nedaFeeTzs,
+      totalFeeTzs: platformFeeTzs + pspFeeTzs + nedaFeeTzs,
       feeRecipient,
-      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + PSP_FLAT_FEE_TZS + nedaFeeTzs} TZS in fees).`,
+      payoutRail: dispatchedRail,
+      payoutReference: dispatchedRef,
+      payoutReceipt: dispatchedReceipt,
+      payoutStatus: finalRow?.payoutStatus ?? null,
+      confirmationMessage,
+      message: `Withdrawal processed: ${receiveAmountTzs} TZS on its way to the recipient (${platformFeeTzs + pspFeeTzs + nedaFeeTzs} TZS in fees).`,
     },
     { status: 201 }
   )

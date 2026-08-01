@@ -30,11 +30,15 @@ Response:
   "recipientPhone": "255744277496",
   "recipientName": "JOHN DOE",                     // null when the registry has no answer
   "receiveAmountTzs": 5000,
-  "burnAmountTzs": 6533,
-  "fees": { "platformFeeTzs": 33, "pspFeeTzs": 1500, "totalFeeTzs": 1533 },
+  "burnAmountTzs": 5206,
+  "payoutRail": "selcom",
+  "fees": { "platformFeeTzs": 26, "pspFeeTzs": 150, "totalFeeTzs": 206 },
   "balance": { "availableTzs": 12000, "sufficient": true }
 }
 ```
+
+> `pspFeeTzs` follows the rail that will serve the payout (`payoutRail`) — Selcom's tariff
+> is amount-tiered, Snippe's is a flat 1,500. Display the quote's figures; never hardcode.
 
 ### 2. Show the confirmation card, then execute
 
@@ -42,7 +46,7 @@ The confirmation screen MUST display, before the user's final tap:
 
 > Paying **JOHN DOE** · 0744 277 496
 > They receive **TZS 5,000**
-> Fees **TZS 1,533** · Total deducted **TZS 6,533**
+> Fees **TZS 206** · Total deducted **TZS 5,206**
 
 ```
 POST /api/v1/withdrawals

@@ -257,6 +257,9 @@ describe('selcom-fees (published send-money tariff)', () => {
     expect(getPayoutFeeTzs('azampay', 10_000)).toBe(100)
     expect(getPayoutFeeTzs('snippe', 10_000)).toBe(SNIPPE_FLAT_FEE_TZS)
     expect(getPayoutFeeTzs(null, 10_000)).toBe(SNIPPE_FLAT_FEE_TZS)
+    // 1 Aug 2026: a live 5,000 TZS withdrawal was quoted Snippe's 1,500 while
+    // Selcom served it at this tier fee — the pin behind per-rail pricing.
+    expect(getPayoutFeeTzs('selcom', 5_000)).toBe(150)
   })
 })
 

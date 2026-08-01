@@ -24,6 +24,21 @@ describe('grossUpWithdrawal (explicit merchant/consumer withdrawal gross-up)', (
       expect(netPayoutTzs({ amountTzs: burnAmountTzs, platformFeeTzs })).toBe(net)
     }
   })
+
+  it('a per-rail PSP fee flows through gross-up AND the netPayoutTzs round-trip', () => {
+    // 1 Aug 2026: quotes charged Snippe's flat 1,500 while Selcom (150 at
+    // 5,000 TZS) served the payout. The fee the gross-up charged must be the
+    // fee the dispatch backs out, or the recipient is over/under-paid.
+    const { burnAmountTzs, platformFeeTzs, pspFeeTzs } = grossUpWithdrawal(5000, WITHDRAWAL_FEE_PCT, 150)
+    expect(pspFeeTzs).toBe(150)
+    expect(burnAmountTzs).toBe(5000 + 150 + platformFeeTzs)
+    expect(netPayoutTzs({ amountTzs: burnAmountTzs, platformFeeTzs, pspFeeTzs })).toBe(5000)
+  })
+
+  it('legacy rows (null pspFeeTzs) still back out the Snippe flat fee they were priced with', () => {
+    const { burnAmountTzs, platformFeeTzs } = grossUpWithdrawal(25_000)
+    expect(netPayoutTzs({ amountTzs: burnAmountTzs, platformFeeTzs, pspFeeTzs: null })).toBe(25_000)
+  })
 })
 
 describe('netPayoutTzs (what actually lands on the phone)', () => {

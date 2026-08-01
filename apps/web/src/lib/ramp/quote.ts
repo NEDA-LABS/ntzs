@@ -5,9 +5,12 @@ import { getDb } from '@/lib/db'
 import { lpFxPairs, lpAccounts, lpFills } from '@ntzs/db'
 import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
 import { estimateSpendFee } from '@/lib/psp/selcom-fees'
+import { expectedPayoutFeeTzs } from '@/lib/psp'
 import { BASE_RPC_URL } from '@/lib/env'
 
 export const RAMP_QUOTE_TTL_MS = 60_000
+/** Legacy flat PSP fee — fallback pricing only; wallet off-ramps now price on
+ * the expected serving rail (expectedPayoutFeeTzs). */
 export const PSP_FLAT_FEE_TZS = 1500
 export const PLATFORM_FEE_PCT = 0.005 // 0.5% on the gross TZS (off-ramp)
 
@@ -158,13 +161,16 @@ export async function computeRampQuote(params: {
     const grossTzs = calcMinOutput({ fromToken: 'USDC', toToken: 'NTZS', amount: usdcAmount, midRate, bidBps, askBps, slippageBps: 0 })
     const platformFee = rampPlatformFeeTzs(grossTzs, params.feePercent)
 
-    // PSP fee depends on the destination: mobile-money wallet = the flat PSP
-    // fee; Selcom Lipa/bill = the Selcom tariff. Tariff estimated on gross
-    // (one tier ≥ the net) — conservative, so the reserve is never short.
+    // PSP fee depends on the destination: mobile-money wallet = the EXPECTED
+    // SERVING RAIL's charge (Selcom is tiered, not the legacy flat 1,500);
+    // Selcom Lipa/bill = the Selcom tariff. Both estimated on gross (one tier
+    // ≥ the net) — conservative, so the reserve is never short. The
+    // settlement engine (offramp.ts) derives the SAME figure from the same
+    // gross, so quote and execution cannot disagree within one env state.
     const dest = params.destination ?? { kind: 'wallet' as const }
     const pspFee =
       dest.kind === 'wallet'
-        ? PSP_FLAT_FEE_TZS
+        ? expectedPayoutFeeTzs(Math.floor(grossTzs))
         : estimateSpendFee(dest.kind, Math.floor(grossTzs), dest.kind === 'bill' ? dest.utilityCode : undefined)
 
     const feeTzs = pspFee + platformFee

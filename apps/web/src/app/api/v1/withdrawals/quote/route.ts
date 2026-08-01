@@ -7,7 +7,7 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { isTestMode, testWithdrawalQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
-import { isValidTanzanianPhone, normalizePhone, lookupRecipientName } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, lookupRecipientName, expectedDisbursementRail, expectedPayoutFeeTzs } from '@/lib/psp'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { partners } from '@ntzs/db'
 import { computeWithdrawalGrossUp, createQuoteToken, DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
@@ -31,6 +31,7 @@ const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] 
  *   quoteId, expiresAt, expiresInSeconds,
  *   recipientPhone, recipientName,          // name null when lookup has no answer
  *   receiveAmountTzs, burnAmountTzs,
+ *   payoutRail,                             // rail the PSP fee is priced on
  *   fees: { platformFeeTzs, pspFeeTzs, totalFeeTzs },
  *   balance: { availableTzs, sufficient }   // sufficient=false → quoteId omitted
  * }
@@ -79,7 +80,11 @@ export async function POST(request: NextRequest) {
   const partnerFeePercentRaw = partnerRow ? parseFloat(String(partnerRow.feePercent ?? '0')) : 0
   const feePercent = partnerFeePercentRaw > 0 ? partnerFeePercentRaw : DEFAULT_PLATFORM_FEE_PERCENT
 
-  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, feePercent)
+  // PSP fee priced on the rail that will actually serve the payout — on
+  // 1 Aug 2026 this quoted Snippe's flat 1,500 while Selcom (tiered, 150 at
+  // 5,000 TZS) dispatched it. Rail flips between quote and execute surface as
+  // quote_stale, forcing a re-quote at the current price.
+  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, feePercent, expectedPayoutFeeTzs(receiveAmountTzs))
 
   // Caps behave exactly like execution so a quotable withdrawal is an
   // executable withdrawal.
@@ -147,6 +152,8 @@ export async function POST(request: NextRequest) {
     recipientName,
     receiveAmountTzs,
     burnAmountTzs: grossUp.burnAmountTzs,
+    // The rail this quote is priced for (first in the disbursement plan).
+    payoutRail: expectedDisbursementRail(),
     fees: {
       platformFeeTzs: grossUp.platformFeeTzs,
       pspFeeTzs: grossUp.pspFeeTzs,

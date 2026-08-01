@@ -68,6 +68,15 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.15.0 (1 Aug 2026)
+
+**Withdrawals now cost what the serving rail costs — usually much less.** The PSP fee in withdrawal quotes was a flat 1,500 TZS; it now follows the rail that will actually carry the payout (`payoutRail` on the quote). On the current primary rail a 5,000 TZS withdrawal carries a **150 TZS** PSP fee — display the quote's `fees`, never hardcoded figures. A rail change between quote and execute answers `409 quote_stale`; re-quote and re-confirm.
+
+- **User-facing payout confirmation.** `POST /api/v1/withdrawals` and `GET /api/v1/withdrawals/:id` now return `payoutRail`, `payoutReference`, `payoutReceipt` (the rail's own receipt number when available) and a ready-to-show `confirmationMessage` ("TZS 5,000 sent to JOHN DOE (2557…) via Selcom — ref …"). **Push or display this to your user on completion** — the rail's own confirmation SMS goes only to the platform's corporate account, so without it your user never sees a receipt.
+- The status GET also returns `receiveAmountTzs` and `recipientPhone`, so completion notifications need no client-side fee math.
+
+---
+
 ## What's New — v1.14.0 (31 Jul 2026)
 
 **The Ramp API is now documented, and the sandbox caps bind on it.** Partners settling cross-border USDC ⇄ TZS get the full reference below — including **how to fund your settlement float** (`GET /api/v1/ramp/balance` returns your dedicated deposit address; native USDC on Base only).
@@ -794,6 +803,8 @@ Burns the user's nTZS and pays out TZS to their mobile money number. **Two-step 
 
 `amountTzs` in both calls is the amount the recipient should **receive** (net). The burn amount is grossed up server-side: `burn = ceil((receive + pspFee) / (1 − platformFeeRate))`. Minimum receive amount: **5,000 TZS**.
 
+**The PSP fee follows the rail that will serve the payout** — it is not a flat constant. The quote's `payoutRail` names the rail it priced (e.g. `selcom`, whose published tariff is amount-tiered: 150 TZS at a 5,000 payout; `snippe` is a flat 1,500). Always display the quote's `fees` — never hardcode fee figures. If the serving rail changes between quote and execute, the execute call answers `409 quote_stale` and you re-quote at the current price.
+
 ### `POST /api/v1/withdrawals/quote`
 
 #### Request body
@@ -814,8 +825,9 @@ Burns the user's nTZS and pays out TZS to their mobile money number. **Two-step 
   "recipientPhone": "255744277496",
   "recipientName": "JOHN DOE",
   "receiveAmountTzs": 5000,
-  "burnAmountTzs": 6533,
-  "fees": { "platformFeeTzs": 33, "pspFeeTzs": 1500, "nedaFeeTzs": 30, "totalFeeTzs": 1563 },
+  "burnAmountTzs": 5206,
+  "payoutRail": "selcom",
+  "fees": { "platformFeeTzs": 26, "pspFeeTzs": 150, "nedaFeeTzs": 30, "totalFeeTzs": 206 },
   "balance": { "availableTzs": 12000, "sufficient": true }
 }
 ```
@@ -826,7 +838,7 @@ Burns the user's nTZS and pays out TZS to their mobile money number. **Two-step 
 
 #### Required confirmation screen
 
-Before the user's final tap, display: **who they are paying** (name + number), **the fee** (`fees.totalFeeTzs`), and **what the recipient receives** (`receiveAmountTzs`). On success, say "*TZS 5,000 is on its way to JOHN DOE (fees TZS 1,533)*" — never present the gross burn amount as the amount "sent".
+Before the user's final tap, display: **who they are paying** (name + number), **the fee** (`fees.totalFeeTzs`), and **what the recipient receives** (`receiveAmountTzs`). On success, say "*TZS 5,000 is on its way to JOHN DOE (fees TZS 206)*" — never present the gross burn amount as the amount "sent".
 
 ### `POST /api/v1/withdrawals`
 
@@ -845,15 +857,22 @@ Before the user's final tap, display: **who they are paying** (name + number), *
 {
   "id": "af9fb83f-4ef9-4445-acdf-22ef5b774766",
   "status": "burned",
-  "amountTzs": 6533,
+  "amountTzs": 5206,
   "receiveAmountTzs": 5000,
   "recipientName": "JOHN DOE",
-  "platformFeeTzs": 33,
-  "pspFeeTzs": 1500,
-  "totalFeeTzs": 1533,
-  "message": "Withdrawal processed: 5000 TZS on its way to the recipient (1533 TZS in fees)."
+  "platformFeeTzs": 26,
+  "pspFeeTzs": 150,
+  "totalFeeTzs": 206,
+  "payoutRail": "selcom",
+  "payoutReference": "16437765-f972-49c4-9231-74f09d815298",
+  "payoutReceipt": "SB0801XXXXX",
+  "payoutStatus": "completed",
+  "confirmationMessage": "TZS 5,000 sent to JOHN DOE (255744277496) via Selcom — ref 16437765-f972-49c4-9231-74f09d815298, receipt SB0801XXXXX.",
+  "message": "Withdrawal processed: 5000 TZS on its way to the recipient (206 TZS in fees)."
 }
 ```
+
+**Notify your user with `confirmationMessage`.** The PSP's own confirmation SMS goes only to the platform's corporate account — this field carries the same substance (who was paid, how much, which rail, the reference) ready to show or push verbatim. `payoutReceipt` is the rail's own receipt number when the rail returns one (Selcom does); `payoutStatus` may still be `pending` if the payout is settling — `GET /api/v1/withdrawals/:id` returns the same fields (plus `confirmationMessage` once completed) for your status polling and completion notification.
 
 Amounts ≥ 1,000,000 TZS queue for admin approval instead (`status: "requested"`).
 

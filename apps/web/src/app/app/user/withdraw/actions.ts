@@ -8,13 +8,12 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
-import { isValidTanzanianPhone, normalizePhone, sendPayoutRouted } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, sendPayoutRouted, expectedPayoutFeeTzs } from '@/lib/psp'
 import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 import { writeAuditLog } from '@/lib/audit'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
-const SNIPPE_FLAT_FEE_TZS = 1500
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BURN_ABI = [
@@ -93,12 +92,17 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   const recipientPhone = normalizePhone(phone)
 
   // Gross-up: user specifies receive amount, we calculate how much nTZS to burn
-  // burnAmount = ceil((receiveAmount + snippeFee) / (1 - platformFeeRate))
+  // burnAmount = ceil((receiveAmount + pspFee) / (1 - platformFeeRate)).
+  // The PSP fee is the EXPECTED SERVING RAIL's charge (Selcom is tiered — 150
+  // at 5,000 TZS — not Snippe's flat 1,500); the same function prices the
+  // form, this action, and the WaaS quote endpoint.
   const receiveAmountTrunc = Math.trunc(receiveAmountTzs)
-  const amountTzsTrunc = Math.ceil((receiveAmountTrunc + SNIPPE_FLAT_FEE_TZS) / (1 - PLATFORM_FEE_PERCENT / 100))
-  const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - SNIPPE_FLAT_FEE_TZS
-  // Snippe's `amount` = net amount the recipient receives; Snippe debits its flat fee
-  // separately on top of this from our Snippe balance. So we pass the exact receive amount.
+  const pspFeeTzs = expectedPayoutFeeTzs(receiveAmountTrunc)
+  const amountTzsTrunc = Math.ceil((receiveAmountTrunc + pspFeeTzs) / (1 - PLATFORM_FEE_PERCENT / 100))
+  const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - pspFeeTzs
+  // The rail's `amount` = net amount the recipient receives; the PSP debits its
+  // own charge separately on top of this from our PSP balance/float. So we pass
+  // the exact receive amount.
   const payoutAmountTzs = receiveAmountTrunc
 
   // Large amounts require admin approval — queue and exit
@@ -114,8 +118,9 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
       requestedByUserId: dbUser.id,
       recipientPhone,
       platformFeeTzs,
+      pspFeeTzs,
     }).returning({ id: burnRequests.id })
-    await writeAuditLog('burn.queued_for_approval', 'burn_request', queuedBurn.id, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs }, dbUser.id)
+    await writeAuditLog('burn.queued_for_approval', 'burn_request', queuedBurn.id, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, pspFeeTzs }, dbUser.id)
     return { success: true as const, requiresApproval: true }
   }
 
@@ -208,6 +213,7 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
       requestedByUserId: dbUser.id,
       recipientPhone,
       platformFeeTzs,
+      pspFeeTzs,
     })
     .returning({ id: burnRequests.id })
 
@@ -296,7 +302,7 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
       .update(burnRequests)
       .set({ payoutReference: payoutResult.reference, payoutProvider: routed.provider, payoutStatus: 'pending', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
-    await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutReference: payoutResult.reference, recipientPhone, rail: routed.provider }, dbUser.id)
+    await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, pspFeeTzs, payoutReference: payoutResult.reference, recipientPhone, rail: routed.provider }, dbUser.id)
     return { success: true as const, requiresApproval: false }
   }
 
