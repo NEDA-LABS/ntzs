@@ -22,7 +22,7 @@ and the `bank` vocabulary Selcom's surfaces share.
 | Destination | Shortcode | Reference type | Lookup | Proven |
 |---|---|---|---|---|
 | Vodacom M-Pesa | `MPESA` | NUMERIC | Enabled | ✅ live dispatch 1 Aug 2026 |
-| Airtel Money | `AIRTELMONEY` | NUMERIC | Enabled | — probe before volume |
+| Airtel Money | `AIRTELMONEY` | NUMERIC | Enabled | ✅ live dispatch 1 Aug 2026 |
 | Mixx by Yas (ex Tigo Pesa) | `MIXXBYYAS` | NUMERIC | Enabled | — probe before volume |
 | Halo Pesa | `HALOPESA` | NUMERIC | Enabled | — probe before volume |
 | TTCL Pesa | `TTCLPESA` | NUMERIC | Enabled | — probe before volume |

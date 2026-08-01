@@ -3,10 +3,16 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { checkPayoutStatus } from '@/lib/psp'
+import { checkPayoutStatus, checkPayoutStatusFor, sendPayoutRouted, normalizePhone } from '@/lib/psp'
+import { PSP_FLAT_FEE_TZS } from '@/lib/waas/quote'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { writeAuditLog } from '@/lib/audit'
 import { burnRequests, wallets } from '@ntzs/db'
+
+// redispatch awaits a short settlement poll after dispatching.
+export const maxDuration = 60
+
+const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 // Explicit column set (both fetch sites) — keeps this route immune to schema
 // columns that exist in code before their migration is applied.
@@ -57,6 +63,14 @@ const RECONCILE_BURN_COLUMNS = {
  * - `mark_completed`: operator has personally confirmed the payout did
  *   actually reach the user (manual payout / reconciled externally). Marks
  *   the row completed without any on-chain action.
+ * - `redispatch`: pay the ORIGINAL withdrawal's payout leg through the (now
+ *   working) failover dispatcher — no new burn, no user retry. Born on
+ *   1 Aug 2026: every rail refused initiations, users' burns piled up in
+ *   reconcile_required, and once the rail was fixed the humane resolution
+ *   for the row a user actually wanted was to complete it, not to revert
+ *   and make them attempt a sixth time. Refused when the row carries a
+ *   payout reference (a dispatch may exist — resolve via auto first) or
+ *   when the burn didn't complete.
  */
 export async function POST(
   request: NextRequest,
@@ -66,7 +80,7 @@ export async function POST(
   const { id: burnRequestId } = await params
 
   let body: {
-    action?: 'auto' | 'force_revert' | 'mark_completed'
+    action?: 'auto' | 'force_revert' | 'mark_completed' | 'redispatch'
     snippeReference?: string
     notes?: string
   } = {}
@@ -190,6 +204,94 @@ export async function POST(
     )
 
     return NextResponse.json({ ok: true, burnId: burnRequestId, action: 'marked_completed' })
+  }
+
+  // ── redispatch: pay the original withdrawal on the working rail ──────────
+  if (action === 'redispatch') {
+    if (burn.payoutStatus !== 'reconcile_required') {
+      return NextResponse.json(
+        { error: 'redispatch requires payout_status=reconcile_required', currentPayoutStatus: burn.payoutStatus },
+        { status: 409 },
+      )
+    }
+    if (burn.payoutReference) {
+      // A reference means a dispatch may exist at the PSP — paying again
+      // could double-pay. Resolve what that reference actually did first.
+      return NextResponse.json(
+        { error: 'row_has_payout_reference', message: 'A payout reference exists — resolve it via action=auto (or mark_completed/force_revert after checking the PSP) instead of redispatching.', payoutReference: burn.payoutReference },
+        { status: 409 },
+      )
+    }
+    if (burn.status !== 'burned') {
+      return NextResponse.json(
+        { error: 'burn_not_completed', message: `Burn status is '${burn.status}' — nothing to pay out.` },
+        { status: 409 },
+      )
+    }
+    if (!burn.recipientPhone) {
+      return NextResponse.json({ error: 'no_recipient_phone' }, { status: 409 })
+    }
+    const receiveAmountTzs = burn.amountTzs - (burn.platformFeeTzs ?? 0) - (burn.nedaFeeTzs ?? 0) - PSP_FLAT_FEE_TZS
+    if (receiveAmountTzs <= 0) {
+      return NextResponse.json({ error: 'non_positive_receive_amount', receiveAmountTzs }, { status: 409 })
+    }
+
+    const phone = normalizePhone(burn.recipientPhone)
+    const routed = await sendPayoutRouted({
+      amountTzs: receiveAmountTzs,
+      recipientPhone: phone,
+      recipientName: 'nTZS User',
+      narration: 'nTZS withdrawal',
+      webhookBaseUrl: APP_URL,
+      metadata: { burn_request_id: burnRequestId, operator_redispatch: true },
+    })
+
+    if (!routed.payout.success || !routed.payout.reference) {
+      const reason = `${routed.payout.error ?? 'Payout initiation failed'} (rails tried: ${routed.attempted.join(' → ') || 'none'})`
+      await db
+        .update(burnRequests)
+        .set({ payoutError: `${burn.payoutError ?? ''} | operator_redispatch_failed: ${reason}`, updatedAt: new Date() })
+        .where(eq(burnRequests.id, burnRequestId))
+      await writeAuditLog('burn.operator_redispatch_failed', 'burn_request', burnRequestId,
+        { operatorId: dbUser.id, notes: body.notes, error: reason, receiveAmountTzs }, dbUser.id)
+      return NextResponse.json({ ok: false, error: reason }, { status: 502 })
+    }
+
+    const ref = routed.payout.reference
+    await db
+      .update(burnRequests)
+      .set({
+        payoutReference: ref,
+        payoutProvider: routed.provider,
+        payoutStatus: 'pending',
+        payoutError: `${burn.payoutError ?? ''} | operator_redispatched via ${routed.provider}: ${body.notes ?? 'no_notes'}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(burnRequests.id, burnRequestId))
+    await writeAuditLog('burn.operator_redispatched', 'burn_request', burnRequestId,
+      { operatorId: dbUser.id, notes: body.notes, rail: routed.provider, payoutReference: ref, receiveAmountTzs }, dbUser.id)
+
+    // Short awaited poll so the operator sees the terminal state immediately;
+    // the rail's webhook remains the durable finisher.
+    for (const delay of [3000, 6000, 12000]) {
+      await new Promise((r) => setTimeout(r, delay))
+      try {
+        const ps = await checkPayoutStatusFor(routed.provider, ref)
+        if (ps.status === 'completed') {
+          await db.update(burnRequests)
+            .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
+            .where(eq(burnRequests.id, burnRequestId))
+          return NextResponse.json({ ok: true, action: 'redispatched', rail: routed.provider, payoutReference: ref, receiveAmountTzs, settled: 'completed' })
+        }
+        if (ps.status === 'failed' || ps.status === 'reversed') {
+          await db.update(burnRequests)
+            .set({ payoutStatus: 'reconcile_required', payoutError: `${burn.payoutError ?? ''} | operator_redispatch settled ${ps.status}: ${ps.failureReason ?? 'no reason'}`, updatedAt: new Date() })
+            .where(eq(burnRequests.id, burnRequestId))
+          return NextResponse.json({ ok: false, action: 'redispatched', rail: routed.provider, payoutReference: ref, settled: ps.status, failureReason: ps.failureReason }, { status: 502 })
+        }
+      } catch { /* keep polling */ }
+    }
+    return NextResponse.json({ ok: true, action: 'redispatched', rail: routed.provider, payoutReference: ref, receiveAmountTzs, settled: 'pending' })
   }
 
   // ── auto: only act on Snippe-authoritative states ────────────────────────

@@ -21,6 +21,7 @@ describe('interactive cash-outs ride the failover engine', () => {
     'app/app/user/withdraw/actions.ts',
     'lib/ramp/offramp.ts',
     'app/api/v1/partners/treasury/withdraw/route.ts',
+    'app/api/admin/burns/[id]/reconcile/route.ts',
   ]
 
   it('every payout call site uses sendPayoutRouted, none the single-rail sendPayout', () => {
@@ -43,7 +44,7 @@ describe('interactive cash-outs ride the failover engine', () => {
   })
 
   it('an all-rails refusal records which rails were tried', () => {
-    for (const rel of ['app/api/v1/withdrawals/route.ts', 'app/app/user/withdraw/actions.ts', 'lib/ramp/offramp.ts']) {
+    for (const rel of ['app/api/v1/withdrawals/route.ts', 'app/app/user/withdraw/actions.ts', 'lib/ramp/offramp.ts', 'app/api/admin/burns/[id]/reconcile/route.ts']) {
       const src = fs.readFileSync(path.join(SRC, rel), 'utf8')
       expect(src, `${rel} must evidence the attempted rails`).toContain('rails tried')
     }
