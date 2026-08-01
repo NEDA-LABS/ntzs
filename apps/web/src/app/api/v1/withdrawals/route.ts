@@ -16,6 +16,7 @@ import {
   lookupRecipientName,
 } from '@/lib/psp'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
+import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 import { burnRequests, partners } from '@ntzs/db'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import {
@@ -199,6 +200,16 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       )
     }
+  }
+
+  // Circuit breaker — when the rails are evidently refusing initiations,
+  // refuse BEFORE the burn (1 Aug 2026: retries against dead rails burned
+  // six times with nothing dispatched; balance-untouched 503 is the honest
+  // failure).
+  const circuit = await payoutRailsLookDead()
+  if (circuit.dead) {
+    console.warn('[v1/withdrawals] circuit open — refusing pre-burn:', circuit.reason)
+    return NextResponse.json(CIRCUIT_OPEN_RESPONSE, { status: 503 })
   }
 
   // Check on-chain balance

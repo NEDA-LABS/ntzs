@@ -1,6 +1,6 @@
 'use server'
 
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gte, isNull, ne, or } from 'drizzle-orm'
 import { ethers } from 'ethers'
 import { redirect } from 'next/navigation'
 
@@ -9,6 +9,7 @@ import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone, sendPayoutRouted } from '@/lib/psp'
+import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 import { writeAuditLog } from '@/lib/audit'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
@@ -157,6 +158,40 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: `Could not verify balance: ${msg}` }
+  }
+
+  // Duplicate guard — same user, same phone, same amount within 5 minutes
+  // while an earlier attempt still holds funds. On 1 Aug 2026 retries against
+  // dead rails burned repeatedly for one intended cash-out.
+  {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+    const [dup] = await db
+      .select({ id: burnRequests.id, payoutStatus: burnRequests.payoutStatus })
+      .from(burnRequests)
+      .where(and(
+        eq(burnRequests.userId, dbUser.id),
+        eq(burnRequests.recipientPhone, recipientPhone),
+        eq(burnRequests.amountTzs, amountTzsTrunc),
+        gte(burnRequests.createdAt, fiveMinAgo),
+        ne(burnRequests.status, 'failed'),
+        or(isNull(burnRequests.payoutStatus), ne(burnRequests.payoutStatus, 'reverted')),
+      ))
+      .limit(1)
+    if (dup) {
+      return {
+        success: false,
+        error: 'An identical withdrawal was made moments ago and is still processing. Do not retry — check its status; if it fails, your balance is restored automatically.',
+      }
+    }
+  }
+
+  // Circuit breaker — when the rails are evidently refusing initiations,
+  // refuse BEFORE the burn (balance untouched) instead of burning into a
+  // stranded reconcile row.
+  const circuit = await payoutRailsLookDead()
+  if (circuit.dead) {
+    console.warn('[withdraw] circuit open — refusing pre-burn:', circuit.reason)
+    return { success: false, error: CIRCUIT_OPEN_RESPONSE.message }
   }
 
   // Create burn request record first (so we have an ID for the audit trail)
