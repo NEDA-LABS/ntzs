@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { writeAuditLog } from '@/lib/audit'
-import { payBill, payLipa, checkPayoutStatus, queryTransactionRaw } from '@/lib/psp/selcom'
+import { payBill, payLipa, checkPayoutStatus, queryTransactionRaw, processDisbursement, detectWalletFiCode, normalizePhone } from '@/lib/psp/selcom'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
     payNumber?: string
     network?: string
     transId?: string
+    phone?: string
+    fiCode?: string
   }
   try {
     body = await request.json()
@@ -62,8 +64,8 @@ export async function POST(request: NextRequest) {
   }
 
   const kind = body.kind
-  if (kind !== 'bill' && kind !== 'lipa') {
-    return NextResponse.json({ error: "kind must be 'bill' or 'lipa'" }, { status: 400 })
+  if (kind !== 'bill' && kind !== 'lipa' && kind !== 'wallet') {
+    return NextResponse.json({ error: "kind must be 'bill', 'lipa' or 'wallet'" }, { status: 400 })
   }
 
   const amountTzs = Number(body.amountTzs)
@@ -83,9 +85,42 @@ export async function POST(request: NextRequest) {
   if (kind === 'lipa' && process.env.SELCOM_LIPA_ENABLED !== 'true') {
     return NextResponse.json({ error: 'SELCOM_LIPA_ENABLED is not set' }, { status: 403 })
   }
+  if (kind === 'wallet' && process.env.SELCOM_DISBURSEMENTS_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'SELCOM_DISBURSEMENTS_ENABLED is not set' }, { status: 403 })
+  }
 
   let dispatch
-  if (kind === 'bill') {
+  if (kind === 'wallet') {
+    // Wallet cash-in probe — the EXACT call the withdrawal rail makes, with
+    // Selcom's raw verdict returned instead of being flattened into a user
+    // message. `fiCode` overrides the shortcode-table default so the two
+    // candidate vocabularies (VMCASHIN-style table codes vs the MPESA-style
+    // codes in Selcom's own wallet-transfer example — never live-confirmed)
+    // can be A/B tested from a browser without a deploy.
+    if (!body.phone) {
+      return NextResponse.json({ error: 'wallet requires phone' }, { status: 400 })
+    }
+    let phone: string
+    try {
+      phone = normalizePhone(body.phone)
+    } catch (e) {
+      return NextResponse.json({ error: `invalid phone: ${e instanceof Error ? e.message : e}` }, { status: 400 })
+    }
+    let fiCode: string
+    try {
+      fiCode = body.fiCode?.trim().toUpperCase() || detectWalletFiCode(phone)
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 })
+    }
+    dispatch = await processDisbursement({
+      recipientFiCode: fiCode,
+      recipientAccount: phone,
+      recipientName: 'NEDA Labs Test',
+      amountTzs,
+      narration: 'wallet payout probe',
+      transId: body.transId,
+    })
+  } else if (kind === 'bill') {
     if (!body.utilityCode || !body.utilityRef) {
       return NextResponse.json({ error: 'bill requires utilityCode and utilityRef' }, { status: 400 })
     }
@@ -122,6 +157,8 @@ export async function POST(request: NextRequest) {
       utilityRef: body.utilityRef ?? null,
       payNumber: body.payNumber ?? null,
       network: body.network ?? null,
+      phone: body.phone ?? null,
+      fiCode: body.fiCode ?? null,
       dispatchSuccess: dispatch.success,
       dispatchError: dispatch.error ?? null,
       dispatchErrorCode: dispatch.errorCode ?? null,
