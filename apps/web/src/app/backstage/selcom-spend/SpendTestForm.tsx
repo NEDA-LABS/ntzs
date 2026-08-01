@@ -259,12 +259,12 @@ export default function SpendTestForm({
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                FI code override <span className="text-zinc-600">(optional — blank uses the shortcode table, e.g. VMCASHIN)</span>
+                FI code override <span className="text-zinc-600">(optional — blank uses the proven mapping; use this to prove a new network&apos;s code)</span>
               </label>
               <input
                 value={fiCode}
                 onChange={(e) => setFiCode(e.target.value)}
-                placeholder="leave blank, or try MPESA"
+                placeholder="e.g. TIGOPESA (candidate to prove)"
                 className={inputCls}
               />
             </div>

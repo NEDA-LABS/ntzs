@@ -230,7 +230,9 @@ describe('bill-pay / lipa field builders (order defines body + signature)', () =
 
 describe('detectWalletFiCode (prefix → Selcom FI code)', () => {
   it('maps every routable network and fails loudly on unmapped prefixes', () => {
-    expect(detectWalletFiCode(normalizePhone('0744277496'))).toBe('VMCASHIN') // Vodacom
+    // MPESA proven by live dispatch 1 Aug 2026 (VMCASHIN from the shortcode
+    // table answered 651 invalid/inactive — the table was wrong).
+    expect(detectWalletFiCode(normalizePhone('0744277496'))).toBe('MPESA') // Vodacom
     expect(detectWalletFiCode(normalizePhone('0689000000'))).toBe('AMCASHIN') // Airtel
     expect(detectWalletFiCode(normalizePhone('0714641171'))).toBe('TPCASHIN') // Yas/Tigo
     expect(detectWalletFiCode(normalizePhone('0612345678'))).toBe('HPCASHIN') // Halotel

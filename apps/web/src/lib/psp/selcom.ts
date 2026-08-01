@@ -294,17 +294,26 @@ export function isValidTanzanianPhone(phone: string): boolean {
 /**
  * Map a Tanzanian mobile prefix → Selcom mobile-wallet FI code (recipientFiCode).
  *
- * Codes from the prelive docs "Destination Shortcodes" table (Jul 2026).
- * ⚠ One inconsistency to confirm with Selcom: their own wallet-transfer example
- * uses "MPESA" while the shortcode table says VMCASHIN — table assumed correct.
+ * ⚠ THE SHORTCODE TABLE WAS WRONG. The prelive docs' "Destination Shortcodes"
+ * table said VMCASHIN-style codes; a live dispatch on 1 Aug 2026 answered
+ * `651 Invalid or inactive bank/FI code: VMCASHIN`, and the same dispatch with
+ * "MPESA" — the code from Selcom's own wallet-transfer example — was ACCEPTED
+ * and the money arrived (ref 16437765-f972-49c4-9231-74f09d815298). Only codes
+ * proven by a live dispatch get mapped here; the admin wallet probe
+ * (/backstage/selcom-spend → Wallet payout, FI-code override) is how a
+ * candidate gets proven. Unproven networks keep their table codes so they fail
+ * with the same explicit 651 rather than an untested guess.
+ *
+ * Candidates to probe / confirm with Selcom for the rest, by their example's
+ * naming style: AIRTELMONEY, TIGOPESA, HALOPESA, TTCL.
  * detectWalletFiCode throws on an unmapped prefix so we fail loudly, never guess.
  */
 const MOBILE_FI_CODES: Record<string, string> = {
-  vodacom: 'VMCASHIN', // Vodacom M-Pesa — 74/75/760-7
-  airtel: 'AMCASHIN', //  Airtel Money — 68/69/78/768-9
-  tigo: 'TPCASHIN', //    Mixx by Yas (ex Tigo Pesa) — 71/65/67/77
-  halotel: 'HPCASHIN', // Halo Pesa — 61/62
-  ttcl: 'TTCASHIN', //    TTCL Pesa — 73
+  vodacom: 'MPESA', //    Vodacom M-Pesa — 74/75/760-7 — PROVEN LIVE 1 Aug 2026
+  airtel: 'AMCASHIN', //  Airtel Money — 68/69/78/768-9 — ⚠ unproven, expect 651
+  tigo: 'TPCASHIN', //    Mixx by Yas (ex Tigo Pesa) — 71/65/67/77 — ⚠ unproven, expect 651
+  halotel: 'HPCASHIN', // Halo Pesa — 61/62 — ⚠ unproven, expect 651
+  ttcl: 'TTCASHIN', //    TTCL Pesa — 73 — ⚠ unproven, expect 651
 }
 
 /** Exported for unit tests. */
