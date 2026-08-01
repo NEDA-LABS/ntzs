@@ -8,7 +8,7 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
-import { isValidTanzanianPhone, normalizePhone, sendPayout } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, sendPayoutRouted } from '@/lib/psp'
 import { writeAuditLog } from '@/lib/audit'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
@@ -242,22 +242,26 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     return { success: false, error: `Burn failed: ${errorMessage}` }
   }
 
-  // ── Burn confirmed — now trigger Snippe payout ───────────────────────────
-  const payoutResult = await sendPayout({
+  // ── Burn confirmed — now trigger the payout with RAIL FAILOVER ───────────
+  // Single-rail dispatch died platform-wide on 1 Aug 2026 when Snippe flagged
+  // our account; the routed dispatcher walks DISBURSEMENT_RAIL_PRIORITY and
+  // sends each rail its own webhook URL.
+  const routed = await sendPayoutRouted({
     amountTzs: payoutAmountTzs,
     recipientPhone,
     recipientName: 'nTZS User',
     narration: 'nTZS withdrawal',
-    webhookUrl: `${APP_URL}/api/webhooks/snippe/payout`,
+    webhookBaseUrl: APP_URL,
     metadata: { burn_request_id: burnRequestId },
   })
+  const payoutResult = routed.payout
 
   if (payoutResult.success && payoutResult.reference) {
     await db
       .update(burnRequests)
-      .set({ payoutReference: payoutResult.reference, payoutStatus: 'pending', updatedAt: new Date() })
+      .set({ payoutReference: payoutResult.reference, payoutProvider: routed.provider, payoutStatus: 'pending', updatedAt: new Date() })
       .where(eq(burnRequests.id, burnRequestId))
-    await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutReference: payoutResult.reference, recipientPhone }, dbUser.id)
+    await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutReference: payoutResult.reference, recipientPhone, rail: routed.provider }, dbUser.id)
     return { success: true as const, requiresApproval: false }
   }
 
@@ -273,7 +277,7 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   // the user. An operator must confirm via Snippe dashboard that no payout
   // was dispatched before the revert is triggered (see the admin reconcile
   // endpoint — /api/admin/burns/:id/reconcile).
-  const payoutErr = payoutResult.error ?? 'Payout initiation failed'
+  const payoutErr = `${payoutResult.error ?? 'Payout initiation failed'} (rails tried: ${routed.attempted.join(' → ') || 'none'})`
   console.error('[withdraw] payout failed (NOT auto-reverting — awaiting PSP confirmation)', {
     burnRequestId,
     error: payoutErr,

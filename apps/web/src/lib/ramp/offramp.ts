@@ -6,8 +6,7 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PR
 import { rampSettlements, burnRequests, users, wallets, partners, lpAccounts, lpFills } from '@ntzs/db'
 import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
 import {
-  isMobilePspConfigured, normalizePhone, sendPayout, checkPayoutStatus, lookupRecipientName,
-  ACTIVE_PSP_PAYOUT_WEBHOOK_PATH,
+  anyDisbursementRailConfigured, normalizePhone, sendPayoutRouted, checkPayoutStatusFor, lookupRecipientName,
 } from '@/lib/psp'
 import { revertOffRampBurn } from '@/lib/minting/revertOffRampBurn'
 import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
@@ -351,34 +350,38 @@ export async function runOfframpSettlement(args: {
     await setStatus(settlementId, { status: 'failed', error: 'recipientPhone missing for wallet payout' })
     return { ok: false, status: 'failed', error: 'recipientPhone missing for wallet payout' }
   }
-  if (!isMobilePspConfigured()) {
+  if (!anyDisbursementRailConfigured()) {
     await setStatus(settlementId, { status: 'failed', error: 'PSP not configured' })
     return { ok: false, status: 'failed', error: 'PSP not configured' }
   }
   const phone = normalizePhone(recipientPhone)
-  const webhookUrl = `${APP_URL}${ACTIVE_PSP_PAYOUT_WEBHOOK_PATH}`
   const recipientInfo = await lookupRecipientName(phone).catch(() => ({ name: undefined as string | undefined }))
 
   try {
-    const payout = await sendPayout({
+    // Rail failover, mirroring v1/withdrawals: one PSP refusing initiations
+    // (Snippe account flag, 1 Aug 2026) must not kill the corridor while
+    // another configured rail can serve.
+    const routed = await sendPayoutRouted({
       amountTzs: args.recipientTzs,
       recipientPhone: phone,
       recipientName: recipientInfo.name || 'nTZS Recipient',
       narration: 'nTZS settlement',
-      webhookUrl,
+      webhookBaseUrl: APP_URL,
       metadata: { burn_request_id: burnRequestId, ramp_settlement_id: settlementId },
     })
+    const payout = routed.payout
 
     if (payout.success && payout.reference) {
       const ref = payout.reference
-      await db.update(burnRequests).set({ payoutReference: ref, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+      const payoutRail = routed.provider
+      await db.update(burnRequests).set({ payoutReference: ref, payoutProvider: payoutRail, payoutStatus: 'pending', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
       await setStatus(settlementId, { pspReference: ref })
 
-      // Poll for quick completion; the signed webhook is the primary path.
+      // Poll the SERVING rail for quick completion; the webhook is primary.
       for (const delay of [3000, 6000, 12000]) {
         await new Promise((r) => setTimeout(r, delay))
         try {
-          const ps = await checkPayoutStatus(ref)
+          const ps = await checkPayoutStatusFor(payoutRail, ref)
           if (ps.status === 'completed') {
             await db.update(burnRequests).set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
             await setStatus(settlementId, { status: 'completed' })
@@ -396,7 +399,7 @@ export async function runOfframpSettlement(args: {
     }
 
     // Ambiguous initiation failure — never auto-revert; flag for reconciliation.
-    const reason = payout.error ?? 'Payout initiation failed'
+    const reason = `${payout.error ?? 'Payout initiation failed'} (rails tried: ${routed.attempted.join(' → ') || 'none'})`
     await db.update(burnRequests).set({ payoutStatus: 'reconcile_required', payoutError: reason, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
     await setStatus(settlementId, { status: 'failed', error: `reconcile_required: ${reason}` })
     return { ok: false, status: 'failed', error: reason }

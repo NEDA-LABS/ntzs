@@ -9,7 +9,7 @@ import {
   BURNER_PRIVATE_KEY,
   MINTER_PRIVATE_KEY,
 } from '@/lib/env'
-import { sendPayout, sendBankPayout } from '@/lib/psp'
+import { sendPayoutRouted, sendBankPayout } from '@/lib/psp'
 import { partners, auditLogs } from '@ntzs/db'
 import { verifySessionToken } from '@/lib/waas/auth'
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency'
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
     treasuryWallet: partner.treasuryWalletAddress,
   }
 
-  let result: Awaited<ReturnType<typeof sendPayout>>
+  let result: Awaited<ReturnType<typeof sendBankPayout>>
   let successMessage: string
 
   try {
@@ -207,21 +207,24 @@ export async function POST(request: NextRequest) {
       })
       successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutBankName} account ending ${partner.payoutBankAccount!.slice(-4)}. Funds will arrive within 1-2 business days.`
     } else {
-      result = await sendPayout({
+      // Mobile leg rides the failover engine (bank payouts have no routed
+      // equivalent yet — bank rails are per-provider).
+      const routed = await sendPayoutRouted({
         amountTzs,
         recipientPhone: partner.payoutPhone!,
         recipientName: partner.name,
         narration: `nTZS treasury withdrawal - ${partner.name}`,
-        webhookUrl,
+        webhookBaseUrl: baseUrl,
         metadata: sharedMeta,
       })
+      result = routed.payout
       successMessage = `Withdrawal of ${amountTzs.toLocaleString()} TZS initiated to ${partner.payoutPhone}. You will receive an M-Pesa prompt shortly.`
     }
   } catch (err) {
     // Treat a thrown PSP error identically to a failed result — re-mint below.
     const message = err instanceof Error ? err.message : String(err)
     console.error('[treasury/withdraw] PSP call threw:', message)
-    result = { success: false, error: message } as Awaited<ReturnType<typeof sendPayout>>
+    result = { success: false, error: message } as Awaited<ReturnType<typeof sendBankPayout>>
     successMessage = ''
   }
 
