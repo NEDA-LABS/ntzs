@@ -86,3 +86,34 @@ describe('ramp routes never answer with a bare 500', () => {
     expect(src).toContain('pairAgeHours > 120')
   })
 })
+
+/**
+ * 3 Aug 2026, first live partner failure: a Selcom reject reverted the
+ * settlement and re-minted the gross as nTZS at the settlement wallet — where
+ * the partner could neither see it (/ramp/balance reported USDC only) nor use
+ * it (the next attempt would swap fresh USDC and pay the spread twice).
+ * "The balance was deducted from our float… how do you handle refunds?"
+ */
+describe('a reverted off-ramp is recoverable, visibly and automatically', () => {
+  it('the settlement engine consumes reverted nTZS before swapping fresh USDC', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'offramp.ts'), 'utf8')
+    expect(src).toContain('existingNtzsWei >= grossWei')
+    expect(src).toContain('consuming reverted nTZS')
+    // Swap preconditions must not block the skip path: a partner recovering
+    // on nTZS alone needs neither USDC sufficiency nor an active LP.
+    const skipAt = src.indexOf('existingNtzsWei >= grossWei')
+    expect(src.indexOf('Insufficient USDC float —')).toBeGreaterThan(skipAt)
+    expect(src.indexOf('No active liquidity provider available')).toBeGreaterThan(skipAt)
+  })
+
+  it('the revert webhook tells the partner WHERE the value went', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'offramp.ts'), 'utf8')
+    expect(src).toContain('returnedAsNtzsTo')
+  })
+
+  it('the balance endpoint surfaces reverted value instead of a silent shortfall', () => {
+    const src = fs.readFileSync(path.join(API, 'v1/ramp/balance/route.ts'), 'utf8')
+    expect(src).toContain('ntzsBalance')
+    expect(src).toContain('consumed automatically by your next off-ramp')
+  })
+})
