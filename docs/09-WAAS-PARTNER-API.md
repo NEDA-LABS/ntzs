@@ -68,6 +68,12 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.15.1 (3 Aug 2026)
+
+**Off-ramp quotes in local currency.** `POST /api/v1/ramp/quote` with `direction: "offramp"` now accepts **either** `usdcAmount` (as before) **or** `tzsAmount` — the exact net TZS your user asked for. Quote by `tzsAmount` when your users think in shillings: the recipient receives exactly that figure, and the response's `usdcAmount` is what your settlement float will be debited. Pass exactly one of the two; execution is unchanged (consume the `quoteId` as before).
+
+---
+
 ## What's New — v1.15.0 (1 Aug 2026)
 
 **Withdrawals now cost what the serving rail costs — usually much less.** The PSP fee in withdrawal quotes was a flat 1,500 TZS; it now follows the rail that will actually carry the payout (`payoutRail` on the quote). On the current primary rail a 5,000 TZS withdrawal carries a **150 TZS** PSP fee — display the quote's `fees`, never hardcoded figures. A rail change between quote and execute answers `409 quote_stale`; re-quote and re-confirm.
@@ -1046,9 +1052,11 @@ Ramp is quote-first, like Spend. A quote is **single-use, expires in 60 seconds*
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `direction` | string | ✓ | `offramp` (USDC → TZS) or `onramp` (TZS → USDC) |
-| `usdcAmount` | number | offramp | USDC you will spend |
-| `tzsAmount` | number | onramp | TZS to collect from the payer (≥ 5,000) |
+| `usdcAmount` | number | offramp* | USDC you will spend |
+| `tzsAmount` | number | offramp* / onramp | **Off-ramp:** the exact net TZS the recipient must receive (≥ 5,000) — we answer with the `usdcAmount` to debit. **On-ramp:** TZS to collect from the payer (≥ 5,000) |
 | `destination` | object | – | Off-ramp only. Omit for a mobile-money wallet payout. `{ "kind": "lipa", "payNumber": "…" }` pays a merchant till; `{ "kind": "bill", "utilityCode": "LUKU", "utilityRef": "…" }` pays a biller |
+
+\* For an off-ramp pass **exactly one** of `usdcAmount` or `tzsAmount`. When your user asks in local currency — "pay 50,000 TZS" — quote by `tzsAmount`: the recipient receives **exactly** that figure (fee tiers are absorbed into `feeTzs`, never into the recipient's net), and the response's `usdcAmount` is what your float will be debited on execute.
 
 ```json
 {
