@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { requireRampPartner } from '@/lib/ramp/auth'
-import { getOrCreateSettlementWallet, getSettlementUsdcBalance, USDC_BASE } from '@/lib/ramp/wallet'
+import { getOrCreateSettlementWallet, getSettlementUsdcBalance, getSettlementNtzsBalance, USDC_BASE } from '@/lib/ramp/wallet'
 
 export const runtime = 'nodejs'
 
@@ -19,11 +19,23 @@ export async function GET(req: NextRequest) {
   try {
     const wallet = await getOrCreateSettlementWallet(auth.partner.id)
     const usdcBalance = await getSettlementUsdcBalance(wallet.address)
+    // Non-zero nTZS here is value a REVERTED off-ramp returned (re-minted as
+    // nTZS, not USDC). Without surfacing it, a partner whose payout failed
+    // sees only "balance was deducted" — their value looks gone when it is
+    // sitting at this very address. (First live partner failure, 3 Aug 2026.)
+    const ntzsBalance = await getSettlementNtzsBalance(wallet.address).catch(() => '0')
     return NextResponse.json({
       settlementAddress: wallet.address,
       chain: 'base',
       token: { symbol: 'USDC', address: USDC_BASE.address, decimals: USDC_BASE.decimals },
       usdcBalance,
+      ntzsBalance,
+      ...(Number(ntzsBalance) > 0
+        ? {
+            note:
+              'ntzsBalance is value returned by a reverted off-ramp settlement. It is consumed automatically by your next off-ramp (before any USDC is debited), so no value is lost to a failed payout.',
+          }
+        : {}),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

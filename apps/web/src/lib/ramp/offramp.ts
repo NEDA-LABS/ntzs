@@ -122,51 +122,76 @@ export async function runOfframpSettlement(args: {
     await setStatus(settlementId, { status: 'failed', error: 'Could not read the USDC float (RPC)' })
     return { ok: false, status: 'failed', error: 'Could not read the settlement float — transient network issue; retry with a fresh quote' }
   }
-  const neededUsdc = ethers.parseUnits(args.usdcAmount.toString(), SWAP_TOKENS.USDC.decimals)
-  if (usdcBal < neededUsdc) {
-    await setStatus(settlementId, { status: 'failed', error: 'Insufficient USDC float' })
-    return { ok: false, status: 'failed', error: 'Insufficient USDC float — fund the settlement address first' }
-  }
-
-  const lpId = await pickLpId()
-  if (!lpId) {
-    await setStatus(settlementId, { status: 'failed', error: 'No active LP for conversion' })
-    return { ok: false, status: 'failed', error: 'No active liquidity provider available' }
-  }
-
   // ── Leg 1: swap USDC → nTZS from the settlement wallet back to itself ───────
-  await setStatus(settlementId, { status: 'swapping' })
+  //
+  // Unless the wallet ALREADY holds enough nTZS: a reverted settlement
+  // re-mints its full gross back here as nTZS (revertOffRampBurn), so a
+  // partner's retry after a failed payout must consume that first — not swap
+  // fresh USDC and pay the spread twice while the prior attempt's value sits
+  // at the address (first live partner failure, 3 Aug 2026). Full-cover only,
+  // deliberately: either the quote's usdcAmount is spent, or none of it is —
+  // partial netting would make the debit disagree with the quote.
   let swapInTxHash: string | undefined
   let swapOutTxHash: string | undefined
+  let existingNtzsWei = BigInt(0)
   try {
-    // Inside the guarded region: seed decryption throws when the encryption
-    // env is wrong, and outside a try that stranded the row in 'swapping'.
-    const signer = getSettlementSigner(args.encryptedHdSeed, args.settlementWalletIndex)
-    for await (const u of executeSwap({
-      userPrivateKey: signer.privateKey as `0x${string}`,
-      solverPrivateKey,
-      solverAddress,
-      selectedLpId: lpId,
-      fromToken: 'USDC',
-      toToken: 'NTZS',
-      amount: args.usdcAmount,
-      minOutput: grossTzs,
-      recipientAddress: settlementAddress as `0x${string}`,
-      rpcUrl,
-    })) {
-      if (u.txHash && !swapInTxHash) swapInTxHash = u.txHash
-      if (u.status === 'FILLED') swapOutTxHash = u.txHash ?? swapOutTxHash
-      if (u.status === 'FAILED' || u.status === 'PARTIAL_FILL_EXHAUSTED') {
-        await setStatus(settlementId, { status: 'failed', error: u.message ?? 'Swap failed', swapInTxHash })
-        return { ok: false, status: 'failed', error: u.message ?? 'USDC→nTZS swap failed' }
-      }
+    const ntzsRead = new ethers.Contract(contractAddress, ['function balanceOf(address) view returns (uint256)'], provider)
+    existingNtzsWei = await ntzsRead.balanceOf(settlementAddress)
+  } catch { /* unreadable balance → normal swap path */ }
+  const grossWei = BigInt(String(grossTzs)) * BigInt(10) ** BigInt(18)
+
+  if (existingNtzsWei >= grossWei) {
+    console.log('[ramp/offramp] consuming reverted nTZS at the settlement wallet — swap skipped', {
+      settlementId, grossTzs, existingNtzs: ethers.formatUnits(existingNtzsWei, 18),
+    })
+    await setStatus(settlementId, { status: 'paying_out' })
+  } else {
+    // Swap preconditions live INSIDE the swap branch: a partner recovering on
+    // reverted nTZS alone must not be blocked by a USDC shortfall or an LP
+    // outage that the skip path never touches.
+    const neededUsdc = ethers.parseUnits(args.usdcAmount.toString(), SWAP_TOKENS.USDC.decimals)
+    if (usdcBal < neededUsdc) {
+      await setStatus(settlementId, { status: 'failed', error: 'Insufficient USDC float' })
+      return { ok: false, status: 'failed', error: 'Insufficient USDC float — fund the settlement address first' }
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Swap error'
-    await setStatus(settlementId, { status: 'failed', error: msg, swapInTxHash })
-    return { ok: false, status: 'failed', error: msg }
+
+    const lpId = await pickLpId()
+    if (!lpId) {
+      await setStatus(settlementId, { status: 'failed', error: 'No active LP for conversion' })
+      return { ok: false, status: 'failed', error: 'No active liquidity provider available' }
+    }
+
+    await setStatus(settlementId, { status: 'swapping' })
+    try {
+      // Inside the guarded region: seed decryption throws when the encryption
+      // env is wrong, and outside a try that stranded the row in 'swapping'.
+      const signer = getSettlementSigner(args.encryptedHdSeed, args.settlementWalletIndex)
+      for await (const u of executeSwap({
+        userPrivateKey: signer.privateKey as `0x${string}`,
+        solverPrivateKey,
+        solverAddress,
+        selectedLpId: lpId,
+        fromToken: 'USDC',
+        toToken: 'NTZS',
+        amount: args.usdcAmount,
+        minOutput: grossTzs,
+        recipientAddress: settlementAddress as `0x${string}`,
+        rpcUrl,
+      })) {
+        if (u.txHash && !swapInTxHash) swapInTxHash = u.txHash
+        if (u.status === 'FILLED') swapOutTxHash = u.txHash ?? swapOutTxHash
+        if (u.status === 'FAILED' || u.status === 'PARTIAL_FILL_EXHAUSTED') {
+          await setStatus(settlementId, { status: 'failed', error: u.message ?? 'Swap failed', swapInTxHash })
+          return { ok: false, status: 'failed', error: u.message ?? 'USDC→nTZS swap failed' }
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Swap error'
+      await setStatus(settlementId, { status: 'failed', error: msg, swapInTxHash })
+      return { ok: false, status: 'failed', error: msg }
+    }
+    await setStatus(settlementId, { swapInTxHash, swapOutTxHash, status: 'paying_out' })
   }
-  await setStatus(settlementId, { swapInTxHash, swapOutTxHash, status: 'paying_out' })
 
   // ── Leg 2: burn nTZS from the settlement wallet + pay out fiat ──────────────
   const fk = await resolveRampUserWallet(settlementAddress)

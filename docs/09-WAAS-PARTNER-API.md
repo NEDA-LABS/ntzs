@@ -68,6 +68,12 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.15.2 (3 Aug 2026)
+
+**Failed payouts refund themselves.** A definitively failed off-ramp reverts and returns its full gross to your settlement address as nTZS; `GET /api/v1/ramp/balance` now shows that value (`ntzsBalance` + note), and your **next off-ramp consumes it automatically before any USDC is debited** — re-quote and execute, and the original intent completes with no double conversion cost. The `ramp.settlement.failed` webhook has always named the return address (`returnedAsNtzsTo`); now the balance surface and the engine close the loop.
+
+---
+
 ## What's New — v1.15.1 (3 Aug 2026)
 
 **Off-ramp quotes in local currency.** `POST /api/v1/ramp/quote` with `direction: "offramp"` now accepts **either** `usdcAmount` (as before) **or** `tzsAmount` — the exact net TZS your user asked for. Quote by `tzsAmount` when your users think in shillings: the recipient receives exactly that figure, and the response's `usdcAmount` is what your settlement float will be debited. Pass exactly one of the two; execution is unchanged (consume the `quoteId` as before).
@@ -1032,9 +1038,12 @@ Every ramp partner gets a **dedicated settlement wallet on Base**. You pre-fund 
   "settlementAddress": "0xYourDedicatedAddress…",
   "chain": "base",
   "token": { "symbol": "USDC", "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "decimals": 6 },
-  "usdcBalance": 1250.5
+  "usdcBalance": 1250.5,
+  "ntzsBalance": "0"
 }
 ```
+
+**What happens when a payout fails — refunds.** If an off-ramp's fiat leg fails definitively, the settlement returns `status: "reverted"` and **no value is lost**: the full gross is returned to your `settlementAddress` — as **nTZS**, since the USDC→nTZS conversion had already executed. That value shows up in `ntzsBalance` (with an explanatory `note`), and your **next off-ramp consumes it automatically before any USDC is debited** — so a simple re-quote + execute completes the original intent with no double conversion cost. The `ramp.settlement.failed` webhook carries `returnedAsNtzsTo` with the address. If a failure is ambiguous rather than definitive, the settlement holds for operator reconciliation instead of reverting — never retry an ambiguous settlement; check `GET /api/v1/ramp/:id` first.
 
 **Funding it:**
 

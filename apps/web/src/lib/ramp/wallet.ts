@@ -97,3 +97,18 @@ export async function getSettlementUsdcBalance(address: string): Promise<string>
   const raw: bigint = await contract.balanceOf(address)
   return ethers.formatUnits(raw, USDC_BASE.decimals)
 }
+
+/**
+ * nTZS at the settlement address. Normally 0 — a non-zero balance is value a
+ * REVERTED off-ramp re-minted here (revertOffRampBurn returns the full gross
+ * as nTZS, not USDC). The settlement engine consumes it before swapping fresh
+ * USDC, so it clears on the partner's next off-ramp attempt.
+ */
+export async function getSettlementNtzsBalance(address: string): Promise<string> {
+  const ntzsAddress = process.env.NTZS_CONTRACT_ADDRESS_BASE
+  if (!ntzsAddress) return '0'
+  const provider = new ethers.JsonRpcProvider(BASE_RPC_URL)
+  const contract = new ethers.Contract(ntzsAddress, ERC20_BALANCE_ABI, provider)
+  const raw: bigint = await contract.balanceOf(address)
+  return ethers.formatUnits(raw, 18)
+}
