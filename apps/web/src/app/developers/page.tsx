@@ -910,25 +910,32 @@ const transfer = await res.json()
     userId:      user.id,
     amountTzs:   10000,           // recipient receives this (net), minimum 5,000 TZS
     phoneNumber: '255712345678',  // Vodacom, Airtel, Tigo/Yas, Halotel, TTCL
+    // …or a BANK instead of a phone (exactly one destination):
+    // bankCode: 'CRDB', accountNumber: '0152768903600'
   }),
 })
 const quote = await res.json()
 // {
 //   quoteId: "eyJ2IjoxLCJw…",           // null if balance.sufficient is false
 //   expiresAt: "…",                      // valid 5 minutes
-//   recipientName: "JOHN DOE",           // null = registry had no answer (don't block)
+//   recipientName: "JOHN DOE",           // registered holder — null = no answer (don't block)
 //   receiveAmountTzs: 10000,
-//   burnAmountTzs: 11558,                // deducted from the user's balance
-//   fees: { platformFeeTzs: 58, pspFeeTzs: 1500, totalFeeTzs: 1558 },
+//   burnAmountTzs: 10382,                // deducted from the user's balance
+//   payoutRail: "selcom",                // the rail this quote is priced for
+//   fees: { platformFeeTzs: 52, pspFeeTzs: 300, nedaFeeTzs: 30, totalFeeTzs: 382 },
 //   balance: { availableTzs: 25000, sufficient: true }
-// }`}
+// }
+//
+// The PSP fee follows the serving rail's published tariff (amount-tiered) —
+// NEVER hardcode fees; display the quote's figures. Bank quotes answer
+// bankCode/bankName/accountNumber instead of recipientPhone.`}
             />
             <Note variant="info">
               <span className="font-semibold text-blue-200">Required confirmation screen:</span>{' '}
-              before the user&apos;s final tap, show <em>who they are paying</em> (name + number),{' '}
+              before the user&apos;s final tap, show <em>who they are paying</em> (name + number/account),{' '}
               <em>the fee</em> (<code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">fees.totalFeeTzs</code>) and{' '}
               <em>what the recipient receives</em> — this is a Bank of Tanzania consumer-disclosure
-              requirement. On success say &ldquo;TZS 10,000 is on its way to JOHN DOE (fees TZS 1,558)&rdquo; —
+              requirement. On success say &ldquo;TZS 10,000 is on its way to JOHN DOE (fees TZS 382)&rdquo; —
               never present the gross burn amount as the amount &ldquo;sent&rdquo;.
             </Note>
             <CodeBlock
@@ -948,23 +955,40 @@ const quote = await res.json()
 })
 const withdrawal = await res2.json()
 // { id, status: "burned", receiveAmountTzs: 10000, recipientName: "JOHN DOE",
-//   totalFeeTzs: 1558, message: "Withdrawal processed: 10000 TZS on its way…" }
+//   totalFeeTzs: 382,
+//   payoutRail: "selcom",                       // the rail that served
+//   payoutReference: "16437765-…",              // our reference (poll GET /:id with it)
+//   payoutReceipt: "SB0803…",                   // the rail's own receipt, when it returns one
+//   payoutStatus: "completed" | "pending",
+//   confirmationMessage: "TZS 10,000 sent to JOHN DOE (2557…) via Selcom — ref …",
+//   message: "Withdrawal processed: 10000 TZS on its way…" }
+//
+// PUSH confirmationMessage TO YOUR USER on completion — the rail's own
+// confirmation SMS goes only to the platform's corporate account, so
+// without it your user never sees a receipt. GET /api/v1/withdrawals/:id
+// returns the same fields for status polling.
 //
 // Errors to handle (fetch a fresh quote and re-confirm):
-//   400 invalid_quote   — expired (> 5 min) or malformed
-//   400 quote_mismatch  — user/phone/amount differ from the quote
-//   409 quote_stale     — pricing changed since the quote was issued
-//   400 quote_required  — enforcement is on and no quoteId was sent
+//   400 invalid_quote          — expired (> 5 min) or malformed
+//   400 quote_mismatch         — user/destination/amount differ from the quote
+//   409 quote_stale            — pricing changed since the quote was issued
+//   400 quote_required         — enforcement is on and no quoteId was sent
+//   409 duplicate_withdrawal   — identical withdrawal within 5 min still holding
+//                                funds; do NOT retry (allowDuplicate: true to force)
+//   503 bank_rail_unavailable  — bank payouts off on this environment
 //
-// Large amounts (>= 1,000,000 TZS) queue instead:
+// Large amounts (>= 1,000,000 TZS) queue instead (phones only — banks
+// answer 400 bank_amount_unsupported at this size; split the withdrawal):
 // { id, status: "requested", message: "…requires admin approval…" }`}
             />
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { label: 'Minimum', value: '5,000 TZS (recipient net)' },
                 { label: 'Quote validity', value: '5 minutes — fetch a fresh quote if the user dawdles' },
-                { label: 'Large withdrawal threshold', value: '>= 1,000,000 TZS requires admin approval and may take up to 1 business day' },
+                { label: 'Bank payouts', value: 'Pass bankCode + accountNumber instead of phoneNumber — 38 banks via canonical FI codes (CRDB, NMB, NBC, …; full list in the API reference). Same fees, caps and flow; Selcom single-rail.' },
+                { label: 'Large withdrawal threshold', value: '>= 1,000,000 TZS requires admin approval and may take up to 1 business day (mobile money only)' },
                 { label: 'Enforcement', value: 'quoteId is optional during the migration window and becomes mandatory on the announced enforcement date (quote_required)' },
+                { label: 'Never recompute fees', value: 'The PSP fee is tiered by amount and serving rail — display the quote’s fees verbatim; hardcoded formulas will drift' },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-medium text-white/50">{label}</div>
@@ -1434,18 +1458,26 @@ while (true) {
   -H "Authorization: Bearer ntzs_live_xxxxxxxxxxxx"
 
 // { settlementAddress: "0x…", chain: "base",
-//   token: { symbol: "USDC", decimals: 6 }, usdcBalance: "2500.0" }`}
+//   token: { symbol: "USDC", decimals: 6 }, usdcBalance: "2500.0",
+//   ntzsBalance: "0" }
+//
+// A non-zero ntzsBalance is value a REVERTED off-ramp returned to you —
+// it is consumed automatically by your next off-ramp before any USDC is
+// debited. No value is ever lost to a failed payout.`}
             />
             <CodeBlock
               title="POST /api/v1/ramp/quote — lock a rate (60s)"
-              code={`// Off-ramp: pass usdcAmount.  On-ramp: pass tzsAmount.
+              code={`// Off-ramp: pass tzsAmount (the EXACT net the recipient receives —
+// recommended; your users think in shillings) OR usdcAmount. Exactly one.
+// On-ramp: pass tzsAmount (what the payer pays).
 fetch('https://www.ntzs.co.tz/api/v1/ramp/quote', {
   method: 'POST',
   headers: { Authorization: 'Bearer ntzs_live_…', 'Content-Type': 'application/json' },
-  body: JSON.stringify({ direction: 'offramp', usdcAmount: 10 }),
+  body: JSON.stringify({ direction: 'offramp', tzsAmount: 50000 }),
 })
-// { quoteId, usdcAmount: 10, tzsAmount: 25800, feeTzs: 1640,
-//   rateUsdTzs: 2740, expiresAt }`}
+// { quoteId, usdcAmount: 19.459614,   // what your float will be debited
+//   tzsAmount: 50000,                 // the recipient receives EXACTLY this
+//   feeTzs: 1207, rateUsdTzs: 2631.45, expiresAt }`}
             />
             <CodeBlock
               title="POST /api/v1/ramp/offramp — USDC → mobile money"
@@ -1455,7 +1487,17 @@ fetch('https://www.ntzs.co.tz/api/v1/ramp/quote', {
              'Idempotency-Key': crypto.randomUUID() },
   body: JSON.stringify({ quoteId, phoneNumber: '0744000000' }),
 })
-// 201/202 { settlementId, status: "completed" | "paying_out" }`}
+// Answers in ~10 seconds with a DEFINITIVE state:
+//   201 { settlementId, status: "completed" }    — settled inline
+//   202 { settlementId, status: "paying_out" }   — money captured, payout
+//       dispatched; completion arrives on the ramp.settlement.completed
+//       webhook and GET /api/v1/ramp/:id. A 202 is success-in-flight —
+//       NEVER re-execute on it.
+//
+// If a payout fails definitively the settlement REVERTS: full value back
+// to your settlementAddress (as nTZS — see ntzsBalance above), webhook
+// ramp.settlement.failed carries returnedAsNtzsTo. Re-quote + execute
+// and the retry completes on the recovered value.`}
             />
             <CodeBlock
               title="Off-ramp straight to a merchant or bill — USDC → Lipa / bill"
