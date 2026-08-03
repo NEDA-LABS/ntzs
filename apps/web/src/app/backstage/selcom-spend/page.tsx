@@ -1,5 +1,5 @@
 import { requireAnyRole } from '@/lib/auth/rbac'
-import { getBalance } from '@/lib/psp/selcom'
+import { getBalance, BANK_FI_CODES } from '@/lib/psp/selcom'
 
 import SpendTestForm from './SpendTestForm'
 
@@ -24,6 +24,10 @@ export default async function SelcomSpendPage() {
   const billEnabled = process.env.SELCOM_BILLPAY_ENABLED === 'true'
   const lipaEnabled = process.env.SELCOM_LIPA_ENABLED === 'true'
   const walletEnabled = process.env.SELCOM_DISBURSEMENTS_ENABLED === 'true'
+  // Bank probes ride the same disbursement rail + gate as wallet payouts.
+  const bankOptions = Object.entries(BANK_FI_CODES)
+    .map(([code, b]) => ({ code, name: b.name, reference: b.reference }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   // Live float check — read-only; the test bounces on an empty account.
   let balanceTzs: number | null = null
@@ -104,7 +108,13 @@ export default async function SelcomSpendPage() {
         </p>
       </div>
 
-      <SpendTestForm billEnabled={billEnabled} lipaEnabled={lipaEnabled} walletEnabled={walletEnabled} />
+      <SpendTestForm
+        billEnabled={billEnabled}
+        lipaEnabled={lipaEnabled}
+        walletEnabled={walletEnabled}
+        bankEnabled={walletEnabled}
+        bankOptions={bankOptions}
+      />
     </div>
   )
 }

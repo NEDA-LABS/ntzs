@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { writeAuditLog } from '@/lib/audit'
-import { payBill, payLipa, checkPayoutStatus, queryTransactionRaw, processDisbursement, detectWalletFiCode, normalizePhone } from '@/lib/psp/selcom'
+import { payBill, payLipa, checkPayoutStatus, queryTransactionRaw, processDisbursement, detectWalletFiCode, normalizePhone, nedaAccountLookup, BANK_FI_CODES } from '@/lib/psp/selcom'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -56,6 +56,9 @@ export async function POST(request: NextRequest) {
     transId?: string
     phone?: string
     fiCode?: string
+    bankCode?: string
+    accountNumber?: string
+    recipientName?: string
   }
   try {
     body = await request.json()
@@ -64,8 +67,8 @@ export async function POST(request: NextRequest) {
   }
 
   const kind = body.kind
-  if (kind !== 'bill' && kind !== 'lipa' && kind !== 'wallet') {
-    return NextResponse.json({ error: "kind must be 'bill', 'lipa' or 'wallet'" }, { status: 400 })
+  if (kind !== 'bill' && kind !== 'lipa' && kind !== 'wallet' && kind !== 'bank') {
+    return NextResponse.json({ error: "kind must be 'bill', 'lipa', 'wallet' or 'bank'" }, { status: 400 })
   }
 
   const amountTzs = Number(body.amountTzs)
@@ -85,12 +88,52 @@ export async function POST(request: NextRequest) {
   if (kind === 'lipa' && process.env.SELCOM_LIPA_ENABLED !== 'true') {
     return NextResponse.json({ error: 'SELCOM_LIPA_ENABLED is not set' }, { status: 403 })
   }
-  if (kind === 'wallet' && process.env.SELCOM_DISBURSEMENTS_ENABLED !== 'true') {
+  if ((kind === 'wallet' || kind === 'bank') && process.env.SELCOM_DISBURSEMENTS_ENABLED !== 'true') {
     return NextResponse.json({ error: 'SELCOM_DISBURSEMENTS_ENABLED is not set' }, { status: 403 })
   }
 
   let dispatch
-  if (kind === 'wallet') {
+  let bankLookup: { name: string | null; reason?: string } | null = null
+  if (kind === 'bank') {
+    // Bank cash-out probe — banking phase 1. Same doctrine that ended the
+    // 1 Aug outage: every FI code in BANK_FI_CODES is an unproven claim until
+    // one live dispatch through this endpoint settles. Name lookup runs first
+    // as evidence (and because a transfer should carry the registered name).
+    const bankCode = body.bankCode?.trim().toUpperCase() ?? ''
+    const bank = BANK_FI_CODES[bankCode]
+    if (!bank) {
+      return NextResponse.json(
+        { error: `bankCode must be one of the canonical FI codes (see docs/psp/selcom-destination-shortcodes.md)`, supportedCodes: Object.keys(BANK_FI_CODES) },
+        { status: 400 },
+      )
+    }
+    const accountNumber = body.accountNumber?.trim() ?? ''
+    const accountOk = bank.reference === 'alphanumeric'
+      ? /^[A-Za-z0-9]{5,24}$/.test(accountNumber)
+      : /^\d{5,20}$/.test(accountNumber)
+    if (!accountOk) {
+      return NextResponse.json(
+        { error: `accountNumber must be ${bank.reference === 'alphanumeric' ? '5–24 alphanumeric characters' : '5–20 digits'} for ${bank.name}` },
+        { status: 400 },
+      )
+    }
+
+    if (bank.lookup) {
+      const info = await nedaAccountLookup(bankCode, accountNumber).catch(() => ({ name: null as string | null, reason: 'lookup threw' }))
+      bankLookup = { name: info.name ?? null, ...('reason' in info && info.reason ? { reason: String(info.reason) } : {}) }
+    } else {
+      bankLookup = { name: null, reason: `${bank.name} has name lookup disabled` }
+    }
+
+    dispatch = await processDisbursement({
+      recipientFiCode: bankCode,
+      recipientAccount: accountNumber,
+      recipientName: bankLookup.name || body.recipientName?.trim() || 'NEDA LABS PROBE',
+      amountTzs,
+      narration: 'bank payout probe',
+      transId: body.transId,
+    })
+  } else if (kind === 'wallet') {
     // Wallet cash-in probe — the EXACT call the withdrawal rail makes, with
     // Selcom's raw verdict returned instead of being flattened into a user
     // message. `fiCode` overrides the shortcode-table default so the two
@@ -159,6 +202,9 @@ export async function POST(request: NextRequest) {
       network: body.network ?? null,
       phone: body.phone ?? null,
       fiCode: body.fiCode ?? null,
+      bankCode: body.bankCode ?? null,
+      accountNumber: body.accountNumber ?? null,
+      bankLookupName: bankLookup?.name ?? null,
       dispatchSuccess: dispatch.success,
       dispatchError: dispatch.error ?? null,
       dispatchErrorCode: dispatch.errorCode ?? null,
@@ -167,5 +213,5 @@ export async function POST(request: NextRequest) {
     admin.id
   )
 
-  return NextResponse.json({ kind, amountTzs, dispatch, query })
+  return NextResponse.json({ kind, amountTzs, dispatch, query, ...(bankLookup ? { lookup: bankLookup } : {}) })
 }
