@@ -39,7 +39,7 @@ export default function MasterLandingPage() {
   const onChainSupply = useOnChainSupply()
   const totalVolume = useTotalVolume()
   return (
-    <div className="bg-black font-mono text-white">
+    <div className="theme-scope bg-black font-mono text-white">
 
       {/* ── Hero ── */}
       <section className="relative min-h-screen overflow-hidden">

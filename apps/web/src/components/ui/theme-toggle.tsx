@@ -1,7 +1,10 @@
 'use client'
 
+import { useSyncExternalStore } from 'react'
 import { useTheme } from 'next-themes'
 import { Moon, Sun } from 'lucide-react'
+
+const noopSubscribe = () => () => {}
 
 /* Sun/moon switch for the site-wide light mode. Defaults to token-based
    styling that flips with the theme; pass className to match a specific
@@ -11,10 +14,15 @@ export default function ThemeToggle({
 }: {
   className?: string
 }) {
-  // resolvedTheme is undefined until next-themes hydrates, so the server
-  // and first client render both show the sun icon — no mismatch.
+  // next-themes only returns undefined on the *server* (its getTheme bails on
+  // `typeof window === "undefined"`); the provider's useState initialiser reads
+  // localStorage synchronously, so a stored `light` makes the client's first
+  // render disagree with the SSR'd markup — on the icon and on aria-label.
+  // suppressHydrationWarning sits on <html> and doesn't cover this button, so
+  // hold the server's rendering until mounted.
   const { resolvedTheme, setTheme } = useTheme()
-  const isLight = resolvedTheme === 'light'
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false)
+  const isLight = mounted && resolvedTheme === 'light'
 
   return (
     <button

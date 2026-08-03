@@ -3,7 +3,8 @@
 
 /* nTZS defaults to dark. Variables are set unconditionally on :root so the
    UI never breaks regardless of the user's OS colour-scheme setting; the
-   `.light` class (set on <html> by next-themes) overrides them below. */
+   `.light` class (set on <html> by next-themes) overrides them below, but
+   only inside a `.theme-scope` wrapper — see the scoping note there. */
 :root {
   color-scheme: dark;
 
@@ -21,7 +22,7 @@
   --ring: rgba(96, 165, 250, 0.2);
 }
 
-@custom-variant light (&:where(.light, .light *));
+@custom-variant light (&:where(.light .theme-scope, .light .theme-scope *));
 
 /* ── Light mode ──────────────────────────────────────────────
    The site was authored dark-first with hardcoded palette classes
@@ -31,8 +32,30 @@
    neutral flipped) and the light accent shades used as text-on-dark
    (x-200/300/400) are darkened for contrast on a light background.
    The `gray` ramp is intentionally untouched — it styles components
-   that are already light (e.g. the landing nav). */
-.light {
+   that are already light (e.g. the landing nav).
+
+   SCOPING — the remap is opt-in per route group, not global.
+   next-themes still writes `.light` to <html>, but the palette only
+   resolves inside a `.theme-scope` wrapper. Opted in today: the landing
+   page, /developers and /simplefx — the three groups that actually
+   render a ThemeToggle.
+
+   This matters because the remap flips `--color-white` to ink. Surfaces
+   authored light-first (`bg-white` + `text-gray-*` / `text-stone-*`)
+   would inverse their background while their text stays dark — the
+   `gray` and `stone` ramps are deliberately not remapped. Unscoped,
+   /enterprise/dashboard rendered `#364153` on `#0f172a` (1.7:1), and the
+   customer-facing /receipt page — light-only by design, and printable —
+   turned dark navy. The theme also persists in localStorage across the
+   whole app while only ~5 of 94 routes carry a toggle, so a visitor
+   could strand themselves in a broken theme with no way back.
+
+   To opt a route group in: add `theme-scope` to its outermost wrapper,
+   then confirm every surface underneath resolves colours through the
+   palette rather than hardcoded hex (`bg-[#0d0d14]` and friends stay
+   dark while `text-white` flips to ink — the wallet shell, whitepaper
+   and ~20 other files still need that migration). */
+.light .theme-scope {
   color-scheme: light;
 
   --background: #f5f7fb;

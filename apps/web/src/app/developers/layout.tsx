@@ -77,7 +77,7 @@ export default function DevelopersLayout({ children }: { children: React.ReactNo
   const isDashboard = pathname.startsWith('/developers/dashboard')
 
   return (
-    <div className="relative min-h-screen bg-black text-white">
+    <div className="theme-scope relative min-h-screen bg-black text-white">
       <div className="pointer-events-none absolute inset-0 opacity-50">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(121,40,202,0.2),transparent_40%),radial-gradient(circle_at_80%_30%,rgba(0,112,243,0.2),transparent_45%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px]" />
