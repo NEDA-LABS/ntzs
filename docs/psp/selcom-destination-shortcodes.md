@@ -31,7 +31,11 @@ and the `bank` vocabulary Selcom's surfaces share.
 ## Banks
 
 `sendBankPayout` passes `bankName` straight through as the FI code — it must be
-one of these shortcodes, never a free-text bank name.
+one of these shortcodes, never a free-text bank name. The machine-readable copy
+is `BANK_FI_CODES` in `lib/psp/selcom.ts` (kept in sync with this table), and
+probes run through `/backstage/selcom-spend` → **Bank payout** (5,000 TZS cap,
+name lookup shown before dispatch). **None of these codes are live-proven yet**
+— probe each bank before it carries volume, starting with CRDB/NMB/NBC.
 
 | Destination | Shortcode | Reference type | Lookup |
 |---|---|---|---|

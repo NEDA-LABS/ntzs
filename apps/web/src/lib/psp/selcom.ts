@@ -668,8 +668,60 @@ export interface SelcomBankPayoutRequest {
 }
 
 /**
+ * Bank FI codes for POST /v1/transaction/process — from the same portal
+ * "Destination Shortcodes" table as the wallet codes (captured 1 Aug 2026;
+ * canonical copy with provenance: docs/psp/selcom-destination-shortcodes.md).
+ *
+ * Same rule the wallet codes taught on 1 Aug 2026: a vendor code word is an
+ * EMPIRICAL CLAIM — none of these count as live until one probe through
+ * /backstage/selcom-spend → Bank payout succeeds. CRDB is the only
+ * ALPHANUMERIC account reference; Bank of Tanzania has name lookup disabled.
+ */
+export const BANK_FI_CODES: Record<string, { name: string; reference: 'numeric' | 'alphanumeric'; lookup: boolean }> = {
+  ABSA: { name: 'Absa Bank', reference: 'numeric', lookup: true },
+  BANCABC: { name: 'Access Bank', reference: 'numeric', lookup: true },
+  ACB: { name: 'Akiba Bank', reference: 'numeric', lookup: true },
+  AMANA: { name: 'Amana Bank', reference: 'numeric', lookup: true },
+  AZANIA: { name: 'Azania Bank', reference: 'numeric', lookup: true },
+  BOA: { name: 'Bank of Africa', reference: 'numeric', lookup: true },
+  BOBTZ: { name: 'Bank of Baroda', reference: 'numeric', lookup: true },
+  BOI: { name: 'Bank of India', reference: 'numeric', lookup: true },
+  BOT: { name: 'Bank of Tanzania', reference: 'numeric', lookup: false },
+  CANARA: { name: 'Canara Bank', reference: 'numeric', lookup: true },
+  CITI: { name: 'Citi Bank', reference: 'numeric', lookup: true },
+  CRDB: { name: 'CRDB Bank', reference: 'alphanumeric', lookup: true },
+  DCB: { name: 'DCB Commercial Bank', reference: 'numeric', lookup: true },
+  DTB: { name: 'Diamond Trust Bank', reference: 'numeric', lookup: true },
+  ECOBANK: { name: 'Ecobank', reference: 'numeric', lookup: true },
+  EQUITY: { name: 'Equity Bank', reference: 'numeric', lookup: true },
+  EXIM: { name: 'Exim Bank', reference: 'numeric', lookup: true },
+  FINCA: { name: 'Finca Microfinance Bank', reference: 'numeric', lookup: true },
+  GTBANK: { name: 'Guaranty Trust Bank', reference: 'numeric', lookup: true },
+  HABIB: { name: 'Habib African Bank', reference: 'numeric', lookup: true },
+  IMBANK: { name: 'I&M Bank', reference: 'numeric', lookup: true },
+  ICB: { name: 'International Commercial Bank', reference: 'numeric', lookup: true },
+  KCB: { name: 'KCB Bank', reference: 'numeric', lookup: true },
+  LETSHEGO: { name: 'Letshego Bank', reference: 'numeric', lookup: true },
+  MAENDELEO: { name: 'Maendeleo Bank', reference: 'numeric', lookup: true },
+  MKOMBOZI: { name: 'Mkombozi Commercial Bank', reference: 'numeric', lookup: true },
+  MUCOBA: { name: 'MUCOBA Bank', reference: 'numeric', lookup: true },
+  MWALIMU: { name: 'Mwalimu Commercial Bank', reference: 'numeric', lookup: true },
+  MWANGA: { name: 'Mwanga Hakika Bank', reference: 'numeric', lookup: true },
+  NBC: { name: 'National Bank of Commerce', reference: 'numeric', lookup: true },
+  NCBA: { name: 'NCBA Bank', reference: 'numeric', lookup: true },
+  NMB: { name: 'NMB Bank', reference: 'numeric', lookup: true },
+  PBZ: { name: "People's Bank of Zanzibar", reference: 'numeric', lookup: true },
+  STANBIC: { name: 'Stanbic Bank', reference: 'numeric', lookup: true },
+  SCB: { name: 'Standard Chartered Bank', reference: 'numeric', lookup: true },
+  TCB: { name: 'Tanzania Commercial Bank', reference: 'numeric', lookup: true },
+  UCHUMI: { name: 'Uchumi Commercial Bank', reference: 'numeric', lookup: true },
+  UBA: { name: 'United Bank for Africa', reference: 'numeric', lookup: true },
+}
+
+/**
  * Send a bank payout — same endpoint, `recipientFiCode` is the bank's
- * institution code (⚠ pass Selcom's FI code, not a free-text bank name).
+ * institution code (⚠ pass Selcom's FI code from BANK_FI_CODES, never a
+ * free-text bank name).
  */
 export async function sendBankPayout(request: SelcomBankPayoutRequest): Promise<SelcomPayoutResponse> {
   return processDisbursement({

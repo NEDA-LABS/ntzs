@@ -11,14 +11,21 @@ import {
   type BillerCategory,
 } from '@/lib/psp/selcom-billers'
 
-type Kind = 'bill' | 'lipa' | 'wallet'
+type Kind = 'bill' | 'lipa' | 'wallet' | 'bank'
 const CUSTOM_CODE = '__custom'
+
+export interface BankOption {
+  code: string
+  name: string
+  reference: 'numeric' | 'alphanumeric'
+}
 
 interface SpendResult {
   kind?: string
   amountTzs?: number
   dispatch?: { success: boolean; reference?: string; error?: string; errorCode?: string }
   query?: { status: string; failureReason?: string } | null
+  lookup?: { name: string | null; reason?: string }
   error?: string
 }
 
@@ -39,15 +46,24 @@ export default function SpendTestForm({
   billEnabled,
   lipaEnabled,
   walletEnabled,
+  bankEnabled,
+  bankOptions,
 }: {
   billEnabled: boolean
   lipaEnabled: boolean
   walletEnabled: boolean
+  bankEnabled: boolean
+  bankOptions: BankOption[]
 }) {
-  const anyEnabled = billEnabled || lipaEnabled || walletEnabled
+  const anyEnabled = billEnabled || lipaEnabled || walletEnabled || bankEnabled
   const [kind, setKind] = useState<Kind>(billEnabled || !lipaEnabled ? 'bill' : 'lipa')
   const [phone, setPhone] = useState('')
   const [fiCode, setFiCode] = useState('')
+  const [bankCode, setBankCode] = useState('CRDB')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [bankLookupBusy, setBankLookupBusy] = useState(false)
+  const [bankLookupOk, setBankLookupOk] = useState(false)
+  const [bankLookupText, setBankLookupText] = useState<string | null>(null)
   const [amount, setAmount] = useState('1000')
   const [utilityCode, setUtilityCode] = useState('TOP')
   const [customCode, setCustomCode] = useState('')
@@ -124,6 +140,40 @@ export default function SpendTestForm({
     }
   }
 
+  // Registered-name check for a bank account — same read-only lookup probe the
+  // bill and lipa tabs use, with the bank FI code as the lookup "bank".
+  const checkBankName = async () => {
+    setBankLookupBusy(true)
+    setBankLookupText(null)
+    try {
+      const res = await fetch(
+        `/api/admin/selcom-lookup-probe?account=${encodeURIComponent(accountNumber.trim())}&bank=${encodeURIComponent(bankCode)}`
+      )
+      const json = (await res.json()) as {
+        error?: string
+        attempts?: Array<{ bank: string; name: string | null; operator?: string; reason?: string }>
+      }
+      if (!res.ok) {
+        setBankLookupOk(false)
+        setBankLookupText(json.error ?? `HTTP ${res.status}`)
+      } else {
+        const hit = (json.attempts ?? []).find((a) => a.name)
+        if (hit) {
+          setBankLookupOk(true)
+          setBankLookupText(hit.name!)
+        } else {
+          setBankLookupOk(false)
+          setBankLookupText(`No name resolved — ${json.attempts?.[0]?.reason ?? 'no attempts'}`)
+        }
+      }
+    } catch (e) {
+      setBankLookupOk(false)
+      setBankLookupText(e instanceof Error ? e.message : 'lookup failed')
+    } finally {
+      setBankLookupBusy(false)
+    }
+  }
+
   // Merchant-name check for the Lipa till — read-only, works independently of
   // the payment flags (the lookup endpoint is already permitted for our creds).
   const checkName = async () => {
@@ -158,10 +208,15 @@ export default function SpendTestForm({
     }
   }
 
-  const kindEnabled = kind === 'bill' ? billEnabled : kind === 'lipa' ? lipaEnabled : walletEnabled
+  const kindEnabled =
+    kind === 'bill' ? billEnabled : kind === 'lipa' ? lipaEnabled : kind === 'bank' ? bankEnabled : walletEnabled
   const effectiveCode = utilityCode === CUSTOM_CODE ? customCode.trim().toUpperCase() : utilityCode
   const selectedBiller = getBiller(effectiveCode)
   const refCheck = validateUtilityRef(effectiveCode, utilityRef)
+  const selectedBank = bankOptions.find((b) => b.code === bankCode)
+  const accountPatternOk = selectedBank?.reference === 'alphanumeric'
+    ? /^[A-Za-z0-9]{5,24}$/.test(accountNumber.trim())
+    : /^\d{5,20}$/.test(accountNumber.trim())
   const fieldsOk =
     Number(amount) > 0 &&
     Number(amount) <= 5000 &&
@@ -169,7 +224,9 @@ export default function SpendTestForm({
       ? Boolean(effectiveCode && utilityRef.trim() && refCheck.ok)
       : kind === 'lipa'
         ? Boolean(payNumber.trim())
-        : phone.trim().replace(/\D/g, '').length >= 9)
+        : kind === 'bank'
+          ? Boolean(bankCode && accountPatternOk)
+          : phone.trim().replace(/\D/g, '').length >= 9)
 
   const send = async () => {
     setBusy(true)
@@ -186,12 +243,14 @@ export default function SpendTestForm({
                 payNumber: payNumber.trim(),
                 ...(network.trim() ? { network: network.trim() } : {}),
               }
-            : {
-                kind,
-                amountTzs: Number(amount),
-                phone: phone.trim(),
-                ...(fiCode.trim() ? { fiCode: fiCode.trim().toUpperCase() } : {}),
-              }
+            : kind === 'bank'
+              ? { kind, amountTzs: Number(amount), bankCode, accountNumber: accountNumber.trim() }
+              : {
+                  kind,
+                  amountTzs: Number(amount),
+                  phone: phone.trim(),
+                  ...(fiCode.trim() ? { fiCode: fiCode.trim().toUpperCase() } : {}),
+                }
       const res = await fetch('/api/admin/selcom-spend-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -238,10 +297,65 @@ export default function SpendTestForm({
         {tab('bill', 'Airtime / Bill', billEnabled)}
         {tab('lipa', 'Lipa Namba', lipaEnabled)}
         {tab('wallet', 'Wallet payout', walletEnabled)}
+        {tab('bank', 'Bank payout', bankEnabled)}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {kind === 'wallet' ? (
+        {kind === 'bank' ? (
+          <>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                Bank <span className="text-zinc-600">(canonical FI codes — every code is unproven until one live probe settles)</span>
+              </label>
+              <select
+                value={bankCode}
+                onChange={(e) => {
+                  setBankCode(e.target.value)
+                  setBankLookupText(null)
+                }}
+                className={inputCls}
+              >
+                {bankOptions.map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.code} — {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                Account number{' '}
+                <span className="text-zinc-600">
+                  ({selectedBank?.reference === 'alphanumeric' ? 'alphanumeric — CRDB formats differ' : 'digits only'})
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  value={accountNumber}
+                  onChange={(e) => {
+                    setAccountNumber(e.target.value)
+                    setBankLookupText(null)
+                  }}
+                  placeholder={selectedBank?.reference === 'alphanumeric' ? 'e.g. 0150XXXXXX00' : 'account number'}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={checkBankName}
+                  disabled={!accountNumber.trim() || bankLookupBusy}
+                  className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:text-zinc-600"
+                >
+                  {bankLookupBusy ? 'Checking…' : 'Check name'}
+                </button>
+              </div>
+              {bankLookupText && (
+                <p className={`mt-1.5 text-xs ${bankLookupOk ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {bankLookupOk ? `Account registered to: ${bankLookupText}` : bankLookupText}
+                </p>
+              )}
+            </div>
+          </>
+        ) : kind === 'wallet' ? (
           <>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">

@@ -1,7 +1,10 @@
+import fs from 'fs'
+import path from 'path'
+
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
 
-import { signRequest, detectWalletFiCode, normalizePhone, buildBillPayFields, buildLipaFields, buildNedaLookupFields } from './selcom'
+import { signRequest, detectWalletFiCode, normalizePhone, buildBillPayFields, buildLipaFields, buildNedaLookupFields, BANK_FI_CODES } from './selcom'
 import { estimateSendMoneyFee, getPayoutFeeTzs, SNIPPE_FLAT_FEE_TZS } from './selcom-fees'
 
 // signRequest reads SELCOM_API_KEY + SELCOM_PRIVATE_KEY from the environment —
@@ -260,6 +263,42 @@ describe('selcom-fees (published send-money tariff)', () => {
     // 1 Aug 2026: a live 5,000 TZS withdrawal was quoted Snippe's 1,500 while
     // Selcom served it at this tier fee — the pin behind per-rail pricing.
     expect(getPayoutFeeTzs('selcom', 5_000)).toBe(150)
+  })
+})
+
+/**
+ * Banking phase 1 (3 Aug 2026): bank FI codes carry the same rule the wallet
+ * codes taught on 1 Aug — transcribed codes are claims, not facts, until one
+ * live probe settles. These pin the canonical registry and the probe surface.
+ */
+describe('bank FI codes and the bank probe', () => {
+  it('the registry matches the canonical shortcode table', () => {
+    expect(Object.keys(BANK_FI_CODES).length).toBeGreaterThanOrEqual(35)
+    // The two known quirks, straight from the portal capture:
+    expect(BANK_FI_CODES.CRDB).toEqual({ name: 'CRDB Bank', reference: 'alphanumeric', lookup: true })
+    expect(BANK_FI_CODES.BOT?.lookup).toBe(false)
+    // Big-four sanity.
+    for (const code of ['NMB', 'NBC', 'CRDB', 'STANBIC']) expect(BANK_FI_CODES[code]).toBeDefined()
+    // Wallet codes must never leak into the bank registry.
+    expect(BANK_FI_CODES).not.toHaveProperty('MPESA')
+    // CRDB is the ONLY alphanumeric reference.
+    const alnum = Object.entries(BANK_FI_CODES).filter(([, b]) => b.reference === 'alphanumeric')
+    expect(alnum.map(([c]) => c)).toEqual(['CRDB'])
+  })
+
+  it('the spend-test route gates, caps and validates the bank kind', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../app/api/admin/selcom-spend-test/route.ts'),
+      'utf8',
+    )
+    expect(src).toContain("kind !== 'bank'")
+    // Banks ride the disbursement rail's gate, like wallet payouts.
+    expect(src).toContain("kind === 'wallet' || kind === 'bank'")
+    expect(src).toContain('SELCOM_DISBURSEMENTS_ENABLED')
+    // Codes come from the canonical registry, never free text.
+    expect(src).toContain('BANK_FI_CODES[bankCode]')
+    // The 5,000 TZS probe cap is one constant for every kind.
+    expect(src).toContain('MAX_TEST_AMOUNT_TZS = 5000')
   })
 })
 
