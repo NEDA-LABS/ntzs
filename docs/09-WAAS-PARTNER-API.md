@@ -68,6 +68,12 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.16.0 (3 Aug 2026)
+
+**Withdrawals can now pay bank accounts.** `POST /api/v1/withdrawals/quote` and `POST /api/v1/withdrawals` accept `bankCode` + `accountNumber` as the destination instead of `phoneNumber` — same quote→confirm contract, and the quote returns the **registered account holder's name** so your user confirms who they're paying, exactly like wallets. Fees follow the same Selcom tariff (a 500,000 TZS bank payout carries the same 1,250 TZS PSP fee as a wallet one). The signed quote binds the bank destination — execution can only pay the confirmed account. Codes come from the canonical FI table in the withdrawals section (pass `CRDB`, never "CRDB Bank"). Bank rails are Selcom-only for now (`503 bank_rail_unavailable` when off; `400 bank_amount_unsupported` at ≥ 1,000,000 TZS gross), and the sandbox accepts the same fields with the same validation, so build against your test key first.
+
+---
+
 ## What's New — v1.15.3 (3 Aug 2026)
 
 **Off-ramp executes now answer in ~10 seconds.** The synchronous chain that produced 40–50s calls (awaited fee-mint confirmations, a 21s payout-status poll, slow chain polling) is gone: the on-chain value capture is still fully confirmed before any fiat dispatches, but everything best-effort now runs without holding your connection. You get `201 completed` when the PSP settles fast, else `202 paying_out` — completion lands on the `ramp.settlement.completed` webhook and `GET /api/v1/ramp/:id`. Never re-execute on a `202`.
@@ -831,7 +837,11 @@ Burns the user's nTZS and pays out TZS to their mobile money number. **Two-step 
 |-------|------|----------|-------------|
 | `userId` | string | ✓ | Your user's nTZS user id |
 | `amountTzs` | number | ✓ | Amount the recipient should receive (net), ≥ 5000 |
-| `phoneNumber` | string | ✓ | Recipient mobile money number (any TZ format) |
+| `phoneNumber` | string | ✓* | Recipient mobile money number (any TZ format) |
+| `bankCode` | string | ✓* | Bank payout instead of mobile money: a canonical FI code from the table below |
+| `accountNumber` | string | ✓* | Bank account (digits; CRDB accepts alphanumeric) — always with `bankCode` |
+
+\* Exactly one destination: `phoneNumber` **or** `bankCode` + `accountNumber`. Bank quotes return the **registered account holder's name** (`recipientName`) just like wallets — show it before the user confirms; a bank quote answers `bankCode` / `bankName` / `accountNumber` instead of `recipientPhone`, and `payoutRail` is always `selcom`.
 
 #### Response `200 OK`
 
@@ -866,8 +876,16 @@ Before the user's final tap, display: **who they are paying** (name + number), *
 |-------|------|----------|-------------|
 | `userId` | string | ✓ | Must match the quote |
 | `amountTzs` | number | ✓ | Must match the quote (receive-net) |
-| `phoneNumber` | string | ✓ | Must match the quote |
-| `quoteId` | string | ✓* | From `/withdrawals/quote`. *Optional during the migration window; **mandatory after the announced enforcement date** (`quote_required` otherwise). |
+| `phoneNumber` | string | ✓* | Must match the quote (wallet payouts) |
+| `bankCode` + `accountNumber` | string | ✓* | Must match the quote exactly (bank payouts) — the signed quote binds the destination |
+| `quoteId` | string | ✓** | From `/withdrawals/quote`. **Optional during the migration window; **mandatory after the announced enforcement date** (`quote_required` otherwise). |
+
+\* Exactly one destination, the same one the quote was issued for.
+
+**Bank payouts** ride Selcom only (single-rail — no failover bank rail exists yet): when the rail is off you get a clean `503 bank_rail_unavailable` before any money moves. Bank withdrawals whose **gross** reaches 1,000,000 TZS answer `400 bank_amount_unsupported` for now — split into smaller withdrawals. Everything else is identical to wallets: same fees table (Selcom's send-money tariff covers banks and wallets alike), same sandbox caps, same `confirmationMessage` / `payoutReference` on completion, same refund semantics on failure.
+
+Canonical bank FI codes (pass the **code**, never a bank name): `ABSA`, `BANCABC` (Access), `ACB` (Akiba), `AMANA`, `AZANIA`, `BOA`, `BOBTZ` (Baroda), `BOI`, `BOT`†, `CANARA`, `CITI`, `CRDB`‡, `DCB`, `DTB`, `ECOBANK`, `EQUITY`, `EXIM`, `FINCA`, `GTBANK`, `HABIB`, `IMBANK`, `ICB`, `KCB`, `LETSHEGO`, `MAENDELEO`, `MKOMBOZI`, `MUCOBA`, `MWALIMU`, `MWANGA`, `NBC`, `NCBA`, `NMB`, `PBZ`, `STANBIC`, `SCB` (Standard Chartered), `TCB`, `UCHUMI`, `UBA`.
+† name lookup unavailable · ‡ alphanumeric account references
 
 #### Response `201 Created`
 

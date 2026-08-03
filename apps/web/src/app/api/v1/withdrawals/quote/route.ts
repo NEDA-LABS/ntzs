@@ -8,6 +8,9 @@ import { isTestMode, testWithdrawalQuote } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { fundingSourceKey, resolveFundingSource } from '@/lib/waas/funding-source'
 import { isValidTanzanianPhone, normalizePhone, lookupRecipientName, expectedDisbursementRail, expectedPayoutFeeTzs } from '@/lib/psp'
+import { BANK_FI_CODES, nedaAccountLookup } from '@/lib/psp/selcom'
+import { getPayoutFeeTzs } from '@/lib/psp/selcom-fees'
+import { resolveBankDestination } from '@/lib/waas/bank-destination'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { partners } from '@ntzs/db'
 import { computeWithdrawalGrossUp, createQuoteToken, DEFAULT_PLATFORM_FEE_PERCENT, QUOTE_TTL_MS } from '@/lib/waas/quote'
@@ -43,7 +46,7 @@ export async function POST(request: NextRequest) {
 
   if (isTestMode(partner)) return testWithdrawalQuote(partner, request)
 
-  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber: string }
+  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber?: string; bankCode?: string; accountNumber?: string }
   try {
     body = await request.json()
   } catch {
@@ -51,16 +54,26 @@ export async function POST(request: NextRequest) {
   }
 
   const { amountTzs: receiveAmountRaw, phoneNumber } = body
-  if (!receiveAmountRaw || !phoneNumber) {
-    return NextResponse.json({ error: 'amountTzs and phoneNumber are required' }, { status: 400 })
+  const bank = resolveBankDestination(body)
+  if (bank && 'error' in bank) return NextResponse.json({ error: bank.error }, { status: bank.status })
+  if (!receiveAmountRaw || (!phoneNumber && !bank)) {
+    return NextResponse.json({ error: 'amountTzs and a destination are required: phoneNumber (mobile money) OR bankCode + accountNumber (bank)' }, { status: 400 })
+  }
+  if (phoneNumber && bank) {
+    return NextResponse.json({ error: 'Provide exactly one destination: phoneNumber OR bankCode + accountNumber' }, { status: 400 })
   }
 
   const receiveAmountTzs = Math.trunc(Number(receiveAmountRaw))
   if (!Number.isFinite(receiveAmountTzs) || receiveAmountTzs < 5000) {
     return NextResponse.json({ error: 'Minimum withdrawal amount is 5,000 TZS (recipient net)' }, { status: 400 })
   }
-  if (!isValidTanzanianPhone(phoneNumber)) {
+  if (phoneNumber && !isValidTanzanianPhone(phoneNumber)) {
     return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
+  }
+  // Banks are served by Selcom only — an unconfigured rail must refuse at
+  // quote time, not strand a burn at execute.
+  if (bank && process.env.SELCOM_DISBURSEMENTS_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'bank_rail_unavailable', message: 'Bank payouts are not enabled on this environment yet.' }, { status: 503 })
   }
 
   const { db } = getDb()
@@ -83,8 +96,10 @@ export async function POST(request: NextRequest) {
   // PSP fee priced on the rail that will actually serve the payout — on
   // 1 Aug 2026 this quoted Snippe's flat 1,500 while Selcom (tiered, 150 at
   // 5,000 TZS) dispatched it. Rail flips between quote and execute surface as
-  // quote_stale, forcing a re-quote at the current price.
-  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, feePercent, expectedPayoutFeeTzs(receiveAmountTzs))
+  // quote_stale, forcing a re-quote at the current price. Banks are always
+  // Selcom (the only bank-capable rail; same send-money tariff as wallets).
+  const pspFeeTzs = bank ? getPayoutFeeTzs('selcom', receiveAmountTzs) : expectedPayoutFeeTzs(receiveAmountTzs)
+  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, feePercent, pspFeeTzs)
 
   // Caps behave exactly like execution so a quotable withdrawal is an
   // executable withdrawal.
@@ -114,11 +129,20 @@ export async function POST(request: NextRequest) {
 
   // Registered wallet name — the "you are paying JOHN DOE" line. Non-fatal:
   // null simply means the UI shows the number without a name.
-  const phone = normalizePhone(phoneNumber)
+  const phone = phoneNumber ? normalizePhone(phoneNumber) : ''
   let recipientName: string | null = null
   try {
-    const info = await lookupRecipientName(phone)
-    recipientName = info.name ?? null
+    if (bank) {
+      // Registered account holder — same disclosure contract as wallets.
+      // BANK_FI_CODES knows which banks have lookup disabled (BoT).
+      if (BANK_FI_CODES[bank.code].lookup) {
+        const info = await nedaAccountLookup(bank.code, bank.account)
+        recipientName = info.name ?? null
+      }
+    } else {
+      const info = await lookupRecipientName(phone)
+      recipientName = info.name ?? null
+    }
   } catch {
     recipientName = null
   }
@@ -131,6 +155,7 @@ export async function POST(request: NextRequest) {
         userId: source.kind === 'user' ? source.userId : '',
         src: fundingSourceKey(source),
         phone,
+        ...(bank ? { bank: { code: bank.code, account: bank.account } } : {}),
         receiveAmountTzs,
         burnAmountTzs: grossUp.burnAmountTzs,
         platformFeeTzs: grossUp.platformFeeTzs,
@@ -148,12 +173,15 @@ export async function POST(request: NextRequest) {
     quoteId,
     expiresAt: quoteId ? new Date(Date.now() + QUOTE_TTL_MS).toISOString() : null,
     expiresInSeconds: quoteId ? QUOTE_TTL_MS / 1000 : null,
-    recipientPhone: phone,
+    ...(bank
+      ? { bankCode: bank.code, bankName: BANK_FI_CODES[bank.code].name, accountNumber: bank.account }
+      : { recipientPhone: phone }),
     recipientName,
     receiveAmountTzs,
     burnAmountTzs: grossUp.burnAmountTzs,
-    // The rail this quote is priced for (first in the disbursement plan).
-    payoutRail: expectedDisbursementRail(),
+    // The rail this quote is priced for. Banks are always Selcom; wallets
+    // follow the disbursement plan.
+    payoutRail: bank ? 'selcom' : expectedDisbursementRail(),
     fees: {
       platformFeeTzs: grossUp.platformFeeTzs,
       pspFeeTzs: grossUp.pspFeeTzs,

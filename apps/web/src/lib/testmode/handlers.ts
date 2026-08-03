@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-billers'
 import { isValidTanzanianPhone, normalizePhone, expectedPayoutFeeTzs } from '@/lib/psp'
+import { BANK_FI_CODES } from '@/lib/psp/selcom'
+import { getPayoutFeeTzs } from '@/lib/psp/selcom-fees'
+import { resolveBankDestination } from '@/lib/waas/bank-destination'
 import { detectNetwork } from '@/lib/psp/routing'
 import { checkPerTransactionCap, limitErrorResponse } from '@/lib/sandbox/limits'
 import { partners } from '@ntzs/db'
@@ -349,34 +352,44 @@ export async function testGetDeposit(partner: AuthenticatedPartner, depositId: s
 export async function testWithdrawalQuote(partner: AuthenticatedPartner, request: NextRequest): Promise<NextResponse> {
   await settleDue(partner.id)
 
-  const body = await readJson<{ userId: string; amountTzs: number; phoneNumber: string }>(request)
+  const body = await readJson<{ userId: string; amountTzs: number; phoneNumber?: string; bankCode?: string; accountNumber?: string }>(request)
   if (!body) return invalidJson()
   const { userId, phoneNumber } = body
   const receiveAmountTzs = Math.trunc(Number(body.amountTzs))
 
-  if (!userId || !receiveAmountTzs || !phoneNumber) {
-    return NextResponse.json({ error: 'userId, amountTzs, and phoneNumber are required' }, { status: 400 })
+  // Bank destinations validate against the SAME registry as live (banking
+  // phase 2) — a sandbox integration that passes here passes in production.
+  const bank = resolveBankDestination(body)
+  if (bank && 'error' in bank) return NextResponse.json({ error: bank.error }, { status: bank.status })
+  if (!userId || !receiveAmountTzs || (!phoneNumber && !bank)) {
+    return NextResponse.json({ error: 'userId, amountTzs, and a destination (phoneNumber OR bankCode + accountNumber) are required' }, { status: 400 })
+  }
+  if (phoneNumber && bank) {
+    return NextResponse.json({ error: 'Provide exactly one destination: phoneNumber OR bankCode + accountNumber' }, { status: 400 })
   }
   if (receiveAmountTzs < 5000) {
     return NextResponse.json({ error: 'Minimum withdrawal amount is 5,000 TZS (recipient net)' }, { status: 400 })
   }
-  if (!isValidTanzanianPhone(phoneNumber)) {
+  if (phoneNumber && !isValidTanzanianPhone(phoneNumber)) {
     return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
   }
 
   const user = await findUserById(partner.id, userId)
   if (!user) return userNotFound()
 
-  // Sandbox prices EXACTLY like live: the PSP fee follows the serving rail.
-  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, await partnerFeePercent(partner.id), expectedPayoutFeeTzs(receiveAmountTzs))
+  // Sandbox prices EXACTLY like live: the PSP fee follows the serving rail
+  // (banks are always the Selcom tariff).
+  const pspFeeTzs = bank ? getPayoutFeeTzs('selcom', receiveAmountTzs) : expectedPayoutFeeTzs(receiveAmountTzs)
+  const grossUp = computeWithdrawalGrossUp(receiveAmountTzs, await partnerFeePercent(partner.id), pspFeeTzs)
   const sufficient = user.balanceTzs >= grossUp.burnAmountTzs
-  const phone = normalizePhone(phoneNumber)
+  const phone = phoneNumber ? normalizePhone(phoneNumber) : ''
 
   const quoteId = sufficient
     ? createQuoteToken({
         partnerId: partner.id,
         userId,
         phone,
+        ...(bank ? { bank: { code: bank.code, account: bank.account } } : {}),
         receiveAmountTzs,
         burnAmountTzs: grossUp.burnAmountTzs,
         platformFeeTzs: grossUp.platformFeeTzs,
@@ -391,10 +404,12 @@ export async function testWithdrawalQuote(partner: AuthenticatedPartner, request
     quoteId,
     expiresAt: quoteId ? new Date(Date.now() + QUOTE_TTL_MS).toISOString() : null,
     expiresInSeconds: quoteId ? QUOTE_TTL_MS / 1000 : null,
-    recipientPhone: phone,
-    recipientName: testRecipientName(phone),
+    ...(bank
+      ? { bankCode: bank.code, bankName: BANK_FI_CODES[bank.code].name, accountNumber: bank.account, recipientName: testRecipientName(bank.account) }
+      : { recipientPhone: phone, recipientName: testRecipientName(phone) }),
     receiveAmountTzs,
     burnAmountTzs: grossUp.burnAmountTzs,
+    payoutRail: bank ? 'selcom' : undefined,
     fees: {
       platformFeeTzs: grossUp.platformFeeTzs,
       pspFeeTzs: grossUp.pspFeeTzs,
@@ -412,18 +427,26 @@ export async function testWithdrawalQuote(partner: AuthenticatedPartner, request
 export async function testCreateWithdrawal(partner: AuthenticatedPartner, request: NextRequest): Promise<NextResponse> {
   await settleDue(partner.id)
 
-  const body = await readJson<{ userId: string; amountTzs: number; phoneNumber: string; quoteId?: string }>(request)
+  const body = await readJson<{ userId: string; amountTzs: number; phoneNumber?: string; bankCode?: string; accountNumber?: string; quoteId?: string }>(request)
   if (!body) return invalidJson()
   const { userId, phoneNumber, quoteId } = body
   const receiveAmountTzs = Math.trunc(Number(body.amountTzs))
 
   if (!userId || !receiveAmountTzs || !phoneNumber) {
-    return NextResponse.json({ error: 'userId, amountTzs, and phoneNumber are required' }, { status: 400 })
+    return NextResponse.json({ error: 'userId, amountTzs, and a destination are required' }, { status: 400 })
+  }
+  const bank = resolveBankDestination(body)
+  if (bank && 'error' in bank) return NextResponse.json({ error: bank.error }, { status: bank.status })
+  if (!phoneNumber && !bank) {
+    return NextResponse.json({ error: 'Provide a destination: phoneNumber OR bankCode + accountNumber' }, { status: 400 })
+  }
+  if (phoneNumber && bank) {
+    return NextResponse.json({ error: 'Provide exactly one destination: phoneNumber OR bankCode + accountNumber' }, { status: 400 })
   }
   if (receiveAmountTzs < 5000) {
     return NextResponse.json({ error: 'Minimum withdrawal amount is 5,000 TZS (recipient net)' }, { status: 400 })
   }
-  if (!isValidTanzanianPhone(phoneNumber)) {
+  if (phoneNumber && !isValidTanzanianPhone(phoneNumber)) {
     return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
   }
 
@@ -433,9 +456,9 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
   const { burnAmountTzs, platformFeeTzs, nedaFeeTzs, pspFeeTzs } = computeWithdrawalGrossUp(
     receiveAmountTzs,
     await partnerFeePercent(partner.id),
-    expectedPayoutFeeTzs(receiveAmountTzs)
+    bank ? getPayoutFeeTzs('selcom', receiveAmountTzs) : expectedPayoutFeeTzs(receiveAmountTzs)
   )
-  const phone = normalizePhone(phoneNumber)
+  const phone = phoneNumber ? normalizePhone(phoneNumber) : ''
 
   // Quote enforcement — the real verifier, the real codes.
   if (quoteId) {
@@ -451,9 +474,12 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
       )
     }
     const q = v.payload
-    if (q.partnerId !== partner.id || q.userId !== userId || q.phone !== phone || q.receiveAmountTzs !== receiveAmountTzs) {
+    const destinationMatches = bank
+      ? Boolean(q.bank && q.bank.code === bank.code && q.bank.account === bank.account)
+      : !q.bank && q.phone === phone
+    if (q.partnerId !== partner.id || q.userId !== userId || !destinationMatches || q.receiveAmountTzs !== receiveAmountTzs) {
       return NextResponse.json(
-        { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/phone/amount). Request a new quote.' },
+        { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/destination/amount). Request a new quote.' },
         { status: 400 }
       )
     }
@@ -488,7 +514,8 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
     )
   }
 
-  const outcome = payoutOutcome(phone)
+  const destinationKey = bank ? bank.account : phone
+  const outcome = payoutOutcome(destinationKey)
   const decisive = outcome === 'fail' || outcome === 'reconcile'
   const tx = await recordTransaction({
     partnerId: partner.id,
@@ -499,7 +526,7 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
     // Only a failure refunds; reconcile_required deliberately does not.
     settlementDeltaTzs: outcome === 'fail' ? burnAmountTzs : 0,
     fees: { platformFeeTzs, pspFeeTzs, nedaFeeTzs },
-    detail: { phone, burnAmountTzs, recipientName: testRecipientName(phone) },
+    detail: { phone, burnAmountTzs, recipientName: testRecipientName(destinationKey), ...(bank ? { bankCode: bank.code, accountNumber: bank.account } : {}) },
     // Decisive failures surface synchronously, exactly like live.
     instant: decisive,
   })
@@ -537,7 +564,8 @@ export async function testCreateWithdrawal(partner: AuthenticatedPartner, reques
       status: 'burned',
       amountTzs: burnAmountTzs,
       receiveAmountTzs,
-      recipientName: testRecipientName(phone),
+      ...(bank ? { bankCode: bank.code, bankName: BANK_FI_CODES[bank.code].name, accountNumber: bank.account } : {}),
+      recipientName: testRecipientName(destinationKey),
       platformFeeTzs,
       pspFeeTzs,
       nedaFeeTzs,
