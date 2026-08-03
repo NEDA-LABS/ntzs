@@ -177,6 +177,10 @@ export default async function SimpleFXBackstagePage() {
 
   const activeCount = lps.filter((l) => l.isActive).length
   const pendingKyc = lps.filter((l) => l.kycStatus === 'pending').length
+  // Bank/institution applicants whose KYB documents are waiting on an admin —
+  // without a dedicated queue these drowned in the table (3 Aug: a bank
+  // applicant chased on WhatsApp because nobody saw their submission).
+  const kybToReview = lps.filter((l) => l.kybStatus === 'submitted')
 
   return (
     <div className="min-h-screen">
@@ -192,6 +196,11 @@ export default async function SimpleFXBackstagePage() {
             <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-400">{activeCount} active</span>
             {pendingKyc > 0 && (
               <span className="rounded-full bg-amber-500/10 px-3 py-1 text-amber-400">{pendingKyc} KYC pending</span>
+            )}
+            {kybToReview.length > 0 && (
+              <span className="rounded-full bg-blue-500/15 px-3 py-1 font-medium text-blue-300">
+                {kybToReview.length} KYB to review
+              </span>
             )}
             <Link
               href="/backstage/simplefx/fills"
@@ -242,6 +251,39 @@ export default async function SimpleFXBackstagePage() {
           </div>
         </div>
 
+        {/* KYB review queue — submissions must never sit unnoticed in the table */}
+        {kybToReview.length > 0 && (
+          <div className="rounded-2xl border border-blue-500/30 bg-blue-600/[0.06] overflow-hidden">
+            <div className="border-b border-blue-500/20 px-6 py-4">
+              <h2 className="text-lg font-semibold text-white">Needs review</h2>
+              <p className="text-sm text-zinc-400 mt-0.5">
+                {kybToReview.length} bank/institution application{kybToReview.length === 1 ? '' : 's'} with submitted KYB documents awaiting a decision
+              </p>
+            </div>
+            <ul className="divide-y divide-white/5">
+              {kybToReview.map((lp) => (
+                <li key={lp.id} className="flex items-center justify-between gap-4 px-6 py-3.5">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-white">
+                      {lp.email}
+                      <span className="ml-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-300 align-middle">
+                        {lp.accountType}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-500">Joined {formatDateEAT(lp.createdAt)}</p>
+                  </div>
+                  <Link
+                    href={`/backstage/simplefx/${lp.id}`}
+                    className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                  >
+                    Review →
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* LP Accounts Table */}
         <div className="rounded-2xl border border-white/10 bg-zinc-950 overflow-hidden">
           <div className="border-b border-white/10 px-6 py-4">
@@ -270,7 +312,14 @@ export default async function SimpleFXBackstagePage() {
                     <tr key={lp.id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-6 py-4">
                         <Link href={`/backstage/simplefx/${lp.id}`} className="hover:text-blue-400 transition-colors">
-                          <p className="font-medium text-white">{lp.email}</p>
+                          <p className="font-medium text-white">
+                            {lp.email}
+                            {lp.accountType === 'bank' && (
+                              <span className="ml-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-300 align-middle">
+                                bank
+                              </span>
+                            )}
+                          </p>
                           {lp.displayName && <p className="text-xs text-zinc-500">{lp.displayName}</p>}
                         </Link>
                       </td>
