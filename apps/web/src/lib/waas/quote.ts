@@ -71,8 +71,14 @@ export interface QuotePayload {
    * execute falls back to comparing `userId` when absent.
    */
   src?: string
-  /** Normalized recipient phone the quote was issued for. */
+  /** Normalized recipient phone the quote was issued for ('' for bank quotes). */
   phone: string
+  /**
+   * Bank destination the quote was issued for (banking phase 2, 3 Aug 2026).
+   * Present ⇔ this is a bank-payout quote; execute must match code AND
+   * account exactly, the same contract as `phone` for wallet quotes.
+   */
+  bank?: { code: string; account: string }
   receiveAmountTzs: number
   burnAmountTzs: number
   platformFeeTzs: number

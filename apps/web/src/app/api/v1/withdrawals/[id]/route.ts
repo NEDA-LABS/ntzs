@@ -6,6 +6,7 @@ import { isTestMode, testGetWithdrawal } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { netPayoutTzs } from '@/lib/payouts/payout-math'
 import { railLabel } from '@/lib/psp/selcom-fees'
+import { maskAccount } from '@/lib/waas/bank-destination'
 import { burnRequests, partnerUsers } from '@ntzs/db'
 
 /**
@@ -40,6 +41,8 @@ export async function GET(
       nedaFeeTzs: burnRequests.nedaFeeTzs,
       pspFeeTzs: burnRequests.pspFeeTzs,
       recipientPhone: burnRequests.recipientPhone,
+      payoutKind: burnRequests.payoutKind,
+      spend: burnRequests.spend,
       txHash: burnRequests.txHash,
       payoutStatus: burnRequests.payoutStatus,
       payoutError: burnRequests.payoutError,
@@ -69,9 +72,17 @@ export async function GET(
   // Net the recipient receives — backs out the fees this row was priced with.
   const receiveAmountTzs = netPayoutTzs(burn)
 
+  // Bank rows carry their destination in the spend descriptor.
+  const bankSpend = burn.payoutKind === 'bank'
+    ? (burn.spend as { bankCode?: string; accountNumber?: string; recipientName?: string | null } | null)
+    : null
+  const destinationLabel = bankSpend
+    ? `${bankSpend.recipientName ? `${bankSpend.recipientName} — ` : ''}${bankSpend.bankCode ?? 'bank'} ${maskAccount(bankSpend.accountNumber ?? '')}`
+    : (burn.recipientPhone ?? 'the recipient')
+
   const confirmationMessage =
     burn.payoutStatus === 'completed' && burn.payoutReference
-      ? `TZS ${receiveAmountTzs.toLocaleString('en-US')} sent to ${burn.recipientPhone ?? 'the recipient'} via ${railLabel(burn.payoutProvider)} — ref ${burn.payoutReference}.`
+      ? `TZS ${receiveAmountTzs.toLocaleString('en-US')} sent to ${destinationLabel} via ${railLabel(burn.payoutProvider)} — ref ${burn.payoutReference}.`
       : null
 
   return NextResponse.json({
@@ -80,6 +91,8 @@ export async function GET(
     amountTzs: burn.amountTzs,
     receiveAmountTzs,
     recipientPhone: burn.recipientPhone,
+    payoutKind: burn.payoutKind,
+    ...(bankSpend ? { bankCode: bankSpend.bankCode ?? null, accountNumber: bankSpend.accountNumber ?? null } : {}),
     txHash: burn.txHash,
     payoutStatus: burn.payoutStatus ?? null,
     payoutError: burn.payoutError,

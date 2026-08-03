@@ -1,4 +1,4 @@
-import { eq, and, or, ne, gte, isNull, desc } from 'drizzle-orm'
+import { eq, and, or, ne, gte, isNull, desc, sql } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 
@@ -16,7 +16,9 @@ import {
   lookupRecipientName,
   expectedPayoutFeeTzs,
 } from '@/lib/psp'
-import { railLabel } from '@/lib/psp/selcom-fees'
+import { railLabel, getPayoutFeeTzs } from '@/lib/psp/selcom-fees'
+import { BANK_FI_CODES, nedaAccountLookup, sendBankPayout as selcomSendBankPayout } from '@/lib/psp/selcom'
+import { resolveBankDestination, maskAccount } from '@/lib/waas/bank-destination'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
 import { burnRequests, partners } from '@ntzs/db'
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
   // TEST MODE: simulated burn + payout, real fee math and real quote checks.
   if (isTestMode(partner)) return testCreateWithdrawal(partner, request)
 
-  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber: string; quoteId?: string; allowDuplicate?: boolean }
+  let body: { userId?: string; subWalletId?: string; amountTzs: number; phoneNumber?: string; bankCode?: string; accountNumber?: string; quoteId?: string; allowDuplicate?: boolean }
   try {
     body = await request.json()
   } catch {
@@ -61,14 +63,21 @@ export async function POST(request: NextRequest) {
 
   const { amountTzs: receiveAmountRaw, phoneNumber, quoteId } = body
 
-  if (!receiveAmountRaw || !phoneNumber) {
+  // Destination: a mobile wallet (phoneNumber) OR a bank account (banking
+  // phase 2) — exactly one.
+  const bank = resolveBankDestination(body)
+  if (bank && 'error' in bank) return NextResponse.json({ error: bank.error }, { status: bank.status })
+  if (!receiveAmountRaw || (!phoneNumber && !bank)) {
     return NextResponse.json(
-      { error: 'amountTzs and phoneNumber are required' },
+      { error: 'amountTzs and a destination are required: phoneNumber (mobile money) OR bankCode + accountNumber (bank)' },
       { status: 400 }
     )
   }
+  if (phoneNumber && bank) {
+    return NextResponse.json({ error: 'Provide exactly one destination: phoneNumber OR bankCode + accountNumber' }, { status: 400 })
+  }
 
-  // amountTzs in the request is the amount the recipient should RECEIVE on mobile money.
+  // amountTzs in the request is the amount the recipient should RECEIVE.
   const receiveAmountTzs = Math.trunc(Number(receiveAmountRaw))
   if (!Number.isFinite(receiveAmountTzs) || receiveAmountTzs < 5000) {
     return NextResponse.json(
@@ -77,11 +86,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!isValidTanzanianPhone(phoneNumber)) {
+  if (phoneNumber && !isValidTanzanianPhone(phoneNumber)) {
     return NextResponse.json(
       { error: 'Invalid Tanzanian phone number' },
       { status: 400 }
     )
+  }
+  // Banks are Selcom-only (single-rail) — refuse before money moves when the
+  // rail is off, exactly like the quote does.
+  if (bank && process.env.SELCOM_DISBURSEMENTS_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'bank_rail_unavailable', message: 'Bank payouts are not enabled on this environment yet.' }, { status: 503 })
   }
 
   const { db } = getDb()
@@ -112,7 +126,8 @@ export async function POST(request: NextRequest) {
   // — shared with the quote endpoint so quotes price exactly what executes.
   // The PSP fee is the expected serving rail's charge, not a flat constant;
   // a rail flip between quote and execute surfaces as quote_stale below.
-  const pspFeeTzs = expectedPayoutFeeTzs(receiveAmountTzs)
+  // Banks are always Selcom (same send-money tariff as wallets).
+  const pspFeeTzs = bank ? getPayoutFeeTzs('selcom', receiveAmountTzs) : expectedPayoutFeeTzs(receiveAmountTzs)
   const { burnAmountTzs, platformFeeTzs, nedaFeeTzs } = computeWithdrawalGrossUp(receiveAmountTzs, feePercent, pspFeeTzs)
 
   // ── Quote verification (the name+fee disclosure contract) ─────────────────
@@ -128,11 +143,13 @@ export async function POST(request: NextRequest) {
       )
     }
     const q = v.payload
-    const normalizedPhone = normalizePhone(phoneNumber)
     const quoteSrc = q.src ?? `user:${q.userId}`
-    if (q.partnerId !== partner.id || quoteSrc !== fundingSourceKey(source) || q.phone !== normalizedPhone || q.receiveAmountTzs !== receiveAmountTzs) {
+    const destinationMatches = bank
+      ? Boolean(q.bank && q.bank.code === bank.code && q.bank.account === bank.account)
+      : !q.bank && q.phone === normalizePhone(phoneNumber!)
+    if (q.partnerId !== partner.id || quoteSrc !== fundingSourceKey(source) || !destinationMatches || q.receiveAmountTzs !== receiveAmountTzs) {
       return NextResponse.json(
-        { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/phone/amount). Request a new quote.' },
+        { error: 'quote_mismatch', message: 'Quote was issued for different terms (user/destination/amount). Request a new quote.' },
         { status: 400 }
       )
     }
@@ -183,7 +200,11 @@ export async function POST(request: NextRequest) {
       .from(burnRequests)
       .where(and(
         eq(burnRequests.burnFromAddress, source.address),
-        eq(burnRequests.recipientPhone, phoneNumber),
+        // Same destination: the phone for wallet payouts, the bank account
+        // (persisted in the spend descriptor) for bank payouts.
+        bank
+          ? and(eq(burnRequests.payoutKind, 'bank'), sql`${burnRequests.spend}->>'accountNumber' = ${bank.account}`)
+          : eq(burnRequests.recipientPhone, phoneNumber!),
         eq(burnRequests.amountTzs, burnAmountTzs),
         gte(burnRequests.createdAt, fiveMinAgo),
         // Money still committed: anything except a burn that never happened
@@ -198,7 +219,7 @@ export async function POST(request: NextRequest) {
         {
           error: 'duplicate_withdrawal',
           message:
-            'An identical withdrawal from this wallet to this number was made moments ago and is still holding funds. Do not retry — check its status. To deliberately withdraw the same amount again, resend with "allowDuplicate": true.',
+            'An identical withdrawal from this wallet to this destination was made moments ago and is still holding funds. Do not retry — check its status. To deliberately withdraw the same amount again, resend with "allowDuplicate": true.',
           existing: { id: dup.id, status: dup.status, payoutStatus: dup.payoutStatus, payoutError: dup.payoutError, createdAt: dup.createdAt },
         },
         { status: 409 },
@@ -247,6 +268,15 @@ export async function POST(request: NextRequest) {
 
   // Large amounts require admin approval — queue and return
   if (burnAmountTzs >= SAFE_MINT_THRESHOLD_TZS) {
+    // The approval queue dispatches through the burn engine, which pays
+    // mobile wallets only — a queued bank row would burn and then strand.
+    // Refuse honestly until the engine learns banks.
+    if (bank) {
+      return NextResponse.json(
+        { error: 'bank_amount_unsupported', message: `Bank withdrawals at or above ${SAFE_MINT_THRESHOLD_TZS.toLocaleString('en-US')} TZS (gross) are not supported yet — split into smaller withdrawals.` },
+        { status: 400 }
+      )
+    }
     const [burn] = await db
       .insert(burnRequests)
       .values({
@@ -310,10 +340,20 @@ export async function POST(request: NextRequest) {
       reason: 'WaaS withdrawal',
       status: 'burn_submitted',
       requestedByUserId: source.userId,
-      recipientPhone: phoneNumber,
+      recipientPhone: bank ? null : phoneNumber,
       platformFeeTzs,
       nedaFeeTzs,
       pspFeeTzs,
+      ...(bank
+        ? {
+            // Bank rows reuse the spend-descriptor pattern (payout_kind +
+            // jsonb) — no schema change; the reconcile surfaces and GET /:id
+            // read the destination from here.
+            payoutKind: 'bank',
+            payoutProvider: 'selcom' as const,
+            spend: { kind: 'bank', bankCode: bank.code, accountNumber: bank.account, bankName: BANK_FI_CODES[bank.code].name },
+          }
+        : {}),
     })
     .returning({ id: burnRequests.id, amountTzs: burnRequests.amountTzs })
 
@@ -472,8 +512,72 @@ export async function POST(request: NextRequest) {
   let dispatchedRail: string | null = null
   let dispatchedRef: string | null = null
   let dispatchedReceipt: string | null = null
-  if (anyDisbursementRailConfigured()) {
-    const phone = normalizePhone(phoneNumber)
+  if (bank) {
+    // ── Bank leg (banking phase 2) — Selcom single-rail ─────────────────────
+    // Registered-name lookup first (disclosure + the transfer carries the
+    // real name); non-fatal, and skipped for lookup-disabled banks (BoT).
+    if (BANK_FI_CODES[bank.code].lookup) {
+      const info = await nedaAccountLookup(bank.code, bank.account).catch(() => ({ name: null as string | null }))
+      if (info.name) verifiedRecipientName = info.name
+    }
+    try {
+      const dispatchResult = await selcomSendBankPayout({
+        amountTzs: receiveAmountTzs,
+        bankName: bank.code,
+        bankAccount: bank.account,
+        recipientName: verifiedRecipientName || 'nTZS User',
+        narration: 'nTZS withdrawal',
+        webhookUrl: `${APP_URL}/api/webhooks/selcom/payout`,
+        metadata: { burn_request_id: burnRequestId },
+      })
+      if (dispatchResult.success && dispatchResult.reference) {
+        dispatchedRail = 'selcom'
+        dispatchedRef = dispatchResult.reference
+        dispatchedReceipt = dispatchResult.externalReference ?? null
+        await db.update(burnRequests)
+          .set({
+            payoutReference: dispatchResult.reference,
+            payoutStatus: 'pending',
+            spend: { kind: 'bank', bankCode: bank.code, accountNumber: bank.account, bankName: BANK_FI_CODES[bank.code].name, recipientName: verifiedRecipientName },
+            updatedAt: new Date(),
+          })
+          .where(eq(burnRequests.id, burnRequestId))
+        // Bounded poll — same latency posture as wallets; the Selcom payout
+        // webhook and the recheck surfaces finish the slow tail.
+        for (const delay of [2500, 4000]) {
+          await new Promise((r) => setTimeout(r, delay))
+          try {
+            const ps = await checkPayoutStatusFor('selcom', dispatchResult.reference)
+            if (ps.status === 'completed') {
+              await db.update(burnRequests)
+                .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
+                .where(eq(burnRequests.id, burnRequestId))
+              break
+            }
+            if (ps.status === 'failed' || ps.status === 'reversed') {
+              await revertBurnForUser(ps.failureReason || 'Bank payout failed')
+              break
+            }
+          } catch { /* keep polling */ }
+        }
+      } else {
+        // Single-rail refusal: same no-auto-revert doctrine as wallets — an
+        // initiation failure is ambiguous until the PSP's records say so.
+        const reason = `${dispatchResult.error ?? 'Bank payout initiation failed'} (rail: selcom — banks are single-rail)`
+        console.error('[v1/withdrawals] Bank payout initiation failed (NOT auto-reverting):', reason)
+        await db.update(burnRequests)
+          .set({ payoutStatus: 'reconcile_required', payoutError: reason, updatedAt: new Date() })
+          .where(eq(burnRequests.id, burnRequestId))
+      }
+    } catch (payoutErr) {
+      const msg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
+      console.error('[v1/withdrawals] Bank payout error (NOT auto-reverting):', msg)
+      await db.update(burnRequests)
+        .set({ payoutStatus: 'reconcile_required', payoutError: msg, updatedAt: new Date() })
+        .where(eq(burnRequests.id, burnRequestId))
+    }
+  } else if (anyDisbursementRailConfigured()) {
+    const phone = normalizePhone(phoneNumber!)
 
     // Name lookup — non-fatal, result stored for audit trail
     const recipientInfo = await lookupRecipientName(phone)
@@ -597,8 +701,9 @@ export async function POST(request: NextRequest) {
   // the corporate account; this string carries the same substance (who was
   // paid, how much, which rail, the reference) so the partner app can show or
   // push it to the withdrawing user verbatim.
+  const destinationLabel = bank ? `${bank.code} ${maskAccount(bank.account)}` : normalizePhone(phoneNumber!)
   const confirmationMessage = dispatchedRef
-    ? `TZS ${receiveAmountTzs.toLocaleString('en-US')} sent to ${verifiedRecipientName ?? 'the recipient'} (${normalizePhone(phoneNumber)}) via ${railLabel(dispatchedRail)} — ref ${dispatchedRef}${dispatchedReceipt ? `, receipt ${dispatchedReceipt}` : ''}.`
+    ? `TZS ${receiveAmountTzs.toLocaleString('en-US')} sent to ${verifiedRecipientName ?? 'the recipient'} (${destinationLabel}) via ${railLabel(dispatchedRail)} — ref ${dispatchedRef}${dispatchedReceipt ? `, receipt ${dispatchedReceipt}` : ''}.`
     : null
 
   return NextResponse.json(
@@ -607,6 +712,7 @@ export async function POST(request: NextRequest) {
       status: 'burned',
       amountTzs: burn.amountTzs,
       receiveAmountTzs,
+      ...(bank ? { bankCode: bank.code, bankName: BANK_FI_CODES[bank.code].name, accountNumber: bank.account } : {}),
       recipientName: verifiedRecipientName,
       platformFeeTzs,
       pspFeeTzs,
