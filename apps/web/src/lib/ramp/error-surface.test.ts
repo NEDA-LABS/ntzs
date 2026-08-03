@@ -51,4 +51,38 @@ describe('ramp routes never answer with a bare 500', () => {
     expect(src).toContain('Boolean(process.env.SOLVER_PRIVATE_KEY)')
     expect(src).not.toMatch(/\$\{process\.env\.SOLVER_PRIVATE_KEY\}/)
   })
+
+  /**
+   * 3 Aug 2026: the probe said READY for a week while every live quote 500'd
+   * on ramp_quotes.destination missing in production (hand-applied migration
+   * 0065 skipped). READY must mean the WRITE PATH works, not just that the
+   * components exist.
+   */
+  it('the readiness probe exercises the real quote write path — and never persists', () => {
+    const src = fs.readFileSync(path.join(API, 'admin/ramp-readiness/route.ts'), 'utf8')
+    // A real INSERT into ramp_quotes…
+    expect(src).toContain('.insert(rampQuotes)')
+    // …inside a transaction aborted by a sentinel, so nothing ever commits.
+    expect(src).toContain('.transaction(')
+    expect(src).toContain('DryRunRollback')
+    expect(src).toContain('throw new DryRunRollback')
+  })
+
+  it('the readiness probe checks for unapplied hand-run migrations by name', () => {
+    const src = fs.readFileSync(path.join(API, 'admin/ramp-readiness/route.ts'), 'utf8')
+    expect(src).toContain('information_schema.columns')
+    // The exact columns the ramp money path writes — quote insert AND
+    // execute-side settlement row.
+    expect(src).toContain("colPresent('ramp_quotes', 'destination')")
+    expect(src).toContain("colPresent('ramp_settlements', 'destination')")
+    expect(src).toContain("colPresent('sandbox_limit_events', 'subject_ref')")
+  })
+
+  it('the readiness probe flags a stale FX mid instead of pricing against a dead number', () => {
+    const src = fs.readFileSync(path.join(API, 'admin/ramp-readiness/route.ts'), 'utf8')
+    expect(src).toContain('pairAgeHours')
+    // Two thresholds: nagging warning (>48h), hard blocker (>120h).
+    expect(src).toContain('pairAgeHours > 48')
+    expect(src).toContain('pairAgeHours > 120')
+  })
 })
