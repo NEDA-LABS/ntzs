@@ -12,8 +12,11 @@ import {
   ymdEAT,
   W2B_CHANNEL,
   W2B_MATCH_WINDOW_HOURS,
+  BANK_CHANNEL,
+  suggestBankMatch,
+  formatBankReference,
 } from '@/lib/psp/selcom-statement'
-import { getW2bConfig } from '@/lib/psp/selcom-w2b'
+import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
 import { suggestOrphanMatch, samePhone } from '@/lib/deposits/orphan-match'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
@@ -42,6 +45,12 @@ export const maxDuration = 60
  *     credit here would double-mint). Everything else stays 'unmatched' for
  *     the backstage orphan queue, where a human decides.
  *
+ *  3. BANK MATCH — attach a still-unmatched orphan to an open SELCOM-BANK
+ *     intent when exactly one open intent's reference token appears in the
+ *     credit's free text AND the amount is exact, inside the same window.
+ *     Bank/TIPS credits carry no payer phone; the token is the identity.
+ *     Token-found-but-wrong-amount stays 'unmatched' — a human decides.
+ *
  * Advancement mirrors attachOrphanAction: claim the orphan (conditional
  * update), advance the deposit (conditional update), release the claim if the
  * deposit was taken concurrently. Minting is left to process-mints.
@@ -52,8 +61,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!getW2bConfig()) {
-      return NextResponse.json({ status: 'skipped', reason: 'SELCOM_W2B_ENABLED not set' })
+    // Either statement-settled channel keeps the cron alive — bank-transfer
+    // collections must not silently stop settling if Lipa Namba is turned off.
+    if (!getW2bConfig() && !getBankCollectionConfig()) {
+      return NextResponse.json({
+        status: 'skipped',
+        reason: 'neither SELCOM_W2B_ENABLED nor SELCOM_BANK_COLLECTIONS_ENABLED is set',
+      })
     }
 
     const { db } = getDb()
@@ -134,6 +148,9 @@ export async function GET(request: NextRequest) {
     // ── 2. Auto-match unmatched selcom orphans to open w2b intents ──────────
     let autoMatched = 0
     let deferredToManual = 0
+    // Orphans this run already claimed (pass 2) — pass 3 skips them without
+    // re-reading; its conditional claim still protects against races.
+    const claimedOrphanIds = new Set<string>()
 
     const unmatchedOrphans = await db
       .select()
@@ -211,6 +228,7 @@ export async function GET(request: NextRequest) {
           .where(and(eq(orphanPayments.id, orphan.id), eq(orphanPayments.status, 'unmatched')))
           .returning({ id: orphanPayments.id })
         if (claimed.length === 0) continue
+        claimedOrphanIds.add(orphan.id)
 
         const newStatus = exact.amountTzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
         const advanced = await db
@@ -250,6 +268,116 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // ── 3. Bank-transfer match: reference token + exact amount ──────────────
+    let bankMatched = 0
+    let bankDeferredToManual = 0
+
+    const bankCandidateOrphans = unmatchedOrphans.filter((o) => !claimedOrphanIds.has(o.id))
+    if (bankCandidateOrphans.length > 0) {
+      const openBankIntents = (
+        await db
+          .select({
+            id: depositRequests.id,
+            amountTzs: depositRequests.amountTzs,
+            pspReference: depositRequests.pspReference,
+            createdAt: depositRequests.createdAt,
+          })
+          .from(depositRequests)
+          .where(
+            and(
+              eq(depositRequests.status, 'submitted'),
+              eq(depositRequests.paymentProvider, 'selcom'),
+              eq(depositRequests.pspChannel, BANK_CHANNEL)
+            )
+          )
+      ).flatMap((i) =>
+        i.pspReference ? [{ id: i.id, amountTzs: i.amountTzs, reference: i.pspReference, createdAt: i.createdAt }] : []
+      )
+
+      for (const orphan of bankCandidateOrphans) {
+        if (openBankIntents.length === 0) break
+        if (orphan.currency !== 'TZS') continue
+        const paymentAt = orphan.receivedAt instanceof Date ? orphan.receivedAt : new Date(orphan.receivedAt)
+
+        const eligible = openBankIntents.filter((intent) => {
+          const createdAt = intent.createdAt instanceof Date ? intent.createdAt : new Date(intent.createdAt)
+          return isWithinMatchWindow(createdAt, paymentAt)
+        })
+
+        // Banks are inconsistent about WHERE the sender's narration surfaces,
+        // so the token is searched across every free-text field we ingested.
+        const { exact, candidates } = suggestBankMatch(
+          { amountTzs: orphan.amountTzs, fields: [orphan.notes, orphan.payerName, orphan.pspReference] },
+          eligible
+        )
+        if (!exact) {
+          if (candidates.length > 0) {
+            // Token seen but amount wrong (or a token collision): a human
+            // decides from the orphan queue — never auto-credit a guess.
+            bankDeferredToManual++
+            console.warn(
+              `[cron/selcom-statement-sync] orphan ${orphan.id} carries bank reference of intent(s) ${candidates
+                .map((c) => c.id)
+                .join(', ')} but no exact amount match (credit ${orphan.amountTzs}) — manual review`
+            )
+          }
+          continue
+        }
+
+        // Claim the orphan first so a concurrent manual attach can't double-credit.
+        const claimed = await db
+          .update(orphanPayments)
+          .set({
+            status: 'matched',
+            matchedDepositRequestId: exact.id,
+            reviewedAt: new Date(),
+            notes: `${orphan.notes ? orphan.notes + ' | ' : ''}auto-matched by selcom-statement-sync (bank reference ${formatBankReference(exact.reference)})`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(orphanPayments.id, orphan.id), eq(orphanPayments.status, 'unmatched')))
+          .returning({ id: orphanPayments.id })
+        if (claimed.length === 0) continue
+
+        const newStatus = exact.amountTzs >= SAFE_MINT_THRESHOLD_TZS ? 'mint_requires_safe' : 'mint_pending'
+        const advanced = await db
+          .update(depositRequests)
+          .set({
+            status: newStatus,
+            pspReference: orphan.pspReference,
+            fiatConfirmedAt: new Date(),
+            updatedAt: new Date(),
+            ...(orphan.payerName ? { payerName: orphan.payerName } : {}),
+          })
+          .where(and(eq(depositRequests.id, exact.id), eq(depositRequests.status, 'submitted')))
+          .returning({ id: depositRequests.id })
+
+        if (advanced.length === 0) {
+          // Intent advanced/cancelled between select and update — release the claim.
+          await db
+            .update(orphanPayments)
+            .set({ status: 'unmatched', matchedDepositRequestId: null, reviewedAt: null, updatedAt: new Date() })
+            .where(and(eq(orphanPayments.id, orphan.id), eq(orphanPayments.status, 'matched')))
+          continue
+        }
+
+        // The intent is settled — stop offering it to later orphans this run.
+        const idx = openBankIntents.findIndex((i) => i.id === exact.id)
+        if (idx >= 0) openBankIntents.splice(idx, 1)
+
+        await writeAuditLog('deposit.bank_intent_auto_matched', 'deposit_request', exact.id, {
+          orphanPaymentId: orphan.id,
+          pspReference: orphan.pspReference,
+          bankReference: exact.reference,
+          amountTzs: orphan.amountTzs,
+          payerName: orphan.payerName,
+          rule: 'bank_reference_exact_amount_within_window',
+          newStatus,
+        })
+        bankMatched++
+        console.log(`[cron/selcom-statement-sync] orphan ${orphan.id} -> bank deposit ${exact.id} (${newStatus})`)
+      }
+    }
+
     return NextResponse.json({
       ingested,
       alreadyKnown,
@@ -257,6 +385,8 @@ export async function GET(request: NextRequest) {
       skipped,
       autoMatched,
       deferredToManual,
+      bankMatched,
+      bankDeferredToManual,
       warnings,
       closingBalance: statement.closingBalance,
       timestamp: now.toISOString(),

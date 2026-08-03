@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { eq, and, lt, isNotNull, inArray, desc } from 'drizzle-orm'
+import { eq, and, lt, isNotNull, isNull, inArray, notInArray, or, desc } from 'drizzle-orm'
 
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
 import { checkPaymentStatus } from '@/lib/psp/selcom'
+import { STATEMENT_SETTLED_CHANNELS } from '@/lib/psp/selcom-statement'
 
 const SAFE_MINT_THRESHOLD_TZS = 1000000
 
@@ -51,6 +52,11 @@ export async function GET(request: NextRequest) {
           inArray(depositRequests.paymentProvider, ['selcom']),
           lt(depositRequests.createdAt, thirtySecondsAgo),
           isNotNull(depositRequests.pspReference),
+          // Statement-settled channels (Lipa Namba, bank transfer) never go
+          // through pushussd-query. A SELCOM-BANK intent holds OUR reference
+          // token in pspReference — querying Selcom with it could read as
+          // failed/expired and wrongly reject a payable open intent.
+          or(isNull(depositRequests.pspChannel), notInArray(depositRequests.pspChannel, STATEMENT_SETTLED_CHANNELS)),
         )
       )
       // Newest first — the AzamPay poll-starvation lesson: a stuck backlog

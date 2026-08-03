@@ -6,6 +6,7 @@ import { getBiller, validateUtilityRef, SELCOM_BILLERS } from '@/lib/psp/selcom-
 import { isValidTanzanianPhone, normalizePhone, expectedPayoutFeeTzs } from '@/lib/psp'
 import { BANK_FI_CODES } from '@/lib/psp/selcom'
 import { getPayoutFeeTzs } from '@/lib/psp/selcom-fees'
+import { generateBankReference, formatBankReference } from '@/lib/psp/selcom-statement'
 import { resolveBankDestination } from '@/lib/waas/bank-destination'
 import { detectNetwork } from '@/lib/psp/routing'
 import { checkPerTransactionCap, limitErrorResponse } from '@/lib/sandbox/limits'
@@ -260,7 +261,7 @@ export async function testCreateDeposit(partner: AuthenticatedPartner, request: 
   const body = await readJson<{
     userId: string
     amountTzs: number
-    paymentMethod?: 'mobile_money' | 'card' | 'lipa_namba'
+    paymentMethod?: 'mobile_money' | 'card' | 'lipa_namba' | 'bank_transfer'
     phoneNumber?: string
     redirectUrl?: string
   }>(request)
@@ -285,6 +286,10 @@ export async function testCreateDeposit(partner: AuthenticatedPartner, request: 
     return NextResponse.json({ error: 'Invalid Tanzanian phone number' }, { status: 400 })
   }
 
+  // Same generator as live, so partners integrate against the REAL reference
+  // shape (NTZ-XXXXXX) before touching money.
+  const bankReference = paymentMethod === 'bank_transfer' ? formatBankReference(generateBankReference()) : null
+
   const outcome = depositOutcome(amountTzs)
   const tx = await recordTransaction({
     partnerId: partner.id,
@@ -296,22 +301,32 @@ export async function testCreateDeposit(partner: AuthenticatedPartner, request: 
     detail: {
       paymentMethod,
       phoneNumber: phoneNumber ? normalizePhone(phoneNumber) : null,
+      ...(bankReference ? { reference: bankReference } : {}),
       txHash: testTxHash('mint', partner.id, userId, String(amountTzs)),
     },
   })
 
   const instructions =
-    paymentMethod === 'lipa_namba'
+    paymentMethod === 'bank_transfer'
       ? {
-          lipaNamba: '70031820',
+          institution: 'Selcom Paytech (TEST)',
+          accountNumber: '0000000000000',
           accountName: 'NEDA LABS LIMITED (TEST)',
+          reference: bankReference,
           amountTzs,
-          payFromPhone: phoneNumber ? normalizePhone(phoneNumber) : null,
-          note: 'Test mode: no payment is required. This deposit settles automatically — poll GET /api/v1/deposits/' + tx.id + '.',
+          note: 'Test mode: no transfer is required. This deposit settles automatically — poll GET /api/v1/deposits/' + tx.id + '.',
         }
-      : paymentMethod === 'card'
-        ? undefined
-        : 'Test mode: no prompt is sent. This deposit settles automatically — poll GET /api/v1/deposits/' + tx.id + '.'
+      : paymentMethod === 'lipa_namba'
+        ? {
+            lipaNamba: '70031820',
+            accountName: 'NEDA LABS LIMITED (TEST)',
+            amountTzs,
+            payFromPhone: phoneNumber ? normalizePhone(phoneNumber) : null,
+            note: 'Test mode: no payment is required. This deposit settles automatically — poll GET /api/v1/deposits/' + tx.id + '.',
+          }
+        : paymentMethod === 'card'
+          ? undefined
+          : 'Test mode: no prompt is sent. This deposit settles automatically — poll GET /api/v1/deposits/' + tx.id + '.'
 
   return NextResponse.json(
     {
@@ -319,6 +334,7 @@ export async function testCreateDeposit(partner: AuthenticatedPartner, request: 
       status: 'submitted',
       amountTzs,
       paymentMethod,
+      ...(bankReference ? { reference: bankReference } : {}),
       ...(paymentMethod === 'card'
         ? { paymentUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.ntzs.co.tz'}/testmode/checkout/${tx.id}` }
         : { instructions }),
@@ -341,6 +357,9 @@ export async function testGetDeposit(partner: AuthenticatedPartner, depositId: s
     status,
     amountTzs: tx.amountTzs,
     paymentMethod: detail.paymentMethod ?? 'mobile_money',
+    // Mirrors live: the bank reference is echoed only while the intent is
+    // open — after settlement it is no longer payment-instruction material.
+    ...(status === 'submitted' && detail.reference ? { reference: detail.reference } : {}),
     txHash: status === 'minted' ? (detail.txHash as string) : null,
     createdAt: tx.createdAt,
     livemode: false,

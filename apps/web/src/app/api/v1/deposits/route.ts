@@ -6,19 +6,21 @@ import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { writeAuditLog } from '@/lib/audit'
 import { initiateCollection, initiateCardPayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
-import { W2B_CHANNEL } from '@/lib/psp/selcom-statement'
-import { getW2bConfig } from '@/lib/psp/selcom-w2b'
+import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference } from '@/lib/psp/selcom-statement'
+import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
+import { allocateBankReference, bankTransferInstructions } from '@/lib/deposits/bank-collection'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { isTestMode, testCreateDeposit } from '@/lib/testmode'
 import { users, wallets, partnerUsers, depositRequests, partners } from '@ntzs/db'
 
-type PaymentMethod = 'mobile_money' | 'card' | 'lipa_namba'
+type PaymentMethod = 'mobile_money' | 'card' | 'lipa_namba' | 'bank_transfer'
 
 interface DepositBody {
   userId: string
   amountTzs: number
   paymentMethod?: PaymentMethod
-  // mobile_money + lipa_namba
+  // mobile_money + lipa_namba (bank_transfer needs NO phone — the payment is
+  // matched by the generated reference, not the payer's line)
   phoneNumber?: string
   // card
   redirectUrl?: string
@@ -52,6 +54,15 @@ interface DepositBody {
  *   (typically under 5 minutes). Only available when Selcom w2b is enabled.
  *   Response: { id, status, amountTzs, paymentMethod, instructions:
  *     { lipaNamba, accountName, amountTzs, payFromPhone, note } }
+ *
+ * bank_transfer: no phone. Returns our settlement account + a generated
+ *   reference (e.g. NTZ-7K2M9Q) — the user sends a bank transfer (TIPS) with
+ *   that reference in the narration and nTZS mints automatically once the
+ *   credit appears on the account statement (typically within ~10 minutes).
+ *   Exact amount + reference are the matching keys; anything else is held for
+ *   manual review. Only available when bank collections are enabled.
+ *   Response: { id, status, amountTzs, paymentMethod, reference, instructions:
+ *     { institution, accountNumber, accountName, reference, amountTzs, note } }
  */
 export async function POST(request: NextRequest) {
   const authResult = await authenticatePartner(request)
@@ -94,9 +105,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(limitErrorResponse(limitErr), { status: 400 })
   }
 
-  if (paymentMethod !== 'mobile_money' && paymentMethod !== 'card' && paymentMethod !== 'lipa_namba') {
+  if (
+    paymentMethod !== 'mobile_money' &&
+    paymentMethod !== 'card' &&
+    paymentMethod !== 'lipa_namba' &&
+    paymentMethod !== 'bank_transfer'
+  ) {
     return NextResponse.json(
-      { error: 'paymentMethod must be "mobile_money", "card" or "lipa_namba"' },
+      { error: 'paymentMethod must be "mobile_money", "card", "lipa_namba" or "bank_transfer"' },
       { status: 400 }
     )
   }
@@ -121,6 +137,14 @@ export async function POST(request: NextRequest) {
   if (paymentMethod === 'lipa_namba' && !w2bConfig) {
     return NextResponse.json(
       { error: 'lipa_namba deposits are not enabled' },
+      { status: 400 }
+    )
+  }
+
+  const bankConfig = paymentMethod === 'bank_transfer' ? getBankCollectionConfig() : null
+  if (paymentMethod === 'bank_transfer' && !bankConfig) {
+    return NextResponse.json(
+      { error: 'bank_transfer deposits are not enabled' },
       { status: 400 }
     )
   }
@@ -280,6 +304,59 @@ export async function POST(request: NextRequest) {
 
   const apiBaseUrl = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
   const webhookUrl = `${apiBaseUrl}/api/webhooks/snippe/payment`
+
+  // ── Bank transfer (TIPS → Selcom account) ──────────────────────────────────
+  // No push, no PSP call: the row is an intent carrying a generated reference
+  // token in pspReference. The selcom-statement-sync cron matches the incoming
+  // credit by that token + exact amount and advances it. Bank credits have no
+  // payer phone, which is why the token — not a phone — is the identity.
+  if (paymentMethod === 'bank_transfer' && bankConfig) {
+    const reference = await allocateBankReference(db)
+
+    const [deposit] = await db
+      .insert(depositRequests)
+      .values({
+        userId,
+        bankId,
+        walletId,
+        chain: 'base',
+        amountTzs,
+        status: 'submitted',
+        idempotencyKey,
+        partnerId: partner.id,
+        paymentProvider: 'selcom',
+        pspChannel: BANK_CHANNEL,
+        pspReference: reference,
+      })
+      .returning({
+        id: depositRequests.id,
+        status: depositRequests.status,
+        amountTzs: depositRequests.amountTzs,
+      })
+
+    if (!deposit) {
+      return NextResponse.json({ error: 'Failed to create deposit request' }, { status: 500 })
+    }
+
+    await writeAuditLog('deposit.bank_intent_created', 'deposit_request', deposit.id, {
+      partnerId: partner.id,
+      reference,
+      accountNumber: bankConfig.accountNumber,
+      amountTzs,
+    })
+
+    return NextResponse.json(
+      {
+        id: deposit.id,
+        status: 'submitted',
+        amountTzs: deposit.amountTzs,
+        paymentMethod: 'bank_transfer',
+        reference: formatBankReference(reference),
+        instructions: bankTransferInstructions(bankConfig, reference, deposit.amountTzs),
+      },
+      { status: 201 }
+    )
+  }
 
   // ── Lipa Namba (Selcom w2b) ────────────────────────────────────────────────
   // No push, no PSP call: the row is an intent. The selcom-statement-sync cron

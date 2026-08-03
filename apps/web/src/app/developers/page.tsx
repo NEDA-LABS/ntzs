@@ -707,7 +707,7 @@ const user = await res.json()
             isActive={activeSection === 'deposits'}
             step="Step 6"
             title="Accept deposits (On-Ramp)"
-            description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money and card payments."
+            description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money, card and bank-transfer payments."
           >
             <Note variant="info">
               <span className="font-semibold text-blue-200">userId</span> must be the{' '}
@@ -748,6 +748,36 @@ const user = await res.json()
 // → redirect your user to paymentUrl to complete card payment`}
             />
             <CodeBlock
+              title="POST /api/v1/deposits — bank transfer"
+              code={`// No phone number: the payment is matched by a generated reference the
+// payer puts in the transfer narration.
+body: JSON.stringify({
+  userId: user.id,
+  amountTzs: 250000,
+  paymentMethod: 'bank_transfer',
+})
+// {
+//   id, status: "submitted", amountTzs: 250000,
+//   paymentMethod: "bank_transfer",
+//   reference: "NTZ-7K2M9Q",
+//   instructions: {
+//     institution: "Selcom Paytech",       // the payer selects this in
+//     accountNumber: "66000000111",        //   their bank app (TIPS menu)
+//     accountName: "NEDA LABS LIMITED",
+//     reference: "NTZ-7K2M9Q",             // MUST go in the description
+//     amountTzs: 250000,                   // MUST match exactly
+//     note: "..."                          // ready-to-show payer guidance
+//   }
+// }
+// Show instructions in your UI. The user sends a bank transfer (TIPS — any
+// Tanzanian bank) of EXACTLY amountTzs with the reference in the transfer
+// description; nTZS mints automatically once the credit lands, typically
+// within ~10 minutes. The reference stays valid for 72 hours and
+// GET /api/v1/deposits/:id echoes it while the deposit is open, so you can
+// re-show the payment details. A transfer with a missing reference or a
+// different amount is held for manual review — money is never lost.`}
+            />
+            <CodeBlock
               title="POST /api/v1/deposits — collect to treasury"
               code={`// Payment-collection mode: mint nTZS directly to your platform treasury
 // instead of the user's individual wallet. Useful for marketplaces and
@@ -765,6 +795,7 @@ body: JSON.stringify({
                 { label: 'Minimum', value: '500 TZS' },
                 { label: 'Mobile providers', value: 'Vodacom (M-Pesa), Airtel (Airtel Money), Tigo (Tigo Pesa), Halotel (HaloPesa), TTCL (TTCL Pesa), Yass' },
                 { label: 'Settlement', value: 'Real-time on Base mainnet after payment confirmation' },
+                { label: 'Bank transfer', value: 'Any Tanzanian bank via TIPS — matched by the NTZ-XXXXXX reference + exact amount, mints in ~10 min. Requires the reference in the transfer description.' },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-medium text-white/50">{label}</div>

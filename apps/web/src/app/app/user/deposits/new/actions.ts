@@ -16,8 +16,9 @@ import {
   isValidTanzanianPhone,
   lookupAccountName,
 } from '@/lib/psp'
-import { W2B_CHANNEL } from '@/lib/psp/selcom-statement'
-import { getW2bConfig } from '@/lib/psp/selcom-w2b'
+import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference } from '@/lib/psp/selcom-statement'
+import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
+import { allocateBankReference } from '@/lib/deposits/bank-collection'
 import { writeAuditLog } from '@/lib/audit'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
@@ -217,6 +218,85 @@ export async function createW2bDepositIntentAction(
   revalidatePath('/app/user/activity')
 
   return { depositId: deposit.id, lipaNamba: w2b.lipaNamba, accountName: w2b.accountName }
+}
+
+/**
+ * Create a bank-transfer deposit intent (banking phase 3) — no push is sent.
+ * The user sends a bank transfer (TIPS) to our Selcom account with the
+ * returned reference in the narration; the selcom-statement-sync cron matches
+ * the credit by that reference + exact amount and advances it to mint. Bank
+ * credits carry no payer phone, so the reference — not a phone — is the
+ * matching key.
+ */
+export async function createBankDepositIntentAction(formData: FormData): Promise<{
+  depositId: string
+  reference: string
+  accountNumber: string
+  accountName: string | null
+  institution: string
+}> {
+  await requireAnyRole(['end_user', 'super_admin'])
+  const dbUser = await requireDbUser()
+
+  const cfg = getBankCollectionConfig()
+  if (!cfg) {
+    throw new Error('Bank transfer deposits are not available right now')
+  }
+
+  const bankId = String(formData.get('bankId') ?? '').trim()
+  const amountTzsRaw = String(formData.get('amountTzs') ?? '').trim()
+
+  if (!bankId) throw new Error('Missing bank')
+
+  const amountTzs = Number(amountTzsRaw)
+  if (!Number.isFinite(amountTzs) || amountTzs <= 0) throw new Error('Invalid amount')
+
+  const { db } = getDb()
+
+  const wallet = await getUserPrimaryWallet(dbUser.id)
+  if (!wallet) redirect('/app/user/wallet')
+
+  const approvedKyc = await db
+    .select({ id: kycCases.id })
+    .from(kycCases)
+    .where(and(eq(kycCases.userId, dbUser.id), eq(kycCases.status, 'approved')))
+    .limit(1)
+  if (!approvedKyc.length) redirect('/app/user/kyc')
+
+  const reference = await allocateBankReference(db)
+
+  const [deposit] = await db
+    .insert(depositRequests)
+    .values({
+      userId: dbUser.id,
+      bankId,
+      walletId: wallet.id,
+      chain: wallet.chain,
+      amountTzs: Math.trunc(amountTzs),
+      idempotencyKey: crypto.randomUUID(),
+      status: 'submitted',
+      paymentProvider: 'selcom',
+      pspChannel: BANK_CHANNEL,
+      pspReference: reference,
+    })
+    .returning({ id: depositRequests.id })
+
+  await writeAuditLog('deposit.bank_intent_created', 'deposit_request', deposit.id, {
+    reference,
+    accountNumber: cfg.accountNumber,
+    amountTzs: Math.trunc(amountTzs),
+  }, dbUser.id)
+
+  revalidatePath('/app/user')
+  revalidatePath('/app/user/activity')
+
+  return {
+    depositId: deposit.id,
+    reference: formatBankReference(reference),
+    accountNumber: cfg.accountNumber,
+    accountName: cfg.accountName,
+    institution: cfg.institution,
+  }
 }
 
 export async function createCardDepositRequestAction(formData: FormData): Promise<{ paymentUrl: string }> {

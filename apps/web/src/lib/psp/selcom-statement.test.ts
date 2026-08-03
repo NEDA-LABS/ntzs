@@ -6,6 +6,13 @@ import {
   isWithinMatchWindow,
   ymdEAT,
   W2B_CLOCK_SLACK_MS,
+  W2B_CHANNEL,
+  BANK_CHANNEL,
+  STATEMENT_SETTLED_CHANNELS,
+  generateBankReference,
+  formatBankReference,
+  bankReferenceInText,
+  suggestBankMatch,
 } from './selcom-statement'
 
 describe('parseStatementRow', () => {
@@ -112,5 +119,102 @@ describe('ymdEAT', () => {
   it('rolls the date at 21:00 UTC (midnight EAT)', () => {
     expect(ymdEAT(new Date('2026-07-21T20:59:00Z'))).toBe('2026-07-21')
     expect(ymdEAT(new Date('2026-07-21T21:01:00Z'))).toBe('2026-07-22')
+  })
+})
+
+/**
+ * Banking phase 3 (3 Aug 2026): bank/TIPS credits carry no payer phone, so
+ * bank-transfer deposits match on a generated reference token the payer types
+ * into the transfer narration. These pin the token contract end to end.
+ */
+
+describe('bank reference tokens', () => {
+  it('generates NTZ + 6 chars from the unambiguous alphabet only', () => {
+    for (let i = 0; i < 200; i++) {
+      const token = generateBankReference()
+      expect(token).toMatch(/^NTZ[ABCDEFGHJKMNPQRSTVWXYZ23456789]{6}$/)
+      // The glyphs people misread over the phone must never appear.
+      expect(token.slice(3)).not.toMatch(/[ILOU01]/)
+    }
+  })
+
+  it('does not repeat across a realistic burst', () => {
+    const seen = new Set<string>()
+    for (let i = 0; i < 500; i++) seen.add(generateBankReference())
+    expect(seen.size).toBe(500)
+  })
+
+  it('formats with a display dash and round-trips already-formatted input', () => {
+    expect(formatBankReference('NTZ7K2M9Q')).toBe('NTZ-7K2M9Q')
+    expect(formatBankReference('NTZ-7K2M9Q')).toBe('NTZ-7K2M9Q')
+    expect(formatBankReference('ntz7k2m9q')).toBe('NTZ-7K2M9Q')
+  })
+
+  it('finds tokens in free text across the punctuation banks insert', () => {
+    expect(bankReferenceInText('NTZ7K2M9Q', 'TRF FROM VICTOR REF NTZ-7K2M9Q TIPS')).toBe(true)
+    expect(bankReferenceInText('NTZ7K2M9Q', 'ntz 7k2 m9q deposit')).toBe(true)
+    expect(bankReferenceInText('NTZ7K2M9Q', 'PAY/NTZ.7K2M9Q/CRDB')).toBe(true)
+    expect(bankReferenceInText('NTZ7K2M9Q', 'NEDA DEPOSIT NO REFERENCE')).toBe(false)
+    expect(bankReferenceInText('NTZ7K2M9Q', null)).toBe(false)
+  })
+
+  it('refuses degenerate tokens so a truncated value can never match everything', () => {
+    expect(bankReferenceInText('NTZ', 'NTZ SOMETHING')).toBe(false)
+    expect(bankReferenceInText('', 'anything')).toBe(false)
+  })
+})
+
+describe('suggestBankMatch', () => {
+  const intents = [
+    { id: 'a', amountTzs: 10000, reference: 'NTZ7K2M9Q' },
+    { id: 'b', amountTzs: 25000, reference: 'NTZWX3P8D' },
+  ]
+
+  it('matches on token + exact amount', () => {
+    const { exact } = suggestBankMatch(
+      { amountTzs: 10000, fields: ['TIPS TRANSFER REF NTZ-7K2M9Q', null] },
+      intents
+    )
+    expect(exact?.id).toBe('a')
+  })
+
+  it('searches every field, including payer name, never concatenating them', () => {
+    const byName = suggestBankMatch({ amountTzs: 25000, fields: [null, 'NTZWX3P8D VICTOR'] }, intents)
+    expect(byName.exact?.id).toBe('b')
+    // A token split ACROSS two fields must not assemble into a match.
+    const split = suggestBankMatch({ amountTzs: 10000, fields: ['REF NTZ7K2', 'M9Q END'] }, intents)
+    expect(split.candidates).toHaveLength(0)
+  })
+
+  it('token found but amount wrong → candidate, NOT auto-match (human decides)', () => {
+    const { exact, candidates } = suggestBankMatch(
+      { amountTzs: 9500, fields: ['REF NTZ7K2M9Q'] },
+      intents
+    )
+    expect(exact).toBeNull()
+    expect(candidates.map((c) => c.id)).toEqual(['a'])
+  })
+
+  it('two intents matched in one credit → never auto-match', () => {
+    const { exact, candidates } = suggestBankMatch(
+      { amountTzs: 10000, fields: ['NTZ7K2M9Q AND NTZWX3P8D'] },
+      intents
+    )
+    expect(exact).toBeNull()
+    expect(candidates).toHaveLength(2)
+  })
+
+  it('no token → no candidates', () => {
+    const { exact, candidates } = suggestBankMatch({ amountTzs: 10000, fields: ['PLAIN DEPOSIT'] }, intents)
+    expect(exact).toBeNull()
+    expect(candidates).toHaveLength(0)
+  })
+})
+
+describe('statement-settled channel registry', () => {
+  it('covers exactly the channels poll-selcom must never sweep', () => {
+    expect(STATEMENT_SETTLED_CHANNELS).toContain(W2B_CHANNEL)
+    expect(STATEMENT_SETTLED_CHANNELS).toContain(BANK_CHANNEL)
+    expect(BANK_CHANNEL).toBe('SELCOM-BANK')
   })
 })
