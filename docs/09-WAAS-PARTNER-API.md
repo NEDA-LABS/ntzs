@@ -68,6 +68,12 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.15.3 (3 Aug 2026)
+
+**Off-ramp executes now answer in ~10 seconds.** The synchronous chain that produced 40–50s calls (awaited fee-mint confirmations, a 21s payout-status poll, slow chain polling) is gone: the on-chain value capture is still fully confirmed before any fiat dispatches, but everything best-effort now runs without holding your connection. You get `201 completed` when the PSP settles fast, else `202 paying_out` — completion lands on the `ramp.settlement.completed` webhook and `GET /api/v1/ramp/:id`. Never re-execute on a `202`.
+
+---
+
 ## What's New — v1.15.2 (3 Aug 2026)
 
 **Failed payouts refund themselves.** A definitively failed off-ramp reverts and returns its full gross to your settlement address as nTZS; `GET /api/v1/ramp/balance` now shows that value (`ntzsBalance` + note), and your **next off-ramp consumes it automatically before any USDC is debited** — re-quote and execute, and the original intent completes with no double conversion cost. The `ramp.settlement.failed` webhook has always named the return address (`returnedAsNtzsTo`); now the balance surface and the engine close the loop.
@@ -1086,6 +1092,8 @@ For an off-ramp, `tzsAmount` is the **net the recipient receives** after `feeTzs
 #### `POST /api/v1/ramp/offramp`
 
 Body: `{ "quoteId": "…", "phoneNumber": "07…" }`. `phoneNumber` is required for a wallet payout and ignored for lipa/bill (the destination is bound to the quote). Send an `Idempotency-Key` header — retries with the same key return the original settlement instead of paying twice.
+
+**Latency model.** The call returns as soon as the settlement reaches a definitive state — typically ~10 seconds: `201 completed` when the PSP settles within the short inline window, otherwise `202 paying_out` with the money already captured and the payout dispatched. Treat `202` as success-in-flight, not an error: completion arrives on the `ramp.settlement.completed` webhook (or `ramp.settlement.failed` with the refund semantics above), and `GET /api/v1/ramp/:id` reflects it. Do NOT re-execute on a `202` — the settlement is running.
 
 Responses: `201` settled (`status: "completed"`), `202` payout in flight (`status: "paying_out"` — poll `GET /api/v1/ramp/:id`), `502` failed and **auto-reverted** (`status: "reverted"` — your USDC is back in the float; safe to retry).
 

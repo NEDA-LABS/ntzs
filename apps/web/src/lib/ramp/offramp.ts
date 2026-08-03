@@ -17,6 +17,10 @@ import { estimateSpendFee } from '@/lib/psp/selcom-fees'
 import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+
+// Burner-role verification survives across settlements within one runtime
+// instance — the grant changes via governance, never per-request.
+let verifiedBurnerAddress: string | null = null
 const NTZS_BURN_ABI = [
   'function burn(address from, uint256 amount)',
   'function mint(address to, uint256 amount)',
@@ -112,10 +116,20 @@ export async function runOfframpSettlement(args: {
 
   // ── Verify settlement float holds enough USDC ──────────────────────────────
   const provider = new ethers.JsonRpcProvider(rpcUrl)
+  // Base blocks every ~2s; ethers' default 4s polling adds dead seconds to
+  // every tx.wait in the leg chain. (StablePay, 3 Aug 2026: 40–50s executes.)
+  provider.pollingInterval = 1000
   const usdc = new ethers.Contract(SWAP_TOKENS.USDC.address, ['function balanceOf(address) view returns (uint256)'], provider)
+  const ntzsRead = new ethers.Contract(contractAddress, ['function balanceOf(address) view returns (uint256)'], provider)
   let usdcBal: bigint
+  let existingNtzsWei = BigInt(0)
   try {
-    usdcBal = await usdc.balanceOf(settlementAddress)
+    // One round-trip's latency for both reads; the nTZS read fails soft (a
+    // zero just means the normal swap path).
+    ;[usdcBal, existingNtzsWei] = await Promise.all([
+      usdc.balanceOf(settlementAddress) as Promise<bigint>,
+      (ntzsRead.balanceOf(settlementAddress) as Promise<bigint>).catch(() => BigInt(0)),
+    ])
   } catch {
     // An RPC hiccup here used to escape as an unhandled throw (opaque 500,
     // settlement row stranded in 'processing'). Nothing has moved — fail the
@@ -134,11 +148,6 @@ export async function runOfframpSettlement(args: {
   // partial netting would make the debit disagree with the quote.
   let swapInTxHash: string | undefined
   let swapOutTxHash: string | undefined
-  let existingNtzsWei = BigInt(0)
-  try {
-    const ntzsRead = new ethers.Contract(contractAddress, ['function balanceOf(address) view returns (uint256)'], provider)
-    existingNtzsWei = await ntzsRead.balanceOf(settlementAddress)
-  } catch { /* unreadable balance → normal swap path */ }
   const grossWei = BigInt(String(grossTzs)) * BigInt(10) ** BigInt(18)
 
   if (existingNtzsWei >= grossWei) {
@@ -300,26 +309,36 @@ export async function runOfframpSettlement(args: {
   await setStatus(settlementId, { burnRequestId })
 
   // Burn on-chain from the settlement wallet.
-  let feeMinted = false       // partner-share mint occurred
-  let nedaFeeMinted = false   // NEDA-share mint occurred
+  let feeMinted = false       // partner-share mint broadcast
+  let nedaFeeMinted = false   // NEDA-share mint broadcast
   try {
     const burnSigner = new ethers.Wallet(burnerKey, provider)
     const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, burnSigner)
-    const burnerRole: string = await token.BURNER_ROLE()
-    if (!(await token.hasRole(burnerRole, await burnSigner.getAddress()))) {
-      throw new Error('Burn key lacks BURNER_ROLE')
+    // Role grants change via governance, not per-request — verify once per
+    // runtime instance instead of two RPC round-trips on every settlement.
+    if (verifiedBurnerAddress !== burnSigner.address) {
+      const burnerRole: string = await token.BURNER_ROLE()
+      if (!(await token.hasRole(burnerRole, burnSigner.address))) {
+        throw new Error('Burn key lacks BURNER_ROLE')
+      }
+      verifiedBurnerAddress = burnSigner.address
     }
     const amountWei = BigInt(String(grossTzs)) * BigInt(10) ** BigInt(18)
     const tx = await token.burn(settlementAddress, amountWei)
     await db.update(burnRequests).set({ txHash: tx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
+    // The ONE wait that is not negotiable: value must be captured on-chain
+    // before any fiat dispatches. Everything after this is best-effort.
     await tx.wait(1)
     await db.update(burnRequests).set({ status: 'burned', updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
 
+    // Fee mints: broadcast and record the hash WITHOUT awaiting confirmation
+    // (same pattern as the app withdrawal's fee mint) — the payout leg must
+    // not queue behind bookkeeping mints, and the signer's nonce ordering
+    // serializes any later revert burn-back behind them on-chain anyway.
     // Partner's share of the platform fee.
     if (partnerFeeTzs > 0 && partnerRecipient) {
       try {
         const feeTx = await token.mint(partnerRecipient, BigInt(partnerFeeTzs) * BigInt(10) ** BigInt(18))
-        await feeTx.wait(1)
         feeMinted = true
         await db.update(burnRequests).set({ feeTxHash: feeTx.hash, feeRecipientAddress: partnerRecipient, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
       } catch (feeErr) {
@@ -331,7 +350,6 @@ export async function runOfframpSettlement(args: {
     if (nedaFeeTzs > 0 && nedaRecipient) {
       try {
         const nedaTx = await token.mint(nedaRecipient, BigInt(nedaFeeTzs) * BigInt(10) ** BigInt(18))
-        await nedaTx.wait(1)
         nedaFeeMinted = true
         await db.update(burnRequests).set({ nedaFeeTxHash: nedaTx.hash, updatedAt: new Date() }).where(eq(burnRequests.id, burnRequestId))
       } catch (feeErr) {
@@ -383,6 +401,12 @@ export async function runOfframpSettlement(args: {
       utilityRef: destination.kind === 'bill' ? destination.utilityRef : undefined,
       spendDescriptor: spendDescriptor as Record<string, unknown>,
       burnAmountTzs: grossTzs,
+      // Latency budget: one quick poll for fast settlements, then hand the
+      // row to spend-status-sync + the webhook and answer 'paying_out'. The
+      // partner tracks GET /ramp/:id and gets ramp.settlement.completed —
+      // holding the connection through Selcom's settling window cost 40–50s
+      // executes (StablePay, 3 Aug 2026).
+      pollDeadlineMs: Date.now() + 4500,
       revert: {
         userAddress: settlementAddress,
         burnAmountTzs: grossTzs,
@@ -453,7 +477,10 @@ export async function runOfframpSettlement(args: {
       await setStatus(settlementId, { pspReference: ref })
 
       // Poll the SERVING rail for quick completion; the webhook is primary.
-      for (const delay of [3000, 6000, 12000]) {
+      // Bounded tight: most wallet payouts settle within seconds, and holding
+      // the connection for the slow tail is what made executes take 40–50s —
+      // an unresolved poll answers 'paying_out' and the webhook finalizes.
+      for (const delay of [2500, 4000]) {
         await new Promise((r) => setTimeout(r, delay))
         try {
           const ps = await checkPayoutStatusFor(payoutRail, ref)
