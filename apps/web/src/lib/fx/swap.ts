@@ -232,6 +232,11 @@ export async function* executeSwap(params: {
   const toProvider   = new JsonRpcProvider(rpcUrl)
   // Provider for the input (from-) chain — user sends here
   const fromProvider = isCrossChain ? new JsonRpcProvider(fromRpcUrl!) : toProvider
+  // Both chains block in ~2s; ethers' default 4s polling makes every tx.wait
+  // in the two-leg swap cost dead seconds. Tight polling shaves ~2–6s per swap
+  // across every caller (app, WaaS, LP, ramp settlements).
+  toProvider.pollingInterval = 1000
+  fromProvider.pollingInterval = 1000
   const inboundSolverAddress = fromSolverAddress ?? solverAddress
 
   const solverWallet = new Wallet(solverPrivateKey, toProvider)
