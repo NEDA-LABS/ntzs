@@ -132,8 +132,50 @@ async function solverUsdcLiquidity(): Promise<number> {
 }
 
 /**
+ * Invert the off-ramp fee chain: the smallest integer gross G (TZS the swap
+ * must yield) such that G − platformFee(G) − pspFee(G) ≥ targetNetTzs.
+ *
+ * Fees are integer step functions (tiered PSP fee, ceil'd platform pct), so
+ * at a tier edge some nets are unreachable exactly; the sliver (net(G) −
+ * target, at most one tier jump) stays in feeTzs rather than shorting or
+ * overpaying the recipient — the recipient receives EXACTLY the target.
+ * Returns null when no G is found within bounds (never loops forever).
+ */
+export function solveOfframpGrossTzs(targetNetTzs: number, feesFor: (gross: number) => number): number | null {
+  const net = (g: number) => g - feesFor(g)
+  // Fixed point first — lands within one fee-tier jump of the answer.
+  let g = targetNetTzs + feesFor(targetNetTzs)
+  for (let i = 0; i < 8; i++) g = targetNetTzs + feesFor(g)
+  // Walk up to feasibility, then down to minimality. Within one fee tier the
+  // net rises 1:1 with G, so both walks terminate at the nearest boundary.
+  let guard = 10_000
+  while (net(g) < targetNetTzs && guard-- > 0) g++
+  if (net(g) < targetNetTzs) return null
+  while (g > 1 && net(g - 1) >= targetNetTzs && guard-- > 0) g--
+  return guard > 0 ? g : null
+}
+
+/**
+ * The USDC to debit so the off-ramp swap yields at least `grossTzs`: inverts
+ * the linear swap leg, rounding UP at USDC precision (6 dp), then
+ * forward-verifies to absorb float dust. Surplus is sub-shilling and stays in
+ * the settlement accounting.
+ */
+export function usdcForGrossTzs(grossTzs: number, midRate: number, bidBps: number, askBps: number): number {
+  const swapOut = (u: number) => calcMinOutput({ fromToken: 'USDC', toToken: 'NTZS', amount: u, midRate, bidBps, askBps, slippageBps: 0 })
+  let usdc = Math.ceil((grossTzs / swapOut(1)) * 1e6) / 1e6
+  for (let i = 0; i < 3 && Math.floor(swapOut(usdc)) < grossTzs; i++) {
+    usdc = Math.round(usdc * 1e6 + 1) / 1e6
+  }
+  return usdc
+}
+
+/**
  * Compute a ramp quote.
- * - off-ramp: caller passes `usdcAmount` (USDC they'll spend) → recipient TZS net.
+ * - off-ramp: pass EITHER `usdcAmount` (USDC to spend → recipient TZS net)
+ *   OR `tzsAmount` (the exact net the recipient must receive → USDC to
+ *   debit). Partners' users ask in local currency, so the TZS form is the
+ *   one integrations should prefer.
  * - on-ramp:  caller passes `tzsAmount` (TZS collected from payer) → USDC delivered.
  */
 export async function computeRampQuote(params: {
@@ -154,13 +196,6 @@ export async function computeRampQuote(params: {
   const { midRate, bidBps, askBps } = ps
 
   if (direction === 'offramp') {
-    const usdcAmount = Number(params.usdcAmount)
-    if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) return { error: 'usdcAmount must be a positive number' }
-
-    // USDC → nTZS (1 nTZS == 1 TZS). Gross TZS the swap yields.
-    const grossTzs = calcMinOutput({ fromToken: 'USDC', toToken: 'NTZS', amount: usdcAmount, midRate, bidBps, askBps, slippageBps: 0 })
-    const platformFee = rampPlatformFeeTzs(grossTzs, params.feePercent)
-
     // PSP fee depends on the destination: mobile-money wallet = the EXPECTED
     // SERVING RAIL's charge (Selcom is tiered, not the legacy flat 1,500);
     // Selcom Lipa/bill = the Selcom tariff. Both estimated on gross (one tier
@@ -168,10 +203,44 @@ export async function computeRampQuote(params: {
     // settlement engine (offramp.ts) derives the SAME figure from the same
     // gross, so quote and execution cannot disagree within one env state.
     const dest = params.destination ?? { kind: 'wallet' as const }
-    const pspFee =
+    const pspFeeFor = (gross: number): number =>
       dest.kind === 'wallet'
-        ? expectedPayoutFeeTzs(Math.floor(grossTzs))
-        : estimateSpendFee(dest.kind, Math.floor(grossTzs), dest.kind === 'bill' ? dest.utilityCode : undefined)
+        ? expectedPayoutFeeTzs(Math.floor(gross))
+        : estimateSpendFee(dest.kind, Math.floor(gross), dest.kind === 'bill' ? dest.utilityCode : undefined)
+
+    const hasUsdc = params.usdcAmount != null
+    const hasTzs = params.tzsAmount != null
+    if (hasUsdc && hasTzs) return { error: 'Provide exactly one of usdcAmount or tzsAmount for an off-ramp quote' }
+    if (!hasUsdc && !hasTzs) return { error: 'Provide usdcAmount (USDC to spend) or tzsAmount (the net TZS the recipient must receive)' }
+
+    if (hasTzs) {
+      // TZS-denominated: the partner names the exact NET the recipient must
+      // receive; we answer with the USDC their float will be debited. Their
+      // users request payouts in local currency, not USDC.
+      const target = Math.trunc(Number(params.tzsAmount))
+      if (!Number.isFinite(target) || target < 5000) {
+        return { error: 'tzsAmount must be an integer of at least 5,000 TZS (the net the recipient receives)' }
+      }
+      const gross = solveOfframpGrossTzs(target, (g) => rampPlatformFeeTzs(g, params.feePercent) + pspFeeFor(g))
+      if (gross == null) return { error: 'Could not price that tzsAmount — quote by usdcAmount instead' }
+
+      const usdcAmount = usdcForGrossTzs(gross, midRate, bidBps, askBps)
+
+      const lowLiquidity = (await solverNtzsLiquidity()) < gross
+      return {
+        direction, usdcAmount, tzsAmount: target, feeTzs: gross - target,
+        rateUsdTzs: +(gross / usdcAmount).toFixed(6),
+        bidBps, askBps, lowLiquidity,
+      }
+    }
+
+    const usdcAmount = Number(params.usdcAmount)
+    if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) return { error: 'usdcAmount must be a positive number' }
+
+    // USDC → nTZS (1 nTZS == 1 TZS). Gross TZS the swap yields.
+    const grossTzs = calcMinOutput({ fromToken: 'USDC', toToken: 'NTZS', amount: usdcAmount, midRate, bidBps, askBps, slippageBps: 0 })
+    const platformFee = rampPlatformFeeTzs(grossTzs, params.feePercent)
+    const pspFee = pspFeeFor(grossTzs)
 
     const feeTzs = pspFee + platformFee
     const tzsAmount = Math.floor(grossTzs) - feeTzs
