@@ -21,6 +21,17 @@
  * this channel, so push-USSD deposits can never be auto-credited twice. */
 export const W2B_CHANNEL = 'SELCOM-W2B'
 
+/** pspChannel stamped on bank-transfer deposit intents (banking phase 3).
+ * Bank/TIPS credits carry no payer phone, so this channel matches by a
+ * generated reference token the payer puts in the transfer narration. */
+export const BANK_CHANNEL = 'SELCOM-BANK'
+
+/** Channels that settle via the account statement, NOT via push-USSD status
+ * queries. poll-selcom must exclude these: a bank intent stores our reference
+ * TOKEN in pspReference while open, and querying pushussd-query with it could
+ * map an unknown-order response to failed/expired and wrongly reject the row. */
+export const STATEMENT_SETTLED_CHANNELS = [W2B_CHANNEL, BANK_CHANNEL]
+
 /** Auto-match window: the payment must land within this many hours AFTER the
  * intent was created. Mirrors the 72h stale-attempt cutoff in backstage. */
 export const W2B_MATCH_WINDOW_HOURS = 72
@@ -188,4 +199,80 @@ export function isWithinMatchWindow(intentCreatedAt: Date, paymentAt: Date): boo
  * date ranges must be computed in EAT or midnight-boundary payments are missed. */
 export function ymdEAT(d: Date): string {
   return new Date(d.getTime() + 3 * 3600_000).toISOString().slice(0, 10)
+}
+
+// ── Bank-transfer collections (SELCOM-BANK) ─────────────────────────────────
+//
+// A TIPS credit has no payer phone, so the matching key is a reference token
+// we generate at intent time and the payer types into the transfer narration.
+// The token must survive being read over the phone and retyped into a bank
+// app, so the alphabet drops every ambiguous glyph (I/L/O/U/0/1).
+
+const BANK_REFERENCE_PREFIX = 'NTZ'
+const BANK_REFERENCE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
+const BANK_REFERENCE_RANDOM_CHARS = 6
+
+/** Canonical form: 'NTZ' + 6 unambiguous chars, e.g. 'NTZ7K2M9Q'. */
+export function generateBankReference(): string {
+  const bytes = new Uint8Array(BANK_REFERENCE_RANDOM_CHARS)
+  globalThis.crypto.getRandomValues(bytes)
+  let out = BANK_REFERENCE_PREFIX
+  for (const b of bytes) out += BANK_REFERENCE_ALPHABET[b % BANK_REFERENCE_ALPHABET.length]
+  return out
+}
+
+/** Display form with a separator ('NTZ-7K2M9Q') — matching strips it anyway. */
+export function formatBankReference(token: string): string {
+  const t = token.trim().toUpperCase()
+  return t.startsWith(BANK_REFERENCE_PREFIX) && t.length > BANK_REFERENCE_PREFIX.length && !t.includes('-')
+    ? `${BANK_REFERENCE_PREFIX}-${t.slice(BANK_REFERENCE_PREFIX.length)}`
+    : t
+}
+
+/**
+ * True when the token appears in the text, tolerating case, dashes, spaces
+ * and any other punctuation the payer's bank inserted. Each field is checked
+ * on its own — fields are never concatenated, so a token can't be assembled
+ * across field boundaries.
+ */
+export function bankReferenceInText(token: string, text: string | null | undefined): boolean {
+  if (!text) return false
+  const canonical = token.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+  if (canonical.length < BANK_REFERENCE_PREFIX.length + BANK_REFERENCE_RANDOM_CHARS) return false
+  return text.replace(/[^A-Za-z0-9]/g, '').toUpperCase().includes(canonical)
+}
+
+export interface BankIntentLike {
+  id: string
+  amountTzs: number
+  /** The canonical reference token stored on the open intent (pspReference). */
+  reference: string
+}
+
+export interface BankMatchSuggestion<T> {
+  /** The sole token-matched intent whose amount ALSO equals the credit —
+   * safe to auto-match. null when nothing matches, several intents' tokens
+   * appear (token collision), or the token matches but the amount differs
+   * (payer sent the wrong amount → a human decides in the orphan queue). */
+  exact: T | null
+  /** Every intent whose token appears somewhere in the credit's fields. */
+  candidates: T[]
+}
+
+/**
+ * Match one statement credit to open bank-transfer intents by reference
+ * token. `fields` is the credit's free-text surface (narrative/notes, payer
+ * name, statement reference) — banks are inconsistent about WHERE the
+ * sender's narration ends up, so every field is searched. Window filtering is
+ * the caller's job, mirroring suggestOrphanMatch.
+ */
+export function suggestBankMatch<T extends BankIntentLike>(
+  credit: { amountTzs: number; fields: Array<string | null | undefined> },
+  intents: T[]
+): BankMatchSuggestion<T> {
+  const candidates = intents.filter((intent) =>
+    credit.fields.some((field) => bankReferenceInText(intent.reference, field))
+  )
+  const exact = candidates.length === 1 && candidates[0].amountTzs === credit.amountTzs ? candidates[0] : null
+  return { exact, candidates }
 }

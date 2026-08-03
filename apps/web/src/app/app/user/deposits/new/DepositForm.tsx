@@ -3,11 +3,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 
-import { IconCard, IconPhone } from '@/app/app/_components/icons'
+import { IconBank, IconCard, IconPhone } from '@/app/app/_components/icons'
 
-import { createDepositRequestAction, createCardDepositRequestAction, createW2bDepositIntentAction } from './actions'
+import {
+  createDepositRequestAction,
+  createCardDepositRequestAction,
+  createW2bDepositIntentAction,
+  createBankDepositIntentAction,
+} from './actions'
 
-type PaymentMethod = 'mobile' | 'card' | 'lipa'
+type PaymentMethod = 'mobile' | 'card' | 'lipa' | 'bank'
 
 const quickAmounts = [1000, 5000, 10000, 50000]
 
@@ -16,9 +21,11 @@ interface DepositFormProps {
   userPhone?: string | null
   /** Selcom Lipa Namba details — null hides the option entirely (feature off). */
   w2b?: { lipaNamba: string; accountName: string | null } | null
+  /** Bank-transfer collection details — null hides the option (feature off). */
+  bankCollection?: { accountNumber: string; accountName: string | null; institution: string } | null
 }
 
-export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps) {
+export function DepositForm({ defaultBankId, userPhone, w2b, bankCollection }: DepositFormProps) {
   const [amount, setAmount] = useState('')
   const [phone, setPhone] = useState(userPhone || '')
   const [rememberPhone, setRememberPhone] = useState(true)
@@ -33,6 +40,14 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
   // Set when the active deposit is a Lipa Namba intent — switches the pending
   // panel from "check your phone" to pay-these-details instructions.
   const [lipaIntent, setLipaIntent] = useState<{ lipaNamba: string; accountName: string | null } | null>(null)
+  // Same idea for a bank-transfer intent: account details + the reference the
+  // user must put in the transfer narration.
+  const [bankIntent, setBankIntent] = useState<{
+    reference: string
+    accountNumber: string
+    accountName: string | null
+    institution: string
+  } | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPolling = useCallback(() => {
@@ -68,11 +83,12 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
 
     checkStatus()
     pollRef.current = setInterval(checkStatus, 3000)
-    // Lipa Namba payments happen in the user's own mobile-money menu, so give
-    // them far longer than a push prompt before the page stops watching.
-    const timeout = setTimeout(() => stopPolling(), (lipaIntent ? 20 : 5) * 60 * 1000)
+    // Lipa Namba / bank transfers happen in the user's own banking or
+    // mobile-money app, so give them far longer than a push prompt before the
+    // page stops watching.
+    const timeout = setTimeout(() => stopPolling(), (lipaIntent || bankIntent ? 20 : 5) * 60 * 1000)
     return () => { stopPolling(); clearTimeout(timeout) }
-  }, [depositId, lipaIntent, stopPolling])
+  }, [depositId, lipaIntent, bankIntent, stopPolling])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -116,6 +132,28 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
         setSubmittedAmount(amount)
         const result = await createW2bDepositIntentAction(fd)
         setLipaIntent({ lipaNamba: result.lipaNamba, accountName: result.accountName })
+        setDepositId(result.depositId)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not start the deposit. Please try again.')
+      }
+      setLoading(false)
+    } else if (method === 'bank') {
+      try {
+        try {
+          const amt = Number(amount)
+          if (amt > 0) sessionStorage.setItem('deposit_success', JSON.stringify({ amount: amt }))
+        } catch {}
+        const fd = new FormData()
+        fd.set('bankId', defaultBankId ?? '')
+        fd.set('amountTzs', amount)
+        setSubmittedAmount(amount)
+        const result = await createBankDepositIntentAction(fd)
+        setBankIntent({
+          reference: result.reference,
+          accountNumber: result.accountNumber,
+          accountName: result.accountName,
+          institution: result.institution,
+        })
         setDepositId(result.depositId)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not start the deposit. Please try again.')
@@ -169,7 +207,7 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
                 </Link>
                 <button
                   type="button"
-                  onClick={() => { setDepositId(null); setPayStatus(null); setLipaIntent(null); setAmount('') }}
+                  onClick={() => { setDepositId(null); setPayStatus(null); setLipaIntent(null); setBankIntent(null); setAmount('') }}
                   className="w-full rounded-2xl border border-border/40 bg-background/35 px-6 py-4 text-base font-medium text-foreground backdrop-blur-xl transition-all duration-75 active:scale-[0.98] hover:bg-background/45"
                 >
                   Make another deposit
@@ -188,7 +226,7 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
               <div className="mt-7 flex flex-col gap-3">
                 <button
                   type="button"
-                  onClick={() => { setDepositId(null); setPayStatus(null); setLipaIntent(null) }}
+                  onClick={() => { setDepositId(null); setPayStatus(null); setLipaIntent(null); setBankIntent(null) }}
                   className="w-full rounded-2xl bg-primary px-6 py-4 text-base font-semibold text-primary-foreground transition-opacity duration-75 active:scale-[0.98] hover:opacity-90"
                 >
                   Try again
@@ -234,6 +272,40 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '300ms' }} />
               </div>
               <p className="mt-3 text-xs text-muted-foreground">This page updates automatically — leave it open while you pay</p>
+            </>
+          ) : bankIntent && payStatus === 'pending' ? (
+            <>
+              <h2 className="text-xl font-bold text-foreground">Pay by bank transfer</h2>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                In your banking app, send a transfer <span className="font-medium text-foreground">(To other banks / TIPS)</span> with these details:
+              </p>
+              <div className="mx-auto mt-5 w-full max-w-xs space-y-2 text-left">
+                <div className="rounded-2xl bg-blue-600/10 px-5 py-3 ring-1 ring-blue-600/20">
+                  <p className="text-[11px] uppercase tracking-wide text-blue-400/70">{bankIntent.institution} — account</p>
+                  <p className="text-2xl font-bold tabular-nums tracking-wider text-foreground">{bankIntent.accountNumber}</p>
+                  {bankIntent.accountName && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{bankIntent.accountName}</p>
+                  )}
+                </div>
+                <div className="rounded-2xl bg-emerald-500/10 px-5 py-3 ring-1 ring-emerald-500/20">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-400/70">Reference — put this in the description</p>
+                  <p className="text-2xl font-bold tabular-nums tracking-wider text-foreground">{bankIntent.reference}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">We match your payment by this reference</p>
+                </div>
+                <div className="rounded-2xl bg-background/35 px-5 py-3 ring-1 ring-border/40">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount — exactly</p>
+                  <p className="text-2xl font-bold tabular-nums text-foreground">{Number(submittedAmount).toLocaleString()} TZS</p>
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-muted-foreground">
+                Your nTZS is minted automatically after the transfer lands — usually within 10 minutes.
+              </p>
+              <div className="mt-5 flex items-center justify-center gap-1.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '0ms' }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '150ms' }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: '300ms' }} />
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">This page updates automatically — you can close it and check Activity later</p>
             </>
           ) : (
             <>
@@ -356,6 +428,8 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
                 ? <><IconPhone className="h-4 w-4 text-blue-400" />Mobile Money</>
                 : method === 'lipa'
                 ? <><IconPhone className="h-4 w-4 text-blue-400" />Lipa Namba</>
+                : method === 'bank'
+                ? <><IconBank className="h-4 w-4 text-blue-400" />Bank transfer</>
                 : <><IconCard className="h-4 w-4 text-blue-400" />Card</>
               }
             </span>
@@ -401,6 +475,26 @@ export function DepositForm({ defaultBankId, userPhone, w2b }: DepositFormProps)
                   <span className={`block text-xs ${method === 'lipa' ? 'text-blue-300/70' : 'text-muted-foreground'}`}>Pay from your own mobile money menu</span>
                 </span>
                 {method === 'lipa' && (
+                  <svg className="ml-auto h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            )}
+            {bankCollection && (
+              <button
+                type="button"
+                onClick={() => { setMethod('bank'); setPayWithOpen(false) }}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${method === 'bank' ? 'bg-blue-600/10 text-foreground' : 'text-foreground/70 hover:bg-background/35'}`}
+              >
+                <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${method === 'bank' ? 'bg-blue-600/20' : 'bg-background/35'}`}>
+                  <IconBank className={`h-4 w-4 ${method === 'bank' ? 'text-blue-300' : 'text-foreground/50'}`} />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold">Bank transfer</span>
+                  <span className={`block text-xs ${method === 'bank' ? 'text-blue-300/70' : 'text-muted-foreground'}`}>Send from any bank via TIPS</span>
+                </span>
+                {method === 'bank' && (
                   <svg className="ml-auto h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>

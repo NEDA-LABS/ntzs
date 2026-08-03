@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { isTestMode, testGetDeposit } from '@/lib/testmode'
 import { authenticatePartner } from '@/lib/waas/auth'
+import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference } from '@/lib/psp/selcom-statement'
 import { depositRequests, mintTransactions, partnerUsers } from '@ntzs/db'
 
 /**
@@ -32,6 +33,8 @@ export async function GET(
       amountTzs: depositRequests.amountTzs,
       partnerId: depositRequests.partnerId,
       paymentProvider: depositRequests.paymentProvider,
+      pspChannel: depositRequests.pspChannel,
+      pspReference: depositRequests.pspReference,
       createdAt: depositRequests.createdAt,
     })
     .from(depositRequests)
@@ -72,13 +75,29 @@ export async function GET(
     txHash = mintTx?.txHash ?? null
   }
 
-  const paymentMethod = deposit.paymentProvider === 'snippe_card' ? 'card' : 'mobile_money'
+  const paymentMethod =
+    deposit.pspChannel === BANK_CHANNEL
+      ? 'bank_transfer'
+      : deposit.pspChannel === W2B_CHANNEL
+        ? 'lipa_namba'
+        : deposit.paymentProvider === 'snippe_card'
+          ? 'card'
+          : 'mobile_money'
+
+  // While a bank intent is open, pspReference holds OUR reference token —
+  // echo it so the partner can re-show payment instructions. After match it
+  // becomes the PSP's statement reference, which is not for partners.
+  const reference =
+    deposit.pspChannel === BANK_CHANNEL && deposit.status === 'submitted' && deposit.pspReference
+      ? formatBankReference(deposit.pspReference)
+      : undefined
 
   return NextResponse.json({
     id: deposit.id,
     status: deposit.status,
     amountTzs: deposit.amountTzs,
     paymentMethod,
+    ...(reference ? { reference } : {}),
     txHash,
     createdAt: deposit.createdAt,
   })

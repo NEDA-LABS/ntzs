@@ -1,7 +1,7 @@
 # 09 — WaaS Partner API Reference
 
 **Document owner**: NEDA Labs Limited  
-**Last updated**: July 2026  
+**Last updated**: August 2026  
 **Classification**: Regulatory — Bank of Tanzania Sandbox Submission
 
 ---
@@ -45,6 +45,8 @@ sequenceDiagram
 | Execute swap | `POST /api/v1/swap` (SSE) |
 | Create user + wallet | `POST /api/v1/users` |
 | Get user profile + balances | `GET /api/v1/users/:id` |
+| Initiate deposit (mobile money / card / Lipa Namba / bank transfer) | `POST /api/v1/deposits` |
+| Deposit status | `GET /api/v1/deposits/:id` |
 | Withdrawal quote (name + fees + net) | `POST /api/v1/withdrawals/quote` |
 | Execute withdrawal (cash-out) | `POST /api/v1/withdrawals` |
 | Recipient name check before withdrawal | `POST /api/v1/lookup/recipient-name` |
@@ -65,6 +67,17 @@ sequenceDiagram
 ---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
+
+---
+
+## What's New — v1.17.0 (3 Aug 2026)
+
+**Deposits can now arrive by bank transfer.** `POST /api/v1/deposits` accepts `paymentMethod: "bank_transfer"` — no phone number. The response carries a generated **reference** (e.g. `NTZ-7K2M9Q`) and an `instructions` block (institution, account number, account name, exact amount, ready-to-show note): your user sends a bank transfer (TIPS, from any Tanzanian bank) to that account with the reference in the transfer description, and nTZS mints automatically once the credit appears on our settlement account — typically within ~10 minutes.
+
+- **Matching is reference + exact amount.** Both must be right, or the payment is held for manual review instead of auto-crediting — funds are never lost, but the flow stalls on a human. Make the reference and the exact figure impossible to miss in your UI.
+- The reference is valid for **72 hours** from intent creation, and `GET /api/v1/deposits/:id` echoes it while the deposit is still open, so payment details can be re-shown without storing them.
+- Method availability is flagged server-side: while the rail is off, the endpoint answers `400` with `bank_transfer deposits are not enabled`.
+- Test keys accept the same request and return the same shapes (including a real-format reference), so the integration is buildable end-to-end in sandbox.
 
 ---
 
