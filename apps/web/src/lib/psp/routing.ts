@@ -39,7 +39,7 @@ export function detectNetwork(phone: string): Network {
     // The 076x range is split: 0760–0767 Vodacom, 0768–0769 Airtel.
     return nine[2] >= '8' ? 'airtel' : 'vodacom'
   }
-  if (['74', '75'].includes(p2)) return 'vodacom'
+  if (['74', '75', '79'].includes(p2)) return 'vodacom'
   if (['68', '69', '78'].includes(p2)) return 'airtel'
   if (['71', '65', '67', '77'].includes(p2)) return 'tigo'
   if (['61', '62'].includes(p2)) return 'halotel'

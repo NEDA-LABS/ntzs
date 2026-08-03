@@ -105,8 +105,9 @@ export function isValidTanzanianPhone(phone: string): boolean {
   if (!/^255\d{9}$/.test(normalized)) return false
   // 61/62 Halotel (Halopesa), 73 TTCL (T-Pesa) — routable networks; keep in
   // sync with the copy in snippe.ts (the one re-exported from lib/psp).
+  // 79 is Vodacom (TCRA numbering plan).
   const prefix = normalized.slice(3, 5)
-  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
+  const validPrefixes = ['74', '75', '76', '79', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
   return validPrefixes.includes(prefix)
 }
 
@@ -120,7 +121,7 @@ export function isValidTanzanianPhone(phone: string): boolean {
  */
 export function detectAzamPayProvider(normalizedPhone: string): string {
   const prefix = normalizedPhone.slice(3, 5)
-  if (['74', '75', '76'].includes(prefix)) return 'azampesa' // Vodacom M-PESA
+  if (['74', '75', '76', '79'].includes(prefix)) return 'azampesa' // Vodacom M-PESA
   if (['68', '69', '78'].includes(prefix)) return 'airtel'
   if (['71', '65'].includes(prefix))       return 'tigo'
   if (['62'].includes(prefix))             return 'halopesa'

@@ -283,9 +283,9 @@ export function isValidTanzanianPhone(phone: string): boolean {
   const normalized = normalizePhone(phone)
   if (!/^255\d{9}$/.test(normalized)) return false
   // Keep in sync with the copies in snippe.ts / azampay.ts (61/62 Halotel,
-  // 73 TTCL included — routable networks).
+  // 73 TTCL included — routable networks; 79 Vodacom per the TCRA plan).
   const prefix = normalized.slice(3, 5)
-  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
+  const validPrefixes = ['74', '75', '76', '79', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
   return validPrefixes.includes(prefix)
 }
 
@@ -308,7 +308,7 @@ export function isValidTanzanianPhone(phone: string): boolean {
  * detectWalletFiCode throws on an unmapped prefix so we fail loudly, never guess.
  */
 const MOBILE_FI_CODES: Record<string, string> = {
-  vodacom: 'MPESA', //       Vodacom M-Pesa — 74/75/760-7 — PROVEN LIVE 1 Aug 2026
+  vodacom: 'MPESA', //       Vodacom M-Pesa — 74/75/760-7/79 — PROVEN LIVE 1 Aug 2026
   airtel: 'AIRTELMONEY', //  Airtel Money — 68/69/78/768-9 — portal table; probe before volume
   tigo: 'MIXXBYYAS', //      Mixx by Yas (ex Tigo Pesa) — 71/65/67/77 — portal table; probe before volume
   halotel: 'HALOPESA', //    Halo Pesa — 61/62 — portal table; probe before volume
@@ -318,7 +318,7 @@ const MOBILE_FI_CODES: Record<string, string> = {
 /** Exported for unit tests. */
 export function detectWalletFiCode(normalizedPhone: string): string {
   const prefix = normalizedPhone.slice(3, 5)
-  if (['74', '75', '76'].includes(prefix)) return MOBILE_FI_CODES.vodacom
+  if (['74', '75', '76', '79'].includes(prefix)) return MOBILE_FI_CODES.vodacom
   if (['68', '69', '78'].includes(prefix)) return MOBILE_FI_CODES.airtel
   if (['71', '65', '67', '77'].includes(prefix)) return MOBILE_FI_CODES.tigo
   if (['61', '62'].includes(prefix)) return MOBILE_FI_CODES.halotel

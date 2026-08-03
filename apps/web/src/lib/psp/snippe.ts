@@ -46,9 +46,10 @@ export function isValidTanzanianPhone(phone: string): boolean {
   // Valid mobile prefixes after 255.
   // 61/62 Halotel (Halopesa) and 73 TTCL (T-Pesa) are routable networks
   // (see routing.ts / the AzamPay destination vocabulary) — keep in sync
-  // with the copy in azampay.ts.
+  // with the copy in azampay.ts. 79 is Vodacom (TCRA numbering plan; missing
+  // here until 28 Jul 2026 — it locked every 079x customer out platform-wide).
   const prefix = normalized.slice(3, 5)
-  const validPrefixes = ['74', '75', '76', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
+  const validPrefixes = ['74', '75', '76', '79', '77', '78', '68', '69', '71', '65', '67', '61', '62', '73']
   return validPrefixes.includes(prefix)
 }
 
