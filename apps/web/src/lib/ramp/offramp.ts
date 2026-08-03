@@ -3,8 +3,9 @@ import { eq, and, or, inArray, sql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS, RAMP_NEDA_FEE_BPS } from '@/lib/env'
-import { rampSettlements, burnRequests, users, wallets, partners, lpAccounts, lpFills } from '@ntzs/db'
-import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/fx/swap'
+import { rampSettlements, burnRequests, users, wallets, partners, lpAccounts, lpFills, lpFxPairs } from '@ntzs/db'
+import { executeSwap, calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig, type SwapResult } from '@/lib/fx/swap'
+import { recordLpFill } from '@/lib/fx/record-fill'
 import {
   anyDisbursementRailConfigured, normalizePhone, sendPayoutRouted, checkPayoutStatusFor, lookupRecipientName, expectedPayoutFeeTzs,
 } from '@/lib/psp'
@@ -162,6 +163,7 @@ export async function runOfframpSettlement(args: {
     }
 
     await setStatus(settlementId, { status: 'swapping' })
+    let fillResult: SwapResult | undefined
     try {
       // Inside the guarded region: seed decryption throws when the encryption
       // env is wrong, and outside a try that stranded the row in 'swapping'.
@@ -179,7 +181,10 @@ export async function runOfframpSettlement(args: {
         rpcUrl,
       })) {
         if (u.txHash && !swapInTxHash) swapInTxHash = u.txHash
-        if (u.status === 'FILLED') swapOutTxHash = u.txHash ?? swapOutTxHash
+        if (u.status === 'FILLED') {
+          swapOutTxHash = u.txHash ?? swapOutTxHash
+          fillResult = (u as typeof u & { _result?: SwapResult })._result
+        }
         if (u.status === 'FAILED' || u.status === 'PARTIAL_FILL_EXHAUSTED') {
           await setStatus(settlementId, { status: 'failed', error: u.message ?? 'Swap failed', swapInTxHash })
           return { ok: false, status: 'failed', error: u.message ?? 'USDC→nTZS swap failed' }
@@ -189,6 +194,48 @@ export async function runOfframpSettlement(args: {
       const msg = err instanceof Error ? err.message : 'Swap error'
       await setStatus(settlementId, { status: 'failed', error: msg, swapInTxHash })
       return { ok: false, status: 'failed', error: msg }
+    }
+
+    // Record the fill — lp_fills row + double-entry pool positions, same as
+    // every swap route. The FIRST live ramp swap (3 Aug 2026) skipped this
+    // and fired the pool reconciler on both detectors: unmatched transfers
+    // AND a solver nTZS deficit. Bookkeeping failure must not strand the
+    // settlement (money already moved; the payout leg still owes the user).
+    if (fillResult) {
+      try {
+        // Mid-rate output prices the spread; if the pair is unreadable the
+        // fill records with zero spread rather than not at all.
+        let midOutput = parseFloat(fillResult.amountOut)
+        try {
+          const USDCa = SWAP_TOKENS.USDC.address.toLowerCase()
+          const NTZSa = SWAP_TOKENS.NTZS.address.toLowerCase()
+          const activePairs = await db.select().from(lpFxPairs).where(eq(lpFxPairs.isActive, true)).limit(10)
+          const pair = activePairs.find((x) => {
+            const t1 = x.token1Address.toLowerCase(), t2 = x.token2Address.toLowerCase()
+            return (x.chain ?? 'base') === 'base' && (t1 === USDCa || t2 === USDCa) && (t1 === NTZSa || t2 === NTZSa)
+          })
+          if (pair?.midRate) midOutput = parseFloat(fillResult.amountIn) * Number(pair.midRate)
+        } catch { /* zero-spread fill */ }
+        await recordLpFill(db, {
+          lpId,
+          userAddress: settlementAddress,
+          fromToken: { address: SWAP_TOKENS.USDC.address, decimals: SWAP_TOKENS.USDC.decimals, symbol: 'USDC' },
+          toToken: { address: SWAP_TOKENS.NTZS.address, decimals: SWAP_TOKENS.NTZS.decimals, symbol: 'NTZS' },
+          fromChain: 'base',
+          toChain: 'base',
+          amountIn: fillResult.amountIn,
+          amountOut: fillResult.amountOut,
+          inTxHash: fillResult.inTxHash,
+          outTxHash: fillResult.outTxHash,
+          midOutput,
+          source: 'ramp',
+          partnerId: args.partnerId,
+        })
+      } catch (err) {
+        console.error('[ramp/offramp] Failed to record fill:', err instanceof Error ? err.message : err)
+      }
+    } else {
+      console.error('[ramp/offramp] swap FILLED without a _result — fill not recorded', { settlementId })
     }
     await setStatus(settlementId, { swapInTxHash, swapOutTxHash, status: 'paying_out' })
   }
