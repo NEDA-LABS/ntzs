@@ -918,6 +918,12 @@ export const lpAccounts = pgTable(
     limits: jsonb('limits'),
     kybReviewNote: text('kyb_review_note'),
 
+    // Time-boxed sandbox test access: while this is in the future the account
+    // may use the portal without full KYC/KYB (status is unlocked but kybStatus
+    // stays truthful). Auto-reverts on expiry; granted/revoked in backstage.
+    testAccessUntil: timestamp('test_access_until', { withTimezone: true }),
+    testAccessNote: text('test_access_note'),
+
     apiKeyHash: text('api_key_hash'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

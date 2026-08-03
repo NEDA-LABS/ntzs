@@ -6,7 +6,8 @@ import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions, lpKybDocuments } from '@ntzs/db'
+import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions, lpKybDocuments, lpOtpCodes } from '@ntzs/db'
+import { CHAIN_TOKENS, getChainConfig, type ChainId } from '@/lib/fx/chainConfig'
 import { SubmitButton } from '../../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
 import { sendFxMail, fxEmailShell } from '@/lib/fx/mailer'
@@ -78,6 +79,107 @@ async function setAccountTypeAction(formData: FormData) {
   await db.update(lpAccounts).set({ accountType, updatedAt: new Date() }).where(eq(lpAccounts.id, id))
   revalidatePath(`/backstage/simplefx/${id}`)
   revalidatePath('/backstage/simplefx')
+}
+
+const TEST_ACCESS_DAYS = 14
+
+/**
+ * Time-boxed sandbox test access: unlocks the portal (status 'active') without
+ * touching kybStatus, so the compliance state stays truthful. The /auth/me
+ * route auto-reverts to onboarding when the window lapses without approval.
+ */
+async function grantTestAccessAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  if (!id) throw new Error('Missing id')
+  const { db } = getDb()
+  const until = new Date(Date.now() + TEST_ACCESS_DAYS * 24 * 60 * 60 * 1000)
+  await db
+    .update(lpAccounts)
+    .set({ testAccessUntil: until, testAccessNote: 'sandbox tester', status: 'active', updatedAt: new Date() })
+    .where(eq(lpAccounts.id, id))
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
+async function revokeTestAccessAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  if (!id) throw new Error('Missing id')
+  const { db } = getDb()
+  const [lp] = await db
+    .select({ kybStatus: lpAccounts.kybStatus })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.id, id))
+    .limit(1)
+  await db
+    .update(lpAccounts)
+    .set({
+      testAccessUntil: null,
+      testAccessNote: null,
+      // Only demote if they were never properly approved.
+      ...(lp?.kybStatus !== 'approved' ? { status: 'onboarding' as const } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(lpAccounts.id, id))
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
+/**
+ * Remove a dead signup. Only when the account has ZERO money footprint: no
+ * pool positions, no fills, no wallet transactions, and an empty on-chain
+ * wallet — an account whose HD wallet holds funds must never be deleted (the
+ * row is the only mapping to that wallet index; deleting it strands the
+ * tokens). All lp_* child tables cascade on delete.
+ */
+async function deleteLpAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  if (!id) throw new Error('Missing id')
+  const { db } = getDb()
+
+  const refuse = (msg: string): never =>
+    redirect(`/backstage/simplefx/${id}?actionError=${encodeURIComponent(msg)}`)
+
+  const [lp] = await db.select().from(lpAccounts).where(eq(lpAccounts.id, id)).limit(1)
+  if (!lp) redirect('/backstage/simplefx')
+
+  if (lp.isActive) refuse('This LP is active. They must deactivate (returning pooled funds) before removal.')
+
+  const [[pos], [fill], [wtx]] = await Promise.all([
+    db.select({ id: lpPoolPositions.id }).from(lpPoolPositions).where(eq(lpPoolPositions.lpId, id)).limit(1),
+    db.select({ id: lpFills.id }).from(lpFills).where(eq(lpFills.lpId, id)).limit(1),
+    db.select({ id: lpWalletTransactions.id }).from(lpWalletTransactions).where(eq(lpWalletTransactions.lpId, id)).limit(1),
+  ])
+  if (pos) refuse('This LP has pool positions on the books — not removable.')
+  if (fill) refuse('This LP has fill history — keep the account for the audit trail.')
+  if (wtx) refuse('This LP has wallet transactions (deposits/sweeps) — keep the account for the audit trail.')
+
+  // On-chain check: every configured token on every chain must be empty.
+  for (const [chainName, tokens] of Object.entries(CHAIN_TOKENS)) {
+    let cfg
+    try { cfg = getChainConfig(chainName as ChainId) } catch { continue }
+    const provider = new JsonRpcProvider(cfg.rpcUrl)
+    for (const t of Object.values(tokens)) {
+      const contract = new Contract(t.address, ERC20_ABI, provider)
+      const raw: bigint = await contract.balanceOf(lp.walletAddress).catch(() => {
+        refuse(`Could not verify the on-chain ${t.symbol} balance on ${chainName} — refusing to remove blind.`)
+        return BigInt(0)
+      })
+      if (raw > BigInt(0)) {
+        refuse(`Wallet still holds ${formatUnits(raw, t.decimals)} ${t.symbol} on ${chainName} — removing the account would strand these funds.`)
+      }
+    }
+  }
+
+  await db.delete(lpOtpCodes).where(eq(lpOtpCodes.email, lp.email))
+  await db.delete(lpAccounts).where(eq(lpAccounts.id, id))
+  revalidatePath('/backstage/simplefx')
+  redirect('/backstage/simplefx')
 }
 
 async function approveKybAction(formData: FormData) {
@@ -494,6 +596,63 @@ export default async function LpDetailPage({
               </SubmitButton>
             </form>
           </div>
+
+          {/* Sandbox test access */}
+          <div className={`rounded-2xl border p-6 space-y-3 ${
+            lp.testAccessUntil && new Date(lp.testAccessUntil).getTime() > Date.now()
+              ? 'border-amber-500/30 bg-amber-500/[0.04]'
+              : 'border-white/10 bg-zinc-950'
+          }`}>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Sandbox testing</h2>
+            {lp.testAccessUntil && new Date(lp.testAccessUntil).getTime() > Date.now() ? (
+              <>
+                <p className="text-xs text-zinc-400">
+                  <span className="mr-2 rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300 align-middle">
+                    TEST
+                  </span>
+                  Portal unlocked without full KYB until {formatDateEAT(lp.testAccessUntil)}. KYB status stays
+                  “{lp.kybStatus.replace('_', ' ')}” — approve it properly before go-live.
+                </p>
+                <form action={revokeTestAccessAction}>
+                  <input type="hidden" name="id" value={lp.id} />
+                  <SubmitButton pendingText="..." className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700">
+                    Revoke test access
+                  </SubmitButton>
+                </form>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-zinc-500">
+                  Let this account use the portal for {TEST_ACCESS_DAYS} days without full KYC/KYB — for vetted
+                  partner testers (e.g. bank staff trialling before go-live). Expires automatically; KYB status
+                  is not touched.
+                </p>
+                <form action={grantTestAccessAction}>
+                  <input type="hidden" name="id" value={lp.id} />
+                  <SubmitButton pendingText="..." className="rounded-xl bg-amber-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600">
+                    Allow testing ({TEST_ACCESS_DAYS} days)
+                  </SubmitButton>
+                </form>
+              </>
+            )}
+          </div>
+
+          {/* Danger zone: remove dead signups */}
+          {!lp.isActive && (
+            <div className="rounded-2xl border border-rose-500/20 bg-zinc-950 p-6 space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Remove account</h2>
+              <p className="text-xs text-zinc-500">
+                Deletes a dead signup. Refused unless the account has zero footprint: no pool positions, no
+                fills, no wallet transactions, and an empty on-chain wallet on every chain.
+              </p>
+              <form action={deleteLpAction}>
+                <input type="hidden" name="id" value={lp.id} />
+                <SubmitButton pendingText="Checking..." className="rounded-xl bg-rose-600/15 px-4 py-2 text-sm font-medium text-rose-400 hover:bg-rose-600/25">
+                  Remove account
+                </SubmitButton>
+              </form>
+            </div>
+          )}
         </div>
 
         {/* Right column: balances + spread */}

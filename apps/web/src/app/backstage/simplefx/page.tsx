@@ -269,6 +269,11 @@ export default async function SimpleFXBackstagePage() {
                       <span className="ml-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-300 align-middle">
                         {lp.accountType}
                       </span>
+                      {lp.testAccessUntil && new Date(lp.testAccessUntil).getTime() > Date.now() && (
+                        <span className="ml-2 rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300 align-middle">
+                          TEST
+                        </span>
+                      )}
                     </p>
                     <p className="mt-0.5 text-xs text-zinc-500">Joined {formatDateEAT(lp.createdAt)}</p>
                   </div>
@@ -317,6 +322,11 @@ export default async function SimpleFXBackstagePage() {
                             {lp.accountType === 'bank' && (
                               <span className="ml-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-300 align-middle">
                                 bank
+                              </span>
+                            )}
+                            {lp.testAccessUntil && new Date(lp.testAccessUntil).getTime() > Date.now() && (
+                              <span className="ml-2 rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300 align-middle">
+                                TEST
                               </span>
                             )}
                           </p>
