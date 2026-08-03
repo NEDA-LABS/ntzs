@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import ThemeToggle from "@/components/ui/theme-toggle";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -330,6 +331,7 @@ function Navbar({ onStart }: { onStart: () => void }) {
         </div>
 
         <div className="hidden sm:flex items-center gap-2">
+          <ThemeToggle className="rounded-full border border-white/10 bg-white/5 text-gray-300 hover:border-white/30 hover:text-white" />
           <button className="px-4 py-2 text-xs border border-white/10 bg-white/5 text-gray-300 rounded-full hover:border-white/30 hover:text-white transition-colors duration-200">
             Sign In
           </button>
@@ -341,6 +343,7 @@ function Navbar({ onStart }: { onStart: () => void }) {
           </div>
         </div>
 
+        <ThemeToggle className="sm:hidden rounded-full border border-white/10 bg-white/5 text-gray-300" />
         <button
           className="sm:hidden flex items-center justify-center w-8 h-8 text-gray-300 focus:outline-none"
           onClick={() => setIsOpen(!isOpen)}
@@ -563,7 +566,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
             />
           </div>
         )}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,0,0,0.85)_0%,_transparent_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,0,0,0.85)_0%,_transparent_100%)] light:bg-[radial-gradient(ellipse_at_center,_rgba(245,247,251,0.88)_0%,_transparent_100%)]" />
         <div className="absolute top-0 left-0 right-0 h-1/3 bg-gradient-to-b from-black to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 h-1/4 bg-gradient-to-t from-black to-transparent" />
       </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
+import ThemeToggle from '@/components/ui/theme-toggle'
 
 function AuthButtons() {
   const router = useRouter()
@@ -76,7 +77,7 @@ export default function DevelopersLayout({ children }: { children: React.ReactNo
   const isDashboard = pathname.startsWith('/developers/dashboard')
 
   return (
-    <div className="relative min-h-screen bg-black text-white">
+    <div className="theme-scope relative min-h-screen bg-black text-white">
       <div className="pointer-events-none absolute inset-0 opacity-50">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(121,40,202,0.2),transparent_40%),radial-gradient(circle_at_80%_30%,rgba(0,112,243,0.2),transparent_45%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px]" />
@@ -108,6 +109,7 @@ export default function DevelopersLayout({ children }: { children: React.ReactNo
             </nav>
 
             <div className="flex items-center gap-3">
+              <ThemeToggle className="rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white" />
               <AuthButtons />
             </div>
           </div>

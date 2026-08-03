@@ -20,6 +20,13 @@ const STYLES = `
     background-clip: text;
     animation: shimmer 5s linear infinite;
   }
+  .light .hero-title {
+    background: linear-gradient(90deg, #0f172a 0%, #047857 35%, #1d4ed8 65%, #0f172a 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
   .nav-active-bar {
     animation: fadeSlide 0.15s ease-out;
   }

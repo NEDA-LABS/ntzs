@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Poppins, Montserrat } from "next/font/google";
 import { NeonAuthUIProvider } from "@neondatabase/neon-js/auth/react/ui";
+import { ThemeProvider } from "next-themes";
 import { authClient } from "@/lib/auth/client";
 import "./globals.css";
 
@@ -45,13 +46,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning style={{ colorScheme: "dark" }}>
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} ${montserrat.variable} antialiased`}
       >
-        <NeonAuthUIProvider authClient={authClient} redirectTo="/app">
-          {children}
-        </NeonAuthUIProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" themes={["dark", "light"]}>
+          <NeonAuthUIProvider authClient={authClient} redirectTo="/app">
+            {children}
+          </NeonAuthUIProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
