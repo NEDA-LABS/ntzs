@@ -10,7 +10,6 @@ import { getPayoutFeeTzs, railLabel } from '@/lib/psp/selcom-fees'
 
 import { createWithdrawRequestAction } from './actions'
 
-const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
 
 // Gross-up: nTZS to burn = ceil((receiveAmount + pspFee) / (1 - platformFeeRate))
@@ -61,9 +60,17 @@ interface WithdrawFormProps {
   /** Banks payable via Selcom. Empty when the bank rail is switched off, in
    * which case the destination picker is hidden entirely. */
   banks?: BankOption[]
+  /**
+   * Burn amount at or above which the withdrawal is queued for a second
+   * approver. Passed from the server rather than read here: a client bundle
+   * cannot see SAFE_BURN_THRESHOLD_TZS, so a local copy would silently drift
+   * from the value the server action actually enforces and the form would
+   * promise instant payouts it can't deliver.
+   */
+  approvalThresholdTzs: number
 }
 
-export function WithdrawForm({ userPhone, expectedRail, banks = [] }: WithdrawFormProps) {
+export function WithdrawForm({ userPhone, expectedRail, banks = [], approvalThresholdTzs }: WithdrawFormProps) {
   const [destination, setDestination] = useState<'mobile' | 'bank'>('mobile')
   const [phone, setPhone] = useState(userPhone || '')
   const [bankCode, setBankCode] = useState(banks[0]?.code ?? '')
@@ -81,7 +88,7 @@ export function WithdrawForm({ userPhone, expectedRail, banks = [] }: WithdrawFo
   const pspFee = validAmount ? getPayoutFeeTzs(isBank ? 'selcom' : expectedRail, receiveNum) : 0
   const burnAmount = validAmount ? calcBurnAmount(receiveNum, pspFee) : 0
   const platformFee = burnAmount > 0 ? burnAmount - receiveNum - pspFee : 0
-  const requiresApproval = burnAmount >= SAFE_BURN_THRESHOLD_TZS
+  const requiresApproval = burnAmount >= approvalThresholdTzs
   const railName = railLabel(expectedRail)
 
   if (submitted) {

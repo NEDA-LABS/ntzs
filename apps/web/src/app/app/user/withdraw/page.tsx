@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db'
 import { expectedDisbursementRail } from '@/lib/psp'
 import { BANK_FI_CODES } from '@/lib/psp/selcom'
 import { railLabel } from '@/lib/psp/selcom-fees'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 import { kycCases, wallets } from '@ntzs/db'
 
 import { WithdrawForm } from './WithdrawForm'
@@ -52,7 +53,12 @@ export default async function WithdrawPage() {
           </p>
         </div>
 
-        <WithdrawForm userPhone={dbUser.phone} expectedRail={expectedRail} banks={banks} />
+        <WithdrawForm
+          userPhone={dbUser.phone}
+          expectedRail={expectedRail}
+          banks={banks}
+          approvalThresholdTzs={SAFE_BURN_THRESHOLD_TZS}
+        />
       </div>
     </div>
   )

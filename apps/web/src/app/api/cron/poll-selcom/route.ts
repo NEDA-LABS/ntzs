@@ -6,8 +6,8 @@ import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
 import { checkPaymentStatus } from '@/lib/psp/selcom'
 import { STATEMENT_SETTLED_CHANNELS } from '@/lib/psp/selcom-statement'
+import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 export const maxDuration = 60
 

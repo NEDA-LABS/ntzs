@@ -7,8 +7,8 @@ import { getDb } from '@/lib/db'
 import { checkPaymentStatus } from '@/lib/psp/selcom'
 import { executeMint } from '@/lib/minting/executeMint'
 import { depositRequests } from '@ntzs/db'
+import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 /**
  * Selcom collection (push-USSD) callback.

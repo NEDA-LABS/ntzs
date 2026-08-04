@@ -14,8 +14,8 @@ import { getPayoutFeeTzs } from '@/lib/psp/selcom-fees'
 import { BANK_FI_CODES, nedaAccountLookup, sendBankPayout as selcomSendBankPayout } from '@/lib/psp/selcom'
 import { resolveBankDestination } from '@/lib/waas/bank-destination'
 import { writeAuditLog } from '@/lib/audit'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_BURN_THRESHOLD_TZS = 100000
 const PLATFORM_FEE_PERCENT = 0.5
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 

@@ -29,8 +29,8 @@ import {
   quoteRequired,
   DEFAULT_PLATFORM_FEE_PERCENT,
 } from '@/lib/waas/quote'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 1000000
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
@@ -267,13 +267,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Large amounts require admin approval — queue and return
-  if (burnAmountTzs >= SAFE_MINT_THRESHOLD_TZS) {
+  if (burnAmountTzs >= SAFE_BURN_THRESHOLD_TZS) {
     // The approval queue dispatches through the burn engine, which pays
     // mobile wallets only — a queued bank row would burn and then strand.
     // Refuse honestly until the engine learns banks.
     if (bank) {
       return NextResponse.json(
-        { error: 'bank_amount_unsupported', message: `Bank withdrawals at or above ${SAFE_MINT_THRESHOLD_TZS.toLocaleString('en-US')} TZS (gross) are not supported yet — split into smaller withdrawals.` },
+        { error: 'bank_amount_unsupported', message: `Bank withdrawals at or above ${SAFE_BURN_THRESHOLD_TZS.toLocaleString('en-US')} TZS (gross) are not supported yet — split into smaller withdrawals.` },
         { status: 400 }
       )
     }
