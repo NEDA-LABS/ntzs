@@ -47,22 +47,38 @@ function SubmitButton({ disabled }: { disabled?: boolean }) {
   )
 }
 
+export interface BankOption {
+  code: string
+  name: string
+  reference: 'numeric' | 'alphanumeric'
+}
+
 interface WithdrawFormProps {
   userPhone?: string | null
   /** Rail the payout is expected to ride (from the server's disbursement
    * plan) — prices the network fee and names the rail in the UI. */
   expectedRail?: string | null
+  /** Banks payable via Selcom. Empty when the bank rail is switched off, in
+   * which case the destination picker is hidden entirely. */
+  banks?: BankOption[]
 }
 
-export function WithdrawForm({ userPhone, expectedRail }: WithdrawFormProps) {
+export function WithdrawForm({ userPhone, expectedRail, banks = [] }: WithdrawFormProps) {
+  const [destination, setDestination] = useState<'mobile' | 'bank'>('mobile')
   const [phone, setPhone] = useState(userPhone || '')
+  const [bankCode, setBankCode] = useState(banks[0]?.code ?? '')
+  const [accountNumber, setAccountNumber] = useState('')
   const [amount, setAmount] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
+  const isBank = destination === 'bank' && banks.length > 0
+  const selectedBank = banks.find((b) => b.code === bankCode)
+  // Bank payouts are single-rail (Selcom) and tiered differently — price the
+  // leg that will actually serve this destination, matching the server action.
   const receiveNum = Number(amount)
   const validAmount = receiveNum >= 5000
-  const pspFee = validAmount ? getPayoutFeeTzs(expectedRail, receiveNum) : 0
+  const pspFee = validAmount ? getPayoutFeeTzs(isBank ? 'selcom' : expectedRail, receiveNum) : 0
   const burnAmount = validAmount ? calcBurnAmount(receiveNum, pspFee) : 0
   const platformFee = burnAmount > 0 ? burnAmount - receiveNum - pspFee : 0
   const requiresApproval = burnAmount >= SAFE_BURN_THRESHOLD_TZS
@@ -163,31 +179,81 @@ export function WithdrawForm({ userPhone, expectedRail }: WithdrawFormProps) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Mobile money</p>
-          <div className="flex items-center gap-3">
-            <div className="flex-none inline-flex items-center gap-2 rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground">
-              <svg className="h-4 w-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 3h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V5a2 2 0 012-2zm4 16h.01" />
-              </svg>
-              {railName}
-            </div>
-            <input
-              name="phone"
-              type="tel"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="07XXXXXXXX"
-              className="min-w-0 flex-1 bg-transparent text-right text-base text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
+        {banks.length > 0 && (
+          <div className="flex gap-1 rounded-2xl border border-border/40 bg-background/35 p-1 backdrop-blur-xl">
+            {([
+              { key: 'mobile' as const, label: 'Mobile money' },
+              { key: 'bank' as const, label: 'Bank account' },
+            ]).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setDestination(key)}
+                className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+                  destination === key
+                    ? 'bg-blue-600 text-white'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        </div>
+        )}
+
+        {isBank ? (
+          <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-3 backdrop-blur-xl">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Bank account</p>
+            <select
+              name="bankCode"
+              value={bankCode}
+              onChange={(e) => setBankCode(e.target.value)}
+              className="w-full rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm text-foreground focus:outline-none"
+            >
+              {banks.map((b) => (
+                <option key={b.code} value={b.code}>{b.name}</option>
+              ))}
+            </select>
+            <input
+              name="accountNumber"
+              type="text"
+              inputMode={selectedBank?.reference === 'alphanumeric' ? 'text' : 'numeric'}
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value.trim())}
+              placeholder={selectedBank?.reference === 'alphanumeric' ? 'Account number' : 'Account number (digits)'}
+              className="w-full rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-right text-base text-foreground placeholder:text-muted-foreground focus:outline-none"
+            />
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Paid to your own account. Confirm the number carefully — bank transfers cannot be recalled.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Mobile money</p>
+            <div className="flex items-center gap-3">
+              <div className="flex-none inline-flex items-center gap-2 rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-sm font-semibold text-foreground">
+                <svg className="h-4 w-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 3h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V5a2 2 0 012-2zm4 16h.01" />
+                </svg>
+                {railName}
+              </div>
+              <input
+                name="phone"
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="07XXXXXXXX"
+                className="min-w-0 flex-1 bg-transparent text-right text-base text-foreground placeholder:text-muted-foreground focus:outline-none"
+              />
+            </div>
+          </div>
+        )}
 
         {validAmount && (
           <div className="space-y-1.5 px-1 text-xs">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Network fee ({railName})</span>
+              <span>Network fee ({isBank ? 'bank transfer' : railName})</span>
               <span className="font-mono">+{pspFee.toLocaleString()} TZS</span>
             </div>
             <div className="flex items-center justify-between text-muted-foreground">
@@ -217,7 +283,7 @@ export function WithdrawForm({ userPhone, expectedRail }: WithdrawFormProps) {
           </div>
         )}
 
-        <SubmitButton disabled={!validAmount || !phone} />
+        <SubmitButton disabled={!validAmount || (isBank ? !bankCode || accountNumber.length < 5 : !phone)} />
 
         <p className="text-center text-[11px] text-muted-foreground">
           1:1 burn — TZS sent to your mobile money via {railName}

@@ -1,6 +1,6 @@
 'use server'
 
-import { and, eq, gte, isNull, ne, or } from 'drizzle-orm'
+import { and, eq, gte, isNull, ne, or, sql } from 'drizzle-orm'
 import { ethers } from 'ethers'
 import { redirect } from 'next/navigation'
 
@@ -8,8 +8,11 @@ import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
-import { isValidTanzanianPhone, normalizePhone, sendPayoutRouted, expectedPayoutFeeTzs } from '@/lib/psp'
+import { isValidTanzanianPhone, normalizePhone, sendPayoutRouted, checkPayoutStatusFor, expectedPayoutFeeTzs } from '@/lib/psp'
 import { payoutRailsLookDead, CIRCUIT_OPEN_RESPONSE } from '@/lib/psp/payout-circuit'
+import { getPayoutFeeTzs } from '@/lib/psp/selcom-fees'
+import { BANK_FI_CODES, nedaAccountLookup, sendBankPayout as selcomSendBankPayout } from '@/lib/psp/selcom'
+import { resolveBankDestination } from '@/lib/waas/bank-destination'
 import { writeAuditLog } from '@/lib/audit'
 
 const SAFE_BURN_THRESHOLD_TZS = 100000
@@ -51,17 +54,35 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   const amountTzsRaw = String(formData.get('amountTzs') ?? '').trim()
   const phone = String(formData.get('phone') ?? '').trim()
 
-  // amountTzsRaw is the amount the user wants to RECEIVE on mobile money
+  // amountTzsRaw is the amount the user wants to RECEIVE
   const receiveAmountTzs = Number(amountTzsRaw)
   if (!Number.isFinite(receiveAmountTzs) || receiveAmountTzs < 5000) {
     return { success: false, error: 'Minimum receive amount is 5,000 TZS' }
   }
 
-  if (!phone) {
-    return { success: false, error: 'Phone number is required for mobile money payout' }
+  // Destination: a mobile wallet (phone) OR a bank account (bankCode +
+  // accountNumber) — never both. Same resolver the partner API uses, so the
+  // two surfaces can never disagree on what a valid destination is.
+  const bankParsed = resolveBankDestination({
+    bankCode: String(formData.get('bankCode') ?? '').trim() || undefined,
+    accountNumber: String(formData.get('accountNumber') ?? '').trim() || undefined,
+  })
+  if (bankParsed && 'error' in bankParsed) {
+    return { success: false, error: bankParsed.error }
   }
-  if (!isValidTanzanianPhone(phone)) {
+  const bank = bankParsed
+
+  if (phone && bank) {
+    return { success: false, error: 'Choose one destination: mobile money or bank account' }
+  }
+  if (!phone && !bank) {
+    return { success: false, error: 'A destination is required: mobile number or bank account' }
+  }
+  if (phone && !isValidTanzanianPhone(phone)) {
     return { success: false, error: 'Invalid Tanzanian mobile number' }
+  }
+  if (bank && process.env.SELCOM_DISBURSEMENTS_ENABLED !== 'true') {
+    return { success: false, error: 'Bank payouts are not enabled on this environment yet.' }
   }
 
   const { db } = getDb()
@@ -89,7 +110,7 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   const contractAddress = NTZS_CONTRACT_ADDRESS_BASE
   if (!contractAddress) return { success: false, error: 'Contract not configured' }
 
-  const recipientPhone = normalizePhone(phone)
+  const recipientPhone = bank ? null : normalizePhone(phone)
 
   // Gross-up: user specifies receive amount, we calculate how much nTZS to burn
   // burnAmount = ceil((receiveAmount + pspFee) / (1 - platformFeeRate)).
@@ -97,7 +118,11 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   // at 5,000 TZS — not Snippe's flat 1,500); the same function prices the
   // form, this action, and the WaaS quote endpoint.
   const receiveAmountTrunc = Math.trunc(receiveAmountTzs)
-  const pspFeeTzs = expectedPayoutFeeTzs(receiveAmountTrunc)
+  // Banks are single-rail (Selcom) and tiered differently from the mobile
+  // rails, so price the leg that will actually serve this destination.
+  const pspFeeTzs = bank
+    ? getPayoutFeeTzs('selcom', receiveAmountTrunc)
+    : expectedPayoutFeeTzs(receiveAmountTrunc)
   const amountTzsTrunc = Math.ceil((receiveAmountTrunc + pspFeeTzs) / (1 - PLATFORM_FEE_PERCENT / 100))
   const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - pspFeeTzs
   // The rail's `amount` = net amount the recipient receives; the PSP debits its
@@ -119,6 +144,11 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
       recipientPhone,
       platformFeeTzs,
       pspFeeTzs,
+      // Bank destinations have no phone — the descriptor IS the destination
+      // record, and the approver's dispatch reads it back from here.
+      ...(bank
+        ? { spend: { kind: 'bank' as const, bankCode: bank.code, accountNumber: bank.account, bankName: BANK_FI_CODES[bank.code].name } }
+        : {}),
     }).returning({ id: burnRequests.id })
     await writeAuditLog('burn.queued_for_approval', 'burn_request', queuedBurn.id, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, pspFeeTzs }, dbUser.id)
     return { success: true as const, requiresApproval: true }
@@ -165,17 +195,21 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     return { success: false, error: `Could not verify balance: ${msg}` }
   }
 
-  // Duplicate guard — same user, same phone, same amount within 5 minutes
-  // while an earlier attempt still holds funds. On 1 Aug 2026 retries against
-  // dead rails burned repeatedly for one intended cash-out.
+  // Duplicate guard — same user, same destination, same amount within 5
+  // minutes while an earlier attempt still holds funds. On 1 Aug 2026 retries
+  // against dead rails burned repeatedly for one intended cash-out. Bank
+  // destinations carry no phone, so they match on the account in `spend`.
   {
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+    const sameDestination = bank
+      ? sql`${burnRequests.spend}->>'accountNumber' = ${bank.account} and ${burnRequests.spend}->>'bankCode' = ${bank.code}`
+      : eq(burnRequests.recipientPhone, recipientPhone!)
     const [dup] = await db
       .select({ id: burnRequests.id, payoutStatus: burnRequests.payoutStatus })
       .from(burnRequests)
       .where(and(
         eq(burnRequests.userId, dbUser.id),
-        eq(burnRequests.recipientPhone, recipientPhone),
+        sameDestination,
         eq(burnRequests.amountTzs, amountTzsTrunc),
         gte(burnRequests.createdAt, fiveMinAgo),
         ne(burnRequests.status, 'failed'),
@@ -283,13 +317,101 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     return { success: false, error: `Burn failed: ${errorMessage}` }
   }
 
+  // ── Burn confirmed — bank leg (single-rail Selcom) ───────────────────────
+  // Banks ride Selcom only: no failover, so an initiation failure lands in
+  // reconcile_required rather than auto-reverting (same doctrine as wallets —
+  // a failed HTTP response is ambiguous until the PSP's records say so).
+  if (bank) {
+    let verifiedRecipientName: string | null = null
+    if (BANK_FI_CODES[bank.code].lookup) {
+      const info = await nedaAccountLookup(bank.code, bank.account).catch(() => ({ name: null as string | null }))
+      if (info.name) verifiedRecipientName = info.name
+    }
+
+    const bankSpend = {
+      kind: 'bank' as const,
+      bankCode: bank.code,
+      accountNumber: bank.account,
+      bankName: BANK_FI_CODES[bank.code].name,
+      recipientName: verifiedRecipientName,
+    }
+
+    try {
+      const dispatchResult = await selcomSendBankPayout({
+        amountTzs: payoutAmountTzs,
+        bankName: bank.code,
+        bankAccount: bank.account,
+        recipientName: verifiedRecipientName || 'nTZS User',
+        narration: 'nTZS withdrawal',
+        webhookUrl: `${APP_URL}/api/webhooks/selcom/payout`,
+        metadata: { burn_request_id: burnRequestId },
+      })
+
+      if (dispatchResult.success && dispatchResult.reference) {
+        await db
+          .update(burnRequests)
+          .set({
+            payoutReference: dispatchResult.reference,
+            payoutProvider: 'selcom',
+            payoutStatus: 'pending',
+            spend: bankSpend,
+            updatedAt: new Date(),
+          })
+          .where(eq(burnRequests.id, burnRequestId))
+        await writeAuditLog('burn.payout_initiated', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, pspFeeTzs, payoutReference: dispatchResult.reference, bankCode: bank.code, rail: 'selcom' }, dbUser.id)
+
+        // Bounded poll — the Selcom payout webhook finishes the slow tail.
+        for (const delay of [2500, 4000]) {
+          await new Promise((r) => setTimeout(r, delay))
+          try {
+            const ps = await checkPayoutStatusFor('selcom', dispatchResult.reference)
+            if (ps.status === 'completed') {
+              await db
+                .update(burnRequests)
+                .set({ payoutStatus: 'completed', status: 'burned', updatedAt: new Date() })
+                .where(eq(burnRequests.id, burnRequestId))
+              break
+            }
+            if (ps.status === 'failed' || ps.status === 'reversed') break
+          } catch { /* keep polling */ }
+        }
+        return { success: true as const, requiresApproval: false }
+      }
+
+      const reason = `${dispatchResult.error ?? 'Bank payout initiation failed'} (rail: selcom — banks are single-rail)`
+      console.error('[withdraw] bank payout initiation failed (NOT auto-reverting)', { burnRequestId, error: reason })
+      await db
+        .update(burnRequests)
+        .set({ payoutReference: dispatchResult.reference ?? null, payoutStatus: 'reconcile_required', payoutError: reason, spend: bankSpend, updatedAt: new Date() })
+        .where(eq(burnRequests.id, burnRequestId))
+      await writeAuditLog('burn.payout_initiation_failed_reconcile_required', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, receiveAmountTzs: receiveAmountTrunc, platformFeeTzs, payoutError: reason, bankCode: bank.code, note: 'Burn already executed on-chain. Operator must verify with Selcom before reverting.' }, dbUser.id)
+      return {
+        success: false,
+        error: `Your payout could not be dispatched (${reason}). Your withdrawal is under review — do not retry. We will confirm and either complete the payout or restore your nTZS balance within a few hours.`,
+      }
+    } catch (payoutErr) {
+      const msg = payoutErr instanceof Error ? payoutErr.message : String(payoutErr)
+      console.error('[withdraw] bank payout error (NOT auto-reverting)', { burnRequestId, error: msg })
+      await db
+        .update(burnRequests)
+        .set({ payoutStatus: 'reconcile_required', payoutError: msg, spend: bankSpend, updatedAt: new Date() })
+        .where(eq(burnRequests.id, burnRequestId))
+      await writeAuditLog('burn.payout_initiation_failed_reconcile_required', 'burn_request', burnRequestId, { amountTzs: amountTzsTrunc, payoutError: msg, bankCode: bank.code, note: 'Burn already executed on-chain. Operator must verify with Selcom before reverting.' }, dbUser.id)
+      return {
+        success: false,
+        error: `Your payout could not be dispatched (${msg}). Your withdrawal is under review — do not retry. We will confirm and either complete the payout or restore your nTZS balance within a few hours.`,
+      }
+    }
+  }
+
   // ── Burn confirmed — now trigger the payout with RAIL FAILOVER ───────────
   // Single-rail dispatch died platform-wide on 1 Aug 2026 when Snippe flagged
   // our account; the routed dispatcher walks DISBURSEMENT_RAIL_PRIORITY and
   // sends each rail its own webhook URL.
   const routed = await sendPayoutRouted({
     amountTzs: payoutAmountTzs,
-    recipientPhone,
+    // Non-null: the bank branch above returns, so this is the wallet path.
+    recipientPhone: recipientPhone!,
     recipientName: 'nTZS User',
     narration: 'nTZS withdrawal',
     webhookBaseUrl: APP_URL,

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
 import { expectedDisbursementRail } from '@/lib/psp'
+import { BANK_FI_CODES } from '@/lib/psp/selcom'
 import { railLabel } from '@/lib/psp/selcom-fees'
 import { kycCases, wallets } from '@ntzs/db'
 
@@ -31,15 +32,27 @@ export default async function WithdrawPage() {
   // in the form (Selcom is tiered; Snippe is a flat 1,500).
   const expectedRail = expectedDisbursementRail()
 
+  // Bank payouts ride Selcom only, so the destination is offered only when
+  // that rail is switched on. BANK_FI_CODES is server-only (it lives beside
+  // the Selcom client), hence the codes are passed down as plain data.
+  const bankPayoutsEnabled = process.env.SELCOM_DISBURSEMENTS_ENABLED === 'true'
+  const banks = bankPayoutsEnabled
+    ? Object.entries(BANK_FI_CODES)
+        .map(([code, meta]) => ({ code, name: meta.name, reference: meta.reference }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : []
+
   return (
     <div className="px-4 py-6 lg:p-8">
       <div className="mx-auto max-w-md sm:max-w-xl">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Withdraw</h1>
-          <p className="mt-1 text-sm text-muted-foreground">nTZS to TZS (1:1) — paid out via {railLabel(expectedRail)} mobile money</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            nTZS to TZS (1:1) — paid out to {banks.length ? 'mobile money or your bank account' : `${railLabel(expectedRail)} mobile money`}
+          </p>
         </div>
 
-        <WithdrawForm userPhone={dbUser.phone} expectedRail={expectedRail} />
+        <WithdrawForm userPhone={dbUser.phone} expectedRail={expectedRail} banks={banks} />
       </div>
     </div>
   )
