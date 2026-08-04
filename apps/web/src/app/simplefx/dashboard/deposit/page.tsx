@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, CheckCircle2, ArrowUpRight, Info, Smartphone, Loader2 } from 'lucide-react';
+import { Copy, CheckCircle2, ArrowUpRight, Info, Smartphone, Loader2, Landmark } from 'lucide-react';
 import { useLp } from '../layout';
 
 const TOKENS = [
@@ -84,6 +84,23 @@ export default function DepositPage() {
   const mintIdemKeyRef = useRef<string | null>(null);
   const [mintError, setMintError] = useState('');
 
+  // Bank transfer (banking phase 3): no push — we hand back an account, a
+  // reference token and an exact amount; the statement-sync cron matches the
+  // credit and mints. Null until the LP has requested the details.
+  const [fundMethod, setFundMethod] = useState<'mpesa' | 'bank'>('mpesa');
+  const [bankIntent, setBankIntent] = useState<{
+    reference: string;
+    amountTzs: number;
+    instructions: {
+      institution: string;
+      accountNumber: string;
+      accountName: string;
+      reference: string;
+      amountTzs: number;
+      note: string;
+    };
+  } | null>(null);
+
   const token = TOKENS.find((t) => t.id === activeToken)!;
 
   useEffect(() => {
@@ -160,10 +177,104 @@ export default function DepositPage() {
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <div className="flex-1 h-px bg-white/5" />
-                <span className="text-[10px] uppercase tracking-widest text-zinc-600">or deposit via M-Pesa</span>
+                <span className="text-[10px] uppercase tracking-widest text-zinc-600">or fund with TZS</span>
                 <div className="flex-1 h-px bg-white/5" />
               </div>
 
+              <div className="mb-3 flex gap-1 rounded-lg border border-white/8 bg-zinc-900/60 p-1">
+                {([
+                  { key: 'mpesa' as const, label: 'M-Pesa' },
+                  { key: 'bank' as const, label: 'Bank transfer' },
+                ]).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setFundMethod(key)}
+                    className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+                      fundMethod === key ? 'bg-emerald-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {fundMethod === 'bank' ? (
+                bankIntent ? (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 space-y-3">
+                    <p className="text-sm font-medium text-emerald-300">Transfer these exact details</p>
+                    <div className="space-y-2 text-xs">
+                      {[
+                        ['Bank', bankIntent.instructions.institution],
+                        ['Account name', bankIntent.instructions.accountName],
+                        ['Account number', bankIntent.instructions.accountNumber],
+                        ['Reference (narration)', bankIntent.instructions.reference],
+                        ['Exact amount', `${bankIntent.amountTzs.toLocaleString()} TZS`],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 last:border-0">
+                          <span className="text-zinc-500">{label}</span>
+                          <span className="font-mono text-zinc-200 text-right">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-zinc-500">{bankIntent.instructions.note}</p>
+                    <button
+                      onClick={() => { setBankIntent(null); setMintAmount(''); }}
+                      className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                    >
+                      Fund a different amount
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="relative mb-3">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600 pointer-events-none">TZS</span>
+                      <input
+                        type="number"
+                        min="500"
+                        placeholder="Amount in TZS (min 500)"
+                        value={mintAmount}
+                        onChange={(e) => setMintAmount(e.target.value)}
+                        className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                      />
+                    </div>
+                    {mintError && <p className="text-xs text-red-400 mb-3">{mintError}</p>}
+                    <button
+                      disabled={mintState === 'loading' || !mintAmount}
+                      onClick={async () => {
+                        setMintError('');
+                        setMintState('loading');
+                        try {
+                          if (!mintIdemKeyRef.current) mintIdemKeyRef.current = crypto.randomUUID();
+                          const res = await fetch('/simplefx/api/lp/mint', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
+                            body: JSON.stringify({ amountTzs: Number(mintAmount), method: 'bank_transfer' }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            setMintError(data.error || 'Could not create the transfer instruction.');
+                            setMintState('error');
+                          } else {
+                            mintIdemKeyRef.current = null;
+                            setBankIntent({ reference: data.reference, amountTzs: data.amountTzs, instructions: data.instructions });
+                            setMintState('idle');
+                          }
+                        } catch {
+                          setMintError('Network error. Please try again.');
+                          setMintState('error');
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-medium text-white transition-colors"
+                    >
+                      {mintState === 'loading' ? (
+                        <><Loader2 size={14} className="animate-spin" /> Preparing...</>
+                      ) : (
+                        <><Landmark size={14} /> Get transfer details</>
+                      )}
+                    </button>
+                  </div>
+                )
+              ) : (
               <AnimatePresence mode="wait">
                 {mintState === 'sent' ? (
                   <motion.div key="sent" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 text-center">
@@ -238,6 +349,7 @@ export default function DepositPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              )}
             </div>
           )}
 

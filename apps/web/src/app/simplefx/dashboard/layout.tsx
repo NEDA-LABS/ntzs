@@ -41,7 +41,9 @@ type NavItem = { href: string; label: string; icon: LucideIcon; exact?: boolean;
 
 const NAV: NavItem[] = [
   { href: '/simplefx/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/simplefx/dashboard/deposit', label: 'Deposit', icon: ArrowDownToLine, hideForBank: true },
+  // Banks fund by bank transfer (TZS in → nTZS minted to their wallet), so the
+  // deposit screen is theirs too — labelled as the reserve funding it is.
+  { href: '/simplefx/dashboard/deposit', label: 'Deposit', icon: ArrowDownToLine, bankLabel: 'Fund reserve' },
   { href: '/simplefx/dashboard/withdraw', label: 'Withdraw', icon: ArrowUpRight, hideForBank: true },
   { href: '/simplefx/dashboard/spread', label: 'Spread', icon: SlidersHorizontal, bankLabel: 'FX rate' },
   { href: '/simplefx/dashboard/swap', label: 'Swap', icon: ArrowLeftRight, hideForBank: true },
