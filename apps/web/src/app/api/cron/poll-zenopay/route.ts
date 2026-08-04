@@ -15,8 +15,8 @@ import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
 import { eq, and, lt, isNotNull } from 'drizzle-orm'
 import { getZenoPayOrderStatus } from '@/lib/psp/zenopay'
+import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 100000
 
 export const maxDuration = 60
 

@@ -18,8 +18,8 @@ import {
 } from '@/lib/psp/selcom-statement'
 import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
 import { suggestOrphanMatch, samePhone } from '@/lib/deposits/orphan-match'
+import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 export const maxDuration = 60
 

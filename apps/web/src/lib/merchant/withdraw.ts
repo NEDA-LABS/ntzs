@@ -7,8 +7,8 @@ import { merchantAccounts } from '@ntzs/db'
 import { isValidTanzanianPhone, normalizePhone, expectedPayoutFeeTzs } from '@/lib/psp'
 import { checkPerTransactionCap, checkUserPeriodLimits, limitErrorResponse } from '@/lib/sandbox/limits'
 import { grossUpWithdrawal, MIN_WITHDRAWAL_TZS, WITHDRAWAL_FEE_PCT } from '@/lib/payouts/payout-math'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_APPROVAL_THRESHOLD_TZS = 1000000
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 
 export interface MerchantWithdrawResult {
@@ -119,7 +119,7 @@ export async function requestMerchantWithdrawal(opts: {
 
   // >= 1M TZS requires admin approval (status 'requested'); otherwise queue as
   // 'approved' — the burn engine executes it within the next cron tick.
-  const status = burnAmountTzs >= SAFE_APPROVAL_THRESHOLD_TZS ? 'requested' : 'approved'
+  const status = burnAmountTzs >= SAFE_BURN_THRESHOLD_TZS ? 'requested' : 'approved'
 
   const burnRows = await rawSql<{ id: string }[]>`
     insert into burn_requests (

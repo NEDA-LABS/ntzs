@@ -11,8 +11,8 @@ import {
 } from '@/lib/psp/azampay'
 import { executeMint } from '@/lib/minting/executeMint'
 import { depositRequests, merchantCollections } from '@ntzs/db'
+import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 type Deposit = typeof depositRequests.$inferSelect
 

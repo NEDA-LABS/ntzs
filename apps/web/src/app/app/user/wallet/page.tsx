@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
+import { expectedDisbursementRail } from '@/lib/psp'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 import {
   IconChevronRight,
   IconPlus,
@@ -134,7 +136,11 @@ export default async function WalletPage() {
         {/* Modal instances — opened via TopActions events */}
         <SwapSection renderLauncher={false} />
         <SendModal walletAddress={wallet.address} />
-        <WithdrawInline userPhone={dbUser.phone} />
+        <WithdrawInline
+          userPhone={dbUser.phone}
+          expectedRail={expectedDisbursementRail()}
+          approvalThresholdTzs={SAFE_BURN_THRESHOLD_TZS}
+        />
       </div>
     </div>
   )

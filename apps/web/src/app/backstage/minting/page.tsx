@@ -30,8 +30,8 @@ import { SupplyReconciliationCard } from './_components/SupplyReconciliationCard
 import { SubmitButton } from '../_components/SubmitButton'
 import { BASE_RPC_URL, MINTER_PRIVATE_KEY, NTZS_CONTRACT_ADDRESS_BASE as NTZS_CONTRACT_ADDRESS } from '@/lib/env'
 import { readReservePots } from '@/lib/attestation'
+import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_MINT_THRESHOLD_TZS = 100000
 const DAILY_ISSUANCE_CAP_TZS = Number(process.env.DAILY_ISSUANCE_CAP_TZS ?? '100000000')
 
 const NTZS_ABI = [

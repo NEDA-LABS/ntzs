@@ -6,9 +6,13 @@ import { WithdrawForm } from '../withdraw/WithdrawForm'
 
 interface WithdrawInlineProps {
   userPhone?: string | null
+  /** Threaded from the server so this modal prices and warns EXACTLY as the
+   * full /withdraw page does — see WithdrawFormProps. */
+  expectedRail?: string | null
+  approvalThresholdTzs: number
 }
 
-export function WithdrawInline({ userPhone }: WithdrawInlineProps) {
+export function WithdrawInline({ userPhone, expectedRail, approvalThresholdTzs }: WithdrawInlineProps) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -50,7 +54,7 @@ export function WithdrawInline({ userPhone }: WithdrawInlineProps) {
                 </svg>
               </button>
             </div>
-            <WithdrawForm userPhone={userPhone} />
+            <WithdrawForm userPhone={userPhone} expectedRail={expectedRail} approvalThresholdTzs={approvalThresholdTzs} />
             </div>
           </motion.div>
         </>

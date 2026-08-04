@@ -20,6 +20,7 @@ import {
 } from '@/lib/waas/spend-quote'
 import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
 import { DUPLICATE_WINDOW_MS, duplicateSpendResponse, findDuplicateSpend } from '@/lib/waas/spend-duplicate'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
 export const maxDuration = 60
 
@@ -32,7 +33,6 @@ export const maxDuration = 60
  */
 const RESPONSE_BUDGET_MS = 45_000
 
-const SAFE_MINT_THRESHOLD_TZS = 1000000
 
 const NTZS_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'] as const
 const NTZS_BURN_ABI = [
@@ -194,9 +194,9 @@ export async function POST(request: NextRequest) {
   const nedaRecipient = ethers.isAddress(PLATFORM_TREASURY_ADDRESS) ? PLATFORM_TREASURY_ADDRESS : null
 
   // Spends above the safe threshold are an ops flow, not an API flow.
-  if (burnAmountTzs >= SAFE_MINT_THRESHOLD_TZS) {
+  if (burnAmountTzs >= SAFE_BURN_THRESHOLD_TZS) {
     return NextResponse.json(
-      { error: 'amount_too_large', message: `Spends of ${SAFE_MINT_THRESHOLD_TZS.toLocaleString('en-US')} TZS or more require operations assistance.` },
+      { error: 'amount_too_large', message: `Spends of ${SAFE_BURN_THRESHOLD_TZS.toLocaleString('en-US')} TZS or more require operations assistance.` },
       { status: 400 }
     )
   }

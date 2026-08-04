@@ -9,8 +9,8 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/
 import { burnRequests, users, wallets } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateTimeEAT } from '@/lib/format-date'
+import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
-const SAFE_BURN_THRESHOLD_TZS = 100000
 const NTZS_CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
 const SNIPPE_API_KEY = process.env.SNIPPE_API_KEY || ''
 const SNIPPE_BASE_URL = 'https://api.snippe.sh'
