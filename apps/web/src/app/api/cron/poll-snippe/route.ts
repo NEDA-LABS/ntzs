@@ -2,15 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
 import { depositRequests } from '@ntzs/db'
-import { eq, and, lt, inArray } from 'drizzle-orm'
-import { checkPaymentStatus } from '@/lib/psp'
+import { eq, and, lt, inArray, isNotNull, desc } from 'drizzle-orm'
+// The SNIPPE adapter directly, NOT the '@/lib/psp' router: that router picks
+// an implementation from the global ACTIVE_PSP_PROVIDER switch, so with
+// AzamPay active it would have queried AzamPay with a Snippe reference.
+import { checkPaymentStatus } from '@/lib/psp/snippe'
 import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
 
 export const maxDuration = 60
 
 /**
- * GET /api/cron/poll-snippe — Poll Snippe for completed payments (webhook fallback)
+ * GET /api/cron/poll-snippe — Poll Snippe for completed payments.
+ *
+ * NOT merely a webhook fallback — it is the only settlement path when a
+ * webhook is missed or arrives for a row we had already closed. It covers
+ * BOTH Snippe providers: 'snippe' (mobile money) and 'snippe_card'.
+ *
+ * ⚠ It used to poll 'snippe_card' ONLY, which left Snippe MOBILE deposits with
+ * no fallback whatsoever — a missed webhook meant the money simply never
+ * credited, silently. That is exactly how a customer's 105,000 TZS collection
+ * went unminted for ~15 hours on 4 Aug 2026.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -40,12 +52,19 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(depositRequests.status, 'submitted'),
-          inArray(depositRequests.paymentProvider, ['snippe_card']),
-          lt(depositRequests.createdAt, thirtySecondsAgo)
+          inArray(depositRequests.paymentProvider, ['snippe', 'snippe_card']),
+          lt(depositRequests.createdAt, thirtySecondsAgo),
+          // A row with no reference cannot be polled — it is resolved by the
+          // webhook or by a human. Excluding it here matters because an
+          // uncertain initiation now leaves exactly that shape behind, and
+          // such rows would otherwise sit in every page of this query forever.
+          isNotNull(depositRequests.pspReference)
         )
       )
-      .orderBy(depositRequests.createdAt)
-      .limit(10)
+      // Newest first — the AzamPay poll-starvation lesson: a stuck backlog
+      // must never occupy every slot and starve fresh deposits.
+      .orderBy(desc(depositRequests.createdAt))
+      .limit(25)
 
     const results: Array<{ depositId: string; status: string; reference?: string }> = []
 

@@ -1165,6 +1165,13 @@ export interface SelcomPaymentResponse {
   /** Control number for the user to pay against, once that flow ships. */
   controlNumber?: string
   error?: string
+  /**
+   * See PaymentResponse.definitiveFailure. Left unset by this adapter, so
+   * every Selcom initiation failure is treated as UNCERTAIN and the deposit
+   * stays recoverable — poll-selcom then adjudicates it against pushussd-query.
+   * Safe by default; tighten only with a verified error taxonomy.
+   */
+  definitiveFailure?: boolean
 }
 
 /**

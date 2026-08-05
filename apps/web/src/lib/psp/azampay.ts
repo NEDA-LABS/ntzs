@@ -194,6 +194,13 @@ export interface AzamPayPaymentResponse {
   /** Truncated checkout acknowledgment body — audit evidence of what they returned. */
   ack?: string
   error?: string
+  /**
+   * See PaymentResponse.definitiveFailure. Left unset by this adapter, so
+   * every AzamPay initiation failure is treated as UNCERTAIN and the deposit
+   * stays recoverable — poll-azampay then adjudicates it against their status
+   * API. Safe by default; tighten only with a verified error taxonomy.
+   */
+  definitiveFailure?: boolean
 }
 
 /**

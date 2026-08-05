@@ -449,13 +449,48 @@ export async function POST(request: NextRequest) {
     })
 
     if (!routed.payment.success) {
+      // A DEFINITIVE refusal is safe to close out. An UNCERTAIN one is not:
+      // the PSP may have taken the money anyway, and a `rejected` row makes
+      // the completion webhook drop the payment on the floor (4 Aug 2026).
+      // Leave it `submitted` so the webhook/poller can still settle it, and
+      // tell the caller to poll rather than retry — a blind retry is how one
+      // customer ended up with two 105,000 attempts against one payment.
+      if (routed.payment.definitiveFailure) {
+        await db
+          .update(depositRequests)
+          .set({ status: 'rejected', paymentProvider: routed.provider, updatedAt: new Date() })
+          .where(eq(depositRequests.id, deposit.id))
+
+        return NextResponse.json(
+          { error: routed.payment.error || 'Failed to initiate payment', code: 'initiation_failed', id: deposit.id },
+          { status: 502 }
+        )
+      }
+
       await db
         .update(depositRequests)
-        .set({ status: 'rejected', updatedAt: new Date() })
+        .set({ paymentProvider: routed.provider, updatedAt: new Date() })
         .where(eq(depositRequests.id, deposit.id))
 
+      await writeAuditLog('deposit.initiation_uncertain', 'deposit_request', deposit.id, {
+        partnerId: partner.id,
+        provider: routed.provider,
+        attempted: routed.attempted,
+        error: routed.payment.error ?? null,
+        note: 'left submitted on purpose — the collection may have been taken; webhook/poller may still settle it',
+      })
+
       return NextResponse.json(
-        { error: routed.payment.error || 'Failed to initiate payment' },
+        {
+          error: routed.payment.error || 'Could not confirm the payment prompt',
+          code: 'initiation_uncertain',
+          id: deposit.id,
+          message:
+            'We could not confirm whether the payment prompt was delivered, and the collection may still have been taken. ' +
+            'DO NOT retry this deposit — poll GET /api/v1/deposits/' +
+            deposit.id +
+            ' instead. It settles automatically if the customer paid.',
+        },
         { status: 502 }
       )
     }
