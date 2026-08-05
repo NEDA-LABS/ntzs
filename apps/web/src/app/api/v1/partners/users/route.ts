@@ -9,6 +9,7 @@ import { verifySessionToken } from '@/lib/waas/auth'
 import { normalizeNidaNumber, verifyNidaNumber } from '@/lib/kyc/selcom'
 import { bindPhoneToNidaIdentity } from '@/lib/kyc/binding'
 import { runIdentityLadder } from '@/lib/kyc/ladder'
+import { getKycReliance, pendingIdentityNextStep } from '@/lib/kyc/reliance'
 import { isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
 
 /**
@@ -140,12 +141,12 @@ export async function POST(request: NextRequest) {
   // STRUCTURAL PREREQUISITE (BoT Parameter 8): no end-user wallet is ever
   // issued without a KYC-verified identity — independent of any pause flag.
   // (Below the existing-mapping return so existing users always resolve.)
-  // ── International signup (country ≠ TZ): no NIDA exists — identity comes
-  // from document verification AFTER creation. The user + mapping and a
-  // pending doc-verification case are created NOW; the wallet only once the
-  // capture verdict approves the case (same 202 contract as Tier-C review,
-  // resolved by the idempotent re-call). Uniqueness of the document identity
-  // is enforced at the webhook, where the ID number is first known. ─────────
+  // ── International signup (country ≠ TZ): no NIDA exists, so the Selcom
+  // ladder has nothing to check. The user + mapping and a pending case are
+  // created NOW; the wallet follows once the identity is verified — by the
+  // partner under a reliance agreement (POST .../kyc/attestation, which issues
+  // the wallet itself) or by our compliance team in Backstage. Uniqueness of
+  // the document identity is enforced wherever the ID number first arrives. ──
   const countryCode = (country ?? 'TZ').toUpperCase()
   if (!/^[A-Z]{2}$/.test(countryCode)) {
     return NextResponse.json(
@@ -185,9 +186,9 @@ export async function POST(request: NextRequest) {
       userId: intlUser.id,
       nationalId: null,
       status: 'pending',
-      provider: 'smileid_docv',
+      provider: 'partner_attested',
       country: countryCode,
-      reviewReason: `International signup (${countryCode}) — identity pending document verification`,
+      reviewReason: `International signup (${countryCode}) — identity pending verification`,
     })
 
     let intlSeed = partner.encryptedHdSeed
@@ -222,8 +223,7 @@ export async function POST(request: NextRequest) {
         walletAddress: null,
         kycStatus: 'pending_review',
         code: 'kyc_pending_review',
-        nextStep: 'kyc_session',
-        message: `Identity verification required: open a document-verification session (POST /api/v1/users/${intlUser.id}/kyc/session) and complete the capture to activate the wallet.`,
+        ...pendingIdentityNextStep((await getKycReliance(partnerId)).enabled, intlUser.id),
       },
       { status: 202 }
     )
@@ -289,9 +289,9 @@ export async function POST(request: NextRequest) {
   // v1.9 soft landing: a 'rejected' pair verdict (typically a telco name
   // contradiction — SIMs registered to a parent/spouse are common) no longer
   // dead-ends the user. The user + mapping + a pending case carrying the
-  // contradiction evidence are created below, and document verification (the
-  // session endpoint) takes over; the webhook's telco-corroboration guard
-  // keeps a human in the loop for exactly these cases.
+  // contradiction evidence are created below, and a human decides: the
+  // partner's own verification under a reliance agreement, or our compliance
+  // team in Backstage. Exactly the cases that need eyes on them keep them.
 
   // ── Create user (also for Tier-C review: exists without a wallet until
   // Backstage approves the pending case) ─────────────────────────────────────
@@ -392,11 +392,12 @@ export async function POST(request: NextRequest) {
         walletAddress: null,
         kycStatus: 'pending_review',
         code: 'kyc_pending_review',
-        nextStep: 'kyc_session',
-        message:
-          verdict.outcome === 'rejected'
-            ? 'We could not verify this NIDA and phone together automatically. Continue with document verification: open a session (POST /api/v1/users/:id/kyc/session) and photograph the NIDA card.'
-            : verdict.userMessage,
+        // A relied-upon partner can finish this user themselves — which is the
+        // whole point for the Selcom-has-no-record population. Everyone else
+        // keeps the ladder's own customer-facing copy.
+        ...((await getKycReliance(partnerId)).enabled
+          ? pendingIdentityNextStep(true, userId)
+          : { nextStep: 'compliance_review' as const, message: verdict.userMessage }),
       },
       { status: 202 }
     )

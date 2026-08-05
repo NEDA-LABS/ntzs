@@ -6,10 +6,16 @@
  * show real verified names without a schema change. Kept pure for unit tests.
  */
 
-/** Extract the verified holder name from a ladder/hotfix evidence string. */
+/**
+ * Extract the verified holder name from a ladder/attestation evidence string.
+ *
+ * Two prefixes because two sources: "NIDA holder:" from the Selcom registry,
+ * "Holder:" from a partner attestation (whose document is often not a NIDA).
+ * Case matters — "NIDA holder:" must not be read as a bare "Holder:".
+ */
 export function extractNidaHolderName(reviewReason: string | null | undefined): string | null {
   if (!reviewReason) return null
-  const match = /NIDA holder:\s*([^·]+)/.exec(reviewReason)
+  const match = /(?:NIDA holder|Holder):\s*([^·]+)/.exec(reviewReason)
   const name = match?.[1]?.trim()
   return name ? name : null
 }

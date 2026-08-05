@@ -8,6 +8,7 @@ import { users, kycCases, partnerUsers, partners } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateEAT } from '@/lib/format-date'
 import { kycDisplayName } from '@/lib/kyc/display'
+import { provisionWalletForApprovedUser } from '@/lib/waas/provision-wallet'
 
 async function updateKycStatusAction(formData: FormData) {
   'use server'
@@ -32,7 +33,7 @@ async function updateKycStatusAction(formData: FormData) {
   const { db } = getDb()
 
   const [existing] = await db
-    .select({ status: kycCases.status, reviewReason: kycCases.reviewReason })
+    .select({ status: kycCases.status, reviewReason: kycCases.reviewReason, userId: kycCases.userId })
     .from(kycCases)
     .where(eq(kycCases.id, kycCaseId))
     .limit(1)
@@ -62,6 +63,24 @@ async function updateKycStatusAction(formData: FormData) {
   }
 
   await writeAuditLog(`kyc.${status}`, 'kyc_case', kycCaseId, { reason: reason || null }, currentUser.id)
+
+  // Approving IS the issuance. This used to only flip the case, leaving the
+  // user approved but wallet-less until their partner happened to call
+  // create-user again — an invisible second queue nobody owned. The helper
+  // re-checks the approval itself and is a no-op for a user who already has a
+  // wallet or isn't a partner user.
+  if (status === 'approved') {
+    const provisioned = await provisionWalletForApprovedUser(existing.userId)
+    if (provisioned.status === 'created') {
+      await writeAuditLog(
+        'wallet.provisioned_on_kyc_approval',
+        'user',
+        existing.userId,
+        { address: provisioned.address, kycCaseId },
+        currentUser.id
+      )
+    }
+  }
 
   revalidatePath('/backstage/kyc')
 }
