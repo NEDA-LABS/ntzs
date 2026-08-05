@@ -708,6 +708,12 @@ export default async function PartnersPage() {
             and issues the wallet, with no second approval here. Grant it only where a signed reliance agreement obliges
             the partner to perform CDD to our standard and to produce the underlying records on request.
           </p>
+          <p className="mt-2 max-w-3xl text-xs text-zinc-600">
+            The agreement reference must name a document that exists and is signed — it is what answers the Bank of
+            Tanzania when they ask who performs CDD on our behalf. Our own policy is{' '}
+            <code className="text-zinc-500">docs/11-KYC-RELIANCE-POLICY.md</code>, reference{' '}
+            <code className="text-zinc-500">NEDA-CDD-REL-2026-01</code>. Do not enter it before that document is signed.
+          </p>
           <div className="mt-4 space-y-2">
             {allPartners.map((partner) => {
               const reliance = relianceById.get(partner.id) ?? { enabled: false, grantedAt: null, agreementRef: null }
