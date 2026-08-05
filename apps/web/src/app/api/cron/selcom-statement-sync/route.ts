@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
 
     const { db } = getDb()
     const now = new Date()
+    const startedAt = Date.now()
 
     // ── 1. Ingest statement credits into the orphan ledger ──────────────────
     let ingested = 0
@@ -80,8 +81,17 @@ export async function GET(request: NextRequest) {
     const skipped: Record<string, number> = {}
     const warnings: string[] = []
 
-    const PER_PAGE = 500
+    // 500 rows/page made every run on the live account exceed the statement
+    // client's timeout, so nothing was ever ingested and no bank deposit ever
+    // auto-credited (5 Aug 2026). Smaller pages return quickly; rows are
+    // ordered DESC, so page 1 alone covers everything a 5-minute cron needs
+    // and deeper pages only matter when catching up after an outage.
+    const PER_PAGE = 100
     const MAX_PAGES = 5
+    // Hard stop before the 60s function budget: a page that lands after this
+    // would be work we can't finish, and overrunning kills the whole run —
+    // including the matching that already-fetched pages earned.
+    const PAGE_BUDGET_MS = 35_000
     const range = {
       fromDate: ymdEAT(new Date(now.getTime() - 24 * 3600_000)),
       toDate: ymdEAT(now),
@@ -92,8 +102,14 @@ export async function GET(request: NextRequest) {
     const statement = await getStatement({ ...range, page: 1 })
     const transactions = [...statement.transactions]
     const lastPage = statement.pagination?.lastPage ?? 1
+    let pagesRead = 1
     for (let page = 2; page <= Math.min(lastPage, MAX_PAGES); page++) {
+      if (Date.now() - startedAt > PAGE_BUDGET_MS) {
+        warnings.push(`page budget reached after ${pagesRead} page(s); remainder picked up next run`)
+        break
+      }
       const next = await getStatement({ ...range, page })
+      pagesRead++
       if (next.transactions.length === 0) break
       transactions.push(...next.transactions)
     }

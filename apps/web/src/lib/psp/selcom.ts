@@ -1072,11 +1072,16 @@ export async function getStatement(params: SelcomStatementParams): Promise<Selco
   if (params.order) fields.push({ name: 'order', value: params.order })
 
   const { headers, body } = signRequest(fields)
+  // 15s was not enough for a busy account: every statement-sync run on the
+  // live account aborted at exactly 15s, so no bank deposit ever auto-credited
+  // (5 Aug 2026). Statements are a reporting endpoint over a date range — slow
+  // by nature — and the caller's budget is a 60s cron, so allow 30s and let
+  // the caller's page budget bound the total.
   const response = await fetch(`${getBaseUrl()}/v1/statements`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(30_000),
   })
 
   const result = (await response.json()) as {
