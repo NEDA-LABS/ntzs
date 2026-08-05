@@ -1072,16 +1072,17 @@ export async function getStatement(params: SelcomStatementParams): Promise<Selco
   if (params.order) fields.push({ name: 'order', value: params.order })
 
   const { headers, body } = signRequest(fields)
-  // 15s was not enough for a busy account: every statement-sync run on the
-  // live account aborted at exactly 15s, so no bank deposit ever auto-credited
-  // (5 Aug 2026). Statements are a reporting endpoint over a date range — slow
-  // by nature — and the caller's budget is a 60s cron, so allow 30s and let
-  // the caller's page budget bound the total.
+  // Measured against the live account (5 Aug 2026): a single page costs ~30s
+  // whatever the page size — 50 rows took 29.9s, and the cost is query
+  // overhead on Selcom's side, not payload. The original 15s (and a first
+  // attempt at 30s) sat below that floor, so every statement-sync run aborted
+  // and NO bank deposit ever auto-credited. 60s clears the observed latency
+  // with margin; callers bound the total with their own page budget.
   const response = await fetch(`${getBaseUrl()}/v1/statements`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(60_000),
   })
 
   const result = (await response.json()) as {

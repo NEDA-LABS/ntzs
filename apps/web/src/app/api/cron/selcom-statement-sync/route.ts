@@ -14,6 +14,7 @@ import {
   W2B_MATCH_WINDOW_HOURS,
   BANK_CHANNEL,
   suggestBankMatch,
+  bankReferenceInText,
   formatBankReference,
 } from '@/lib/psp/selcom-statement'
 import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
@@ -21,7 +22,10 @@ import { suggestOrphanMatch, samePhone } from '@/lib/deposits/orphan-match'
 import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
 
-export const maxDuration = 60
+// A single statement page costs ~30s on the live account (measured 5 Aug
+// 2026), so the old 60s budget could not fit even two pages — and a run that
+// overruns is killed, discarding everything it had already matched.
+export const maxDuration = 300
 
 /**
  * GET /api/cron/selcom-statement-sync — settle w2b (Lipa Namba) deposits.
@@ -95,14 +99,41 @@ export async function GET(request: NextRequest) {
                 page: 1,
               },
         )
+        // Does the payer's reference actually survive the transfer? Show the
+        // raw keys and the parsed credit fields the matcher searches, plus
+        // whether any open bank intent's token is found in them.
+        const openIntents = await db
+          .select({ id: depositRequests.id, reference: depositRequests.pspReference, amountTzs: depositRequests.amountTzs })
+          .from(depositRequests)
+          .where(and(eq(depositRequests.pspChannel, BANK_CHANNEL), eq(depositRequests.status, 'submitted')))
+          .limit(20)
+
+        const rows = s.transactions.map((row) => {
+          const parsed = parseStatementRow(row)
+          const base = { keys: Object.keys(row) }
+          if (parsed.kind !== 'credit') return { ...base, kind: parsed.kind, reason: 'reason' in parsed ? parsed.reason : null }
+          const searched = [parsed.reference, parsed.narrative, parsed.payerName]
+          return {
+            ...base,
+            kind: 'credit' as const,
+            amountTzs: parsed.amountTzs,
+            reference: parsed.reference,
+            narrative: parsed.narrative,
+            payerName: parsed.payerName,
+            tokenHit: openIntents
+              .filter((i) => i.reference && searched.some((f) => bankReferenceInText(i.reference!, f)))
+              .map((i) => ({ token: i.reference, amountMatches: i.amountTzs === parsed.amountTzs })),
+          }
+        })
+
         return NextResponse.json({
           probe: true,
           ms: Date.now() - t0,
           params: { perPage, days, preset: preset ?? null },
-          rows: s.transactions.length,
-          total: s.pagination?.total ?? null,
-          lastPage: s.pagination?.lastPage ?? null,
+          rowCount: s.transactions.length,
           closingBalance: s.closingBalance,
+          openIntents: openIntents.map((i) => ({ token: i.reference, amountTzs: i.amountTzs })),
+          rows,
         })
       } catch (e) {
         return NextResponse.json({ probe: true, ms: Date.now() - t0, params: { perPage, days, preset: preset ?? null }, error: (e as Error).message })
@@ -123,10 +154,10 @@ export async function GET(request: NextRequest) {
     // and deeper pages only matter when catching up after an outage.
     const PER_PAGE = 100
     const MAX_PAGES = 5
-    // Hard stop before the 60s function budget: a page that lands after this
-    // would be work we can't finish, and overrunning kills the whole run —
-    // including the matching that already-fetched pages earned.
-    const PAGE_BUDGET_MS = 35_000
+    // Stop fetching well before maxDuration: at ~30s a page, another fetch
+    // started late would run past the function limit, and an overrun kills the
+    // run — discarding the matching that the fetched pages already earned.
+    const PAGE_BUDGET_MS = 150_000
     const range = {
       fromDate: ymdEAT(new Date(now.getTime() - 24 * 3600_000)),
       toDate: ymdEAT(now),
