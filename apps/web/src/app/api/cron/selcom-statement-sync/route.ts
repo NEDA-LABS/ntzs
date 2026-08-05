@@ -74,6 +74,41 @@ export async function GET(request: NextRequest) {
     const now = new Date()
     const startedAt = Date.now()
 
+    // TEMP diagnostic (5 Aug 2026): the live statement fetch times out and the
+    // sandbox account this repo's env points at is empty, so the only way to
+    // find parameters that return in time is to probe production. Read-only —
+    // fetches and reports timing, never touches the ledger.
+    const probe = request.nextUrl.searchParams.get('probe')
+    if (probe) {
+      const perPage = Number(request.nextUrl.searchParams.get('perPage') ?? 50)
+      const days = Number(request.nextUrl.searchParams.get('days') ?? 0)
+      const preset = request.nextUrl.searchParams.get('preset') ?? undefined
+      const t0 = Date.now()
+      try {
+        const s = await getStatement(
+          preset
+            ? { preset, perPage, page: 1 }
+            : {
+                fromDate: ymdEAT(new Date(now.getTime() - days * 24 * 3600_000)),
+                toDate: ymdEAT(now),
+                perPage,
+                page: 1,
+              },
+        )
+        return NextResponse.json({
+          probe: true,
+          ms: Date.now() - t0,
+          params: { perPage, days, preset: preset ?? null },
+          rows: s.transactions.length,
+          total: s.pagination?.total ?? null,
+          lastPage: s.pagination?.lastPage ?? null,
+          closingBalance: s.closingBalance,
+        })
+      } catch (e) {
+        return NextResponse.json({ probe: true, ms: Date.now() - t0, params: { perPage, days, preset: preset ?? null }, error: (e as Error).message })
+      }
+    }
+
     // ── 1. Ingest statement credits into the orphan ledger ──────────────────
     let ingested = 0
     let alreadyKnown = 0
