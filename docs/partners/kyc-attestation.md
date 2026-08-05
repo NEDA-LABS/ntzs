@@ -112,7 +112,7 @@ Content-Type: application/json
   "reference":  "NEDAPAY-KYC-88213",
   "verifiedBy": "compliance@nedapay.xyz",
   "verifiedAt": "2026-08-04T09:30:00Z",
-  "method":     "document_and_selfie"
+  "method":     "document_selfie_liveness"
 }
 ```
 
@@ -157,7 +157,7 @@ The wallet is live when that response returns. There is nothing else to call.
 | `idNumber` | ✓ on approval | As printed, 3–64 chars. Punctuation and spacing are ignored when we compare. |
 | `fullName` | ✓ on approval | As printed on the document. Must be at least two name components. |
 | `notes` | ✓ on rejection | The reason, in words the customer can act on. |
-| `method` | — | Free text, e.g. `document_and_selfie`. Recommended. |
+| `method` | — | How the customer was verified. Send **`document_selfie_liveness`** for the standard NEDApay flow, and keep it consistent — the quarterly assurance sample selects on it, so a field that varies per developer is a field nobody can query. Use a different value only when the technique genuinely differed. |
 
 ---
 
