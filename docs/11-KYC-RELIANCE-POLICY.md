@@ -4,10 +4,11 @@ Governs identity verification performed outside the NIDA registry path and recor
 
 **Reference**: `NEDA-CDD-REL-2026-01`
 **Document owner**: NEDA Labs Limited — Office of the CTO
-**Effective from**: _(date of signature below)_
+**Effective from**: 5 August 2026
 **Review cycle**: Annual, or on any material change to the onboarding process of either party
 **Classification**: Confidential — Regulatory (Bank of Tanzania Sandbox)
-**Status**: ⚠️ **DRAFT — UNSIGNED.** Not in force until the signature block is completed.
+**Status**: **In force.** This repository holds the text; the executed copy carrying the signatures is held separately by the compliance function. Granted to NEDApay in Backstage on 5 August 2026.
+**Next assurance review due**: end of Q4 2026 (section 7)
 
 ---
 
@@ -126,7 +127,7 @@ Any material change to NEDApay's onboarding or verification process shall be not
 
 ## Signature
 
-This policy takes effect on the date of signature below. Until then, no grant should be recorded against its reference.
+**Executed 5 August 2026.** The signed copy is authoritative and is held by the compliance function; the block below is the template it was executed against. A superseding version takes a new reference (section 10) and is signed afresh — this block is never amended in place, so the repository history shows which text was in force at any date.
 
 Two signatures, both within NEDA Labs Limited: the executive who owns the decision, and the compliance function that owns the control. They should not be the same person — a delegation of the CDD function approved by one signature is not a maker-checker control, and every other approval in this platform is.
 
