@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { NextRequest, NextResponse } from 'next/server'
@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { verifyWebhookSignature, type SnippePaymentWebhookPayload } from '@/lib/psp/snippe'
 import { executeMint } from '@/lib/minting/executeMint'
+import { writeAuditLog } from '@/lib/audit'
+import { RECOVERABLE_DEPOSIT_STATUSES, isRecoveryAdvance } from '@/lib/deposits/recoverable'
 import { depositRequests, merchantCollections, orphanPayments } from '@ntzs/db'
 import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
@@ -80,17 +82,28 @@ export async function POST(request: NextRequest) {
 
   const { db } = getDb()
 
-  // Idempotency: only process if still in 'submitted' status
+  // 'submitted' is the normal case; 'rejected'/'cancelled' are RECOVERY cases
+  // — see lib/deposits/recoverable.ts for why a closed row must still be
+  // advanceable when the PSP says it collected. The amount and currency
+  // cross-checks below are what make that safe, not the status guard.
   const [deposit] = await db
     .select()
     .from(depositRequests)
-    .where(and(eq(depositRequests.id, depositRequestId), eq(depositRequests.status, 'submitted')))
+    .where(
+      and(
+        eq(depositRequests.id, depositRequestId),
+        inArray(depositRequests.status, RECOVERABLE_DEPOSIT_STATUSES)
+      )
+    )
     .limit(1)
 
   if (!deposit) {
+    // Already minting/minted, or genuinely unknown — idempotent no-op.
     console.warn(`[snippe/payment webhook] Deposit not found or already processed: ${depositRequestId}`)
     return NextResponse.json({ status: 'ignored', reason: 'not_found_or_processed' })
   }
+
+  const isRecovery = isRecoveryAdvance(deposit.status)
 
   if (type === 'payment.completed' && data.status === 'completed') {
     // Cross-check that the PSP actually collected the amount and currency
@@ -145,6 +158,22 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(depositRequests.id, depositRequestId))
+
+    if (isRecovery) {
+      // Loud on purpose: this is money we would previously have lost, and it
+      // means an initiation reported a failure the PSP did not honour.
+      console.warn(
+        `[snippe/payment webhook] RECOVERED deposit ${depositRequestId} from '${deposit.status}' -> ${newStatus} (${paidValue} TZS, ref ${data.reference})`
+      )
+      await writeAuditLog('deposit.recovered_from_closed', 'deposit_request', depositRequestId, {
+        previousStatus: deposit.status,
+        newStatus,
+        reference: data.reference ?? null,
+        amountTzs: deposit.amountTzs,
+        paidValue,
+        note: 'PSP reported a completed collection for a deposit our side had already closed',
+      })
+    }
 
     console.log(`[snippe/payment webhook] Deposit ${depositRequestId} -> ${newStatus}`)
 

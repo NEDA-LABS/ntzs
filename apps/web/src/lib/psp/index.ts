@@ -332,7 +332,16 @@ export async function initiateCollection(
   const { webhookBaseUrl, ...payment } = req
   const plan = liveRails(planCollectionRails(detectNetwork(req.phoneNumber), readRailEnv()))
   const attempted: LiveRail[] = []
-  let last: PaymentResponseT = { success: false, error: 'No collection rail is configured for this network' }
+  // Nothing was called yet, so "no rail configured" IS a definitive failure.
+  let last: PaymentResponseT = {
+    success: false,
+    definitiveFailure: true,
+    error: 'No collection rail is configured for this network',
+  }
+  // ONE uncertain attempt makes the WHOLE routed result uncertain: if rail A
+  // timed out and rail B then cleanly refused, rail A may still have taken the
+  // customer's money. Reporting that as a definitive failure would strand it.
+  let anyIndeterminate = false
 
   for (const rail of plan) {
     attempted.push(rail)
@@ -348,14 +357,22 @@ export async function initiateCollection(
         return { payment: result, provider: rail, attempted }
       }
       last = result
-      console.warn(`[psp] collection initiation failed on ${rail}: ${result.error}`)
+      if (!result.definitiveFailure) anyIndeterminate = true
+      console.warn(
+        `[psp] collection initiation failed on ${rail} (${result.definitiveFailure ? 'definitive' : 'UNCERTAIN'}): ${result.error}`
+      )
     } catch (err) {
       last = { success: false, error: err instanceof Error ? err.message : 'rail error' }
-      console.warn(`[psp] collection initiation threw on ${rail}: ${last.error}`)
+      anyIndeterminate = true
+      console.warn(`[psp] collection initiation threw on ${rail} (UNCERTAIN): ${last.error}`)
     }
   }
 
-  return { payment: last, provider: attempted[attempted.length - 1] ?? ACTIVE_PSP_PROVIDER, attempted }
+  return {
+    payment: { ...last, definitiveFailure: !anyIndeterminate && last.definitiveFailure === true },
+    provider: attempted[attempted.length - 1] ?? ACTIVE_PSP_PROVIDER,
+    attempted,
+  }
 }
 
 export interface RoutedPayoutResult {

@@ -23,6 +23,7 @@ import {
   probeTransactionStatus as azamProbeTransactionStatus,
 } from '@/lib/psp/azampay'
 import { suggestOrphanMatch, isPhoneMatch } from '@/lib/deposits/orphan-match'
+import { RECOVERABLE_DEPOSIT_STATUSES, isRecoveryAdvance } from '@/lib/deposits/recoverable'
 import { formatDateTimeEAT } from '@/lib/format-date'
 import { ReconciliationEntryForm } from './_components/ReconciliationEntryForm'
 import { SafeMintActions } from './_components/SafeMintActions'
@@ -518,6 +519,97 @@ async function approveDepositAction(formData: FormData) {
     .where(eq(depositRequests.id, depositId))
 
   await writeAuditLog(`deposit.${decision}`, 'deposit_request', depositId, { decision, reason: reason || null, newStatus }, currentUser.id)
+
+  revalidatePath('/backstage/minting')
+}
+
+/**
+ * Recover a deposit our side closed but the PSP actually collected.
+ *
+ * A `rejected`/`cancelled` row had NO action in this UI, so the only way to
+ * credit one was hand-written SQL against production — which is how a
+ * customer's 105,000 TZS sat unminted for ~15 hours on 4 Aug 2026, and how a
+ * first attempt at the fix nearly double-minted because two attempt rows
+ * existed for one payment.
+ *
+ * This does NOT mint. It records the operator's PSP evidence and moves the row
+ * to `bank_approved`, so the mint still goes through the same Approve Mint
+ * control (and the same second pair of eyes) as every other deposit.
+ */
+async function recoverClosedDepositAction(formData: FormData): Promise<void> {
+  'use server'
+
+  await requireAnyRole(['super_admin', 'bank_admin'])
+  const currentUser = await getCurrentDbUser()
+  if (!currentUser) throw new Error('User not found')
+
+  const depositId = String(formData.get('depositId') ?? '')
+  const pspReference = String(formData.get('pspReference') ?? '').trim()
+  if (!depositId) throw new Error('Missing deposit')
+  // The reference is the evidence. Without it there is nothing tying this
+  // credit to a real collection, and no way to reconcile it later.
+  if (pspReference.length < 6) {
+    throw new Error('Enter the PSP transaction reference from the provider dashboard — it is the evidence for this credit.')
+  }
+
+  const { db } = getDb()
+
+  const [deposit] = await db.select().from(depositRequests).where(eq(depositRequests.id, depositId)).limit(1)
+  if (!deposit) throw new Error('Deposit not found')
+  if (!isRecoveryAdvance(deposit.status)) {
+    throw new Error(`Deposit is ${deposit.status}; only a rejected or cancelled deposit can be recovered`)
+  }
+
+  // Never credit a deposit that already minted.
+  const [existingMint] = await db
+    .select({ id: mintTransactions.id })
+    .from(mintTransactions)
+    .where(eq(mintTransactions.depositRequestId, depositId))
+    .limit(1)
+  if (existingMint) {
+    throw new Error('This deposit already has a mint transaction — it cannot be recovered again.')
+  }
+
+  // The reference identifies ONE collection. If another deposit already carries
+  // it, this is a duplicate attempt row for a single payment and crediting it
+  // would mint the same money twice — the exact trap the 4 Aug incident set
+  // (two 105,000 rows, one payment).
+  const [refClash] = await db
+    .select({ id: depositRequests.id, status: depositRequests.status })
+    .from(depositRequests)
+    .where(and(eq(depositRequests.pspReference, pspReference), ne(depositRequests.id, depositId)))
+    .limit(1)
+  if (refClash) {
+    throw new Error(
+      `PSP reference ${pspReference} is already on deposit ${refClash.id} (${refClash.status}). One payment credits one deposit — recover that row instead.`
+    )
+  }
+
+  const updated = await db
+    .update(depositRequests)
+    .set({
+      status: 'bank_approved',
+      pspReference,
+      fiatConfirmedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(depositRequests.id, depositId), inArray(depositRequests.status, RECOVERABLE_DEPOSIT_STATUSES)))
+    .returning({ id: depositRequests.id })
+  if (updated.length === 0) throw new Error('Deposit changed state — reload and try again')
+
+  await writeAuditLog(
+    'deposit.recovered_by_operator',
+    'deposit_request',
+    depositId,
+    {
+      previousStatus: deposit.status,
+      newStatus: 'bank_approved',
+      pspReference,
+      amountTzs: deposit.amountTzs,
+      note: 'operator verified the collection against the PSP dashboard; still requires Approve Mint',
+    },
+    currentUser.id
+  )
 
   revalidatePath('/backstage/minting')
 }
@@ -1369,6 +1461,27 @@ export default async function MintingPage({
                               </SubmitButton>
                             </form>
                           </div>
+                        ) : dep.status === 'rejected' || dep.status === 'cancelled' ? (
+                          // A closed deposit the PSP may still have collected.
+                          // Recording the reference is what makes this safe:
+                          // it is the evidence, and it blocks crediting two
+                          // attempt rows from one payment.
+                          <form action={recoverClosedDepositAction} className="flex flex-col gap-1.5">
+                            <input type="hidden" name="depositId" value={dep.id} />
+                            <input
+                              type="text"
+                              name="pspReference"
+                              placeholder="PSP reference"
+                              title="The provider's transaction reference for the completed collection. Check the PSP dashboard FIRST — recover only if it shows this payment as completed."
+                              className="w-36 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white outline-none placeholder:text-zinc-600 focus:border-amber-500/50"
+                            />
+                            <SubmitButton
+                              pendingText="Recovering..."
+                              className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
+                            >
+                              PSP says paid
+                            </SubmitButton>
+                          </form>
                         ) : (
                           <span className="text-sm text-zinc-600">—</span>
                         )}

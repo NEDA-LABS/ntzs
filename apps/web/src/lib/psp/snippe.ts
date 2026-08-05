@@ -69,6 +69,9 @@ export interface SnippePaymentResponse {
   success: boolean
   reference?: string
   error?: string
+  /** See PaymentResponse.definitiveFailure — absent means UNKNOWN, and an
+   * unknown initiation may still have collected the customer's money. */
+  definitiveFailure?: boolean
 }
 
 /**
@@ -125,9 +128,16 @@ export async function initiatePayment(
         errorMsg.toLowerCase().includes('unavailable') ||
         errorMsg.toLowerCase().includes('temporarily')
       
+      // A 5xx means Snippe broke while handling the request — it may have
+      // queued the push before failing, so the outcome is UNKNOWN. Only a
+      // request Snippe actually adjudicated (2xx/4xx body saying "no") is a
+      // definitive refusal that is safe to mark rejected.
+      const definitiveFailure = response.status < 500
+
       return {
         success: false,
-        error: isProviderOutage 
+        definitiveFailure,
+        error: isProviderOutage
           ? 'Mobile money service temporarily unavailable. Please try again later or use a different payment method.'
           : result.message || 'Payment initiation failed',
       }
@@ -145,6 +155,9 @@ export async function initiatePayment(
     }
   } catch (error) {
     console.error('[snippe] payment API error:', error)
+    // Transport error / timeout / unparseable body: we do NOT know whether
+    // Snippe received the request or pushed the prompt. definitiveFailure is
+    // deliberately left unset — the deposit must stay recoverable.
     return {
       success: false,
       error: 'Failed to connect to payment provider',

@@ -33,6 +33,22 @@ export interface PaymentResponse {
   /** Truncated PSP acknowledgment body, when the adapter surfaces it — audit evidence. */
   ack?: string
   error?: string
+  /**
+   * Set TRUE only when the PSP DEFINITIVELY refused: it answered, and the
+   * answer was "no". A 4xx, or a parsed body explicitly reporting failure.
+   *
+   * ⚠ ABSENT MEANS UNKNOWN, AND UNKNOWN IS NOT FAILURE. A timeout, a network
+   * error, or a 5xx means the request may well have reached the PSP and the
+   * customer may have paid. On 4 Aug 2026 a customer's 105,000 TZS collection
+   * was taken by the PSP while our side saw an initiation error, marked the
+   * deposit `rejected`, and then dropped the completion webhook because it
+   * only accepted `submitted` rows — the money sat unminted until the customer
+   * complained. Callers MUST leave an indeterminate deposit recoverable.
+   *
+   * The default is deliberately the safe one: an adapter that forgets to set
+   * this yields a recoverable deposit, never a stranded payment.
+   */
+  definitiveFailure?: boolean
 }
 
 export interface CardPaymentRequest {

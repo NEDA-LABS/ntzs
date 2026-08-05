@@ -23,6 +23,13 @@ import { writeAuditLog } from '@/lib/audit'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ntzs.co.tz'
 
+/**
+ * Thrown when the PSP gave us no usable answer. Carries the meaning "the
+ * deposit row was left OPEN on purpose" so the surrounding error handling
+ * cannot cancel a deposit whose money may already be in flight.
+ */
+class UncertainInitiationError extends Error {}
+
 export async function createDepositRequestAction(formData: FormData) {
   await requireAnyRole(['end_user', 'super_admin'])
   const dbUser = await requireDbUser()
@@ -90,6 +97,10 @@ export async function createDepositRequestAction(formData: FormData) {
   // If mobile money, initiate the collection with per-network rail failover
   // (one PSP being down no longer blocks deposits — see lib/psp/routing.ts).
   if (paymentMethod === 'mpesa') {
+    // Set once the PSP has accepted the collection. After that point NOTHING
+    // may cancel the row — the customer's money is in flight, and a later
+    // bookkeeping error must never present as a cancelled deposit.
+    let initiationAccepted = false
     try {
       const routed = await initiateCollection({
         amountTzs: Math.trunc(amountTzs),
@@ -102,12 +113,36 @@ export async function createDepositRequestAction(formData: FormData) {
       const response = routed.payment
 
       if (!response.success) {
+        // Only a DEFINITIVE refusal closes the deposit. An uncertain one stays
+        // open: the collection may have been taken, and a cancelled row makes
+        // the completion webhook ignore the payment entirely (4 Aug 2026).
+        if (response.definitiveFailure) {
+          await db
+            .update(depositRequests)
+            .set({ status: 'cancelled', paymentProvider: routed.provider, updatedAt: new Date() })
+            .where(eq(depositRequests.id, deposit.id))
+          throw new Error(response.error || 'Failed to initiate mobile money payment')
+        }
+
         await db
           .update(depositRequests)
-          .set({ status: 'cancelled', updatedAt: new Date() })
+          .set({ paymentProvider: routed.provider, updatedAt: new Date() })
           .where(eq(depositRequests.id, deposit.id))
-        throw new Error(response.error || 'Failed to initiate mobile money payment')
+
+        await writeAuditLog('deposit.initiation_uncertain', 'deposit_request', deposit.id, {
+          provider: routed.provider,
+          attempted: routed.attempted,
+          error: response.error ?? null,
+          note: 'left submitted on purpose — the collection may have been taken',
+        }, dbUser.id)
+
+        throw new UncertainInitiationError(
+          'We could not confirm the payment prompt. If you received it and approved the payment, ' +
+            'your nTZS will be credited automatically — do not pay again.'
+        )
       }
+
+      initiationAccepted = true
 
       // Persist the rail that ACTUALLY served (failover may differ from the
       // default) — webhooks and pollers are provider-scoped. pspChannel keeps
@@ -136,10 +171,15 @@ export async function createDepositRequestAction(formData: FormData) {
 
       console.log(`[${routed.provider}] payment initiated for deposit ${deposit.id}, ref: ${response.reference}`)
     } catch (error) {
-      await db
-        .update(depositRequests)
-        .set({ status: 'cancelled', updatedAt: new Date() })
-        .where(eq(depositRequests.id, deposit.id))
+      // Cancel ONLY when we know no collection is in flight. An uncertain
+      // initiation, or any failure after the PSP already accepted, leaves the
+      // row open so the completion webhook can still settle it.
+      if (!initiationAccepted && !(error instanceof UncertainInitiationError)) {
+        await db
+          .update(depositRequests)
+          .set({ status: 'cancelled', updatedAt: new Date() })
+          .where(eq(depositRequests.id, deposit.id))
+      }
       throw error
     }
   }

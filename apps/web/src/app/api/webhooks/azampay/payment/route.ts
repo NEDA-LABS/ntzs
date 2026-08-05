@@ -1,4 +1,4 @@
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { NextRequest, NextResponse } from 'next/server'
@@ -10,6 +10,8 @@ import {
   type AzamPayPaymentWebhookPayload,
 } from '@/lib/psp/azampay'
 import { executeMint } from '@/lib/minting/executeMint'
+import { writeAuditLog } from '@/lib/audit'
+import { RECOVERABLE_DEPOSIT_STATUSES, isRecoveryAdvance } from '@/lib/deposits/recoverable'
 import { depositRequests, merchantCollections } from '@ntzs/db'
 import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
@@ -28,7 +30,15 @@ async function evidence(action: string, entityId: string, metadata: Record<strin
   }
 }
 
-/** Claim-style advance (only from 'submitted') + instant mint. Returns the new status, or null if another path already claimed the deposit. */
+/**
+ * Claim-style advance + instant mint. Returns the new status, or null if
+ * another path already claimed the deposit.
+ *
+ * Claims from any RECOVERABLE status, not 'submitted' alone: a collection the
+ * PSP confirms must still credit even when our own row was closed by a failed
+ * initiation (see lib/deposits/recoverable.ts). The claim stays conditional so
+ * the poll cron and this handler still cannot both mint.
+ */
 async function advanceAndMint(
   deposit: Deposit,
   reference: string | null,
@@ -46,9 +56,22 @@ async function advanceAndMint(
       fiatConfirmedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(and(eq(depositRequests.id, deposit.id), eq(depositRequests.status, 'submitted')))
+    .where(and(eq(depositRequests.id, deposit.id), inArray(depositRequests.status, RECOVERABLE_DEPOSIT_STATUSES)))
     .returning({ id: depositRequests.id })
   if (updated.length === 0) return null // raced by the poll cron — that path mints
+
+  if (isRecoveryAdvance(deposit.status)) {
+    console.warn(
+      `[azampay/payment webhook] RECOVERED deposit ${deposit.id} from '${deposit.status}' -> ${newStatus} (ref ${reference ?? 'n/a'})`
+    )
+    await writeAuditLog('deposit.recovered_from_closed', 'deposit_request', deposit.id, {
+      previousStatus: deposit.status,
+      newStatus,
+      reference,
+      amountTzs: deposit.amountTzs,
+      note: 'PSP reported a completed collection for a deposit our side had already closed',
+    })
+  }
 
   revalidatePath('/app/user')
   revalidatePath('/app/user/activity')
