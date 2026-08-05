@@ -31,7 +31,7 @@ This `/docs` folder is intended for third-party code reviewers and smart contrac
 - [05 Security Model and Threats](./05-SECURITY-MODEL.md)
 - [06 Operations Runbook](./06-OPERATIONS-RUNBOOK.md)
 - [09 WaaS Partner API](./09-WAAS-PARTNER-API.md)
-- [11 CDD Reliance Policy](./11-KYC-RELIANCE-POLICY.md) — governs partner-attested KYC (`NEDA-CDD-REL-2026-01`)
+- [11 CDD Attested Verification Policy](./11-KYC-RELIANCE-POLICY.md) — governs partner-attested KYC (`NEDA-CDD-REL-2026-01`)
 
 ## Primary Review Goals
 

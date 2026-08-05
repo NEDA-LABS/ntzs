@@ -1,4 +1,6 @@
-# 11 — Customer Due Diligence Reliance Policy
+# 11 — Customer Due Diligence: Attested Verification Policy
+
+Governs identity verification performed outside the NIDA registry path and recorded in nTZS by attestation — today an internal delegation within NEDA Labs Limited (section 2), and the standing terms for any future grant to a separate entity (section 2.1).
 
 **Reference**: `NEDA-CDD-REL-2026-01`
 **Document owner**: NEDA Labs Limited — Office of the CTO
@@ -20,17 +22,25 @@ It cannot cover everyone. Two populations fall outside it:
 - **Tanzanians with no registry record** — typically genuine customers who are simply not Selcom Pesa customers. This is a coverage gap, not a fraud signal.
 - **Customers holding a non-Tanzanian identity document** — no NIDA exists to check.
 
-This policy governs how those customers are verified: **NEDApay performs the customer due diligence, and NEDA Labs relies on that verification** to approve the identity case and issue the wallet.
+This policy governs how those customers are verified: **the customer due diligence is performed in NEDApay's onboarding, and the outcome is attested to nTZS**, which approves the identity case and issues the wallet in one step rather than queueing the customer for a second approval.
 
 ## 2. Basis of the arrangement
 
-> **⚠️ COMPLETE BEFORE SIGNATURE.** Tick the clause that reflects the actual legal position and delete the other. The obligations in sections 4–10 are identical either way; the legal basis is not.
->
-> **☐ 2(a) — Internal delegation (same legal entity).** NEDApay is a product line and trading name of NEDA Labs Limited. This document is therefore an **internal delegation of the customer due diligence function** between business units of one regulated entity, approved by the compliance function, and not a contract between separate parties. No countersignature by a second entity is required.
->
-> **☐ 2(b) — Intra-group or third-party reliance (separate legal entities).** NEDApay is a legal entity distinct from NEDA Labs Limited. This document must then be executed as a **binding reliance agreement countersigned by both entities**, and NEDA Labs must additionally satisfy itself — and be able to demonstrate to the Bank of Tanzania — that NEDApay is subject to AML/CFT obligations and supervision adequate to support reliance, before any attestation is accepted.
+**NEDApay is a product line and trading name of NEDA Labs Limited — the same legal entity that issues nTZS.**
 
-Ultimate responsibility is unaffected by either choice. See section 8.
+This is therefore **not reliance on a third party**. NEDA Labs is verifying its own customers, through its own onboarding, and recording the outcome in its own issuing system. No countersignature by a second party is required, no assessment of another firm's AML/CFT supervision arises, and nothing is delegated outside the regulated entity. This document is an **internal delegation of the customer due diligence function** between systems of one firm, approved by the compliance function.
+
+What that does **not** change is the substance. The customer due diligence standard in section 4 must be met, the records in section 5 must exist and be retrievable, and the assurance in section 7 must be performed — because those obligations attach to NEDA Labs as issuer, not to whichever of its systems performs the work. A customer verified in NEDApay's onboarding is a NEDA Labs customer, verified by NEDA Labs.
+
+### 2.1 Grants to a separate legal entity
+
+The technical control this policy governs is general: any partner may in principle be granted the authority to attest. Before it is granted to a party that is **not** NEDA Labs Limited, all of the following must additionally be satisfied, and this policy re-issued under a new reference:
+
+1. A binding reliance agreement executed by both entities on the terms of sections 4–10.
+2. A documented assessment that the party is subject to AML/CFT obligations and supervision adequate to support reliance.
+3. Confirmation of the Bank of Tanzania's expectations for notification or approval of such an arrangement under the sandbox terms.
+
+As at the date of this policy, **NEDApay is the only grant in force, and clause 2.1 does not apply to it.**
 
 ## 3. Scope
 
@@ -91,7 +101,7 @@ Findings are recorded and, where material, trigger suspension under section 9. T
 
 ## 8. Responsibility is not transferred
 
-Reliance places the **performance** of customer due diligence with NEDApay. It does not move the **responsibility** for it. NEDA Labs Limited, as issuer of nTZS, remains fully accountable to the Bank of Tanzania for the adequacy of customer due diligence on every wallet it issues, and for the consequences of any failure.
+Delegation places the **performance** of customer due diligence with the NEDApay onboarding process. It does not move the **responsibility** for it — and where the performing party is the same legal entity, as it is today, there was never anywhere for that responsibility to move to. NEDA Labs Limited, as issuer of nTZS, is fully accountable to the Bank of Tanzania for the adequacy of customer due diligence on every wallet it issues, and for the consequences of any failure.
 
 Accordingly NEDA Labs retains, at all times and without notice, the right to:
 
@@ -102,9 +112,11 @@ Accordingly NEDA Labs retains, at all times and without notice, the right to:
 
 ## 9. Suspension and withdrawal
 
-Reliance may be withdrawn at any time by NEDA Labs compliance, taking effect immediately upon revoking the grant in Backstage. Existing customers already verified remain verified; no new attestation is accepted from that moment.
+The grant may be withdrawn at any time by NEDA Labs compliance, taking effect immediately upon revoking it in Backstage. Existing customers already verified remain verified; no new attestation is accepted from that moment.
 
-Reliance **shall** be suspended where: records requested under section 5 are not produced within the stated period; an assurance review under section 7 finds attestations unsupported by underlying records; or the Bank of Tanzania directs it.
+The grant **shall** be suspended where: records requested under section 5 are not produced within the stated period; an assurance review under section 7 finds attestations unsupported by underlying records; or the Bank of Tanzania directs it.
+
+Withdrawal has an operational consequence that must be planned for, not discovered: customers in scope under section 3 have no other automated verification path, so while the grant is suspended they fall to manual compliance review and wallet issuance slows to that queue.
 
 ## 10. Change control
 
@@ -114,7 +126,9 @@ Any material change to NEDApay's onboarding or verification process shall be not
 
 ## Signature
 
-This policy takes effect on the date of signature below. Until then, no reliance grant should be recorded against its reference.
+This policy takes effect on the date of signature below. Until then, no grant should be recorded against its reference.
+
+Two signatures, both within NEDA Labs Limited: the executive who owns the decision, and the compliance function that owns the control. They should not be the same person — a delegation of the CDD function approved by one signature is not a maker-checker control, and every other approval in this platform is.
 
 **For NEDA Labs Limited (issuer of nTZS):**
 
@@ -126,15 +140,6 @@ This policy takes effect on the date of signature below. Until then, no reliance
 | Date | |
 
 **Compliance function approval:**
-
-| | |
-|---|---|
-| Name | |
-| Position | |
-| Signature | |
-| Date | |
-
-**For NEDApay** — *required only if clause 2(b) applies:*
 
 | | |
 |---|---|
@@ -167,9 +172,8 @@ Date of birth, the live image, the liveness evidence and the screening result ar
 
 ## Appendix B — Points requiring professional review before submission
 
-This draft is complete enough to operate against internally. Before it is relied upon in a filing to the Bank of Tanzania, the following should be confirmed by qualified counsel:
+The legal-entity question that would have been the significant one is settled: NEDApay and NEDA Labs Limited are the same entity, so no third-party reliance arises and nothing here needs another party's signature. What remains is narrower, and none of it blocks internal operation — but it should be confirmed by qualified counsel before this policy supports a filing to the Bank of Tanzania:
 
-1. **Clause 2** — the legal entity relationship between NEDApay and NEDA Labs Limited, which determines whether this is internal delegation or reliance requiring execution by two parties.
-2. **Section 5 retention period** — ten years is stated as the conservative position; confirm against the Anti-Money Laundering Act and its current regulations.
-3. **Section 4(4) screening** — confirm which sanctions lists NEDA Labs is obliged to screen against, and whether the sandbox terms impose additional PEP requirements.
-4. Whether the Bank of Tanzania requires **prior notification or approval** of a reliance arrangement under the sandbox terms, rather than disclosure at the next reporting point.
+1. **Section 5 retention period** — ten years is stated as the conservative position; confirm against the Anti-Money Laundering Act and its current regulations. Retaining longer than required is never a breach; retaining less can be.
+2. **Section 4(4) screening** — confirm which sanctions lists NEDA Labs is obliged to screen against, and whether the sandbox terms impose PEP requirements beyond those stated.
+3. Whether the Bank of Tanzania expects **notification** that identity verification for the section 3 population is performed in the NEDApay onboarding process rather than in nTZS directly. This is disclosure of an internal process split, not of an outsourcing arrangement, so it most likely belongs in ordinary periodic reporting — but confirm rather than assume.
