@@ -90,7 +90,7 @@ DAILY_ISSUANCE_CAP_TZS=100000000
 - [x] **Para #4 — Daily per-user limit (TZS 2,000,000)** · rolling 24-hour sum across deposits + burns
 - [x] **Para #5 — Monthly per-user cap (TZS 60,000,000)** · 30-day rolling window
 - [ ] **Para #2 — Sandbox user cap (100 users max)** · applies to new bank/PSP integration corridor only; existing Snippe users are unaffected
-- [ ] **Para #8 — Biometric KYC + OTP** · Smile Identity integration (national ID + selfie + OTP)
+- [x] **Para #8 — Identity verification** · NIDA registry pair-check via Selcom Identity, corroborated by telco SIM registration; partners under a signed reliance agreement attest their own verifications for customers outside that registry
 - [ ] **Para #8 — PEP screening + sanctions checks** · UN / BoT / OFAC before wallet activation
 - [ ] **Para #14 — Multi-sig minting keys** · complete Gnosis Safe path (`mint_requires_safe` flow)
 - [ ] **Para #7 / LR-2 — Automated daily reserve report** · cron → email BoT by 10:00 EAT

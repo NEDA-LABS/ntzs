@@ -599,6 +599,13 @@ export const partners = pgTable(
     suspendReason: text('suspend_reason'),
     dailyLimitTzs: bigint('daily_limit_tzs', { mode: 'number' }),
     contractSignedAt: timestamp('contract_signed_at', { withTimezone: true }),
+    // Reliance on this partner for CDD: may they attest a KYC outcome to us
+    // (POST /api/v1/users/:id/kyc/attestation) and have it approve the case?
+    // OFF until compliance grants it in Backstage — an API key alone must
+    // never be able to manufacture a verified identity. Requires 0076.
+    kycAttestationEnabled: boolean('kyc_attestation_enabled').notNull().default(false),
+    kycAttestationGrantedAt: timestamp('kyc_attestation_granted_at', { withTimezone: true }),
+    kycAttestationAgreementRef: text('kyc_attestation_agreement_ref'),
     treasuryWalletAddress: text('treasury_wallet_address'),
     feePercent: numeric('fee_percent').notNull().default('0'),
     payoutPhone: text('payout_phone'),

@@ -549,65 +549,51 @@ POST /api/v1/testmode/reset`}
             isActive={activeSection === 'kyc'}
             step="Step 4"
             title="Identity verification (KYC)"
-            description="Every wallet is backed by a verified identity, checked on a risk-tiered ladder. Most users pass instantly at create-user; the rest finish in ~2 minutes with a document-capture session — nobody waits on a human unless something genuinely needs review."
+            description="Every wallet is backed by a verified identity. Tanzanians verify instantly against the NIDA registry at create-user. Everyone else — customers the registry has no record of, and anyone holding a non-Tanzanian document — is verified in your own onboarding, and you report the outcome to us."
           >
             <CodeBlock
-              title="POST /api/v1/users/:id/kyc/session"
-              code={`// Open a capture session for a user stuck in pending_review
-// (or any user holding a non-Tanzanian document).
+              title="POST /api/v1/users/:id/kyc/attestation"
+              code={`// You verified this customer yourself. Tell us, and the wallet
+// is issued on this call — there is no second approval step.
+// Requires a signed KYC reliance agreement with NEDA Labs.
 const res = await fetch(
-  'https://www.ntzs.co.tz/api/v1/users/14e17d04-ec7f-4d99-91a3-dfbaca19fba1/kyc/session',
+  'https://www.ntzs.co.tz/api/v1/users/14e17d04-ec7f-4d99-91a3-dfbaca19fba1/kyc/attestation',
   {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ country: 'TZ' }),  // ISO-3166 alpha-2 of the ID document
+    body: JSON.stringify({
+      decision:   'approved',              // or 'rejected' (then notes is required)
+      country:    'KE',                    // ISO-3166 alpha-2 of the document
+      idType:     'PASSPORT',              // NATIONAL_ID | PASSPORT | DRIVERS_LICENSE
+                                           // | RESIDENCE_PERMIT | VOTER_ID
+      idNumber:   'A1234567',
+      fullName:   'Jane Wanjiru Doe',      // as it appears on the document
+      reference:  'YOURCO-KYC-88213',      // YOUR case id — we may ask for the file
+      verifiedBy: 'compliance@yourco.com', // who made the decision
+      verifiedAt: '2026-08-04T09:30:00Z',  // when (within the last 365 days)
+      method:     'document_and_selfie',   // optional, free text
+    }),
   }
 )`}
             />
             <CodeBlock
-              title="201 — session open (valid 15 minutes)"
+              title="200 — approved, wallet issued"
               code={`{
   "id": "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
   "externalId": "your-internal-user-id",
-  "kycStatus": "pending_review",
+  "kycStatus": "approved",
   "caseId": "6f1e...c2a9",
-  "session": {
-    "token": "eyJhbGciOi...",          // short-lived, safe for the browser
-    "smilePartnerId": "8005",
-    "apiBaseUrl": "https://api.smileidentity.com",
-    "submitPath": "/v3/document_verification",
-    "country": "TZ",
-    "partnerParams": { "kyc_case_id": "6f1e...c2a9", "external_id": "your-internal-user-id" },
-    "expiresInSeconds": 900
-  }
-}`}
-            />
-            <CodeBlock
-              title="Client capture submit (multipart)"
-              code={`// From your app, with the user present and consenting:
-// capture with the device camera, then POST directly to
-// session.apiBaseUrl + session.submitPath as multipart/form-data.
-//
-// Headers:
-//   SmileID-Partner-ID: session.smilePartnerId
-//   SmileID-Token:      session.token
-//
-// Parts:
-//   country          session.country
-//   document         ID front photo (JPEG/PNG)
-//   document_back    optional back photo
-//   selfie_image     one selfie (JPEG)
-//   liveness_images  6-8 JPEG frames (short selfie burst)
-//   user_details     JSON string: { given_names, last_name, email | phone_number }
-//   consent          JSON string: { granted: true, granted_at,
-//                      notice_language, notice_privacy_policy_url }
-//   partner_params   JSON string: exactly session.partnerParams
-//
-// Response is 202 Accepted — the VERDICT arrives on the
-// kyc.updated webhook, not in this response.`}
+  "walletAddress": "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C"
+}
+
+// Errors worth handling:
+//   403 kyc_reliance_not_granted    no reliance agreement on your account
+//   400 verified_at_stale           decision older than 365 days — re-verify
+//   409 identity_mismatch           document number disagrees with the NIDA we hold
+//   409 identity_already_registered that document already backs another of your users`}
             />
             <div className="overflow-x-auto rounded-xl border border-white/10">
               <table className="w-full text-sm">
@@ -622,7 +608,7 @@ const res = await fetch(
                   {[
                     ['A', 'NIDA + phone pair verified against a bank-grade registry at create-user', 'instant'],
                     ['B', "The phone's telco SIM registration (NIDA + fingerprints by law) corroborates — a contradiction outranks", 'instant'],
-                    ['B′', 'Document + selfie capture: the ID is forensically checked and face-matched to the live person', '~2 min'],
+                    ['B′', 'You verified the customer yourself and attest the outcome to us — the wallet is issued on that call', 'instant'],
                     ['C', 'Our compliance team reviews the collected evidence', '< 1 business day'],
                   ].map(([tier, what, speed]) => (
                     <tr key={tier} className="hover:bg-white/[0.02]">
@@ -635,32 +621,36 @@ const res = await fetch(
               </table>
             </div>
             <Note variant="info">
-              <span className="font-semibold text-blue-200">"Under review" is an action, not a wait.</span>{' '}
-              When create-user returns <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">202</code>, open a
-              session and let the user photograph their ID + take a selfie. On the{' '}
-              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">kyc.updated</code> webhook with{' '}
-              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">approved</code>, re-call{' '}
-              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/users</code> (idempotent) — the
-              response now carries the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">walletAddress</code>.
+              <span className="font-semibold text-blue-200">One approval, not two.</span>{' '}
+              When create-user returns <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">202</code>, the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">nextStep</code> field tells you who resolves it.
+              With a reliance agreement it is <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">kyc_attestation</code>:
+              your own approval issues the wallet and returns the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">walletAddress</code> in the same response, so a customer
+              you have already verified never waits behind a second review. Without one it is{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">compliance_review</code>, and the{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">kyc.updated</code> webhook tells you when it clears.
             </Note>
             <div className="grid gap-3 sm:grid-cols-2">
               <Note variant="neutral">
-                <span className="font-semibold text-white/90">Consent is mandatory:</span> capture requires the
-                user present and consenting — record it in the <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">consent</code>{' '}
-                part. Sessions are re-callable: an abandoned capture just restarts with a fresh token.
+                <span className="font-semibold text-white/90">Reliance is an agreement, not a setting:</span> attesting a KYC
+                outcome means you performed due diligence to our standard and can produce the underlying record on request.
+                That is why every attestation carries <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">reference</code>,{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">verifiedBy</code> and{' '}
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">verifiedAt</code>. Talk to us to arrange it.
               </Note>
               <Note variant="neutral">
                 <span className="font-semibold text-white/90">International documents:</span> pass the document&apos;s{' '}
-                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">country</code> — passports, national IDs and
-                residence permits from 200+ countries verify through the same flow. Existing users only for now;
-                NIDA-less signup ships next.
+                <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">country</code> at create-user and the customer is
+                created without a NIDA, then activated by your attestation. Passports, national IDs, driving licences,
+                residence permits and voter IDs are all accepted.
               </Note>
             </div>
             <Note variant="neutral">
               <span className="font-semibold text-white/90">Retro-KYC:</span> users created before the KYC standard
               show <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">kycStatus: &quot;none&quot;</code> — attach an identity
               with <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/users/:id/kyc</code>{' '}
-              (NIDA + phone, same outcomes as signup), or go straight to a capture session.
+              (NIDA + phone, same outcomes as signup), or attest one you verified yourself.
             </Note>
           </DocSection>
 

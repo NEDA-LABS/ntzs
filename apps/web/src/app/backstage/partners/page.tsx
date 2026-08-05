@@ -5,6 +5,7 @@ import { ethers } from 'ethers'
 import { requireRole, requireAnyRole } from '@/lib/auth/rbac'
 import { SubmitButton } from '../_components/SubmitButton'
 import { getDb } from '@/lib/db'
+import { isMissingSchemaObject } from '@/lib/db-errors'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
 import { partners, partnerUsers, depositRequests, burnRequests, partnerKyb } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
@@ -98,6 +99,56 @@ async function toggleCapabilityAction(formData: FormData) {
   revalidatePath('/backstage/partners')
 }
 
+/**
+ * Grant or revoke reliance on a partner for customer due diligence.
+ *
+ * A partner holding this may call POST /api/v1/users/:id/kyc/attestation and
+ * have their own verification approve one of our KYC cases and issue a wallet.
+ * That is real regulatory delegation, so it is deliberately not a capability
+ * a partner can request from their dashboard — it is granted here, by name,
+ * against a signed reliance agreement whose reference is recorded on the row.
+ */
+async function toggleKycRelianceAction(formData: FormData) {
+  'use server'
+  const reviewer = await requireAnyRole(['super_admin', 'platform_compliance'])
+
+  const partnerId = String(formData.get('partnerId') ?? '')
+  const enable = String(formData.get('enable') ?? '') === 'true'
+  const agreementRef = String(formData.get('agreementRef') ?? '').trim()
+  if (!partnerId) throw new Error('Missing partnerId')
+  // Reliance rests on an agreement. Without its reference on the row we cannot
+  // answer the only question a regulator will ask about this arrangement.
+  if (enable && !agreementRef) {
+    throw new Error('A signed reliance agreement reference is required to grant KYC reliance')
+  }
+
+  const { db } = getDb()
+  try {
+    await db
+      .update(partners)
+      .set({
+        kycAttestationEnabled: enable,
+        kycAttestationGrantedAt: enable ? new Date() : null,
+        kycAttestationAgreementRef: enable ? agreementRef : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(partners.id, partnerId))
+  } catch (err) {
+    if (isMissingSchemaObject(err)) {
+      throw new Error('Apply migration 0076_kyc_partner_attestation.sql before granting KYC reliance')
+    }
+    throw err
+  }
+
+  await writeAuditLog(
+    enable ? 'partner.kyc_reliance_granted' : 'partner.kyc_reliance_revoked',
+    'partner',
+    partnerId,
+    { agreementRef: enable ? agreementRef : null, reviewedBy: reviewer.email }
+  )
+  revalidatePath('/backstage/partners')
+}
+
 async function reviewKybAction(formData: FormData) {
   'use server'
   const reviewer = await requireAnyRole(['super_admin', 'platform_compliance'])
@@ -149,6 +200,26 @@ export default async function PartnersPage() {
     })
     .from(partners)
     .orderBy(desc(partners.createdAt))
+
+  // Read separately from the query above so this whole page keeps rendering on
+  // a deployment where 0076 has not been applied yet — a missing column then
+  // simply means nobody holds reliance, which is the truth.
+  const relianceById = new Map<string, { enabled: boolean; grantedAt: Date | null; agreementRef: string | null }>()
+  try {
+    const relianceRows = await db
+      .select({
+        id: partners.id,
+        enabled: partners.kycAttestationEnabled,
+        grantedAt: partners.kycAttestationGrantedAt,
+        agreementRef: partners.kycAttestationAgreementRef,
+      })
+      .from(partners)
+    for (const r of relianceRows) {
+      relianceById.set(r.id, { enabled: r.enabled === true, grantedAt: r.grantedAt ?? null, agreementRef: r.agreementRef ?? null })
+    }
+  } catch (err) {
+    if (!isMissingSchemaObject(err)) throw err
+  }
 
   // Fetch on-chain treasury balances (best-effort)
   const rpcUrl = BASE_RPC_URL
@@ -626,6 +697,72 @@ export default async function PartnersPage() {
               })}
             </div>
           )}
+        </div>
+
+        {/* KYC reliance — delegation of customer due diligence */}
+        <div className="rounded-xl border border-white/10 bg-zinc-900/30 p-5">
+          <h3 className="text-sm font-semibold text-zinc-300">KYC reliance</h3>
+          <p className="mt-2 max-w-3xl text-sm text-zinc-500">
+            A partner with reliance may verify customers in their own onboarding and report the outcome to{' '}
+            <code className="text-zinc-400">POST /api/v1/users/:id/kyc/attestation</code>. That call approves our KYC case
+            and issues the wallet, with no second approval here. Grant it only where a signed reliance agreement obliges
+            the partner to perform CDD to our standard and to produce the underlying records on request.
+          </p>
+          <div className="mt-4 space-y-2">
+            {allPartners.map((partner) => {
+              const reliance = relianceById.get(partner.id) ?? { enabled: false, grantedAt: null, agreementRef: null }
+              return (
+                <div
+                  key={partner.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-zinc-900/50 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-white">{partner.name}</p>
+                    {reliance.enabled ? (
+                      <p className="mt-0.5 text-xs text-emerald-400/90">
+                        Relied upon since {reliance.grantedAt ? formatDateEAT(reliance.grantedAt) : 'unknown'}
+                        {reliance.agreementRef ? ` · agreement ${reliance.agreementRef}` : ''}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        Not relied upon — their attestations are rejected with 403
+                      </p>
+                    )}
+                  </div>
+                  {reliance.enabled ? (
+                    <form action={toggleKycRelianceAction}>
+                      <input type="hidden" name="partnerId" value={partner.id} />
+                      <input type="hidden" name="enable" value="false" />
+                      <SubmitButton
+                        pendingText="Revoking…"
+                        className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-500/20"
+                      >
+                        Revoke reliance
+                      </SubmitButton>
+                    </form>
+                  ) : (
+                    <form action={toggleKycRelianceAction} className="flex items-center gap-2">
+                      <input type="hidden" name="partnerId" value={partner.id} />
+                      <input type="hidden" name="enable" value="true" />
+                      <input
+                        type="text"
+                        name="agreementRef"
+                        required
+                        placeholder="Signed agreement ref"
+                        className="w-48 rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-xs text-white focus:border-emerald-500/50 focus:outline-none"
+                      />
+                      <SubmitButton
+                        pendingText="Granting…"
+                        className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
+                      >
+                        Grant reliance
+                      </SubmitButton>
+                    </form>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         {/* Info box */}

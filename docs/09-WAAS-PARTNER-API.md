@@ -45,6 +45,8 @@ sequenceDiagram
 | Execute swap | `POST /api/v1/swap` (SSE) |
 | Create user + wallet | `POST /api/v1/users` |
 | Get user profile + balances | `GET /api/v1/users/:id` |
+| Verify an existing user (NIDA + phone) | `POST /api/v1/users/:id/kyc` |
+| Attest a KYC outcome you made (issues the wallet) | `POST /api/v1/users/:id/kyc/attestation` |
 | Initiate deposit (mobile money / card / Lipa Namba / bank transfer) | `POST /api/v1/deposits` |
 | Deposit status | `GET /api/v1/deposits/:id` |
 | Withdrawal quote (name + fees + net) | `POST /api/v1/withdrawals/quote` |
@@ -67,6 +69,20 @@ sequenceDiagram
 ---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
+
+---
+
+## What's New — v1.18.0 (5 Aug 2026)
+
+**If you verify your customers, your approval now issues the wallet.** `POST /api/v1/users/:id/kyc/attestation` records a KYC decision you have already made, approves our case, and returns the `walletAddress` in the same response — a customer you have verified is no longer queued behind a second review here just to receive a wallet.
+
+- **Who this is for.** Tanzanians whose NIDA and phone verify against the registry still pass instantly at create-user and need none of this. Attestation covers the rest: customers the registry has no record of, and anyone holding a non-Tanzanian document.
+- **It requires a signed reliance agreement.** The endpoint answers `403 kyc_reliance_not_granted` until NEDA Labs compliance grants your account reliance. An API key alone can never approve an identity.
+- **An attestation must stand up on its own.** `reference` (your case id), `verifiedBy`, `verifiedAt`, `country`, `idType`, `idNumber` and `fullName` are all required on an approval, and a decision older than **365 days** is refused rather than replayed. Rejections are accepted too, with `notes`.
+- **It cannot overwrite what we hold.** A document number that disagrees with the NIDA already on the case returns `409 identity_mismatch`; a document already backing another of your users returns `409 identity_already_registered`.
+- **`nextStep` on a `202` now tells you who resolves it** — `kyc_attestation` if you hold reliance, `compliance_review` if our team does.
+
+**Removed: document-capture sessions.** `POST /api/v1/users/:id/kyc/session` now answers `410 endpoint_retired`. The third-party capture vendor behind it was priced per attempt, and attempts are exactly what onboarding produces. If you were using it, move to attestation (or leave those users to `compliance_review`).
 
 ---
 
@@ -181,7 +197,7 @@ Your users can now **spend** their nTZS directly: `POST /api/v1/spend/quote` + `
 
 ### International signups + no more dead-ends
 
-`POST /api/v1/users` now accepts a `country` field (ISO 3166-1 alpha-2, default `TZ`). For any country other than TZ, `nidaNumber` is **not** required: the user is created immediately with a pending document-verification case, and the capture session (see [Identity Verification](#identity-verification-kyc)) verifies their passport / national ID — 200+ countries covered. The `202` response now carries `nextStep: "kyc_session"`.
+`POST /api/v1/users` now accepts a `country` field (ISO 3166-1 alpha-2, default `TZ`). For any country other than TZ, `nidaNumber` is **not** required: the user is created immediately with a pending identity case, and their passport / national ID is verified outside the NIDA registry (see [Identity Verification](#identity-verification-kyc)). The `202` response carries a `nextStep` naming who resolves it — `kyc_attestation` if you hold a reliance agreement, otherwise `compliance_review`.
 
 Two more changes in the same spirit:
 
@@ -194,15 +210,15 @@ Two more changes in the same spirit:
 
 ## What's New — v1.8.0 (23 Jul 2026)
 
-### Instant document verification — no more waiting when the registry has no record
+### No more dead-ends when the registry has no record
 
-Until now, a user whose NIDA + phone pair had no Tier-A registry record (typically: not a Selcom Pesa customer) was queued for manual review — correct, but slow. They can now finish **instantly** instead: open a capture session with `POST /api/v1/users/:id/kyc/session`, let the user photograph their ID and take a selfie (~2 minutes), and our `kyc.updated` webhook tells you the verdict. The same session verifies non-Tanzanian identity documents (pass `country`) — document verification covers 200+ countries.
+A user whose NIDA + phone pair has no Tier-A registry record (typically: not a Selcom Pesa customer) is not rejected — they are parked pending and always have a route through. Since v1.18.0 that route is `POST /api/v1/users/:id/kyc/attestation` for partners holding a reliance agreement (instant, and it issues the wallet), and our compliance team for everyone else. The same path verifies non-Tanzanian documents; pass `country` at create-user.
 
 **Do you need to update your integration?**
 
 | Scenario | Action required |
 |----------|----------------|
-| You handle `202 kyc_pending_review` today | **Recommended.** On a `202`, open a session and run the capture flow instead of showing "wait for review". On the `kyc.updated` webhook with `approved`, re-call `POST /api/v1/users` (idempotent) to get the `walletAddress`. |
+| You handle `202 kyc_pending_review` today | **Recommended.** Read `nextStep` instead of showing a flat "wait for review". If it is `kyc_attestation`, your own verification finishes the user in one call and returns the `walletAddress`. If it is `compliance_review`, the `kyc.updated` webhook tells you when it clears. |
 | Your users hold non-Tanzanian documents | **Partially unlocked.** An existing user can verify a non-TZ document via the session `country` field. NIDA-less user creation (full international signup) ships in the next version. |
 | Selcom Tier A verifies your users instantly today | **None.** Nothing changes for them. |
 
@@ -656,8 +672,8 @@ Every end-user wallet is backed by a verified national identity (BoT sandbox Tes
 
 Rules your UX should reflect:
 
-- The phone must be the user's **own** mobile money line. A line registered to someone else no longer hard-fails signup — the user soft-lands into document verification — but a standing telco contradiction always puts a human reviewer in the loop before approval (deliberate, per AML policy: nothing auto-approves over a contradiction).
-- "Under review" is **not** a rejection — never show it as an error. Better: make it an *action* by opening a document-capture session so the user can finish instantly.
+- The phone must be the user's **own** mobile money line. A line registered to someone else no longer hard-fails signup — the user soft-lands into a pending case — but a standing telco contradiction always puts a human reviewer in the loop before approval (deliberate, per AML policy: nothing auto-approves over a contradiction).
+- "Under review" is **not** a rejection — never show it as an error. Read `nextStep`: if it is `kyc_attestation`, you can finish the user yourself in one call.
 - One NIDA backs at most one wallet on your platform.
 
 ### `POST /api/v1/users/:id/kyc`
@@ -688,36 +704,80 @@ Attaches a verified identity to an **existing** user — for users created befor
 3. `POST /api/v1/users/:id/kyc` → handle the three outcomes exactly like signup.
 4. Nothing is frozen and no deadline is enforced by the API — the campaign is prompt-driven.
 
-### `POST /api/v1/users/:id/kyc/session`
+### `POST /api/v1/users/:id/kyc/attestation`
 
-Opens an **instant document-verification session** for an existing user — the fast path out of `pending_review` (users the registry doesn't know), and the verification path for non-Tanzanian identity documents. Never touches wallets or balances.
+Records a KYC decision **you** have already made, approves our case, and issues the wallet — all in one call. This is the verification path for everyone the NIDA registry cannot settle: Tanzanians it has no record of, and anyone holding a non-Tanzanian document.
 
-#### Request body (optional)
+Requires a **signed KYC reliance agreement** with NEDA Labs. Until compliance grants your account reliance the endpoint answers `403 kyc_reliance_not_granted` — holding an API key is never sufficient to approve an identity.
+
+> **What you are signing up to.** Attesting means you performed customer due diligence to our standard, and that you can produce the underlying record if the Bank of Tanzania asks us for it. Every field below exists so that request can be answered years later.
+
+#### Request body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `country` | string | — | ISO 3166-1 alpha-2 of the user's identity document. Defaults to the user's open case country (international signups carry theirs), then `TZ` |
+| `decision` | string | — | `approved` (default) or `rejected` |
+| `reference` | string | ✓ | **Your** KYC case/reference id (4–128 chars) — how we ask you for the file |
+| `verifiedBy` | string | ✓ | Who made the decision: reviewer email, team, or system identifier |
+| `verifiedAt` | string | ✓ | ISO 8601 date/timestamp of the verification. Not in the future; not older than 365 days |
+| `country` | string | ✓ | ISO 3166-1 alpha-2 of the identity document (e.g. `TZ`, `KE`, `GB`) |
+| `idType` | string | ✓ on approval | `NATIONAL_ID` \| `PASSPORT` \| `DRIVERS_LICENSE` \| `RESIDENCE_PERMIT` \| `VOTER_ID` |
+| `idNumber` | string | ✓ on approval | Document number as printed (3–64 chars) |
+| `fullName` | string | ✓ on approval | Holder's full name as it appears on the document |
+| `notes` | string | ✓ on rejection | The reason, in terms the customer can act on |
+| `method` | string | — | Free text, e.g. `document_and_selfie` |
 
 #### Responses
 
 | Status | Body highlights | Meaning |
 |--------|-----------------|---------|
-| `201` | `caseId`, `session: { token, smilePartnerId, apiBaseUrl, submitPath, partnerParams, callbackUrl, expiresInSeconds }` | Session open — run the capture flow within 15 minutes |
-| `200` | `alreadyVerified: true` | Already approved — nothing to do |
-| `400` | `invalid_country` | Bad country code |
+| `200` | `kycStatus: "approved"`, `caseId`, `walletAddress` | Approved **and the wallet is live** — nothing else to call |
+| `200` | `kycStatus: "approved"`, `alreadyVerified: true` | Already approved; the wallet address is returned again (idempotent) |
+| `200` | `kycStatus: "rejected"`, `caseId` | Rejection recorded; no wallet |
+| `400` | `reference_required`, `verified_by_required`, `verified_at_required`, `verified_at_future`, `verified_at_stale`, `invalid_country`, `invalid_id_type`, `invalid_id_number`, `invalid_full_name`, `notes_required` | The attestation could not stand on its own |
+| `403` | `kyc_reliance_not_granted` | No reliance agreement on your account |
 | `404` | — | User does not belong to your platform |
-| `503` | `kyc_unavailable` | Temporarily unavailable — retry shortly |
+| `409` | `identity_mismatch` | The document number disagrees with the NIDA already recorded for this user |
+| `409` | `identity_already_registered` | That document already backs another of your users |
+| `409` | `kyc_already_decided` | A reviewer decided the case first — fetch the user for current status |
 
-#### Capture flow
+#### Example
 
-1. **Open the session server-side** (your API key never reaches a browser) and hand the `session` object to your frontend. The `token` is short-lived and safe for the client.
-2. **Capture with the device camera**: document **front** photo (back optional where relevant), one **selfie**, and **6–8 liveness frames** (a short burst). On mobile, the SmileID v12 mobile SDKs handle all capture; on web you own the camera UI.
-3. **Submit directly from the client to SmileID** — `POST {session.apiBaseUrl}{session.submitPath}` as `multipart/form-data`, headers `SmileID-Partner-ID: {session.smilePartnerId}` + `SmileID-Token: {session.token}`, parts: `country`, `document`, `document_back` (optional), `selfie_image`, `liveness_images` (repeated), plus `user_details`, `consent`, and `partner_params` as **JSON-string parts**. `partner_params` must be exactly `session.partnerParams`; `consent` records the user's explicit agreement: `{ "granted": true, "granted_at": ISO-8601, "notice_language": "EN", "notice_privacy_policy_url": "…" }`.
-4. SmileID responds `202 Accepted` — that is an acknowledgement, **not** the verdict.
-5. The verdict lands on our platform webhook; we move the case and notify you via the `kyc.updated` partner webhook (signed + retried, configured from your partner dashboard): `{ externalId, kycStatus: "approved" | "rejected" | "pending_review", provider: "smileid" }`.
-6. On `approved`, re-call `POST /api/v1/users` (idempotent) — the response now carries `walletAddress`. On `pending_review`, the document needs a human look (expired, glare, photocopy) — usually < 1 business day. On `rejected`, show the reason and allow a fresh attempt with a new session.
+```json
+POST /api/v1/users/14e17d04-ec7f-4d99-91a3-dfbaca19fba1/kyc/attestation
+{
+  "decision":   "approved",
+  "country":    "KE",
+  "idType":     "PASSPORT",
+  "idNumber":   "A1234567",
+  "fullName":   "Jane Wanjiru Doe",
+  "reference":  "YOURCO-KYC-88213",
+  "verifiedBy": "compliance@yourco.com",
+  "verifiedAt": "2026-08-04T09:30:00Z",
+  "method":     "document_and_selfie"
+}
+```
 
-Re-calling the endpoint reuses the user's open case with a fresh token, so an abandoned capture can simply be restarted.
+```json
+200 OK
+{
+  "id": "14e17d04-ec7f-4d99-91a3-dfbaca19fba1",
+  "externalId": "your-internal-user-id",
+  "kycStatus": "approved",
+  "caseId": "6f1e...c2a9",
+  "walletAddress": "0x531B87EfdEBD19bfd05700DF6218d4786Cf2201C"
+}
+```
+
+#### What we do with it
+
+The attestation decides the case the user is already parked on (so the evidence trail stays on one case), records the whole chain — verifier, timestamp, document, your reference, your reliance agreement — in our audit log, and issues the wallet. Your `kyc.updated` webhook fires as well, so a separate service of yours can react without polling.
+
+Guards that always apply, reliance or not: the user must belong to you; a document number that contradicts the NIDA we already hold is refused rather than overwritten; and one document identity backs at most one of your users.
+
+### `POST /api/v1/users/:id/kyc/session` — **retired**
+
+Document-capture sessions have been withdrawn and the endpoint answers `410 endpoint_retired`. The third-party capture vendor behind it charged per attempt, which is the wrong shape for onboarding. Use the attestation endpoint above; users you cannot verify yourself fall to our compliance team (`nextStep: "compliance_review"`) and clear on the `kyc.updated` webhook.
 
 ### Suggested UX copy
 
@@ -739,7 +799,7 @@ Sub-wallets and treasury wallets are business wallets: they unlock after **KYB**
 3. Re-call `POST /api/v1/users` with the same `externalId` → expect the idempotent existing-user response.
 4. A `202` user: after our team approves the review, re-call → expect `walletAddress` populated.
 5. A legacy user: `GET /api/v1/users/:id` → `kycStatus: "none"` → `POST /api/v1/users/:id/kyc` → same outcomes as signup.
-6. A `202` user: `POST /api/v1/users/:id/kyc/session` → complete capture with a SmileID sandbox test identity → expect the `kyc.updated` webhook, then `walletAddress` on the create-user re-call.
+6. A `202` user, with reliance granted: `POST /api/v1/users/:id/kyc/attestation` → expect `200` carrying `kycStatus: "approved"` **and** `walletAddress` in the same response. Without reliance, expect `403 kyc_reliance_not_granted`.
 
 ---
 
