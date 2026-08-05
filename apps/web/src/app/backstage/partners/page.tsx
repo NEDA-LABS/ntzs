@@ -710,9 +710,10 @@ export default async function PartnersPage() {
           </p>
           <p className="mt-2 max-w-3xl text-xs text-zinc-600">
             The agreement reference must name a document that exists and is signed — it is what answers the Bank of
-            Tanzania when they ask who performs CDD on our behalf. Our own policy is{' '}
-            <code className="text-zinc-500">docs/11-KYC-RELIANCE-POLICY.md</code>, reference{' '}
-            <code className="text-zinc-500">NEDA-CDD-REL-2026-01</code>. Do not enter it before that document is signed.
+            Tanzania when they ask who performs CDD on our behalf, so never enter a reference for an unsigned document.
+            Our own policy is <code className="text-zinc-500">docs/11-KYC-RELIANCE-POLICY.md</code>, reference{' '}
+            <code className="text-zinc-500">NEDA-CDD-REL-2026-01</code>, in force since 5 August 2026. A grant to a
+            partner that is a separate legal entity needs its own executed agreement first — see clause 2.1.
           </p>
           <div className="mt-4 space-y-2">
             {allPartners.map((partner) => {
