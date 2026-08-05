@@ -710,6 +710,8 @@ Records a KYC decision **you** have already made, approves our case, and issues 
 
 Requires a **signed KYC reliance agreement** with NEDA Labs. Until compliance grants your account reliance the endpoint answers `403 kyc_reliance_not_granted` — holding an API key is never sufficient to approve an identity.
 
+> **Integrating this?** `partners/kyc-attestation.md` is the step-by-step brief — where the user id comes from, which customers to attest and which to leave alone, what to do with each error, and what not to send us.
+
 > **What you are signing up to.** Attesting means you performed customer due diligence to our standard, and that you can produce the underlying record if the Bank of Tanzania asks us for it. Every field below exists so that request can be answered years later.
 
 #### Request body
