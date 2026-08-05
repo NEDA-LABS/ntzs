@@ -144,10 +144,16 @@ describe('bank reference tokens', () => {
     expect(seen.size).toBe(500)
   })
 
-  it('formats with a display dash and round-trips already-formatted input', () => {
-    expect(formatBankReference('NTZ7K2M9Q')).toBe('NTZ-7K2M9Q')
-    expect(formatBankReference('NTZ-7K2M9Q')).toBe('NTZ-7K2M9Q')
-    expect(formatBankReference('ntz7k2m9q')).toBe('NTZ-7K2M9Q')
+  it('displays the bare token — bank narrations reject punctuation', () => {
+    expect(formatBankReference('NTZ7K2M9Q')).toBe('NTZ7K2M9Q')
+    expect(formatBankReference('NTZ-7K2M9Q')).toBe('NTZ7K2M9Q')
+    expect(formatBankReference('ntz7k2m9q')).toBe('NTZ7K2M9Q')
+  })
+
+  it('displayed reference still matches a narration however the payer types it', () => {
+    const shown = formatBankReference('NTZ7K2M9Q')
+    expect(bankReferenceInText('NTZ7K2M9Q', `TRF REF ${shown}`)).toBe(true)
+    expect(bankReferenceInText('NTZ7K2M9Q', 'TRF REF NTZ-7K2M9Q')).toBe(true)
   })
 
   it('finds tokens in free text across the punctuation banks insert', () => {

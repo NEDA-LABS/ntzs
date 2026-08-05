@@ -93,10 +93,11 @@ describe('bankTransferInstructions', () => {
       'NTZ7K2M9Q',
       15000
     )
-    expect(ins.reference).toBe('NTZ-7K2M9Q')
+    // Bare token: bank narration fields routinely reject punctuation.
+    expect(ins.reference).toBe('NTZ7K2M9Q')
     expect(ins.amountTzs).toBe(15000)
     expect(ins.note).toContain('EXACTLY')
-    expect(ins.note).toContain('NTZ-7K2M9Q')
+    expect(ins.note).toContain('NTZ7K2M9Q')
     expect(ins.note).toContain('narration')
     expect(ins.note).toContain('72 hours')
   })

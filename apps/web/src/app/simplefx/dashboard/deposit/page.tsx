@@ -69,6 +69,25 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Inline copy affordance for a single value in the transfer instructions. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      onClick={() => {
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="flex-none text-zinc-500 hover:text-white transition-colors"
+    >
+      {copied ? <CheckCircle2 size={12} className="text-emerald-400" /> : <Copy size={12} />}
+    </button>
+  );
+}
+
 type MintState = 'idle' | 'loading' | 'sent' | 'error';
 
 export default function DepositPage() {
@@ -84,10 +103,12 @@ export default function DepositPage() {
   const mintIdemKeyRef = useRef<string | null>(null);
   const [mintError, setMintError] = useState('');
 
-  // Bank transfer (banking phase 3): no push — we hand back an account, a
-  // reference token and an exact amount; the statement-sync cron matches the
-  // credit and mints. Null until the LP has requested the details.
-  const [fundMethod, setFundMethod] = useState<'mpesa' | 'bank'>('mpesa');
+  // Funding rail is decided by who the account is, not by a toggle: banks wire
+  // TZS (statement-matched, per the bank-LP design), crypto LPs use the M-Pesa
+  // push. Offering both to everyone invites a bank to fund a reserve by phone
+  // prompt, and a retail LP to sit waiting on a settlement statement.
+  const isBank = lp?.accountType === 'bank';
+  const fundMethod: 'mpesa' | 'bank' = isBank ? 'bank' : 'mpesa';
   const [bankIntent, setBankIntent] = useState<{
     reference: string;
     amountTzs: number;
@@ -177,25 +198,10 @@ export default function DepositPage() {
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <div className="flex-1 h-px bg-white/5" />
-                <span className="text-[10px] uppercase tracking-widest text-zinc-600">or fund with TZS</span>
+                <span className="text-[10px] uppercase tracking-widest text-zinc-600">
+                  {isBank ? 'or fund your reserve by bank transfer' : 'or deposit via M-Pesa'}
+                </span>
                 <div className="flex-1 h-px bg-white/5" />
-              </div>
-
-              <div className="mb-3 flex gap-1 rounded-lg border border-white/8 bg-zinc-900/60 p-1">
-                {([
-                  { key: 'mpesa' as const, label: 'M-Pesa' },
-                  { key: 'bank' as const, label: 'Bank transfer' },
-                ]).map(({ key, label }) => (
-                  <button
-                    key={key}
-                    onClick={() => setFundMethod(key)}
-                    className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-                      fundMethod === key ? 'bg-emerald-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
               </div>
 
               {fundMethod === 'bank' ? (
@@ -203,18 +209,27 @@ export default function DepositPage() {
                   <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 space-y-3">
                     <p className="text-sm font-medium text-emerald-300">Transfer these exact details</p>
                     <div className="space-y-2 text-xs">
-                      {[
-                        ['Bank', bankIntent.instructions.institution],
-                        ['Account name', bankIntent.instructions.accountName],
-                        ['Account number', bankIntent.instructions.accountNumber],
-                        ['Reference (narration)', bankIntent.instructions.reference],
-                        ['Exact amount', `${bankIntent.amountTzs.toLocaleString()} TZS`],
-                      ].map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 last:border-0">
-                          <span className="text-zinc-500">{label}</span>
-                          <span className="font-mono text-zinc-200 text-right">{value}</span>
-                        </div>
-                      ))}
+                      {([
+                        { label: 'Bank', value: bankIntent.instructions.institution, copy: false },
+                        { label: 'Account name', value: bankIntent.instructions.accountName, copy: true },
+                        { label: 'Account number', value: bankIntent.instructions.accountNumber, copy: true },
+                        { label: 'Reference (narration)', value: bankIntent.instructions.reference, copy: true },
+                        // Copies the digits only — pasting "250,000 TZS" into a
+                        // bank amount field is never what anyone wants.
+                        { label: 'Exact amount', value: `${bankIntent.amountTzs.toLocaleString()} TZS`, copy: true, copyValue: String(bankIntent.amountTzs) },
+                      ] as const)
+                        .filter((row) => row.value)
+                        .map((row) => (
+                          <div key={row.label} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 last:border-0">
+                            <span className="text-zinc-500">{row.label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-zinc-200 text-right">{row.value}</span>
+                              {row.copy && (
+                                <CopyButton value={'copyValue' in row ? row.copyValue : String(row.value)} label={row.label} />
+                              )}
+                            </div>
+                          </div>
+                        ))}
                     </div>
                     <p className="text-[11px] leading-relaxed text-zinc-500">{bankIntent.instructions.note}</p>
                     <button

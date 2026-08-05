@@ -221,12 +221,17 @@ export function generateBankReference(): string {
   return out
 }
 
-/** Display form with a separator ('NTZ-7K2M9Q') — matching strips it anyway. */
+/**
+ * Display form: the bare alphanumeric token ('NTZ7K2M9Q').
+ *
+ * It used to carry a separator ('NTZ-7K2M9Q') for legibility, but many bank
+ * apps reject punctuation in the transfer narration — and a payer who drops
+ * the dash themselves types something different from what we showed them.
+ * Matching normalises punctuation either way (bankReferenceInText), so the
+ * safest thing to DISPLAY is the exact string a payer can always enter.
+ */
 export function formatBankReference(token: string): string {
-  const t = token.trim().toUpperCase()
-  return t.startsWith(BANK_REFERENCE_PREFIX) && t.length > BANK_REFERENCE_PREFIX.length && !t.includes('-')
-    ? `${BANK_REFERENCE_PREFIX}-${t.slice(BANK_REFERENCE_PREFIX.length)}`
-    : t
+  return token.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
 }
 
 /**
