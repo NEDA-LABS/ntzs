@@ -96,3 +96,45 @@ describe('the guarantees that keep a carried-forward figure honest', () => {
     expect(src).toContain('last verified reading, as at')
   })
 })
+
+describe("a provider's own statement beats our memory of its API", () => {
+  const src = fs.readFileSync(path.join(__dirname, 'attestation.ts'), 'utf8')
+
+  it('is tried BEFORE carrying our last reading forward', () => {
+    // Order is the whole point: the custodian's current figure outranks our
+    // recollection of yesterday's.
+    const statementTried = src.indexOf('const statement = await latestStatementPot')
+    const snapshotTried = src.indexOf('const snapshot = await lastKnownPot')
+    expect(statementTried).toBeGreaterThan(-1)
+    expect(statementTried).toBeLessThan(snapshotTried)
+  })
+
+  it("uses the STATEMENT's date, not the moment it was typed in", () => {
+    // Filing Tuesday's statement on Thursday must not read as Thursday's
+    // balance — that would reset the staleness clock on stale information.
+    expect(src).toContain('asOf: new Date(row.asOf).toISOString()')
+  })
+
+  it('ages out on the same clock, so stale statements cannot accumulate', () => {
+    expect(src).toContain('statement && withinLimit(statement.asOf)')
+  })
+
+  it('still qualifies the attestation — a human transcribed it', () => {
+    expect(src).toContain("p.source === 'stale' || p.source === 'statement'")
+    expect(src).toContain("taken from the provider's own statement")
+  })
+
+  it('survives the pre-migration window instead of failing the whole report', () => {
+    // 0077 is applied by hand; until then there are simply no statements.
+    expect(src).toContain('does not exist|42P01')
+  })
+
+  it('demands a reference, so the document can be produced on review', () => {
+    const page = fs.readFileSync(
+      path.join(__dirname, '../app/backstage/attestation/page.tsx'),
+      'utf8'
+    )
+    expect(page).toContain('A statement reference (file name or statement id) is required')
+    expect(page).toContain('Statement date cannot be in the future')
+  })
+})

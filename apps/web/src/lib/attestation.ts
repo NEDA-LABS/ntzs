@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 import { and, desc, eq, inArray, isNull, isNotNull, notInArray, or, sql as dsql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
-import { attestations, burnRequests, depositRequests, orphanPayments } from '@ntzs/db'
+import { attestations, burnRequests, depositRequests, orphanPayments, reserveStatements } from '@ntzs/db'
 import * as snippe from '@/lib/psp/snippe'
 import * as azampay from '@/lib/psp/azampay'
 import * as selcom from '@/lib/psp/selcom'
@@ -24,14 +24,17 @@ import { computeAnnex, errorChainIncludes, type AttestationAnnex, type ReservePo
  *      unminted fees, orphans, paid-but-unminted) — see attestation-math.ts;
  *   3. NEVER attests a fabricated reading. If the chain or a pot cannot be
  *      read, there are two outcomes and no third:
- *        - a pot with a recent VERIFIED reading is carried forward, marked
- *          `stale`, and the attestation goes out QUALIFIED — naming the source
- *          and the date it was last verified. A provider outage is not a
- *          reserve deficiency, and dropping the pot would report a peg breach
- *          that did not happen;
- *        - anything else (chain unreadable, no snapshot, snapshot older than
- *          ATTESTATION_MAX_STALE_DAYS) sends an INCOMPLETE alert and persists
- *          no row (re-run via POST /api/admin/attestation once resolved).
+ *        - the best available substitute is used and the attestation goes out
+ *          QUALIFIED, naming the source and the date the figure was true. In
+ *          order of preference: the provider's OWN statement, entered by an
+ *          operator (`statement` — current, custodian-issued); else our last
+ *          verified reading, carried forward (`stale`). A provider outage is
+ *          not a reserve deficiency, and dropping the pot would report a peg
+ *          breach that did not happen;
+ *        - anything else (chain unreadable, nothing to substitute, or the
+ *          substitute is older than ATTESTATION_MAX_STALE_DAYS) sends an
+ *          INCOMPLETE alert and persists no row (re-run via
+ *          POST /api/admin/attestation once resolved).
  *
  * The hard rule stands: nTZS outstanding must never exceed the TZS reserve.
  */
@@ -82,9 +85,10 @@ export interface AttestationReport {
   reportHash: string
   generatedAt: string
   annex: AttestationAnnex
-  /** Pots carried forward from a previous verified reading rather than read
-   *  today. Non-empty = the attestation is QUALIFIED. */
-  staleSources: Array<{ key: string; label: string; asOf: string }>
+  /** Pots not read live today. Non-empty = the attestation is QUALIFIED.
+   *  'statement' — the provider issued the figure, an operator entered it.
+   *  'carried_forward' — our own last verified reading, reused. */
+  staleSources: Array<{ key: string; label: string; asOf: string; kind: 'statement' | 'carried_forward' }>
 }
 
 export interface IncompleteAttestation {
@@ -132,6 +136,14 @@ interface PotRead {
   failure?: string
 }
 
+/** Labels for pots reconstructed from a statement or a snapshot, where the
+ *  live reader never ran to supply one. */
+const POT_LABELS: Record<string, string> = {
+  snippe: 'Snippe settled balance',
+  azampay: 'AzamPay balance',
+  selcom: 'Selcom custodial balance',
+}
+
 /**
  * How long a carried-forward balance may still stand in for a live reading.
  *
@@ -174,6 +186,56 @@ async function lastKnownPot(key: string): Promise<ReservePot | null> {
 }
 
 /**
+ * The provider's own latest statement of a pot, entered by an operator.
+ *
+ * When an API goes away but the provider keeps telling us what we hold — a
+ * daily CSV, a portal export — that figure beats carrying yesterday's reading
+ * forward on every axis that matters: it is current, and it comes from the
+ * custodian rather than from our memory of them. A bank statement is the
+ * oldest form of reserve evidence there is.
+ *
+ * It is still not an API read, because a human typed it, so it qualifies the
+ * attestation and ages out on the same clock. Ordered by the STATEMENT's date,
+ * then by entry time so a correction filed later for the same date wins.
+ */
+async function latestStatementPot(key: string, label: string): Promise<ReservePot | null> {
+  try {
+    const { db } = getDb()
+    const [row] = await db
+      .select({
+        amountTzs: reserveStatements.amountTzs,
+        asOf: reserveStatements.asOf,
+        reference: reserveStatements.reference,
+      })
+      .from(reserveStatements)
+      .where(eq(reserveStatements.potKey, key))
+      .orderBy(desc(reserveStatements.asOf), desc(reserveStatements.createdAt))
+      .limit(1)
+    if (!row) return null
+
+    const amount = Number(row.amountTzs)
+    if (!Number.isFinite(amount)) return null
+
+    return {
+      key,
+      label,
+      source: 'statement',
+      amountTzs: amount,
+      // The statement's own date. Entering Tuesday's statement on Thursday must
+      // not make it look like Thursday's balance.
+      asOf: new Date(row.asOf).toISOString(),
+      note: `Provider statement${row.reference ? ` ${row.reference}` : ''}, entered by an operator — API unavailable`,
+    }
+  } catch (e) {
+    // The table arrives with 0077; until then there simply are no statements.
+    if (!errorChainIncludes(e, /does not exist|42P01/i)) {
+      console.error('[attestation] statement lookup failed:', e instanceof Error ? e.message : e)
+    }
+  }
+  return null
+}
+
+/**
  * Carry the last verified balance forward when a live read fails.
  *
  * A provider outage is not a reserve deficiency, but the arithmetic cannot
@@ -184,7 +246,17 @@ async function lastKnownPot(key: string): Promise<ReservePot | null> {
  * and could not verify today. Both halves are required — either alone is a
  * lie in one direction or the other.
  */
-async function fallbackToSnapshot(key: string, failure: string): Promise<PotRead> {
+async function fallbackToSnapshot(key: string, label: string, failure: string): Promise<PotRead> {
+  const limitDays = maxStaleDays()
+  const withinLimit = (iso: string) => {
+    const ageDays = (Date.now() - Date.parse(iso)) / 86_400_000
+    return Number.isFinite(ageDays) && ageDays <= limitDays
+  }
+
+  // A statement the provider issued beats our memory of their API.
+  const statement = await latestStatementPot(key, label)
+  if (statement && withinLimit(statement.asOf)) return { pot: statement }
+
   const snapshot = await lastKnownPot(key)
   if (!snapshot) return { failure: `${failure} — no previous verified reading to carry forward` }
 
@@ -327,7 +399,7 @@ export async function readReservePots(): Promise<{ pots: ReservePot[]; failures:
   const withFallback = async (key: string, read: () => Promise<PotRead>): Promise<PotRead> => {
     const first = await read()
     if (!first.failure) return first
-    return fallbackToSnapshot(key, first.failure)
+    return fallbackToSnapshot(key, POT_LABELS[key] ?? key, first.failure)
   }
 
   const [snippePot, azamPot, selcomPot] = await Promise.all([
@@ -480,12 +552,13 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
 
   // A carried-forward pot qualifies the attestation. Say so in the annex, in
   // the words a reader needs: which source, as at when, and why.
-  const stalePots = pots.filter((p) => p.source === 'stale')
+  const unverifiedPots = pots.filter((p) => p.source === 'stale' || p.source === 'statement')
   const annexNotes = [
     ...(notes ?? []),
-    ...stalePots.map(
-      (p) =>
-        `QUALIFIED: ${p.label} is the last verified reading, as at ${p.asOf} — the provider could not be read for this report. The balance is held at the provider; it is not verified as at today.`
+    ...unverifiedPots.map((p) =>
+      p.source === 'statement'
+        ? `QUALIFIED: ${p.label} is taken from the provider's own statement as at ${p.asOf}, entered by an operator — the provider's API could not be read for this report.`
+        : `QUALIFIED: ${p.label} is our last verified reading, as at ${p.asOf} — the provider could not be read for this report. The balance is held at the provider; it is not verified as at today.`
     ),
   ]
 
@@ -512,7 +585,12 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     reserveSource: pots.map((p) => `${p.label} [${p.source}]`).join(' + '),
     /** Sources carried forward rather than read today — the attestation is
      *  qualified whenever this is non-empty. */
-    staleSources: stalePots.map((p) => ({ key: p.key, label: p.label, asOf: p.asOf })),
+    staleSources: unverifiedPots.map((p) => ({
+      key: p.key,
+      label: p.label,
+      asOf: p.asOf,
+      kind: p.source === 'statement' ? ('statement' as const) : ('carried_forward' as const),
+    })),
   }
   const reportHash = crypto.createHash('sha256').update(JSON.stringify({ ...core, annex })).digest('hex')
   return { ...core, reportHash, generatedAt: new Date().toISOString(), annex }
@@ -595,7 +673,11 @@ function reportEmailHtml(r: AttestationReport, deltaLine: string, includeAnnex: 
   const qualifiedBanner = r.staleSources.length
     ? `<p style="padding:10px 12px;border-radius:6px;background:#d977061a;color:#92400e;font-size:12px;margin:0 0 12px;line-height:1.5">
         <b>⚠️ QUALIFIED READING.</b> ${r.staleSources
-          .map((sSrc) => `<b>${sSrc.label}</b> could not be read for this report; the figure below is its last verified reading, as at <b>${sSrc.asOf}</b>.`)
+          .map((sSrc) =>
+          sSrc.kind === 'statement'
+            ? `<b>${sSrc.label}</b> could not be read over the provider's API; the figure below is taken from the provider's own statement as at <b>${sSrc.asOf}</b>, entered by an operator.`
+            : `<b>${sSrc.label}</b> could not be read for this report; the figure below is our last verified reading, as at <b>${sSrc.asOf}</b>.`
+        )
           .join(' ')}
         The balance is held at the provider and no reserve deficiency is implied, but it is <b>not verified as at today</b>.
        </p>`
