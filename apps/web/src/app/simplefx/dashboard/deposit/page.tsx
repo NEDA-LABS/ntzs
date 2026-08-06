@@ -254,16 +254,21 @@ export default function DepositPage() {
                         className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
                       />
                     </div>
-                    <div className="relative mb-3">
-                      <Landmark size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="Your bank account number (you send from)"
-                        value={payerAccount}
-                        onChange={(e) => setPayerAccount(e.target.value)}
-                        className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
-                      />
+                    {/* The icon centres on the INPUT, so the hint below must sit
+                        outside the relative box — otherwise top-1/2 resolves
+                        against input+hint and the icon drifts to the bottom. */}
+                    <div className="mb-3">
+                      <div className="relative">
+                        <Landmark size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Account number you send from"
+                          value={payerAccount}
+                          onChange={(e) => setPayerAccount(e.target.value)}
+                          className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                        />
+                      </div>
                       <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600">
                         Banks often strip the reference in transit, so we identify your transfer by the account it
                         comes from. Send from this exact account.
