@@ -337,11 +337,16 @@ export async function initiateCollection(
   // Nothing was called yet, so "no rail configured" IS a definitive failure —
   // and the message a customer sees is theirs, not a log line. See
   // noCollectionRailMessage: it names their network, says the cause is ours and
-  // temporary, and reassures them nothing was charged.
+  // temporary, offers only alternatives that are actually switched on, and
+  // reassures them nothing was charged.
+  const { getW2bConfig, getBankCollectionConfig } = await import('@/lib/psp/selcom-w2b')
   let last: PaymentResponseT = {
     success: false,
     definitiveFailure: true,
-    error: noCollectionRailMessage(network),
+    error: noCollectionRailMessage(network, {
+      lipaNamba: getW2bConfig() !== null,
+      bankTransfer: getBankCollectionConfig() !== null,
+    }),
     errorCode: 'network_rail_unavailable',
   }
   // ONE uncertain attempt makes the WHOLE routed result uncertain: if rail A

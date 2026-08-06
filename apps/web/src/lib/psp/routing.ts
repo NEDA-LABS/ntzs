@@ -155,19 +155,42 @@ const NETWORK_WALLET_NAMES: Record<Network, string> = {
 }
 
 /**
- * What to tell a customer when no rail can collect from their network.
+ * What to tell a customer when no rail can push a payment prompt to their
+ * network.
  *
  * This is not an error string for a log — it is what somebody sees when they
  * are trying to put money in and cannot. So it says which network, that the
  * cause is ours and temporary, what they can do instead, and — the part people
  * actually worry about — that money already in their wallet is untouched.
  *
+ * The alternatives are passed in by the caller from what is ACTUALLY enabled,
+ * because a suggestion that leads to a disabled feature is worse than none:
+ * this message once pointed at bank transfer while that flag was off. The
+ * Lipa Namba option matters most — it is customer-initiated (they pay our
+ * till from their own M-Pesa menu), so it works even when no push rail covers
+ * their network at all.
+ *
  * Deliberately does not name the provider or the reason: a customer cannot act
  * on either, and a provider's commercial troubles are not their business.
  */
-export function noCollectionRailMessage(network: Network): string {
+export function noCollectionRailMessage(
+  network: Network,
+  available: { lipaNamba?: boolean; bankTransfer?: boolean } = {}
+): string {
   const wallet = NETWORK_WALLET_NAMES[network] ?? NETWORK_WALLET_NAMES.unknown
-  return `${wallet} deposits are temporarily unavailable while we restore service with our payment provider. Please try another mobile network, or deposit by bank transfer. Your nTZS balance is unaffected and nothing has been charged.`
+  const alternatives: string[] = []
+  if (available.lipaNamba) {
+    alternatives.push("use the 'Lipa Namba' deposit option (you pay from your own phone — it works on every network)")
+  }
+  if (available.bankTransfer) {
+    alternatives.push('deposit by bank transfer')
+  }
+  alternatives.push('try another mobile network')
+  const advice =
+    alternatives.length === 1
+      ? `Please ${alternatives[0]}.`
+      : `Please ${alternatives.slice(0, -1).join(', ')}, or ${alternatives[alternatives.length - 1]}.`
+  return `${wallet} deposits are temporarily unavailable while we restore service with our payment provider. ${advice} Your nTZS balance is unaffected and nothing has been charged.`
 }
 
 /** Build RailEnv from process.env (the only impure step, kept trivial). */

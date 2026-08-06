@@ -189,13 +189,37 @@ describe('what the customer is told', () => {
     expect(msg.toLowerCase()).not.toContain('suspend')
   })
 
-  it('says it is temporary, offers a way through, and calms the real fear', () => {
+  it('says it is temporary and calms the real fear', () => {
     const msg = noCollectionRailMessage('vodacom')
     expect(msg).toContain('temporarily')
-    expect(msg).toContain('bank transfer')
     // The thing people actually panic about.
     expect(msg).toContain('balance is unaffected')
     expect(msg).toContain('nothing has been charged')
+  })
+
+  it('only ever suggests alternatives that are actually switched on', () => {
+    // A pointer at a disabled feature is worse than none — this message once
+    // said "deposit by bank transfer" while that flag was off.
+    const none = noCollectionRailMessage('vodacom')
+    expect(none).not.toContain('bank transfer')
+    expect(none).not.toContain('Lipa Namba')
+    expect(none).toContain('another mobile network')
+
+    const lipa = noCollectionRailMessage('vodacom', { lipaNamba: true })
+    expect(lipa).toContain('Lipa Namba')
+    expect(lipa).not.toContain('bank transfer')
+
+    const both = noCollectionRailMessage('vodacom', { lipaNamba: true, bankTransfer: true })
+    expect(both).toContain('Lipa Namba')
+    expect(both).toContain('bank transfer')
+  })
+
+  it('tells a stranded M-Pesa user the one path that works without a push rail', () => {
+    // Lipa Namba is customer-initiated — they pay our till from their own
+    // menu — so it survives the loss of every push rail. The message must say
+    // that plainly enough for someone mid-deposit to act on it.
+    const msg = noCollectionRailMessage('vodacom', { lipaNamba: true })
+    expect(msg).toContain('pay from your own phone')
   })
 
   it('has a name for every network', () => {
