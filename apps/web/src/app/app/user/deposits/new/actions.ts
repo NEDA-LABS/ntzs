@@ -16,7 +16,7 @@ import {
   isValidTanzanianPhone,
   lookupAccountName,
 } from '@/lib/psp'
-import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference } from '@/lib/psp/selcom-statement'
+import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference, normalizeAccountNumber } from '@/lib/psp/selcom-statement'
 import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
 import { allocateBankReference } from '@/lib/deposits/bank-collection'
 import { writeAuditLog } from '@/lib/audit'
@@ -285,8 +285,14 @@ export async function createBankDepositIntentAction(formData: FormData): Promise
 
   const bankId = String(formData.get('bankId') ?? '').trim()
   const amountTzsRaw = String(formData.get('amountTzs') ?? '').trim()
+  // Banks routinely strip the reference in transit, so the account the payer
+  // sends FROM is the identity that actually survives to our statement.
+  const payerAccountNumber = normalizeAccountNumber(String(formData.get('payerAccountNumber') ?? ''))
 
   if (!bankId) throw new Error('Missing bank')
+  if (!payerAccountNumber) {
+    throw new Error('Your bank account number is required — it is how we identify your transfer when it arrives')
+  }
 
   const amountTzs = Number(amountTzsRaw)
   if (!Number.isFinite(amountTzs) || amountTzs <= 0) throw new Error('Invalid amount')
@@ -317,6 +323,7 @@ export async function createBankDepositIntentAction(formData: FormData): Promise
       status: 'submitted',
       paymentProvider: 'selcom',
       pspChannel: BANK_CHANNEL,
+      payerAccountNumber,
       pspReference: reference,
     })
     .returning({ id: depositRequests.id })

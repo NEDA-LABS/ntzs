@@ -28,6 +28,9 @@ interface DepositFormProps {
 export function DepositForm({ defaultBankId, userPhone, w2b, bankCollection }: DepositFormProps) {
   const [amount, setAmount] = useState('')
   const [phone, setPhone] = useState(userPhone || '')
+  // Bank transfers arrive without the payer's narration, so the account they
+  // send FROM is what identifies the credit on our statement.
+  const [payerAccount, setPayerAccount] = useState('')
   const [rememberPhone, setRememberPhone] = useState(true)
   const [isSavedNumber, setIsSavedNumber] = useState(false)
   const [method, setMethod] = useState<PaymentMethod>('mobile')
@@ -146,6 +149,7 @@ export function DepositForm({ defaultBankId, userPhone, w2b, bankCollection }: D
         const fd = new FormData()
         fd.set('bankId', defaultBankId ?? '')
         fd.set('amountTzs', amount)
+        fd.set('payerAccountNumber', payerAccount)
         setSubmittedAmount(amount)
         const result = await createBankDepositIntentAction(fd)
         setBankIntent({
@@ -377,6 +381,28 @@ export function DepositForm({ defaultBankId, userPhone, w2b, bankCollection }: D
           ))}
         </div>
       </div>
+
+      {/* Payer account — bank transfer's matching key: TIPS credits reach our
+          statement without the narration, so the sending account identifies them. */}
+      {method === 'bank' && (
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+            Bank account you will pay from
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="Your account number"
+            value={payerAccount}
+            onChange={(e) => setPayerAccount(e.target.value)}
+            className="w-full rounded-2xl border border-border/40 bg-background/35 px-4 py-3.5 text-base text-foreground placeholder:text-muted-foreground focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring backdrop-blur-xl"
+          />
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Banks often drop the reference in transit, so we match your transfer by the account it comes from.
+            Send from this exact account.
+          </p>
+        </div>
+      )}
 
       {/* Phone — mobile money + Lipa Namba (matching key for w2b) */}
       {(method === 'mobile' || method === 'lipa') && (

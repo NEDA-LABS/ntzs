@@ -13,6 +13,8 @@ import {
   formatBankReference,
   bankReferenceInText,
   suggestBankMatch,
+  extractAccountCandidates,
+  normalizeAccountNumber,
 } from './selcom-statement'
 
 describe('parseStatementRow', () => {
@@ -222,5 +224,75 @@ describe('statement-settled channel registry', () => {
     expect(STATEMENT_SETTLED_CHANNELS).toContain(W2B_CHANNEL)
     expect(STATEMENT_SETTLED_CHANNELS).toContain(BANK_CHANNEL)
     expect(BANK_CHANNEL).toBe('SELCOM-BANK')
+  })
+})
+
+describe('payer-account identity (TIPS credits arrive without the narration)', () => {
+  // The exact narrative Selcom returned for a real 1,300 TZS transfer that was
+  // sent WITH reference NTZGPXNZ6 — the token is absent, the payer's own
+  // account survives.
+  const REAL = 'SB0806MN8GZ - VICTOR AMOS MUHAGACHI - CRDBBANK (0152768903600) - SP TIPS Bank2SP New'
+
+  it('extracts the payer account from a live narrative', () => {
+    expect(extractAccountCandidates(REAL)).toEqual(['0152768903600'])
+  })
+
+  it('ignores parenthesised runs that are too short, and handles empties', () => {
+    expect(extractAccountCandidates('FEE (12) CHARGE')).toEqual([])
+    expect(extractAccountCandidates(null)).toEqual([])
+  })
+
+  it('normalises separators so a formatted account compares equal', () => {
+    expect(normalizeAccountNumber('0152 768 903 600')).toBe('0152768903600')
+    expect(normalizeAccountNumber('0152-768-903-600')).toBe('0152768903600')
+    expect(normalizeAccountNumber('123')).toBeNull()
+    expect(normalizeAccountNumber(null)).toBeNull()
+  })
+
+  it('matches on payer account when the reference never arrived', () => {
+    const intents = [{ id: 'a', amountTzs: 1300, reference: 'NTZGPXNZ6', payerAccountNumber: '0152768903600' }]
+    const { exact, via } = suggestBankMatch({ amountTzs: 1300, fields: [REAL, null, '35492359'] }, intents)
+    expect(exact?.id).toBe('a')
+    expect(via).toBe('payer_account')
+  })
+
+  it('still refuses when the account matches but the amount does not', () => {
+    const intents = [{ id: 'a', amountTzs: 5000, reference: 'NTZGPXNZ6', payerAccountNumber: '0152768903600' }]
+    const { exact, candidates } = suggestBankMatch({ amountTzs: 1300, fields: [REAL] }, intents)
+    expect(exact).toBeNull()
+    expect(candidates).toHaveLength(1)
+  })
+
+  it('refuses when one payer has two open intents the credit could belong to', () => {
+    const intents = [
+      { id: 'a', amountTzs: 1300, reference: 'NTZAAAAAA', payerAccountNumber: '0152768903600' },
+      { id: 'b', amountTzs: 1300, reference: 'NTZBBBBBB', payerAccountNumber: '0152768903600' },
+    ]
+    const { exact, candidates } = suggestBankMatch({ amountTzs: 1300, fields: [REAL] }, intents)
+    expect(exact).toBeNull()
+    expect(candidates).toHaveLength(2)
+  })
+
+  it('prefers the reference when it did survive, even if another payer account also matches', () => {
+    const intents = [
+      { id: 'tok', amountTzs: 1300, reference: 'NTZGPXNZ6', payerAccountNumber: null },
+      { id: 'acct', amountTzs: 1300, reference: 'NTZOTHER1', payerAccountNumber: '0152768903600' },
+    ]
+    const { exact, via } = suggestBankMatch(
+      { amountTzs: 1300, fields: [`${REAL} NTZGPXNZ6`] },
+      intents
+    )
+    expect(exact?.id).toBe('tok')
+    expect(via).toBe('reference')
+  })
+
+  it('does not match an intent with no recorded account against a mobile narrative', () => {
+    const intents = [{ id: 'a', amountTzs: 1300, reference: 'NTZGPXNZ6', payerAccountNumber: null }]
+    const { exact, candidates } = suggestBankMatch(
+      { amountTzs: 1300, fields: ['LIPA JOHN DOE (255712345678) - SP MOBILE'] },
+      intents
+    )
+    expect(exact).toBeNull()
+    expect(candidates).toHaveLength(0)
   })
 })

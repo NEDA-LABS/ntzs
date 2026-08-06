@@ -252,32 +252,95 @@ export interface BankIntentLike {
   amountTzs: number
   /** The canonical reference token stored on the open intent (pspReference). */
   reference: string
+  /**
+   * Account the payer said they would send from, digits only. TIPS credits
+   * arrive without the payer's narration, so this — not the token — is the
+   * identity that actually survives the transfer.
+   */
+  payerAccountNumber?: string | null
 }
 
-export interface BankMatchSuggestion<T> {
-  /** The sole token-matched intent whose amount ALSO equals the credit —
-   * safe to auto-match. null when nothing matches, several intents' tokens
-   * appear (token collision), or the token matches but the amount differs
-   * (payer sent the wrong amount → a human decides in the orphan queue). */
-  exact: T | null
-  /** Every intent whose token appears somewhere in the credit's fields. */
-  candidates: T[]
+/** Digits only, so '0152 768 903 600' and '0152768903600' compare equal. */
+export function normalizeAccountNumber(account: string | null | undefined): string | null {
+  if (!account) return null
+  const digits = account.replace(/\D/g, '')
+  return digits.length >= 5 ? digits : null
 }
 
 /**
- * Match one statement credit to open bank-transfer intents by reference
- * token. `fields` is the credit's free-text surface (narrative/notes, payer
- * name, statement reference) — banks are inconsistent about WHERE the
- * sender's narration ends up, so every field is searched. Window filtering is
- * the caller's job, mirroring suggestOrphanMatch.
+ * Pull the payer's account number out of a statement narrative.
+ *
+ * Selcom renders an incoming TIPS credit as
+ *   'SB0806MN8GZ - VICTOR AMOS MUHAGACHI - CRDBBANK (0152768903600) - SP TIPS Bank2SP New'
+ * — the payer's own account in parentheses after their bank. Returns every
+ * parenthesised digit-run so a caller can compare against what it expects;
+ * mobile-money narratives put a phone here instead, which simply never equals
+ * a recorded bank account.
+ */
+export function extractAccountCandidates(text: string | null | undefined): string[] {
+  if (!text) return []
+  const out: string[] = []
+  for (const m of text.matchAll(/\(([\d\s-]{5,34})\)/g)) {
+    const digits = m[1].replace(/\D/g, '')
+    if (digits.length >= 5) out.push(digits)
+  }
+  return out
+}
+
+export interface BankMatchSuggestion<T> {
+  /** The sole identified intent whose amount ALSO equals the credit — safe to
+   * auto-match. null when nothing identifies, several intents identify
+   * (collision), or one identifies but the amount differs (payer sent the
+   * wrong amount → a human decides in the orphan queue). */
+  exact: T | null
+  /** Every intent identified by this credit, by token or by payer account. */
+  candidates: T[]
+  /** How the sole candidate was identified — for the audit note. */
+  via: 'reference' | 'payer_account' | null
+}
+
+/**
+ * Match one statement credit to open bank-transfer intents.
+ *
+ * Two independent identities, because the obvious one is not reliable:
+ *
+ *  - **reference token** in the credit's free text. Preferred when present,
+ *    but TIPS credits routinely arrive WITHOUT the payer's narration — a
+ *    transfer sent with reference NTZGPXNZ6 reached us as 'SB0806MN8GZ -
+ *    VICTOR AMOS MUHAGACHI - CRDBBANK (0152768903600) - SP TIPS Bank2SP New'
+ *    (6 Aug 2026). Relying on it alone means every bank deposit needs a human.
+ *
+ *  - **payer account**, which does survive: the account the payer told us
+ *    they would send from, compared against the account Selcom exposes in the
+ *    narrative.
+ *
+ * Either identity qualifies an intent as a candidate; the auto-match rule is
+ * unchanged and deliberately strict — exactly ONE candidate AND an exact
+ * amount. Anything else is left for the orphan queue.
+ *
+ * `fields` is the credit's free-text surface (narrative/notes, payer name,
+ * statement reference); banks are inconsistent about where the narration
+ * lands, so every field is searched. Window filtering is the caller's job.
  */
 export function suggestBankMatch<T extends BankIntentLike>(
   credit: { amountTzs: number; fields: Array<string | null | undefined> },
   intents: T[]
 ): BankMatchSuggestion<T> {
-  const candidates = intents.filter((intent) =>
+  const accountsInCredit = new Set(credit.fields.flatMap((f) => extractAccountCandidates(f)))
+
+  const byReference = intents.filter((intent) =>
     credit.fields.some((field) => bankReferenceInText(intent.reference, field))
   )
+  const byAccount = intents.filter((intent) => {
+    const expected = normalizeAccountNumber(intent.payerAccountNumber)
+    return expected !== null && accountsInCredit.has(expected)
+  })
+
+  // Reference wins when present: it is intent-specific, whereas one payer's
+  // account can legitimately back several open intents.
+  const candidates = byReference.length > 0 ? byReference : byAccount
+  const via = byReference.length > 0 ? 'reference' : byAccount.length > 0 ? 'payer_account' : null
+
   const exact = candidates.length === 1 && candidates[0].amountTzs === credit.amountTzs ? candidates[0] : null
-  return { exact, candidates }
+  return { exact, candidates, via: exact ? via : null }
 }

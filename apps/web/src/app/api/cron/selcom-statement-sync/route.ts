@@ -49,10 +49,13 @@ export const maxDuration = 300
  *     the backstage orphan queue, where a human decides.
  *
  *  3. BANK MATCH — attach a still-unmatched orphan to an open SELCOM-BANK
- *     intent when exactly one open intent's reference token appears in the
- *     credit's free text AND the amount is exact, inside the same window.
- *     Bank/TIPS credits carry no payer phone; the token is the identity.
- *     Token-found-but-wrong-amount stays 'unmatched' — a human decides.
+ *     intent when exactly ONE open intent is identified AND the amount is
+ *     exact, inside the same window. Two identities are tried: the reference
+ *     token in the credit's free text, and — because TIPS credits routinely
+ *     arrive WITHOUT the payer's narration (6 Aug 2026) — the payer's own
+ *     account number, which does survive. Identified-but-not-conclusive
+ *     (wrong amount, or one payer with several open intents) stays
+ *     'unmatched' — a human decides.
  *
  * Advancement mirrors attachOrphanAction: claim the orphan (conditional
  * update), advance the deposit (conditional update), release the claim if the
@@ -313,6 +316,7 @@ export async function GET(request: NextRequest) {
             id: depositRequests.id,
             amountTzs: depositRequests.amountTzs,
             pspReference: depositRequests.pspReference,
+            payerAccountNumber: depositRequests.payerAccountNumber,
             createdAt: depositRequests.createdAt,
           })
           .from(depositRequests)
@@ -324,7 +328,15 @@ export async function GET(request: NextRequest) {
             )
           )
       ).flatMap((i) =>
-        i.pspReference ? [{ id: i.id, amountTzs: i.amountTzs, reference: i.pspReference, createdAt: i.createdAt }] : []
+        i.pspReference
+          ? [{
+              id: i.id,
+              amountTzs: i.amountTzs,
+              reference: i.pspReference,
+              payerAccountNumber: i.payerAccountNumber,
+              createdAt: i.createdAt,
+            }]
+          : []
       )
 
       for (const orphan of bankCandidateOrphans) {
@@ -337,16 +349,19 @@ export async function GET(request: NextRequest) {
           return isWithinMatchWindow(createdAt, paymentAt)
         })
 
-        // Banks are inconsistent about WHERE the sender's narration surfaces,
-        // so the token is searched across every free-text field we ingested.
-        const { exact, candidates } = suggestBankMatch(
+        // Two identities: the reference token when the payer's narration
+        // survived, and otherwise the payer's own account number — which TIPS
+        // credits DO carry. Both are searched across every free-text field,
+        // since banks differ on where the narrative lands.
+        const { exact, candidates, via } = suggestBankMatch(
           { amountTzs: orphan.amountTzs, fields: [orphan.notes, orphan.payerName, orphan.pspReference] },
           eligible
         )
         if (!exact) {
           if (candidates.length > 0) {
-            // Token seen but amount wrong (or a token collision): a human
-            // decides from the orphan queue — never auto-credit a guess.
+            // Identified but not conclusively — wrong amount, or one payer
+            // with several open intents: a human decides from the orphan
+            // queue. Never auto-credit a guess.
             bankDeferredToManual++
             console.warn(
               `[cron/selcom-statement-sync] orphan ${orphan.id} carries bank reference of intent(s) ${candidates
@@ -364,7 +379,7 @@ export async function GET(request: NextRequest) {
             status: 'matched',
             matchedDepositRequestId: exact.id,
             reviewedAt: new Date(),
-            notes: `${orphan.notes ? orphan.notes + ' | ' : ''}auto-matched by selcom-statement-sync (bank reference ${formatBankReference(exact.reference)})`,
+            notes: `${orphan.notes ? orphan.notes + ' | ' : ''}auto-matched by selcom-statement-sync (bank ${via === 'payer_account' ? `payer account, intent ${formatBankReference(exact.reference)}` : `reference ${formatBankReference(exact.reference)}`})`,
             updatedAt: new Date(),
           })
           .where(and(eq(orphanPayments.id, orphan.id), eq(orphanPayments.status, 'unmatched')))

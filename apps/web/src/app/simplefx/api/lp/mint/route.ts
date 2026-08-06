@@ -6,7 +6,7 @@ import { getSessionFromCookies } from '@/lib/fx/auth'
 import { db } from '@/lib/fx/db'
 import { lpAccounts, users, wallets, depositRequests } from '@ntzs/db'
 import { initiatePayment, isValidTanzanianPhone } from '@/lib/psp'
-import { BANK_CHANNEL, formatBankReference } from '@/lib/psp/selcom-statement'
+import { BANK_CHANNEL, formatBankReference, normalizeAccountNumber } from '@/lib/psp/selcom-statement'
 import { getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
 import { allocateBankReference, bankTransferInstructions } from '@/lib/deposits/bank-collection'
 import { getDb } from '@/lib/db'
@@ -27,12 +27,13 @@ export async function POST(req: NextRequest) {
   const session = await getSessionFromCookies()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let amountTzs: number, phoneNumber: string, method: string
+  let amountTzs: number, phoneNumber: string, method: string, payerAccountNumber: string
   try {
     const body = await req.json()
     amountTzs = body.amountTzs
     phoneNumber = body.phoneNumber
     method = body.method ?? 'mobile_money'
+    payerAccountNumber = String(body.payerAccountNumber ?? '').trim()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
@@ -49,10 +50,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Maximum deposit is ${MAX_DEPOSIT_TZS.toLocaleString()} TZS` }, { status: 400 })
   }
 
-  // Bank transfer carries no phone — the reference token is the identity.
+  // Bank transfer carries no phone. The reference token is often stripped in
+  // transit too, so the account the payer sends FROM is what actually
+  // identifies the credit — required, not optional.
   if (method === 'bank_transfer') {
+    const account = normalizeAccountNumber(payerAccountNumber)
+    if (!account) {
+      return NextResponse.json(
+        { error: 'payerAccountNumber is required for a bank transfer — it is how your payment is identified when it arrives' },
+        { status: 400 },
+      )
+    }
     return withIdempotency(`lp_mint:${session.lpId}`, getIdempotencyKey(req), () =>
-      runBankIntent({ lpId: session.lpId, amountTzs }),
+      runBankIntent({ lpId: session.lpId, amountTzs, payerAccountNumber: account }),
     )
   }
 
@@ -79,7 +89,15 @@ export async function POST(req: NextRequest) {
  * that token + exact amount, then advances it to mint. Bank credits carry no
  * payer phone, which is why the token — not a phone — is the identity.
  */
-async function runBankIntent({ lpId, amountTzs }: { lpId: string; amountTzs: number }): Promise<NextResponse> {
+async function runBankIntent({
+  lpId,
+  amountTzs,
+  payerAccountNumber,
+}: {
+  lpId: string
+  amountTzs: number
+  payerAccountNumber: string
+}): Promise<NextResponse> {
   const cfg = getBankCollectionConfig()
   if (!cfg) {
     return NextResponse.json({ error: 'Bank transfer deposits are not enabled on this environment yet.' }, { status: 503 })
@@ -104,6 +122,7 @@ async function runBankIntent({ lpId, amountTzs }: { lpId: string; amountTzs: num
       paymentProvider: 'selcom',
       pspChannel: BANK_CHANNEL,
       pspReference: reference,
+      payerAccountNumber,
       source: 'self',
     })
     .returning({ id: depositRequests.id })

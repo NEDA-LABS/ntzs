@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db'
 import { authenticatePartner } from '@/lib/waas/auth'
 import { writeAuditLog } from '@/lib/audit'
 import { initiateCollection, initiateCardPayment, isValidTanzanianPhone, normalizePhone } from '@/lib/psp'
-import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference } from '@/lib/psp/selcom-statement'
+import { W2B_CHANNEL, BANK_CHANNEL, formatBankReference, normalizeAccountNumber } from '@/lib/psp/selcom-statement'
 import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
 import { allocateBankReference, bankTransferInstructions } from '@/lib/deposits/bank-collection'
 import { enforceSandboxLimits, limitErrorResponse } from '@/lib/sandbox/limits'
@@ -19,9 +19,16 @@ interface DepositBody {
   userId: string
   amountTzs: number
   paymentMethod?: PaymentMethod
-  // mobile_money + lipa_namba (bank_transfer needs NO phone — the payment is
-  // matched by the generated reference, not the payer's line)
+  // mobile_money + lipa_namba (bank_transfer needs NO phone — a bank credit
+  // carries no payer line)
   phoneNumber?: string
+  /**
+   * bank_transfer only, REQUIRED: the account the payer will send from.
+   * TIPS credits reach our statement without the payer's narration, so the
+   * generated reference cannot identify them on its own — the sending account
+   * can, and is what matching keys on.
+   */
+  payerAccountNumber?: string
   // card
   redirectUrl?: string
   cancelUrl?: string
@@ -81,6 +88,9 @@ export async function POST(request: NextRequest) {
   }
 
   const { userId, amountTzs, paymentMethod = 'mobile_money', phoneNumber, redirectUrl, cancelUrl, collectToTreasury = false } = body
+  // Bank transfers reach our statement WITHOUT the payer's narration, so the
+  // account they send FROM is the identity that survives — required, not a hint.
+  const payerAccountNumber = normalizeAccountNumber(body.payerAccountNumber)
 
   if (!userId || !amountTzs) {
     return NextResponse.json(
@@ -137,6 +147,13 @@ export async function POST(request: NextRequest) {
   if (paymentMethod === 'lipa_namba' && !w2bConfig) {
     return NextResponse.json(
       { error: 'lipa_namba deposits are not enabled' },
+      { status: 400 }
+    )
+  }
+
+  if (paymentMethod === 'bank_transfer' && !payerAccountNumber) {
+    return NextResponse.json(
+      { error: 'payerAccountNumber is required for bank_transfer — the payer\'s narration does not survive TIPS, so the sending account is how the credit is identified' },
       { status: 400 }
     )
   }
@@ -327,6 +344,7 @@ export async function POST(request: NextRequest) {
         paymentProvider: 'selcom',
         pspChannel: BANK_CHANNEL,
         pspReference: reference,
+        payerAccountNumber,
       })
       .returning({
         id: depositRequests.id,

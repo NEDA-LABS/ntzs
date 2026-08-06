@@ -109,6 +109,7 @@ export default function DepositPage() {
   // prompt, and a retail LP to sit waiting on a settlement statement.
   const isBank = lp?.accountType === 'bank';
   const fundMethod: 'mpesa' | 'bank' = isBank ? 'bank' : 'mpesa';
+  const [payerAccount, setPayerAccount] = useState('');
   const [bankIntent, setBankIntent] = useState<{
     reference: string;
     amountTzs: number;
@@ -217,6 +218,7 @@ export default function DepositPage() {
                         // Copies the digits only — pasting "250,000 TZS" into a
                         // bank amount field is never what anyone wants.
                         { label: 'Exact amount', value: `${bankIntent.amountTzs.toLocaleString()} TZS`, copy: true, copyValue: String(bankIntent.amountTzs) },
+                        { label: 'Send from account', value: payerAccount, copy: false },
                       ] as const)
                         .filter((row) => row.value)
                         .map((row) => (
@@ -252,9 +254,25 @@ export default function DepositPage() {
                         className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
                       />
                     </div>
+                    <div className="relative mb-3">
+                      <Landmark size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Your bank account number (you send from)"
+                        value={payerAccount}
+                        onChange={(e) => setPayerAccount(e.target.value)}
+                        className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                      />
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600">
+                        Banks often strip the reference in transit, so we identify your transfer by the account it
+                        comes from. Send from this exact account.
+                      </p>
+                    </div>
+
                     {mintError && <p className="text-xs text-red-400 mb-3">{mintError}</p>}
                     <button
-                      disabled={mintState === 'loading' || !mintAmount}
+                      disabled={mintState === 'loading' || !mintAmount || payerAccount.replace(/\D/g, '').length < 5}
                       onClick={async () => {
                         setMintError('');
                         setMintState('loading');
@@ -263,7 +281,7 @@ export default function DepositPage() {
                           const res = await fetch('/simplefx/api/lp/mint', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
-                            body: JSON.stringify({ amountTzs: Number(mintAmount), method: 'bank_transfer' }),
+                            body: JSON.stringify({ amountTzs: Number(mintAmount), method: 'bank_transfer', payerAccountNumber: payerAccount }),
                           });
                           const data = await res.json();
                           if (!res.ok) {

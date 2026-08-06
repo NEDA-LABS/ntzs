@@ -385,6 +385,12 @@ export const depositRequests = pgTable(
     source: text('source').notNull().default('self'),
     payerName: text('payer_name'),
 
+    // Bank account the payer will send from (bank_transfer intents only).
+    // TIPS credits reach our statement WITHOUT the payer's narration, so the
+    // reference token cannot identify them on its own — but the payer's own
+    // account number does survive, and is what matching keys on.
+    payerAccountNumber: varchar('payer_account_number', { length: 34 }),
+
     // Links this deposit to a Ramp API settlement (on-ramp leg) so the PSP
     // payment webhook can resume the ramp flow after mint.
     rampSettlementId: uuid('ramp_settlement_id'),
