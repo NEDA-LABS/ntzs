@@ -53,6 +53,7 @@ sequenceDiagram
 | Execute withdrawal (cash-out) | `POST /api/v1/withdrawals` |
 | Recipient name check before withdrawal | `POST /api/v1/lookup/recipient-name` |
 | Merchant / TANQR / biller name check before payment | `POST /api/v1/lookup/merchant-name` |
+| Decode a scanned merchant QR (TANQR) into a payable till | `POST /api/v1/lookup/qr` |
 | Create org/treasury sub-wallet | `POST /api/v1/partners/sub-wallets` |
 | List sub-wallets | `GET /api/v1/partners/sub-wallets` |
 | Ramp: settlement float address + USDC balance | `GET /api/v1/ramp/balance` |
@@ -69,6 +70,20 @@ sequenceDiagram
 ---
 
 Partners integrate via a REST + SSE API using a bearer token issued during onboarding. All endpoints are under `/api/v1/`.
+
+---
+
+## What's New — v1.19.0 (5 Aug 2026)
+
+**Scan-to-pay: `POST /api/v1/lookup/qr` turns a scanned TANQR code into a payable Lipa Namba.** A camera gives you a string, not a till number — this endpoint reads the EMVCo payload, verifies its checksum, extracts the merchant identifier and confirms it against the acquirer's register before handing it back.
+
+- **There is no separate QR rail and nothing to enable.** TANQR is a QR code carrying a Lipa Namba. Decode it, then use the ordinary `/v1/spend/quote` → `/v1/spend` flow with the returned `payNumber`. Fees are the same Lipa/TanQR tariff as a typed till payment; scanning costs nothing extra.
+- **Dynamic codes carry their amount** (`dynamic: true`, `amountTzs` populated) — use it rather than asking the user to retype it. Static stickers return `amountTzs: null` and you collect the amount.
+- **`resolution` gates payment**: only `resolved` is payable. `unresolved` (nothing in the code is a registered merchant) and `ambiguous` (more than one is) are returned rather than guessed, because guessing would be choosing who gets paid.
+- **Sticker-swap protection.** The name printed inside a QR is controlled by whoever printed it; `merchantName` comes from the acquirer's records and is not. When they disagree we return `nameMatch: false` and a warning — display `merchantName`, not `qrMerchantName`.
+- **Fully available on test keys**, so the entire scan → confirm → quote → pay screen is buildable in sandbox before any rail is live.
+
+Step-by-step integration guide: `partners/tanqr.md`.
 
 ---
 
@@ -843,6 +858,86 @@ Resolves the mobile-money-registered name for a Tanzanian number so your app can
 | Name unavailable | "Confirm the number {phone} is correct before continuing." | "Hakikisha namba {phone} ni sahihi kabla ya kuendelea." |
 
 Lookups are rate-limited and audit-logged: the endpoint resolves registered names (PII) and must only be called from user-initiated withdrawal flows — bulk or speculative querying will trip the limiter and our audit review.
+
+---
+
+## QR Scan (TANQR)
+
+### `POST /api/v1/lookup/qr`
+
+Turns a scanned merchant QR into a payable **Lipa Namba**. TANQR codes are EMVCo merchant-presented QR; the merchant identifier sits in a scheme-defined region of the payload, so "which number do I pay?" is a real question with a non-obvious answer. This answers it, and confirms the answer against the acquirer's register before returning it.
+
+**There is no separate QR rail.** The `payNumber` returned here is an ordinary till number — feed it straight into `/v1/spend/quote` and `/v1/spend`. Nothing needs enabling on your account beyond the spend rail itself, and this endpoint is deliberately not behind the spend flags so you can finish your scan screen before the rail is live.
+
+Full walkthrough with UI guidance: **`partners/tanqr.md`**.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `payload` | string | ✓ | The raw string your scanner read. A merchant QR always begins `000201` |
+
+#### Response — `200`
+
+```json
+{
+  "kind": "lipa",
+  "payNumber": "123456",
+  "merchantName": "KARIAKOO HARDWARE LIMITED",
+  "qrMerchantName": "KARIAKOO HARDWARE",
+  "nameMatch": true,
+  "amountTzs": null,
+  "dynamic": false,
+  "currency": "TZS",
+  "countryCode": "TZ",
+  "reference": null,
+  "resolution": "resolved",
+  "warnings": []
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `payNumber` | The Lipa Namba to pay. Present only when `resolution` is `resolved` |
+| `merchantName` | From the acquirer's records — **this is the name to display** |
+| `qrMerchantName` | The name printed inside the QR, for comparison only. Attacker-controlled |
+| `nameMatch` | `false` when those two disagree — warn the user (see below). `null` when there is nothing to compare |
+| `amountTzs` | Set on a dynamic QR; `null` on a static sticker. Never populated for a code priced in another currency |
+| `dynamic` | `true` when the merchant set the amount |
+| `reference` | Invoice / reference label the merchant attached, if any |
+| `warnings` | Human-readable strings. Non-empty means show them |
+
+#### `resolution` — only one value is payable
+
+| Value | Meaning | Action |
+|---|---|---|
+| `resolved` | Exactly one registered merchant found | Proceed |
+| `unresolved` | Valid code, nothing in it resolves to a registered merchant | Do not pay — ask for the printed till number |
+| `ambiguous` | More than one registered merchant in the code; `candidates` lists them | Do not pay — make the user choose |
+
+`ambiguous` is returned rather than resolved on purpose: choosing between two registered accounts is choosing who receives the money.
+
+#### Errors — `400`
+
+| Code | Meaning |
+|------|---------|
+| `payload_required` | No `payload` sent |
+| `not_a_merchant_qr` | Not EMVCo — commonly a URL or deep link. Handle it in your own app |
+| `checksum_failed` | Contents do not match the code's own checksum: damaged, mis-scanned, or altered. **Never pay against it** |
+| `malformed_payload` | Structurally invalid TLV |
+| `payload_too_long` | Beyond the 512-character EMVCo limit |
+
+Rate limited to 120 scans/minute per partner, with an audit row per scan.
+
+#### The sticker-swap check
+
+The realistic attack on printed QR is physical: someone pastes their own code over the merchant's, so the customer is in the right shop and pays a stranger. The name inside the QR is chosen by whoever printed it; `merchantName` comes from the acquirer and is not. When they disagree we return `nameMatch: false` plus a warning naming both.
+
+This only protects your users if your UI shows `merchantName`. Showing `qrMerchantName` displays exactly what the attacker wrote.
+
+#### Test mode
+
+Fully supported on test keys — the payload is decoded for real and resolved without calling the acquirer, so the entire scan → confirm → quote → pay flow is buildable in sandbox.
 
 ---
 

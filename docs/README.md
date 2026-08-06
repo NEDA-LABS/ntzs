@@ -33,6 +33,7 @@ This `/docs` folder is intended for third-party code reviewers and smart contrac
 - [09 WaaS Partner API](./09-WAAS-PARTNER-API.md)
 - [11 CDD Attested Verification Policy](./11-KYC-RELIANCE-POLICY.md) — governs partner-attested KYC (`NEDA-CDD-REL-2026-01`)
 - [Attested KYC integration brief](./partners/kyc-attestation.md) — hand this to a partner building against the attestation endpoint
+- [TANQR scan-to-pay guide](./partners/tanqr.md) — hand this to a partner building QR payments
 
 ## Primary Review Goals
 
