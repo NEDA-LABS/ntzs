@@ -195,6 +195,69 @@ describe('sticker-swap detection', () => {
   })
 })
 
+describe('a real TANQR code from the field', () => {
+  /**
+   * Scanned 6 Aug 2026 from a live merchant sticker (THE DECK AND KITCHEN BAR,
+   * Dar es Salaam) via Backstage → Selcom Test → Scan to pay.
+   *
+   * This fixture is the whole reason the decoder can stop searching. Everything
+   * below was previously inferred; it is now read off a genuine code.
+   */
+  const REAL =
+    '00020101021126400014tz.go.bot.tips01050250402091389741225204000053038345802TZ5924THE DECK AND KITCHEN BAR6008TANZANIA610514110621303091389741226304F3ED'
+
+  const result = decodeMerchantQr(REAL)
+
+  it('passes its own checksum — our CRC implementation is right for real codes', () => {
+    expect(result.ok, 'a genuine merchant code must decode').toBe(true)
+  })
+
+  it('reads the merchant and the scheme', () => {
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.merchantName).toBe('THE DECK AND KITCHEN BAR')
+    expect(result.value.countryCode).toBe('TZ')
+    expect(result.value.currencyNumeric).toBe(TZS_CURRENCY_NUMERIC)
+    expect(result.value.dynamic).toBe(false)
+    expect(result.value.amountTzs).toBeNull()
+    expect(result.value.scheme).toBe('tz.go.bot.tips')
+  })
+
+  it('picks the MERCHANT till, not the acquirer code', () => {
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Selcom's verdict on this exact code: 02504 → "unable to detect network
+    // provider"; 138974122 → "THE DECK KITCHEN AND BAR". Tag 62's store label
+    // repeats 138974122, corroborating it independently.
+    expect(result.value.merchantIdentifier).toBe('138974122')
+    expect(result.value.acquirerIdentifier).toBe('02504')
+  })
+
+  it('tries the merchant till first and the acquirer code last', () => {
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Ordering is what removes a guaranteed-to-fail upstream call on every
+    // scan, and with it a misleading error in the logs.
+    expect(result.value.candidateTillNumbers[0]).toBe('138974122')
+    expect(result.value.candidateTillNumbers.at(-1)).toBe('02504')
+  })
+
+  it('still offers the acquirer code as a fallback rather than dropping it', () => {
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // If BoT ever moves the till to another sub-tag, the search must still be
+    // able to find it — a known layout is a fast path, never a dependency.
+    expect(result.value.candidateTillNumbers).toContain('02504')
+  })
+
+  it('accepts the acquirer’s word order for the same business', () => {
+    // The QR says "THE DECK AND KITCHEN BAR"; Selcom's register says
+    // "THE DECK KITCHEN AND BAR". Same business, words reordered — this must
+    // not fire the swapped-sticker warning at a real customer.
+    expect(qrNameAgrees('THE DECK AND KITCHEN BAR', 'THE DECK KITCHEN AND BAR')).toBe(true)
+  })
+})
+
 describe('round trip', () => {
   it('encodes what it decodes', () => {
     const built = encodeMerchantQr([

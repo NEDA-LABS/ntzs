@@ -74,7 +74,11 @@ export async function POST(request: NextRequest) {
       amountTzs: qr.amountTzs,
       merchantCategoryCode: qr.merchantCategoryCode,
       reference: qr.reference,
-      // The part we could not know without a real code in hand.
+      // Read off a real code rather than assumed — see KNOWN_SCHEMES.
+      scheme: qr.scheme,
+      schemeLabel: qr.schemeLabel,
+      merchantIdentifier: qr.merchantIdentifier,
+      acquirerIdentifier: qr.acquirerIdentifier,
       accounts: qr.accounts,
       candidateTillNumbers: qr.candidateTillNumbers,
     },
