@@ -1034,6 +1034,52 @@ const withdrawal = await res2.json()
             title="Spend — pay merchants & bills"
             description="Burn a user's nTZS and pay a merchant Lipa Namba on any network (M-Pesa, Tigo, Airtel, Selcom) or a biller (LUKU electricity, GEPG government control numbers, DSTV, airtime and more) directly from the reserve. Same quote → confirm → execute shape as Disbursements. amountTzs is always the PRINCIPAL the destination receives; fees are added on top. Quote-first by design — execution ALWAYS requires a quoteId."
           >
+            <Note variant="info">
+              <span className="font-semibold text-blue-200">Scanning a QR? There is nothing extra to enable.</span>{' '}
+              A TANQR code is a QR containing a merchant&apos;s Lipa Namba — the same till number a customer could read
+              off the counter and type. Decode it with{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">POST /api/v1/lookup/qr</code>, then use the
+              returned <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">payNumber</code> in the ordinary quote
+              → execute flow below. Same tariff as a typed till payment; scanning costs nothing extra.
+            </Note>
+            <CodeBlock
+              title="0 · POST /api/v1/lookup/qr — scan → till number"
+              code={`// The camera gives you a string, not a till number.
+const res = await fetch('https://www.ntzs.co.tz/api/v1/lookup/qr', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ payload: scannedString }),  // starts "000201"
+})
+
+// {
+//   payNumber:      "123456",                     // ← pay this
+//   merchantName:   "KARIAKOO HARDWARE LIMITED",  // ← DISPLAY this
+//   qrMerchantName: "KARIAKOO HARDWARE",          // printed in the QR
+//   nameMatch:      true,       // false → warn: possible swapped sticker
+//   amountTzs:      null,       // set on a dynamic QR — use it, don't retype
+//   dynamic:        false,
+//   resolution:     "resolved", // ONLY "resolved" is payable
+//   warnings:       []
+// }
+
+if (data.resolution !== 'resolved') {
+  // "unresolved" — nothing in the code is a registered merchant
+  // "ambiguous"  — more than one is; make the user choose
+  // Either way: do not pay. Ask for the printed till number.
+}`}
+            />
+            <Note variant="neutral">
+              <span className="font-semibold text-white/90">Display <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">merchantName</code>, not <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">qrMerchantName</code>.</span>{' '}
+              The realistic attack on printed QR is a person with a printer pasting their code over a merchant&apos;s, so
+              the customer is in the right shop and pays a stranger. The name inside the QR is whatever the attacker
+              wrote; <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">merchantName</code> comes from the
+              acquirer&apos;s register and is not. When they disagree we return{' '}
+              <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">nameMatch: false</code> — show both names and
+              make the user confirm. We also verify the code&apos;s own checksum and refuse an altered one outright.
+            </Note>
             <CodeBlock
               title="1 · POST /api/v1/spend/quote"
               code={`const res = await fetch('https://www.ntzs.co.tz/api/v1/spend/quote', {
