@@ -130,6 +130,11 @@ export async function GET(request: NextRequest) {
           probe: true,
           ms: Date.now() - t0,
           params: { perPage, days, preset: preset ?? null },
+          // Which account are we actually reading? If the statement account is
+          // not the account payers are told to send to, no credit can ever be
+          // seen — regardless of references or timeouts.
+          statementAccount: { number: s.accountNumber ?? null, name: s.accountName ?? null },
+          collectionAccount: getBankCollectionConfig()?.accountNumber ?? null,
           rowCount: s.transactions.length,
           closingBalance: s.closingBalance,
           openIntents: openIntents.map((i) => ({ token: i.reference, amountTzs: i.amountTzs })),
