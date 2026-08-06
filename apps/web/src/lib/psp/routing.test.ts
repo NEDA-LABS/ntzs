@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 
-import { detectNetwork, planCollectionRails, planDisbursementRails, type RailEnv } from './routing'
+import {
+  detectNetwork,
+  noCollectionRailMessage,
+  planCollectionRails,
+  planDisbursementRails,
+  readRailEnv,
+  type RailEnv,
+} from './routing'
 
 function env(overrides: Partial<RailEnv> = {}): RailEnv {
   return {
@@ -107,5 +114,93 @@ describe('planDisbursementRails', () => {
   it('returns empty when nothing is configured (caller must fail closed)', () => {
     const e = env({ snippeConfigured: false, azampayConfigured: false })
     expect(planDisbursementRails(e)).toEqual([])
+  })
+})
+
+/**
+ * INC 6 Aug 2026 — the PSP that is our ONLY Vodacom M-Pesa collection rail
+ * suspended our account. Every M-Pesa depositor hit a rail certain to refuse.
+ */
+describe('taking a suspended rail out of service', () => {
+  const base: RailEnv = {
+    activeMobilePsp: 'snippe',
+    collectionPriority: undefined,
+    perNetwork: {},
+    disbursementPriority: 'selcom,snippe',
+    snippeConfigured: true,
+    azampayConfigured: true,
+    azampayDisbursementEnabled: false,
+    selcomConfigured: true,
+    selcomCollectionsEnabled: false,
+    selcomDisbursementsEnabled: true,
+  }
+
+  it('SNIPPE_ENABLED=false removes the rail without deleting the key', () => {
+    // The credentials stay — we want the account back — but routing a customer
+    // to a rail that will certainly refuse only produces a support ticket.
+    const live = readRailEnv({ SNIPPE_API_KEY: 'k' } as unknown as NodeJS.ProcessEnv)
+    const suspended = readRailEnv({ SNIPPE_API_KEY: 'k', SNIPPE_ENABLED: 'false' } as unknown as NodeJS.ProcessEnv)
+    expect(live.snippeConfigured).toBe(true)
+    expect(suspended.snippeConfigured).toBe(false)
+  })
+
+  it('leaves Vodacom with no collection rail, rather than a doomed one', () => {
+    // AzamPay cannot collect Vodacom; Selcom collections are off. Returning an
+    // empty plan is the honest answer — the caller then shows a real message
+    // instead of the customer watching a push that never arrives.
+    const suspended = { ...base, snippeConfigured: false }
+    expect(planCollectionRails('vodacom', suspended)).toEqual([])
+  })
+
+  it('TRAP: with the legacy single-rail config, disabling it stops EVERY network', () => {
+    // Not a bug — a configuration requirement made visible. The plan is
+    // "exactly ACTIVE_MOBILE_PSP", so removing that rail leaves nothing, even
+    // for networks another rail could serve. Silently substituting a rail the
+    // operator never declared would move customer money somewhere unintended.
+    const suspended = { ...base, snippeConfigured: false }
+    for (const n of ['airtel', 'tigo', 'halotel'] as const) {
+      expect(planCollectionRails(n, suspended)).toEqual([])
+    }
+  })
+
+  it('and the remedy is config: declare the priority list BEFORE disabling a rail', () => {
+    const suspended = { ...base, snippeConfigured: false, collectionPriority: 'azampay,snippe' }
+    for (const n of ['airtel', 'tigo', 'halotel'] as const) {
+      expect(planCollectionRails(n, suspended), `${n} must still collect`).toEqual(['azampay'])
+    }
+    // Vodacom still cannot be served — AzamPay does not collect M-Pesa — which
+    // is exactly the case the customer message exists for.
+    expect(planCollectionRails('vodacom', suspended)).toEqual([])
+  })
+
+  it('keeps payouts running on Selcom', () => {
+    // Losing collections must not also stop customers getting money out.
+    const suspended = { ...base, snippeConfigured: false }
+    expect(planDisbursementRails(suspended)).toEqual(['selcom'])
+  })
+})
+
+describe('what the customer is told', () => {
+  it('names their wallet, not our provider', () => {
+    const msg = noCollectionRailMessage('vodacom')
+    expect(msg).toContain('M-Pesa')
+    // A customer can act on neither the provider's name nor its troubles.
+    expect(msg.toLowerCase()).not.toContain('snippe')
+    expect(msg.toLowerCase()).not.toContain('suspend')
+  })
+
+  it('says it is temporary, offers a way through, and calms the real fear', () => {
+    const msg = noCollectionRailMessage('vodacom')
+    expect(msg).toContain('temporarily')
+    expect(msg).toContain('bank transfer')
+    // The thing people actually panic about.
+    expect(msg).toContain('balance is unaffected')
+    expect(msg).toContain('nothing has been charged')
+  })
+
+  it('has a name for every network', () => {
+    for (const n of ['vodacom', 'airtel', 'tigo', 'halotel', 'ttcl', 'unknown'] as const) {
+      expect(noCollectionRailMessage(n).length).toBeGreaterThan(40)
+    }
   })
 })

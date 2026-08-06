@@ -117,6 +117,17 @@ export function planCollectionRails(network: Network, env: RailEnv): RailId[] {
   )
   // Never return an empty plan while the legacy default is usable — a
   // misconfigured priority list must not take deposits down.
+  //
+  // ⚠ OPERATIONAL TRAP, learned 6 Aug 2026. This rescues a bad priority list,
+  // NOT a dead default rail. With the legacy single-rail config
+  // (ACTIVE_MOBILE_PSP set, no COLLECTION_RAIL_PRIORITY), disabling that one
+  // rail empties the plan for EVERY network — including ones another rail could
+  // serve perfectly well. That is deliberate: routing a customer's money
+  // through a rail the operator never declared is not a decision this function
+  // gets to make silently. The remedy is configuration — set
+  // COLLECTION_RAIL_PRIORITY (or a per-network override) BEFORE disabling a
+  // rail — and the emptied plan is what makes the omission loud instead of
+  // quietly moving money somewhere unintended.
   if (plan.length === 0 && collectionCapable(defaultRail(env), network, env)) {
     return [defaultRail(env)]
   }
@@ -133,6 +144,32 @@ export function planDisbursementRails(env: RailEnv): RailId[] {
   return [...new Set(plan)]
 }
 
+/** How a Tanzanian would name the wallet behind a number. */
+const NETWORK_WALLET_NAMES: Record<Network, string> = {
+  vodacom: 'M-Pesa (Vodacom)',
+  airtel: 'Airtel Money',
+  tigo: 'Mixx by Yas (Tigo)',
+  halotel: 'HaloPesa',
+  ttcl: 'T-Pesa',
+  unknown: 'this mobile network',
+}
+
+/**
+ * What to tell a customer when no rail can collect from their network.
+ *
+ * This is not an error string for a log — it is what somebody sees when they
+ * are trying to put money in and cannot. So it says which network, that the
+ * cause is ours and temporary, what they can do instead, and — the part people
+ * actually worry about — that money already in their wallet is untouched.
+ *
+ * Deliberately does not name the provider or the reason: a customer cannot act
+ * on either, and a provider's commercial troubles are not their business.
+ */
+export function noCollectionRailMessage(network: Network): string {
+  const wallet = NETWORK_WALLET_NAMES[network] ?? NETWORK_WALLET_NAMES.unknown
+  return `${wallet} deposits are temporarily unavailable while we restore service with our payment provider. Please try another mobile network, or deposit by bank transfer. Your nTZS balance is unaffected and nothing has been charged.`
+}
+
 /** Build RailEnv from process.env (the only impure step, kept trivial). */
 export function readRailEnv(env: NodeJS.ProcessEnv = process.env): RailEnv {
   return {
@@ -147,7 +184,11 @@ export function readRailEnv(env: NodeJS.ProcessEnv = process.env): RailEnv {
       unknown: env.COLLECTION_RAIL_PRIORITY,
     },
     disbursementPriority: env.DISBURSEMENT_RAIL_PRIORITY,
-    snippeConfigured: Boolean(env.SNIPPE_API_KEY),
+    // SNIPPE_ENABLED=false takes the rail out of every plan without deleting
+    // the key. Needed when a provider suspends the account: the credentials are
+    // still ours and we want them back, but routing a customer to a rail that
+    // is certain to refuse only produces a failed payment and a support ticket.
+    snippeConfigured: Boolean(env.SNIPPE_API_KEY) && env.SNIPPE_ENABLED !== 'false',
     azampayConfigured: Boolean(env.AZAMPAY_APP_NAME && env.AZAMPAY_CLIENT_ID && env.AZAMPAY_CLIENT_SECRET),
     azampayDisbursementEnabled: env.AZAMPAY_DISBURSEMENT_ENABLED === 'true',
     selcomConfigured: Boolean(env.SELCOM_API_KEY && env.SELCOM_PRIVATE_KEY && env.SELCOM_ACCOUNT_NUMBER),

@@ -262,6 +262,7 @@ export const initiateCardPayment = snippe.initiateCardPayment
 
 import {
   detectNetwork,
+  noCollectionRailMessage,
   planCollectionRails,
   planDisbursementRails,
   readRailEnv,
@@ -330,13 +331,18 @@ export async function initiateCollection(
   req: Omit<PaymentRequestT, 'webhookUrl'> & { webhookBaseUrl: string }
 ): Promise<RoutedCollectionResult> {
   const { webhookBaseUrl, ...payment } = req
-  const plan = liveRails(planCollectionRails(detectNetwork(req.phoneNumber), readRailEnv()))
+  const network = detectNetwork(req.phoneNumber)
+  const plan = liveRails(planCollectionRails(network, readRailEnv()))
   const attempted: LiveRail[] = []
-  // Nothing was called yet, so "no rail configured" IS a definitive failure.
+  // Nothing was called yet, so "no rail configured" IS a definitive failure —
+  // and the message a customer sees is theirs, not a log line. See
+  // noCollectionRailMessage: it names their network, says the cause is ours and
+  // temporary, and reassures them nothing was charged.
   let last: PaymentResponseT = {
     success: false,
     definitiveFailure: true,
-    error: 'No collection rail is configured for this network',
+    error: noCollectionRailMessage(network),
+    errorCode: 'network_rail_unavailable',
   }
   // ONE uncertain attempt makes the WHOLE routed result uncertain: if rail A
   // timed out and rail B then cleanly refused, rail A may still have taken the

@@ -33,6 +33,9 @@ export interface PaymentResponse {
   /** Truncated PSP acknowledgment body, when the adapter surfaces it — audit evidence. */
   ack?: string
   error?: string
+  /** Machine-readable reason, so a caller can branch without matching on prose
+   *  (e.g. 'network_rail_unavailable' when no rail can serve the network). */
+  errorCode?: string
   /**
    * Set TRUE only when the PSP DEFINITIVELY refused: it answered, and the
    * answer was "no". A 4xx, or a parsed body explicitly reporting failure.

@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { ethers } from 'ethers'
-import { and, eq, inArray, isNull, isNotNull, notInArray, or, sql as dsql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, isNotNull, notInArray, or, sql as dsql } from 'drizzle-orm'
 
 import { getDb } from '@/lib/db'
 import { attestations, burnRequests, depositRequests, orphanPayments } from '@ntzs/db'
@@ -22,10 +22,16 @@ import { computeAnnex, errorChainIncludes, type AttestationAnnex, type ReservePo
  *   2. reconciles the raw deviation down to an ADJUSTED coverage figure by
  *      netting obligations computed from our own ledger (burned-but-unpaid,
  *      unminted fees, orphans, paid-but-unminted) — see attestation-math.ts;
- *   3. NEVER attests a degraded reading: if the chain or any configured pot
- *      cannot be read, an INCOMPLETE alert is sent instead of a fabricated
- *      "fully backed" or a false peg breach, and no row is persisted for the
- *      day (re-run via POST /api/admin/attestation once resolved).
+ *   3. NEVER attests a fabricated reading. If the chain or a pot cannot be
+ *      read, there are two outcomes and no third:
+ *        - a pot with a recent VERIFIED reading is carried forward, marked
+ *          `stale`, and the attestation goes out QUALIFIED — naming the source
+ *          and the date it was last verified. A provider outage is not a
+ *          reserve deficiency, and dropping the pot would report a peg breach
+ *          that did not happen;
+ *        - anything else (chain unreadable, no snapshot, snapshot older than
+ *          ATTESTATION_MAX_STALE_DAYS) sends an INCOMPLETE alert and persists
+ *          no row (re-run via POST /api/admin/attestation once resolved).
  *
  * The hard rule stands: nTZS outstanding must never exceed the TZS reserve.
  */
@@ -76,6 +82,9 @@ export interface AttestationReport {
   reportHash: string
   generatedAt: string
   annex: AttestationAnnex
+  /** Pots carried forward from a previous verified reading rather than read
+   *  today. Non-empty = the attestation is QUALIFIED. */
+  staleSources: Array<{ key: string; label: string; asOf: string }>
 }
 
 export interface IncompleteAttestation {
@@ -121,6 +130,81 @@ function countedMobileProviders(): ('snippe' | 'azampay' | 'selcom')[] {
 interface PotRead {
   pot?: ReservePot
   failure?: string
+}
+
+/**
+ * How long a carried-forward balance may still stand in for a live reading.
+ *
+ * Past this, a snapshot stops being evidence and becomes a guess: money can
+ * move at the provider without us seeing it, and the longer we cannot look the
+ * less the last figure means. Reverting to INCOMPLETE at that point is the
+ * honest outcome — it puts a human back in the loop rather than quietly
+ * attesting to a number nobody has verified in a fortnight.
+ */
+const maxStaleDays = () => parseFloat(process.env.ATTESTATION_MAX_STALE_DAYS ?? '7') || 7
+
+/**
+ * The last VERIFIED reading of a pot, from the most recent attestation that
+ * actually read it live.
+ *
+ * Only `source: 'api'` rows qualify. A previously-stale figure must never be
+ * re-carried, or one unreadable day would propagate forward indefinitely and
+ * the reading would age without ever tripping the staleness limit.
+ */
+async function lastKnownPot(key: string): Promise<ReservePot | null> {
+  try {
+    const { db } = getDb()
+    const rows = await db
+      .select({ annex: attestations.annex })
+      .from(attestations)
+      .orderBy(desc(attestations.reportDate))
+      .limit(30)
+    for (const row of rows) {
+      const pots = (row.annex as AttestationAnnex | null)?.pots
+      if (!Array.isArray(pots)) continue
+      const hit = pots.find(
+        (p) => p?.key === key && p?.source === 'api' && Number.isFinite(Number(p?.amountTzs))
+      )
+      if (hit) return hit
+    }
+  } catch (e) {
+    console.error('[attestation] snapshot lookup failed:', e instanceof Error ? e.message : e)
+  }
+  return null
+}
+
+/**
+ * Carry the last verified balance forward when a live read fails.
+ *
+ * A provider outage is not a reserve deficiency, but the arithmetic cannot
+ * tell the difference: drop an unreadable pot and the report shows the reserve
+ * collapsing, which reads as a broken peg and is simply false. Substituting
+ * the last verified figure keeps the coverage number true to the money that
+ * exists, and marking it `stale` keeps the report honest about what we could
+ * and could not verify today. Both halves are required — either alone is a
+ * lie in one direction or the other.
+ */
+async function fallbackToSnapshot(key: string, failure: string): Promise<PotRead> {
+  const snapshot = await lastKnownPot(key)
+  if (!snapshot) return { failure: `${failure} — no previous verified reading to carry forward` }
+
+  const ageDays = (Date.now() - Date.parse(snapshot.asOf)) / 86_400_000
+  const limit = maxStaleDays()
+  if (!Number.isFinite(ageDays) || ageDays > limit) {
+    return {
+      failure: `${failure} — last verified reading is ${Math.round(ageDays)} days old, beyond the ${limit}-day carry-forward limit`,
+    }
+  }
+
+  return {
+    pot: {
+      ...snapshot,
+      source: 'stale',
+      // asOf deliberately keeps the ORIGINAL reading time. Stamping it "now"
+      // would erase the very fact the reader needs.
+      note: `Last verified reading, carried forward — live read failed (${failure})`,
+    },
+  }
 }
 
 async function readSnippePot(): Promise<PotRead> {
@@ -236,10 +320,20 @@ async function readSelcomPot(): Promise<PotRead> {
  * therefore total-neutral on every display simultaneously.
  */
 export async function readReservePots(): Promise<{ pots: ReservePot[]; failures: string[] }> {
+  // A failed read falls back to the last verified figure before it is called a
+  // failure, so a provider outage degrades the report's CONFIDENCE rather than
+  // its arithmetic. Only when nothing usable can be carried forward does the
+  // run go INCOMPLETE.
+  const withFallback = async (key: string, read: () => Promise<PotRead>): Promise<PotRead> => {
+    const first = await read()
+    if (!first.failure) return first
+    return fallbackToSnapshot(key, first.failure)
+  }
+
   const [snippePot, azamPot, selcomPot] = await Promise.all([
-    readSnippePot(),
-    readAzamPayPot(),
-    readSelcomPot(),
+    withFallback('snippe', readSnippePot),
+    withFallback('azampay', readAzamPayPot),
+    withFallback('selcom', readSelcomPot),
   ])
   const failures: string[] = []
   for (const r of [snippePot, azamPot, selcomPot]) if (r.failure) failures.push(r.failure)
@@ -384,7 +478,18 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
   }
   const { notes, ...nettings } = nettingsRead
 
-  const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply, notes })
+  // A carried-forward pot qualifies the attestation. Say so in the annex, in
+  // the words a reader needs: which source, as at when, and why.
+  const stalePots = pots.filter((p) => p.source === 'stale')
+  const annexNotes = [
+    ...(notes ?? []),
+    ...stalePots.map(
+      (p) =>
+        `QUALIFIED: ${p.label} is the last verified reading, as at ${p.asOf} — the provider could not be read for this report. The balance is held at the provider; it is not verified as at today.`
+    ),
+  ]
+
+  const annex = computeAnnex({ pots, nettings, totalSupplyTzs: chain.supply, notes: annexNotes })
 
   const ntzsCirculation = chain.supply
   const tzsCustodialReserve = annex.grossReservesTzs - govt
@@ -405,6 +510,9 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     blockNumber: chain.block,
     supplySource: `Base Mainnet · ${NTZS_CONTRACT_ADDRESS_BASE ?? 'n/a'} · totalSupply()`,
     reserveSource: pots.map((p) => `${p.label} [${p.source}]`).join(' + '),
+    /** Sources carried forward rather than read today — the attestation is
+     *  qualified whenever this is non-empty. */
+    staleSources: stalePots.map((p) => ({ key: p.key, label: p.label, asOf: p.asOf })),
   }
   const reportHash = crypto.createHash('sha256').update(JSON.stringify({ ...core, annex })).digest('hex')
   return { ...core, reportHash, generatedAt: new Date().toISOString(), annex }
@@ -482,12 +590,23 @@ function reportEmailHtml(r: AttestationReport, deltaLine: string, includeAnnex: 
   const adjustedLine = includeAnnex
     ? `<p style="margin:0 0 16px;font-size:12px;color:#374151">Adjusted coverage after accrued obligations: <b>${r.annex.adjustedCoveragePct.toFixed(4)}%</b> · residual ${r.annex.residualPct >= 0 ? '+' : ''}${r.annex.residualPct.toFixed(4)}%</p>`
     : '<span style="display:block;margin:0 0 12px"></span>'
+  // A qualification the reader has to scroll for is not a qualification. It
+  // sits directly under the headline status, before any figure.
+  const qualifiedBanner = r.staleSources.length
+    ? `<p style="padding:10px 12px;border-radius:6px;background:#d977061a;color:#92400e;font-size:12px;margin:0 0 12px;line-height:1.5">
+        <b>⚠️ QUALIFIED READING.</b> ${r.staleSources
+          .map((sSrc) => `<b>${sSrc.label}</b> could not be read for this report; the figure below is its last verified reading, as at <b>${sSrc.asOf}</b>.`)
+          .join(' ')}
+        The balance is held at the provider and no reserve deficiency is implied, but it is <b>not verified as at today</b>.
+       </p>`
+    : ''
   return `
   <div style="font-family:ui-monospace,Menlo,monospace;max-width:640px;margin:0 auto;color:#111827">
     <p style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6b7280;margin:0">Bank of Tanzania · Sandbox Ref. LD.170/515/02/1254</p>
     <h2 style="margin:4px 0 2px">nTZS Daily Reserve Attestation</h2>
     <p style="margin:0 0 16px;color:#6b7280">Report date (EAT): <b>${r.reportDate}</b> · Parameter 7 &amp; 16</p>
     <p style="display:inline-block;padding:6px 12px;border-radius:6px;background:${color}1a;color:${color};font-weight:700;margin:0 0 4px">${status}</p>
+    ${qualifiedBanner}
     ${adjustedLine}
     <table style="border-collapse:collapse;width:100%;font-size:13px">
       ${row('(a) Total nTZS in circulation', fmt(r.ntzsCirculation) + ' nTZS')}
