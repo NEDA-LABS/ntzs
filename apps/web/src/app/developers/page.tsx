@@ -1159,9 +1159,16 @@ const { categories } = await (await fetch(
   'https://www.ntzs.co.tz/api/v1/spend/billers',
   { headers: { 'Authorization': 'Bearer ntzs_live_xxxxxxxxxxxx' } }
 )).json()
-// categories: [{ key, label, billers: [{ code, referenceLabel,
-//   referenceKind, referenceMinLength, referenceMaxLength, feeFreeUnder20k }] }]
-// e.g. LUKU → referenceLabel "Meter No", 11 digits; GEPG → feeFreeUnder20k: true`}
+// categories: [{ key, label, billers: [{ code, referenceLabel, referenceKind,
+//   referenceMinLength, referenceMaxLength, selcomFeeFreeUnder20k,
+//   feeFreeUnder20k, feeNote }] }]
+// e.g. LUKU → referenceLabel "Meter No", 11 digits
+//
+// ⚠ Do NOT render selcomFeeFreeUnder20k as a "no fee" badge. It means Selcom
+// charges nothing on that biller under 20,000 TZS — true, and worth showing —
+// but a service fee applies to EVERY payment, so the payer is never charged
+// nothing. A 1,000 TZS government bill costs 35 TZS. Use feeNote for wording,
+// and always show the total from /spend/quote.`}
             />
             <div className="grid gap-3 sm:grid-cols-2">
               {[
