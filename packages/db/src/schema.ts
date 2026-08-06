@@ -1880,6 +1880,35 @@ export const rampSettlements = pgTable(
  * deviation from the strict 1:1 peg. One immutable row per EAT day; report_hash
  * makes each record tamper-evident.
  */
+/**
+ * Provider-declared reserve balances, entered by an operator from a statement
+ * the provider sent (daily CSV, portal export) when its API is unavailable.
+ *
+ * Better evidence than carrying yesterday's reading forward — it is current and
+ * it comes from the custodian — but a human transcribed it, so the attestation
+ * marks it as not-read-live and it ages out on the same clock. Requires
+ * drizzle/0077_reserve_statements.sql.
+ */
+export const reserveStatements = pgTable(
+  'reserve_statements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** Matches the attestation pot key: 'snippe' | 'azampay' | 'selcom'. */
+    potKey: text('pot_key').notNull(),
+    amountTzs: numeric('amount_tzs', { precision: 36, scale: 2 }).notNull(),
+    /** The STATEMENT's date, never the entry time. */
+    asOf: timestamp('as_of', { withTimezone: true }).notNull(),
+    /** Statement id / filename — what to ask the provider for on review. */
+    reference: text('reference'),
+    note: text('note'),
+    enteredByUserId: uuid('entered_by_user_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    potAsOfIdx: index('reserve_statements_pot_as_of_idx').on(t.potKey, t.asOf, t.createdAt),
+  })
+)
+
 export const attestations = pgTable(
   'attestations',
   {

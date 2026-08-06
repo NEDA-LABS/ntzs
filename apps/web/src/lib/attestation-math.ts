@@ -23,17 +23,26 @@
  * our DB) and any opening float in the PSP accounts.
  */
 
-export type PotSource = 'api' | 'book' | 'env' | 'stale'
+export type PotSource = 'api' | 'book' | 'env' | 'statement' | 'stale'
 
 export interface ReservePot {
   key: string
   label: string
-  /** 'api' = read live from the provider; 'book' = derived from our own
-   * ledger (pending settlement / not bank-verified); 'env' = declared;
-   * 'stale' = the last verified reading, carried forward because the provider
-   * could not be read today. A stale pot is REAL money we can no longer see,
-   * not an estimate — but it is unverified as at this report, so it qualifies
-   * the attestation and `asOf` holds when it was actually read, never now. */
+  /**
+   * Descending order of trust:
+   *   'api'       — read live from the provider.
+   *   'statement' — the provider TOLD us this figure (daily statement/CSV) and
+   *                 an operator entered it. Current and custodian-issued, but
+   *                 transcribed by a human.
+   *   'book'      — derived from our own ledger (pending settlement).
+   *   'env'       — declared in configuration.
+   *   'stale'     — the last verified reading, carried forward because nothing
+   *                 better was available today.
+   *
+   * The bottom two are REAL money we cannot currently see, not estimates — but
+   * neither was verified as at this report, so both qualify the attestation.
+   * For those, `asOf` holds when the figure was true, never now.
+   */
   source: PotSource
   amountTzs: number
   /** ISO timestamp of the reading. */

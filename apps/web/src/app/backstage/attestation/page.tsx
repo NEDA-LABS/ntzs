@@ -1,8 +1,14 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
-import { requireAnyRole } from '@/lib/auth/rbac'
+import { desc, eq } from 'drizzle-orm'
+
+import { requireAnyRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { computeAttestation, generateDailyAttestation, isIncomplete } from '@/lib/attestation'
+import { writeAuditLog } from '@/lib/audit'
+import { getDb } from '@/lib/db'
+import { formatDateEAT } from '@/lib/format-date'
+import { reserveStatements } from '@ntzs/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,17 +44,77 @@ async function sendNowAction() {
   )
 }
 
+/**
+ * Record a balance the provider stated to us while its API is unavailable.
+ *
+ * This is the daily-CSV path: the custodian tells us what we hold, an operator
+ * types it here, and the attestation uses it in preference to carrying our own
+ * last reading forward — it is current and it comes from the custodian. The
+ * statement's OWN date is captured, never the entry time, so filing Tuesday's
+ * statement on Thursday cannot make it look like Thursday's balance.
+ */
+async function recordStatementAction(formData: FormData) {
+  'use server'
+  await requireAnyRole(['super_admin', 'platform_compliance'])
+  const operator = await getCurrentDbUser()
+  if (!operator) throw new Error('User not found')
+
+  const potKey = String(formData.get('potKey') ?? '').trim()
+  const amountRaw = String(formData.get('amountTzs') ?? '').replace(/[\s,]/g, '')
+  const asOfRaw = String(formData.get('asOf') ?? '').trim()
+  const reference = String(formData.get('reference') ?? '').trim()
+  const note = String(formData.get('note') ?? '').trim()
+
+  if (!['snippe', 'azampay', 'selcom'].includes(potKey)) throw new Error('Unknown reserve pot')
+
+  const amountTzs = Number(amountRaw)
+  if (!Number.isFinite(amountTzs) || amountTzs < 0) throw new Error('Amount must be a number of TZS, zero or more')
+
+  // The statement's date decides how the figure ages. A future one would never
+  // expire, so it is refused rather than clamped.
+  const asOf = new Date(asOfRaw)
+  if (Number.isNaN(asOf.getTime())) throw new Error('Statement date is required')
+  if (asOf.getTime() > Date.now() + 60 * 60 * 1000) throw new Error('Statement date cannot be in the future')
+
+  // Evidence, not vibes: without a reference nobody can ask the provider for
+  // the document this figure came from.
+  if (!reference) throw new Error('A statement reference (file name or statement id) is required')
+
+  const { db } = getDb()
+  await db.insert(reserveStatements).values({
+    potKey,
+    amountTzs: amountTzs.toFixed(2),
+    asOf,
+    reference,
+    note: note || null,
+    enteredByUserId: operator.id,
+  })
+
+  await writeAuditLog(
+    'attestation.statement_recorded',
+    'reserve_pot',
+    potKey,
+    { amountTzs, asOf: asOf.toISOString(), reference, note: note || null },
+    operator.id
+  )
+  revalidatePath('/backstage/attestation')
+}
+
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 
 const SOURCE_BADGE: Record<string, string> = {
   api: 'bg-emerald-500/20 text-emerald-400',
+  statement: 'bg-sky-500/20 text-sky-300',
   book: 'bg-amber-500/20 text-amber-400',
   env: 'bg-zinc-500/20 text-zinc-300',
+  stale: 'bg-orange-500/20 text-orange-300',
 }
 const SOURCE_LABEL: Record<string, string> = {
   api: 'API-verified',
+  statement: 'provider statement',
   book: 'book-derived',
   env: 'declared',
+  stale: 'carried forward',
 }
 
 export default async function AttestationPage({
@@ -60,6 +126,30 @@ export default async function AttestationPage({
   const { actionError, actionOk } = await searchParams
 
   const report = await computeAttestation()
+
+  // Recent statements, so an operator can see what has been filed and spot a
+  // gap before the carry-forward clock runs out.
+  let recentStatements: Array<{
+    potKey: string
+    amountTzs: string
+    asOf: Date
+    reference: string | null
+  }> = []
+  try {
+    const { db } = getDb()
+    recentStatements = await db
+      .select({
+        potKey: reserveStatements.potKey,
+        amountTzs: reserveStatements.amountTzs,
+        asOf: reserveStatements.asOf,
+        reference: reserveStatements.reference,
+      })
+      .from(reserveStatements)
+      .orderBy(desc(reserveStatements.asOf), desc(reserveStatements.createdAt))
+      .limit(8)
+  } catch {
+    // Table arrives with 0077 — until then there is simply nothing to show.
+  }
 
   return (
     <div className="p-8">
@@ -90,6 +180,69 @@ export default async function AttestationPage({
           {actionOk}
         </div>
       )}
+
+      {/* Provider statement entry — the daily-CSV path while an API is down */}
+      <details className="mb-6 rounded-2xl border border-white/10 bg-zinc-950 p-5" open={isIncomplete(report)}>
+        <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
+          Record a provider statement balance
+          <span className="ml-2 text-xs font-normal text-zinc-500">
+            for when a provider&apos;s API is unavailable but it still sends us a statement
+          </span>
+        </summary>
+
+        <p className="mt-3 max-w-3xl text-xs leading-relaxed text-zinc-500">
+          The attestation prefers this to carrying our own last reading forward: it is current and it comes from the
+          custodian. It still qualifies the attestation, because a human typed it, and it ages out on the same{' '}
+          <code className="text-zinc-400">ATTESTATION_MAX_STALE_DAYS</code> clock — so keep filing them daily while the
+          API is down, or the report reverts to INCOMPLETE.
+        </p>
+
+        <form action={recordStatementAction} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-400">Reserve pot</label>
+            <select name="potKey" defaultValue="snippe" className="w-full rounded-xl border border-white/10 bg-black px-3 py-2.5 text-sm text-white focus:border-emerald-500/50 focus:outline-none">
+              <option value="snippe">Snippe</option>
+              <option value="azampay">AzamPay</option>
+              <option value="selcom">Selcom</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-400">Balance (TZS)</label>
+            <input name="amountTzs" required inputMode="decimal" placeholder="2300000" className="w-full rounded-xl border border-white/10 bg-black px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-emerald-500/50 focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+              Statement date <span className="text-zinc-600">(not today)</span>
+            </label>
+            <input name="asOf" type="date" required className="w-full rounded-xl border border-white/10 bg-black px-3 py-2.5 text-sm text-white focus:border-emerald-500/50 focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-400">Statement reference</label>
+            <input name="reference" required placeholder="e.g. snippe-balance-2026-08-07.csv" className="w-full rounded-xl border border-white/10 bg-black px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-emerald-500/50 focus:outline-none" />
+          </div>
+          <div className="flex items-end">
+            <button type="submit" className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500">
+              Record
+            </button>
+          </div>
+        </form>
+
+        {recentStatements.length > 0 && (
+          <div className="mt-5">
+            <p className="mb-2 text-xs font-medium text-zinc-400">Recently filed</p>
+            <div className="space-y-1.5">
+              {recentStatements.map((st, i) => (
+                <div key={`${st.potKey}-${st.asOf.toISOString()}-${i}`} className="flex flex-wrap items-baseline gap-x-3 text-xs">
+                  <span className="font-mono text-zinc-300">{st.potKey}</span>
+                  <span className="text-white">TZS {fmt(Number(st.amountTzs))}</span>
+                  <span className="text-zinc-500">as at {formatDateEAT(st.asOf)}</span>
+                  {st.reference && <span className="text-zinc-600">· {st.reference}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </details>
 
       {isIncomplete(report) ? (
         <div className="space-y-4">
