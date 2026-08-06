@@ -87,14 +87,18 @@ export async function GET(request: NextRequest) {
       const perPage = Number(request.nextUrl.searchParams.get('perPage') ?? 50)
       const days = Number(request.nextUrl.searchParams.get('days') ?? 0)
       const preset = request.nextUrl.searchParams.get('preset') ?? undefined
+      // Explicit single-day windows: multi-day ranges consistently time out
+      // while one day returns in seconds, so the day is the unit worth testing.
+      const from = request.nextUrl.searchParams.get('from') ?? undefined
+      const to = request.nextUrl.searchParams.get('to') ?? undefined
       const t0 = Date.now()
       try {
         const s = await getStatement(
           preset
             ? { preset, perPage, page: 1 }
             : {
-                fromDate: ymdEAT(new Date(now.getTime() - days * 24 * 3600_000)),
-                toDate: ymdEAT(now),
+                fromDate: from ?? ymdEAT(new Date(now.getTime() - days * 24 * 3600_000)),
+                toDate: to ?? ymdEAT(now),
                 perPage,
                 page: 1,
               },
@@ -162,36 +166,50 @@ export async function GET(request: NextRequest) {
     // and deeper pages only matter when catching up after an outage.
     const PER_PAGE = 100
     const MAX_PAGES = 5
-    // Stop fetching well before maxDuration: at ~30s a page, another fetch
-    // started late would run past the function limit, and an overrun kills the
-    // run — discarding the matching that the fetched pages already earned.
+    // Stop fetching well before maxDuration: a page can cost ~30s, and an
+    // overrun kills the run — discarding the matching the fetched pages earned.
     const PAGE_BUDGET_MS = 150_000
-    const range = {
-      fromDate: ymdEAT(new Date(now.getTime() - 24 * 3600_000)),
-      toDate: ymdEAT(now),
-      perPage: PER_PAGE,
-      order: 'DESC' as const,
-    }
 
-    const statement = await getStatement({ ...range, page: 1 })
-    const transactions = [...statement.transactions]
-    const lastPage = statement.pagination?.lastPage ?? 1
-    let pagesRead = 1
-    for (let page = 2; page <= Math.min(lastPage, MAX_PAGES); page++) {
+    // ONE DAY PER REQUEST. Measured against the live account (5-6 Aug 2026): a
+    // single-day window returns in ~4-10s, while the yesterday+today range this
+    // used to send timed out at 60s on every attempt. Same coverage, asked for
+    // in the unit Selcom can actually answer — today first, so the freshest
+    // credits are ingested even if yesterday's call is slow or fails.
+    const days = [ymdEAT(now), ymdEAT(new Date(now.getTime() - 24 * 3600_000))]
+    const transactions: Array<Record<string, unknown>> = []
+    // Today's closing balance — reported for the reserve view; the second day
+    // is history and must not overwrite it.
+    let closingBalance = 0
+
+    for (const day of days) {
       if (Date.now() - startedAt > PAGE_BUDGET_MS) {
-        warnings.push(`page budget reached after ${pagesRead} page(s); remainder picked up next run`)
+        warnings.push(`day budget reached before ${day}; picked up next run`)
         break
       }
-      const next = await getStatement({ ...range, page })
-      pagesRead++
-      if (next.transactions.length === 0) break
-      transactions.push(...next.transactions)
-    }
-    if (lastPage > MAX_PAGES) {
-      // No silent caps: an unread tail exists beyond the per-run page budget.
-      warnings.push(
-        `statement has ${lastPage} pages; only ${MAX_PAGES} (${MAX_PAGES * PER_PAGE} rows) ingested this run — remainder picked up next run`
-      )
+      const range = { fromDate: day, toDate: day, perPage: PER_PAGE, order: 'DESC' as const }
+      try {
+        const statement = await getStatement({ ...range, page: 1 })
+        if (day === days[0]) closingBalance = statement.closingBalance
+        transactions.push(...statement.transactions)
+        const lastPage = statement.pagination?.lastPage ?? 1
+        for (let page = 2; page <= Math.min(lastPage, MAX_PAGES); page++) {
+          if (Date.now() - startedAt > PAGE_BUDGET_MS) {
+            warnings.push(`page budget reached on ${day} at page ${page}; remainder picked up next run`)
+            break
+          }
+          const next = await getStatement({ ...range, page })
+          if (next.transactions.length === 0) break
+          transactions.push(...next.transactions)
+        }
+        if (lastPage > MAX_PAGES) {
+          // No silent caps: an unread tail exists beyond the per-run page budget.
+          warnings.push(`${day}: ${lastPage} pages, only ${MAX_PAGES} ingested this run — remainder next run`)
+        }
+      } catch (e) {
+        // One slow day must not lose the other: Selcom's statement latency is
+        // erratic (sub-second to over a minute for the same query).
+        warnings.push(`${day}: statement fetch failed — ${e instanceof Error ? e.message : String(e)}`)
+      }
     }
 
     for (const row of transactions) {
@@ -478,7 +496,7 @@ export async function GET(request: NextRequest) {
       bankMatched,
       bankDeferredToManual,
       warnings,
-      closingBalance: statement.closingBalance,
+      closingBalance,
       timestamp: now.toISOString(),
     })
   } catch (err) {
