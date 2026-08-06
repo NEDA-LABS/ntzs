@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
-import { desc, eq } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 
 import { requireAnyRole, getCurrentDbUser } from '@/lib/auth/rbac'
 import { computeAttestation, generateDailyAttestation, isIncomplete } from '@/lib/attestation'
