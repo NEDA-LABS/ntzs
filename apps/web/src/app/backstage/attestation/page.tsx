@@ -64,6 +64,8 @@ async function recordStatementAction(formData: FormData) {
   const asOfRaw = String(formData.get('asOf') ?? '').trim()
   const reference = String(formData.get('reference') ?? '').trim()
   const note = String(formData.get('note') ?? '').trim()
+  const frozen = String(formData.get('frozen') ?? '') === 'on'
+  const frozenEvidence = String(formData.get('frozenEvidence') ?? '').trim()
 
   if (!['snippe', 'azampay', 'selcom'].includes(potKey)) throw new Error('Unknown reserve pot')
 
@@ -80,6 +82,12 @@ async function recordStatementAction(formData: FormData) {
   // the document this figure came from.
   if (!reference) throw new Error('A statement reference (file name or statement id) is required')
 
+  // The frozen flag buys weeks of extra life for this figure, so the claim
+  // behind it has to be pointable-at: which notice, which ticket, which email.
+  if (frozen && !frozenEvidence) {
+    throw new Error('Marking an account frozen requires the evidence for it (suspension notice, ticket, or email reference)')
+  }
+
   const { db } = getDb()
   await db.insert(reserveStatements).values({
     potKey,
@@ -87,6 +95,8 @@ async function recordStatementAction(formData: FormData) {
     asOf,
     reference,
     note: note || null,
+    frozen,
+    frozenEvidence: frozen ? frozenEvidence : null,
     enteredByUserId: operator.id,
   })
 
@@ -94,7 +104,7 @@ async function recordStatementAction(formData: FormData) {
     'attestation.statement_recorded',
     'reserve_pot',
     potKey,
-    { amountTzs, asOf: asOf.toISOString(), reference, note: note || null },
+    { amountTzs, asOf: asOf.toISOString(), reference, note: note || null, frozen, frozenEvidence: frozen ? frozenEvidence : null },
     operator.id
   )
   revalidatePath('/backstage/attestation')
@@ -192,9 +202,10 @@ export default async function AttestationPage({
 
         <p className="mt-3 max-w-3xl text-xs leading-relaxed text-zinc-500">
           The attestation prefers this to carrying our own last reading forward: it is current and it comes from the
-          custodian. It still qualifies the attestation, because a human typed it, and it ages out on the same{' '}
-          <code className="text-zinc-400">ATTESTATION_MAX_STALE_DAYS</code> clock — so keep filing them daily while the
-          API is down, or the report reverts to INCOMPLETE.
+          custodian. It still qualifies the attestation, because a human typed it. An ordinary statement ages out on the{' '}
+          <code className="text-zinc-400">ATTESTATION_MAX_STALE_DAYS</code> clock, so keep filing them while the API is
+          down; a statement for a <b>frozen</b> account (below) lasts much longer, because a suspended account cannot
+          transact. Never re-date an old statement to keep it alive — that is inventing a confirmation nobody gave.
         </p>
 
         <form action={recordStatementAction} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -224,6 +235,24 @@ export default async function AttestationPage({
             <button type="submit" className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500">
               Record
             </button>
+          </div>
+
+          <div className="sm:col-span-2 lg:col-span-5">
+            <label className="flex items-start gap-2.5 text-xs text-zinc-300">
+              <input type="checkbox" name="frozen" className="mt-0.5 h-4 w-4 rounded border-white/20 bg-black" />
+              <span>
+                <b>The provider has suspended this account, so the balance cannot move.</b> A frozen statement stays
+                usable for{' '}
+                <code className="text-zinc-400">ATTESTATION_FROZEN_STATEMENT_MAX_DAYS</code> (default 30) instead of 7 —
+                because the reason the short clock exists, money moving unseen, does not apply. It still expires: a
+                suspension can be lifted without anyone telling us.
+              </span>
+            </label>
+            <input
+              name="frozenEvidence"
+              placeholder="Evidence for the freeze — suspension notice, ticket or email reference (required if ticked)"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-emerald-500/50 focus:outline-none"
+            />
           </div>
         </form>
 

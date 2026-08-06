@@ -1901,6 +1901,12 @@ export const reserveStatements = pgTable(
     /** Statement id / filename — what to ask the provider for on review. */
     reference: text('reference'),
     note: text('note'),
+    /** The provider has suspended the account, so the balance cannot move.
+     *  Ages on a longer clock than an ordinary statement — but still ages, in
+     *  case the suspension is lifted without anyone telling us. Requires 0078. */
+    frozen: boolean('frozen').notNull().default(false),
+    /** What the frozen claim rests on: the suspension notice, ticket, or email. */
+    frozenEvidence: text('frozen_evidence'),
     enteredByUserId: uuid('entered_by_user_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
