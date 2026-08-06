@@ -7,6 +7,23 @@
  * example request used ATOP — the first live airtime test settles which one
  * the gateway actually accepts (an invalid code fails fast and harmlessly).
  * ⚠ Fees per biller are still pending from Selcom.
+ *
+ * ⚠ LENGTH BOUNDS ARE TRANSCRIBED, NOT PROVEN, and the two failure directions
+ * are not symmetric:
+ *
+ *   too STRICT — we refuse a reference Selcom would have accepted. The customer
+ *                cannot pay, sees our error, and nothing reaches the gateway to
+ *                tell us we were wrong. Silent and customer-facing.
+ *   too LOOSE  — Selcom refuses it and says so. Recoverable, and it teaches us.
+ *
+ * So an unverified exact length is the dangerous shape, and passing ONE bound
+ * to b() means exactly that length. DSTV was defined that way and blocked real
+ * 10-digit smartcards until 6 Aug 2026. Where the true range is unknown, prefer
+ * the wider bound or omit bounds entirely and let the gateway adjudicate.
+ *
+ * Rejections are logged (code + observed length, never the reference itself —
+ * a meter or smartcard number is customer data), so production reports a wrong
+ * bound instead of a customer having to.
  */
 
 export type BillerCategory = 'utility' | 'tv' | 'internet' | 'government' | 'travel'
@@ -44,7 +61,9 @@ export const SELCOM_BILLERS: SelcomBiller[] = [
   b('HIGHLAND', 'utility', 'Meter Number', 'numeric', 11),
   b('THORNLUX', 'utility', 'Meter Number', 'numeric', 11),
   // TV subscriptions
-  b('DSTV', 'tv', 'Smartcard No', 'numeric', 11),
+  // 10–11, not exactly 11. The PDF gave one length; a real 10-digit smartcard
+  // was rejected in testing on 6 Aug 2026. Field evidence outranks the PDF.
+  b('DSTV', 'tv', 'Smartcard No', 'numeric', 10, 11),
   b('ZMUX', 'tv', 'Smartcard No', 'numeric', 16),
   b('AZAMTV', 'tv', 'Smartcard No', 'numeric', 12),
   b('STARTIMES', 'tv', 'Customer ID or Smartcard No', 'numeric', 10, 11),
@@ -99,10 +118,18 @@ export function validateUtilityRef(code: string, ref: string): { ok: boolean; re
     return { ok: false, reason: `${biller.refLabel} must be ${biller.refKind === 'numeric' ? 'digits only' : 'letters and digits only'}` }
   }
 
-  if (biller.refMin != null && value.length < biller.refMin) {
-    return { ok: false, reason: lengthHint(biller) }
-  }
-  if (biller.refMax != null && value.length > biller.refMax) {
+  if (
+    (biller.refMin != null && value.length < biller.refMin) ||
+    (biller.refMax != null && value.length > biller.refMax)
+  ) {
+    // A length rejection is the one outcome that can be OUR error rather than
+    // the payer's: these bounds were transcribed from a PDF, and a too-strict
+    // one blocks a payment the gateway would have taken. Logged so a wrong
+    // bound surfaces in our own logs rather than as a support ticket. The
+    // length only — the reference itself is customer data.
+    console.warn(
+      `[selcom-billers] reference length rejected: code=${biller.code} observed=${value.length} allowed=${biller.refMin}-${biller.refMax}`
+    )
     return { ok: false, reason: lengthHint(biller) }
   }
   return { ok: true }

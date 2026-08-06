@@ -38,3 +38,32 @@ describe('selcom-billers catalogue (SB Biller Codes PDF, 25 Jul 2026)', () => {
     expect(validateUtilityRef('NOTREAL', 'anything-at-all').ok).toBe(true)
   })
 })
+
+/**
+ * Reported 6 Aug 2026 from a Pay Bill testing session: a real 10-digit DSTV
+ * smartcard was refused. The catalogue was transcribed from Selcom's PDF with a
+ * single length, and one length means EXACTLY that length.
+ */
+describe('reference length bounds', () => {
+  it('accepts a 10-digit DSTV smartcard, which is a real card length', () => {
+    expect(validateUtilityRef('DSTV', '1234567890').ok).toBe(true)
+  })
+
+  it('still accepts 11 digits', () => {
+    expect(validateUtilityRef('DSTV', '12345678901').ok).toBe(true)
+  })
+
+  it('rejects lengths outside the range', () => {
+    expect(validateUtilityRef('DSTV', '123456789').ok).toBe(false)
+    expect(validateUtilityRef('DSTV', '123456789012').ok).toBe(false)
+  })
+
+  it('a one-argument bound means an EXACT length — the shape that caused this', () => {
+    // Not a defect in itself, but the trap: every biller below is a
+    // transcription nobody has proven, and too-strict silently blocks a real
+    // payment while too-loose merely gets refused by the gateway.
+    const exactLength = SELCOM_BILLERS.filter((b) => b.refMin != null && b.refMin === b.refMax)
+    expect(exactLength.length).toBeGreaterThan(0)
+    expect(exactLength.map((b) => b.code)).not.toContain('DSTV')
+  })
+})

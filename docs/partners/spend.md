@@ -93,9 +93,22 @@ GET /api/v1/spend/billers
 Authorization: Bearer <partner api key>
 ```
 
-Returns billers grouped by category, each with its `referenceLabel` (e.g. "Meter No"), format
-rules, and a `feeFreeUnder20k` flag. **Government bills (GEPG, DAWASA, NHC, Traffic Fine, water
-bills) are free up to 20,000 TZS** — worth surfacing.
+Returns billers grouped by category, each with its `referenceLabel` (e.g. "Meter No") and format
+rules.
+
+**On the fee flags — do not render `selcomFeeFreeUnder20k` as "no fee".** Government bills (GEPG,
+DAWASA, NHC, Traffic Fine, water bills) carry **no Selcom fee** up to 20,000 TZS, and that is worth
+surfacing — but a service fee applies to every payment regardless of biller or amount, so the payer
+is never charged nothing. A 1,000 TZS government bill costs 35 TZS in fees.
+
+| Field | Meaning |
+|---|---|
+| `selcomFeeFreeUnder20k` | True when Selcom's own charge is zero under 20,000 TZS. **Narrow and true** |
+| `feeFreeUnder20k` | True only when the payer would be charged **nothing at all**. Effectively never |
+| `feeNote` | Ready-made wording for the first case — use it rather than writing your own |
+
+Price every payment with `POST /api/v1/spend/quote` and show that total. This endpoint is the
+picker's metadata, not a pricing API.
 
 ## Test recipe
 
