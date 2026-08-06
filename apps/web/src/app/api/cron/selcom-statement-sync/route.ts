@@ -110,7 +110,10 @@ export async function GET(request: NextRequest) {
 
         const rows = s.transactions.map((row) => {
           const parsed = parseStatementRow(row)
-          const base = { keys: Object.keys(row) }
+          // Raw row included deliberately: this is our own settlement account,
+          // the caller is cron-authenticated, and the parse failure can only be
+          // diagnosed from the actual values Selcom sends.
+          const base = { keys: Object.keys(row), raw: row }
           if (parsed.kind !== 'credit') return { ...base, kind: parsed.kind, reason: 'reason' in parsed ? parsed.reason : null }
           const searched = [parsed.reference, parsed.narrative, parsed.payerName]
           return {
