@@ -115,8 +115,11 @@ describe("a provider's own statement beats our memory of its API", () => {
     expect(src).toContain('asOf: new Date(row.asOf).toISOString()')
   })
 
-  it('ages out on the same clock, so stale statements cannot accumulate', () => {
-    expect(src).toContain('statement && withinLimit(statement.asOf)')
+  it('expires, so an old statement cannot quietly stand in for ever', () => {
+    // An ordinary statement ages on the same clock as a carried-forward
+    // reading; a frozen one gets a longer clock but still ages (below).
+    expect(src).toContain('const allowed = statement.frozen ? maxFrozenStatementDays() : limitDays')
+    expect(src).toContain('ageDays <= allowed')
   })
 
   it('still qualifies the attestation — a human transcribed it', () => {
@@ -136,5 +139,39 @@ describe("a provider's own statement beats our memory of its API", () => {
     )
     expect(page).toContain('A statement reference (file name or statement id) is required')
     expect(page).toContain('Statement date cannot be in the future')
+  })
+})
+
+describe('a statement for an account the provider has frozen', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'attestation.ts'), 'utf8')
+  const page = fs.readFileSync(path.join(__dirname, '../app/backstage/attestation/page.tsx'), 'utf8')
+
+  it('lives on a longer clock, because the balance cannot move', () => {
+    // The 7-day limit exists because money can move at the provider unseen. A
+    // suspended account cannot transact, so that premise is gone — and a
+    // suspension can easily outlast a week.
+    expect(src).toContain('ATTESTATION_FROZEN_STATEMENT_MAX_DAYS')
+    expect(src).toContain('statement.frozen ? maxFrozenStatementDays() : limitDays')
+  })
+
+  it('STILL expires — the flag rests on a claim that can silently stop being true', () => {
+    // A lifted suspension is not announced to us. From that moment the balance
+    // moves again while we quote a month-old figure.
+    expect(src).toContain('ageDays <= allowed')
+  })
+
+  it('demands evidence for the freeze, not just a tick', () => {
+    expect(page).toContain('Marking an account frozen requires the evidence for it')
+  })
+
+  it('says on the attestation that the account is suspended', () => {
+    expect(src).toContain('account suspended by the provider, so the balance cannot move')
+    expect(src).toContain('The provider has suspended the account, so the balance cannot move.')
+  })
+
+  it('warns an operator against re-dating an old statement', () => {
+    // The tempting workaround, and the one that would be fabrication: re-file
+    // yesterday's figure with today's date to restart the clock.
+    expect(page).toContain('Never re-date an old statement')
   })
 })

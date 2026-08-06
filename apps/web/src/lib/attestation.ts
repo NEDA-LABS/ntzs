@@ -156,6 +156,23 @@ const POT_LABELS: Record<string, string> = {
 const maxStaleDays = () => parseFloat(process.env.ATTESTATION_MAX_STALE_DAYS ?? '7') || 7
 
 /**
+ * The same limit for a statement covering an account the provider has FROZEN.
+ *
+ * The ordinary clock exists because money can move at the provider unseen. A
+ * suspended account cannot transact — the custodian has said so in writing —
+ * so that premise is gone and a single statement stays meaningful for far
+ * longer. A suspension can run for weeks; expiring a valid figure after seven
+ * days would force a choice between an INCOMPLETE report and re-dating a
+ * statement nobody re-issued, and the second of those is fabrication.
+ *
+ * It still expires. The flag rests on the provider's claim, and a suspension
+ * can be lifted without anyone telling us — from that moment the balance moves
+ * again while we quote a month-old figure.
+ */
+const maxFrozenStatementDays = () =>
+  parseFloat(process.env.ATTESTATION_FROZEN_STATEMENT_MAX_DAYS ?? '30') || 30
+
+/**
  * The last VERIFIED reading of a pot, from the most recent attestation that
  * actually read it live.
  *
@@ -198,7 +215,10 @@ async function lastKnownPot(key: string): Promise<ReservePot | null> {
  * attestation and ages out on the same clock. Ordered by the STATEMENT's date,
  * then by entry time so a correction filed later for the same date wins.
  */
-async function latestStatementPot(key: string, label: string): Promise<ReservePot | null> {
+async function latestStatementPot(
+  key: string,
+  label: string
+): Promise<(ReservePot & { frozen: boolean }) | null> {
   try {
     const { db } = getDb()
     const [row] = await db
@@ -206,6 +226,8 @@ async function latestStatementPot(key: string, label: string): Promise<ReservePo
         amountTzs: reserveStatements.amountTzs,
         asOf: reserveStatements.asOf,
         reference: reserveStatements.reference,
+        frozen: reserveStatements.frozen,
+        frozenEvidence: reserveStatements.frozenEvidence,
       })
       .from(reserveStatements)
       .where(eq(reserveStatements.potKey, key))
@@ -216,6 +238,7 @@ async function latestStatementPot(key: string, label: string): Promise<ReservePo
     const amount = Number(row.amountTzs)
     if (!Number.isFinite(amount)) return null
 
+    const frozen = row.frozen === true
     return {
       key,
       label,
@@ -224,7 +247,10 @@ async function latestStatementPot(key: string, label: string): Promise<ReservePo
       // The statement's own date. Entering Tuesday's statement on Thursday must
       // not make it look like Thursday's balance.
       asOf: new Date(row.asOf).toISOString(),
-      note: `Provider statement${row.reference ? ` ${row.reference}` : ''}, entered by an operator — API unavailable`,
+      note: frozen
+        ? `Provider statement${row.reference ? ` ${row.reference}` : ''} — account suspended by the provider, so the balance cannot move${row.frozenEvidence ? ` (${row.frozenEvidence})` : ''}`
+        : `Provider statement${row.reference ? ` ${row.reference}` : ''}, entered by an operator — API unavailable`,
+      frozen,
     }
   } catch (e) {
     // The table arrives with 0077; until then there simply are no statements.
@@ -248,14 +274,27 @@ async function latestStatementPot(key: string, label: string): Promise<ReservePo
  */
 async function fallbackToSnapshot(key: string, label: string, failure: string): Promise<PotRead> {
   const limitDays = maxStaleDays()
-  const withinLimit = (iso: string) => {
-    const ageDays = (Date.now() - Date.parse(iso)) / 86_400_000
-    return Number.isFinite(ageDays) && ageDays <= limitDays
-  }
 
-  // A statement the provider issued beats our memory of their API.
+  // A statement the provider issued beats our memory of their API — and one
+  // covering a frozen account stays meaningful for far longer, because the
+  // custodian has made the balance incapable of moving.
   const statement = await latestStatementPot(key, label)
-  if (statement && withinLimit(statement.asOf)) return { pot: statement }
+  if (statement) {
+    const ageDays = (Date.now() - Date.parse(statement.asOf)) / 86_400_000
+    const allowed = statement.frozen ? maxFrozenStatementDays() : limitDays
+    if (Number.isFinite(ageDays) && ageDays <= allowed) {
+      return {
+        pot: {
+          key: statement.key,
+          label: statement.label,
+          source: statement.source,
+          amountTzs: statement.amountTzs,
+          asOf: statement.asOf,
+          note: statement.note,
+        },
+      }
+    }
+  }
 
   const snapshot = await lastKnownPot(key)
   if (!snapshot) return { failure: `${failure} — no previous verified reading to carry forward` }
@@ -557,7 +596,9 @@ export async function computeAttestation(): Promise<AttestationReport | Incomple
     ...(notes ?? []),
     ...unverifiedPots.map((p) =>
       p.source === 'statement'
-        ? `QUALIFIED: ${p.label} is taken from the provider's own statement as at ${p.asOf}, entered by an operator — the provider's API could not be read for this report.`
+        ? `QUALIFIED: ${p.label} is taken from the provider's own statement as at ${p.asOf}, entered by an operator — the provider's API could not be read for this report.${
+            p.note?.includes('account suspended') ? ' The provider has suspended the account, so the balance cannot move.' : ''
+          }`
         : `QUALIFIED: ${p.label} is our last verified reading, as at ${p.asOf} — the provider could not be read for this report. The balance is held at the provider; it is not verified as at today.`
     ),
   ]
