@@ -178,13 +178,34 @@ Neither helps if your app displays `qrMerchantName` instead of `merchantName`. *
 
 `/v1/lookup/qr` works fully on a **test key** — it decodes for real and returns a resolved merchant without calling the acquirer, so the whole scan → confirm → quote → pay screen is buildable in sandbox before any rail is live.
 
-To generate a test code, encode this string as a QR image with any generator:
+Two valid sample payloads, checksums correct. Send either as `payload` directly, or encode it as a QR image with any generator and point a real camera at it:
+
+**Static** — a counter sticker, no amount:
 
 ```
-00020101021126360016tz.go.bot.tanqr01061234565303834540550005802TZ5917KARIAKOO HARDWARE6013DAR ES SALAAM6304
+00020101021126290015tz.go.bot.tanqr01061234565204531153038345802TZ5917KARIAKOO HARDWARE6013DAR ES SALAAM63047314
 ```
 
-⚠️ That string is missing its final four checksum characters on purpose — a hand-written EMVCo payload is almost always wrong, and a wrong one teaches you nothing. Ask us for a valid sample code, or take a photo of a real merchant sticker and send us the decoded string.
+```json
+{ "payNumber": "123456", "merchantName": "KARIAKOO HARDWARE",
+  "amountTzs": null, "dynamic": false, "resolution": "resolved" }
+```
+
+**Dynamic** — a POS screen with the amount and an invoice reference:
+
+```
+00020101021226290015tz.go.bot.tanqr01067788995303834540450005802TZ5916MAMA NTILIE CAFE6013DAR ES SALAAM62130509INV-009316304F4A1
+```
+
+```json
+{ "payNumber": "778899", "merchantName": "MAMA NTILIE CAFE",
+  "amountTzs": 5000, "dynamic": true, "reference": "INV-00931",
+  "resolution": "resolved" }
+```
+
+To exercise your error handling, change any single character in the middle of either string. The checksum will no longer match its contents and you'll get `checksum_failed` — which is exactly what a tampered sticker produces, so it's worth seeing what your UI does with it.
+
+Don't hand-write your own payloads. Every field carries its own length and the whole thing carries a checksum, so a hand-built string is almost always subtly wrong, and a wrong one teaches you nothing about your integration.
 
 ---
 
@@ -194,7 +215,7 @@ To generate a test code, encode this string as a QR image with any generator:
 
 **"Do we need TANQR enabled on our account?"** No. If `/v1/spend` works for you, QR works for you.
 
-**"Does it work across banks and networks?"** Yes — this has been tested with Lipa numbers from other banks, across all mobile networks, and by QR.
+**"Does it work across banks and networks?"** Yes. This is live in production today: the NEDApay app runs on these same APIs, and scanning and paying a Lipa Namba works across banks and across every mobile network. You are not the first integration of this flow.
 
 **"Can we skip the lookup and parse the QR ourselves?"** You can, and we publish enough here for you to try. We would rather you didn't: the merchant identifier's position is scheme-defined, so a parser that works on the codes you have on your desk can quietly mis-read a different acquirer's and pay the wrong till. The lookup confirms the till against the acquirer's register before it hands it to you; a local parser cannot.
 
