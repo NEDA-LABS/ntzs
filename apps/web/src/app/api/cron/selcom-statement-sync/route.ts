@@ -14,7 +14,6 @@ import {
   W2B_MATCH_WINDOW_HOURS,
   BANK_CHANNEL,
   suggestBankMatch,
-  bankReferenceInText,
   formatBankReference,
 } from '@/lib/psp/selcom-statement'
 import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
@@ -77,80 +76,6 @@ export async function GET(request: NextRequest) {
     const { db } = getDb()
     const now = new Date()
     const startedAt = Date.now()
-
-    // TEMP diagnostic (5 Aug 2026): the live statement fetch times out and the
-    // sandbox account this repo's env points at is empty, so the only way to
-    // find parameters that return in time is to probe production. Read-only —
-    // fetches and reports timing, never touches the ledger.
-    const probe = request.nextUrl.searchParams.get('probe')
-    if (probe) {
-      const perPage = Number(request.nextUrl.searchParams.get('perPage') ?? 50)
-      const days = Number(request.nextUrl.searchParams.get('days') ?? 0)
-      const preset = request.nextUrl.searchParams.get('preset') ?? undefined
-      // Explicit single-day windows: multi-day ranges consistently time out
-      // while one day returns in seconds, so the day is the unit worth testing.
-      const from = request.nextUrl.searchParams.get('from') ?? undefined
-      const to = request.nextUrl.searchParams.get('to') ?? undefined
-      const t0 = Date.now()
-      try {
-        const s = await getStatement(
-          preset
-            ? { preset, perPage, page: 1 }
-            : {
-                fromDate: from ?? ymdEAT(new Date(now.getTime() - days * 24 * 3600_000)),
-                toDate: to ?? ymdEAT(now),
-                perPage,
-                page: 1,
-              },
-        )
-        // Does the payer's reference actually survive the transfer? Show the
-        // raw keys and the parsed credit fields the matcher searches, plus
-        // whether any open bank intent's token is found in them.
-        const openIntents = await db
-          .select({ id: depositRequests.id, reference: depositRequests.pspReference, amountTzs: depositRequests.amountTzs })
-          .from(depositRequests)
-          .where(and(eq(depositRequests.pspChannel, BANK_CHANNEL), eq(depositRequests.status, 'submitted')))
-          .limit(20)
-
-        const rows = s.transactions.map((row) => {
-          const parsed = parseStatementRow(row)
-          // Raw row included deliberately: this is our own settlement account,
-          // the caller is cron-authenticated, and the parse failure can only be
-          // diagnosed from the actual values Selcom sends.
-          const base = { keys: Object.keys(row), raw: row }
-          if (parsed.kind !== 'credit') return { ...base, kind: parsed.kind, reason: 'reason' in parsed ? parsed.reason : null }
-          const searched = [parsed.reference, parsed.narrative, parsed.payerName]
-          return {
-            ...base,
-            kind: 'credit' as const,
-            amountTzs: parsed.amountTzs,
-            reference: parsed.reference,
-            narrative: parsed.narrative,
-            payerName: parsed.payerName,
-            tokenHit: openIntents
-              .filter((i) => i.reference && searched.some((f) => bankReferenceInText(i.reference!, f)))
-              .map((i) => ({ token: i.reference, amountMatches: i.amountTzs === parsed.amountTzs })),
-          }
-        })
-
-        return NextResponse.json({
-          probe: true,
-          ms: Date.now() - t0,
-          params: { perPage, days, preset: preset ?? null },
-          // Which account are we actually reading? If the statement account is
-          // not the account payers are told to send to, no credit can ever be
-          // seen — regardless of references or timeouts.
-          statementAccount: { number: s.accountNumber ?? null, name: s.accountName ?? null },
-          collectionAccount: getBankCollectionConfig()?.accountNumber ?? null,
-          rowCount: s.transactions.length,
-          closingBalance: s.closingBalance,
-          openIntents: openIntents.map((i) => ({ token: i.reference, amountTzs: i.amountTzs })),
-          rows,
-        })
-      } catch (e) {
-        return NextResponse.json({ probe: true, ms: Date.now() - t0, params: { perPage, days, preset: preset ?? null }, error: (e as Error).message })
-      }
-    }
 
     // ── 1. Ingest statement credits into the orphan ledger ──────────────────
     let ingested = 0
