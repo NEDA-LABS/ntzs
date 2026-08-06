@@ -10,8 +10,9 @@ import {
   lengthHint,
   type BillerCategory,
 } from '@/lib/psp/selcom-billers'
+import QrScanPanel from './QrScanPanel'
 
-type Kind = 'bill' | 'lipa' | 'wallet' | 'bank'
+type Kind = 'bill' | 'lipa' | 'wallet' | 'bank' | 'scan'
 const CUSTOM_CODE = '__custom'
 
 export interface BankOption {
@@ -298,8 +299,23 @@ export default function SpendTestForm({
         {tab('lipa', 'Lipa Namba', lipaEnabled)}
         {tab('wallet', 'Wallet payout', walletEnabled)}
         {tab('bank', 'Bank payout', bankEnabled)}
+        {/* Read-only: decoding a QR moves no money, so it is never flag-gated. */}
+        {tab('scan', 'Scan to pay', true)}
       </div>
 
+      {kind === 'scan' && (
+        <QrScanPanel
+          onUseTill={(till, amountTzs) => {
+            setPayNumber(till)
+            if (amountTzs) setAmount(String(amountTzs))
+            setLookupText(null)
+            setKind('lipa')
+          }}
+        />
+      )}
+
+      {kind !== 'scan' && (
+      <>
       <div className="grid gap-4 sm:grid-cols-2">
         {kind === 'bank' ? (
           <>
@@ -565,6 +581,8 @@ export default function SpendTestForm({
             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(result, null, 2)}</pre>
           </details>
         </div>
+      )}
+      </>
       )}
 
       <div className="mt-8 border-t border-white/10 pt-6">
