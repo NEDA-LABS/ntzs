@@ -33,6 +33,10 @@ interface DecodeResponse {
     amountTzs: number | null
     merchantCategoryCode: string | null
     reference: string | null
+    scheme: string | null
+    schemeLabel: string | null
+    merchantIdentifier: string | null
+    acquirerIdentifier: string | null
     accounts: Array<{ tag: string; guid: string | null; values: string[] }>
     candidateTillNumbers: string[]
   }
@@ -284,6 +288,8 @@ export default function QrScanPanel({
             <Row label="Type" value={d.dynamic ? 'dynamic (merchant set the amount)' : 'static sticker'} />
             <Row label="MCC" value={d.merchantCategoryCode} />
             <Row label="Reference" value={d.reference} />
+            <Row label="Scheme" value={d.schemeLabel ?? d.scheme ?? 'unrecognised — searching candidates'} />
+            <Row label="Acquirer code" value={d.acquirerIdentifier} />
           </div>
 
           {/* The bit we could not know without a real code */}

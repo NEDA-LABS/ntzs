@@ -48,6 +48,40 @@ const SUB_REFERENCE_LABEL = '05'
 /** A Lipa Namba, matching what /v1/lookup/merchant-name and the quote accept. */
 const TILL_NUMBER_RE = /^\d{4,12}$/
 
+/**
+ * Schemes whose layout we have READ OFF A REAL CODE, not inferred.
+ *
+ * TANQR carries the GUID `tz.go.bot.tips` — the Bank of Tanzania's Instant
+ * Payment System. Decoded from a live merchant sticker on 6 Aug 2026
+ * (THE DECK AND KITCHEN BAR, Dar es Salaam):
+ *
+ *   26  0014 tz.go.bot.tips     ← scheme
+ *       0105 02504              ← acquirer / PSP institution code
+ *       0209 138974122          ← THE MERCHANT'S LIPA NAMBA
+ *   62  0309 138974122          ← store label, repeating the same till
+ *
+ * Selcom settled which is which from evidence rather than assumption: `02504`
+ * came back "unable to detect network provider", `138974122` came back
+ * "THE DECK KITCHEN AND BAR". The store label in tag 62 corroborates it
+ * independently.
+ *
+ * Knowing this turns a two-call search into one lookup, stops us asking the
+ * acquirer about an institution code that can never resolve, and — the part
+ * that matters — removes the chance of calling a code ambiguous because two of
+ * its values happened to look like tills.
+ *
+ * The mapping is a fast path, never a hard dependency: `candidateTillNumbers`
+ * still carries every value, so if the scheme's layout ever changes the search
+ * fallback continues to find the merchant.
+ */
+const KNOWN_SCHEMES: Record<string, { merchantSubTag: string; acquirerSubTag: string; label: string }> = {
+  'tz.go.bot.tips': {
+    merchantSubTag: '02',
+    acquirerSubTag: '01',
+    label: 'TIPS — Tanzania Instant Payment System (TANQR)',
+  },
+}
+
 export interface QrMerchantAccount {
   /** The template tag it was found under (26–51 are scheme-defined). */
   tag: string
@@ -55,6 +89,8 @@ export interface QrMerchantAccount {
   guid: string | null
   /** Every other sub-value, in sub-tag order. */
   values: string[]
+  /** Sub-values keyed by sub-tag, so a known scheme can address them by name. */
+  fields?: Record<string, string>
 }
 
 export interface DecodedMerchantQr {
@@ -75,6 +111,17 @@ export interface DecodedMerchantQr {
    * are worth trying. A candidate is a guess until the acquirer confirms it.
    */
   candidateTillNumbers: string[]
+  /** The scheme GUID, when it is one whose layout we have read off a real code. */
+  scheme: string | null
+  /** Human label for that scheme. */
+  schemeLabel: string | null
+  /**
+   * The value the KNOWN scheme designates as the merchant's till — the fast
+   * path. Null for an unrecognised scheme, where the candidate search decides.
+   */
+  merchantIdentifier: string | null
+  /** The acquirer/institution code. Never the merchant, and never resolves. */
+  acquirerIdentifier: string | null
 }
 
 export type QrDecodeResult =
@@ -195,6 +242,11 @@ export function decodeMerchantQr(payload: string): QrDecodeResult {
   // templates a domestic scheme defines for itself.
   const accounts: QrMerchantAccount[] = []
   const candidates: string[] = []
+  let scheme: string | null = null
+  let schemeLabel: string | null = null
+  let merchantIdentifier: string | null = null
+  let acquirerIdentifier: string | null = null
+
   const pushCandidate = (v: string) => {
     const trimmed = v.trim()
     if (TILL_NUMBER_RE.test(trimmed) && !candidates.includes(trimmed)) candidates.push(trimmed)
@@ -218,9 +270,31 @@ export function decodeMerchantQr(payload: string): QrDecodeResult {
       continue
     }
     const guid = sub.find((s) => s.tag === '00')?.value ?? null
-    const values = sub.filter((s) => s.tag !== '00').map((s) => s.value)
-    accounts.push({ tag: field.tag, guid, values })
-    for (const v of values) pushCandidate(v)
+    const rest = sub.filter((s) => s.tag !== '00')
+    const fieldsBySubTag: Record<string, string> = {}
+    for (const s of rest) fieldsBySubTag[s.tag] = s.value
+    accounts.push({ tag: field.tag, guid, values: rest.map((s) => s.value), fields: fieldsBySubTag })
+
+    const known = guid ? KNOWN_SCHEMES[guid] : undefined
+    if (known && !scheme) {
+      scheme = guid
+      schemeLabel = known.label
+      const designated = fieldsBySubTag[known.merchantSubTag]?.trim()
+      if (designated && TILL_NUMBER_RE.test(designated)) merchantIdentifier = designated
+      const acquirer = fieldsBySubTag[known.acquirerSubTag]?.trim()
+      if (acquirer) acquirerIdentifier = acquirer
+    }
+
+    for (const s of rest) pushCandidate(s.value)
+  }
+
+  // Order the search so the value the scheme designates is tried first, and the
+  // acquirer code — which we know can never resolve to a merchant — is tried
+  // last rather than dropped, so an unannounced change to the scheme's layout
+  // degrades into a slower search instead of a hard failure.
+  if (merchantIdentifier || acquirerIdentifier) {
+    const rank = (v: string) => (v === merchantIdentifier ? 0 : v === acquirerIdentifier ? 2 : 1)
+    candidates.sort((a, b) => rank(a) - rank(b))
   }
 
   const currencyNumeric = findValue(fields, TAG_CURRENCY)
@@ -256,6 +330,10 @@ export function decodeMerchantQr(payload: string): QrDecodeResult {
       reference,
       accounts,
       candidateTillNumbers: candidates,
+      scheme,
+      schemeLabel,
+      merchantIdentifier,
+      acquirerIdentifier,
     },
   }
 }

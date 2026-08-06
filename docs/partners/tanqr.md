@@ -217,7 +217,25 @@ Don't hand-write your own payloads. Every field carries its own length and the w
 
 **"Does it work across banks and networks?"** Yes. This is live in production today: the NEDApay app runs on these same APIs, and scanning and paying a Lipa Namba works across banks and across every mobile network. You are not the first integration of this flow.
 
-**"Can we skip the lookup and parse the QR ourselves?"** You can, and we publish enough here for you to try. We would rather you didn't: the merchant identifier's position is scheme-defined, so a parser that works on the codes you have on your desk can quietly mis-read a different acquirer's and pay the wrong till. The lookup confirms the till against the acquirer's register before it hands it to you; a local parser cannot.
+**"Can we skip the lookup and parse the QR ourselves?"** You can. TANQR is EMVCo merchant-presented QR, and here is a real code's structure so nothing is hidden from you:
+
+```
+00 02 01                          payload format indicator
+01 02 11                          static (12 = dynamic)
+26 40   00 14 tz.go.bot.tips      scheme: BoT Instant Payment System
+        01 05 02504               acquirer / PSP institution code
+        02 09 138974122           ← THE MERCHANT'S LIPA NAMBA
+52 04 0000                        merchant category code
+53 03 834                         currency: TZS
+58 02 TZ                          country
+59 24 THE DECK AND KITCHEN BAR    merchant name (as printed in the code)
+60 08 TANZANIA                    city
+61 05 14110                       postal code
+62 13   03 09 138974122           store label
+63 04 F3ED                        CRC-16/CCITT-FALSE over everything incl. "6304"
+```
+
+We would still rather you called the endpoint, for two reasons that have nothing to do with gatekeeping. **Sub-tag 01 is not the till** — it is the acquirer, and paying it fails; a parser that grabs the first number it finds gets this wrong. And a local parser cannot confirm the till against the acquirer's register, so it cannot tell you the merchant's real registered name, which is the only defence against a swapped sticker. You would be shipping the attack surface described above and turning off its mitigation.
 
 **"What if the customer has no nTZS?"** Same as any spend — fund the wallet first. QR changes nothing about funding.
 

@@ -13,6 +13,28 @@ export const maxDuration = 60
 
 const SCANS_PER_MINUTE = 120
 
+/** One audit row per scan, never allowed to fail the request. */
+async function recordScan(
+  partnerId: string,
+  resolution: string,
+  payNumber: string | null,
+  candidates: number
+): Promise<void> {
+  try {
+    const { sql } = getDb()
+    await sql`
+      insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
+      values ('partner.qr_scan', 'partner', ${partnerId}, ${JSON.stringify({
+        resolution,
+        payNumber,
+        candidates,
+      })}::jsonb, now())
+    `
+  } catch (err) {
+    console.warn('[v1/lookup/qr] audit insert failed:', err instanceof Error ? err.message : err)
+  }
+}
+
 /**
  * POST /api/v1/lookup/qr — turn a scanned merchant QR into something payable.
  *
@@ -27,14 +49,21 @@ const SCANS_PER_MINUTE = 120
  * and nothing to enable: a scan is a shortcut to a till number you could have
  * typed.
  *
- * ── How the till number is established, and why not by guessing ────────────
+ * ── How the till number is established ─────────────────────────────────────
  * The EMVCo envelope is standard and is decoded strictly (checksum verified,
- * no partial parses). Where the identifier sits inside the scheme's own
- * template is not standard, so instead of hardcoding a tag we take every
- * plausible identifier out of the code and ask the acquirer which one is a
- * registered merchant. Exactly one match resolves; several matches is reported
- * as ambiguous rather than resolved, because picking one would be picking who
- * gets paid.
+ * no partial parses). Where the identifier sits inside the scheme's template
+ * is not, so there are two paths:
+ *
+ *  1. A RECOGNISED scheme — TANQR carries GUID `tz.go.bot.tips` — has its
+ *     layout recorded in lib/psp/qr.ts, read off a real merchant sticker
+ *     rather than assumed. One lookup confirms the designated till.
+ *  2. Anything else falls back to a search: take every plausible identifier
+ *     and ask the acquirer which is a registered merchant. Exactly one match
+ *     resolves; several is reported as ambiguous rather than resolved, because
+ *     picking one would be picking who gets paid.
+ *
+ * The search is retained even for known schemes, so a change to the scheme's
+ * layout degrades into a slower answer rather than a wrong one.
  *
  * ── The sticker-swap check ────────────────────────────────────────────────
  * The common attack on printed QR is physical: a criminal pastes their own
@@ -136,6 +165,38 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // ── Fast path: the scheme told us which value is the merchant's ──────────
+  // For a recognised scheme (TANQR carries GUID tz.go.bot.tips) the till's
+  // position is known from a decoded real code, so one lookup settles it. This
+  // also removes the chance of calling a code "ambiguous" because a second
+  // value in it happened to resolve.
+  if (qr.merchantIdentifier) {
+    try {
+      const info = await nedaAccountLookup('SB2LIPA', qr.merchantIdentifier)
+      if (info.name) {
+        const nameMatch = qrNameAgrees(qr.merchantName, info.name)
+        if (nameMatch === false) {
+          warnings.push(
+            `The name printed in this code ("${qr.merchantName}") does not match the registered account holder ("${info.name}"). A QR sticker pasted over another merchant's looks exactly like this. Show both names and make the user confirm before paying.`
+          )
+        }
+        await recordScan(partner.id, 'resolved', qr.merchantIdentifier, 1)
+        return NextResponse.json({
+          kind: 'lipa',
+          ...base,
+          payNumber: qr.merchantIdentifier,
+          merchantName: info.name,
+          nameMatch,
+          resolution: 'resolved',
+          warnings,
+        })
+      }
+    } catch {
+      // Fall through to the search — a transient acquirer failure must not
+      // turn a perfectly good code into "unresolved".
+    }
+  }
+
   // Try in parallel: sequential upstream lookups would blow the request
   // budget, and we need every answer anyway to detect ambiguity.
   const tried = qr.candidateTillNumbers.slice(0, 3)
@@ -151,24 +212,8 @@ export async function POST(request: NextRequest) {
   )
   const hits = resolved.filter((r): r is { payNumber: string; name: string } => r !== null)
 
-  const audit = async (resolution: string, payNumber: string | null) => {
-    try {
-      const { sql } = getDb()
-      await sql`
-        insert into audit_logs (action, entity_type, entity_id, metadata, created_at)
-        values ('partner.qr_scan', 'partner', ${partner.id}, ${JSON.stringify({
-          resolution,
-          payNumber,
-          candidates: tried.length,
-        })}::jsonb, now())
-      `
-    } catch (err) {
-      console.warn('[v1/lookup/qr] audit insert failed:', err instanceof Error ? err.message : err)
-    }
-  }
-
   if (hits.length === 0) {
-    await audit('unresolved', null)
+    await recordScan(partner.id, 'unresolved', null, tried.length)
     return NextResponse.json({
       kind: 'lipa',
       ...base,
@@ -187,7 +232,7 @@ export async function POST(request: NextRequest) {
   if (hits.length > 1) {
     // Two registered merchants in one code. Choosing between them would be
     // choosing who receives the money, which is not ours to decide silently.
-    await audit('ambiguous', null)
+    await recordScan(partner.id, 'ambiguous', null, tried.length)
     return NextResponse.json({
       kind: 'lipa',
       ...base,
@@ -211,7 +256,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  await audit('resolved', hit.payNumber)
+  await recordScan(partner.id, 'resolved', hit.payNumber, tried.length)
 
   return NextResponse.json({
     kind: 'lipa',
