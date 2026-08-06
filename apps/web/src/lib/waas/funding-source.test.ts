@@ -167,3 +167,35 @@ describe('queued (≥1M) path — money lands in the right account', () => {
     expect(src).toContain('join partners p on p.id = sw.partner_id')
   })
 })
+
+/**
+ * 6 Aug 2026: a partner's spend/quote call failed with "userId or subWalletId
+ * is required". The validation was right — no userId was sent — but the error
+ * pointed at subWalletId, which for a non-wakala partner is a dead end
+ * (wakala_float_disabled), and said nothing about what the id is or where it
+ * comes from. An error that misdirects costs more than the bug it reports.
+ */
+describe('the missing-funding-source error', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'funding-source.ts'), 'utf8')
+
+  it('says what the id IS and where to get it', () => {
+    expect(src).toContain('the user whose nTZS balance pays for this')
+    expect(src).toContain('returned by POST /api/v1/users')
+  })
+
+  it('pre-empts the externalId-instead-of-userId mistake on both error paths', () => {
+    // The two ids are both opaque strings; sending the wrong one is invisible
+    // until the 404, which then reads like the user is missing entirely.
+    expect(src).toContain('not your own externalId')
+    expect(src).toContain('rather than your own externalId')
+  })
+
+  it('only mentions subWalletId where it is actually usable', () => {
+    expect(src).toContain('wakalaFloatEnabled()\n            ?')
+    expect(src).not.toContain("'userId or subWalletId is required'")
+  })
+
+  it('carries a stable machine-readable code', () => {
+    expect(src).toContain("error: 'funding_source_required'")
+  })
+})

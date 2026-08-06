@@ -205,7 +205,24 @@ export async function resolveFundingSource(
 
   // ── Default: the user's own wallet (unchanged behaviour) ──────────────────
   if (!body.userId) {
-    return { error: NextResponse.json({ error: 'userId or subWalletId is required' }, { status: 400 }) }
+    // Naming both fields with no further help actively misdirects: a partner
+    // reads "or subWalletId", tries it, and gets wakala_float_disabled — a
+    // dead end for anyone not on the agent-float product. So sub-wallets are
+    // mentioned only where they are actually usable, and the message says what
+    // the id IS and where it comes from. The externalId note pre-empts the very
+    // next mistake, which returns a different error ("User not found") and
+    // reads like the user is missing rather than the wrong id being sent.
+    return {
+      error: NextResponse.json(
+        {
+          error: 'funding_source_required',
+          message: wakalaFloatEnabled()
+            ? 'userId is required — the user whose nTZS balance pays for this. Use the id returned by POST /api/v1/users, not your own externalId. Agent-float partners may send subWalletId instead.'
+            : 'userId is required — the user whose nTZS balance pays for this. Use the id returned by POST /api/v1/users, not your own externalId.',
+        },
+        { status: 400 }
+      ),
+    }
   }
 
   const { partnerUsers } = await import('@ntzs/db')
@@ -215,7 +232,19 @@ export async function resolveFundingSource(
     .where(and(eq(partnerUsers.partnerId, partner.id), eq(partnerUsers.userId, body.userId)))
     .limit(1)
   if (!mapping) {
-    return { error: NextResponse.json({ error: 'User not found' }, { status: 404 }) }
+    // Almost always the partner's own externalId sent where our user id belongs
+    // — the two are both opaque strings, so the mistake is invisible until here.
+    return {
+      error: NextResponse.json(
+        {
+          error: 'User not found',
+          code: 'user_not_found',
+          message:
+            'No user with this id belongs to your account. Check you are sending the nTZS user id returned by POST /api/v1/users rather than your own externalId.',
+        },
+        { status: 404 }
+      ),
+    }
   }
 
   const [wallet] = await db
