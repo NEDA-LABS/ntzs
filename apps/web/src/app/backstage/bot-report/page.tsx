@@ -8,6 +8,8 @@ import {
   type Section,
 } from '@/lib/bot-report/figures'
 
+import { ExportReturnButton } from './ExportReturnButton'
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -127,13 +129,16 @@ export default async function BotReportPage({
   return (
     <div className="min-h-screen">
       <div className="border-b border-white/10 bg-zinc-950/50">
-        <div className="px-8 py-6">
-          <h1 className="text-2xl font-bold text-white">Periodic return — Bank of Tanzania</h1>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-            Generated, not assembled. Every figure prints the derivation behind it, so whoever signs the return can
-            re-derive it and the next period uses the same definitions. Anything that could not be computed is shown as
-            unavailable — never as zero.
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-4 px-8 py-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Periodic return — Bank of Tanzania</h1>
+            <p className="mt-1 max-w-3xl text-sm text-zinc-400">
+              Generated, not assembled. Every figure prints the derivation behind it, so whoever signs the return can
+              re-derive it and the next period uses the same definitions. Anything that could not be computed is shown
+              as unavailable — never as zero.
+            </p>
+          </div>
+          <ExportReturnButton report={report} warnings={warnings} />
         </div>
       </div>
 
