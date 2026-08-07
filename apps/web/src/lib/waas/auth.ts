@@ -13,6 +13,8 @@ import { isMissingSchemaObject } from '@/lib/db-errors'
 import { normalizeMode, type PartnerMode } from '@/lib/testmode/mode'
 import { partners } from '@ntzs/db'
 
+import { ipAllowed, requestSourceIp } from '@/lib/waas/ip-allowlist'
+
 export interface AuthenticatedPartner {
   id: string
   name: string
@@ -204,6 +206,28 @@ export async function verifyPartnerSession(token: string): Promise<Authenticated
  * Authenticate a partner from the request's Authorization header.
  * Returns the partner if valid, or a NextResponse error.
  */
+/** The partner's API IP allowlist, read tolerantly: before drizzle/0080 the
+ * column does not exist, which reads as "no restriction" — correct for an
+ * opt-in control that nobody can have configured yet. */
+let ipAllowlistColumnMissing = false
+async function partnerIpAllowlist(partnerId: string): Promise<string[] | null> {
+  if (ipAllowlistColumnMissing) return null
+  const { db } = getDb()
+  try {
+    const [row] = await db
+      .select({ list: partners.apiIpAllowlist })
+      .from(partners)
+      .where(eq(partners.id, partnerId))
+      .limit(1)
+    return row?.list ?? null
+  } catch (err) {
+    if (!isMissingSchemaObject(err)) throw err
+    ipAllowlistColumnMissing = true
+    console.warn('[waas/auth] partners.api_ip_allowlist not present yet — no IP restriction until 0080 is applied')
+    return null
+  }
+}
+
 export async function authenticatePartner(
   request: NextRequest
 ): Promise<{ partner: AuthenticatedPartner } | { error: NextResponse }> {
@@ -237,6 +261,29 @@ export async function authenticatePartner(
   if (!partner.isActive) {
     return {
       error: NextResponse.json({ error: 'Partner account is deactivated' }, { status: 403 }),
+    }
+  }
+
+  // ── Source-IP allowlist (issue #231, opt-in) ──────────────────────────────
+  // Enforced INSIDE authentication so no /api/v1 route can forget it. The 403
+  // names the caller's own address — that is the one piece of information the
+  // legitimate integrator needs to fix their list, and it is information the
+  // caller already has about itself.
+  const allowlist = await partnerIpAllowlist(partner.id)
+  if (allowlist && allowlist.length > 0) {
+    const sourceIp = requestSourceIp(request)
+    if (!ipAllowed(allowlist, sourceIp)) {
+      console.warn(`[waas/auth] IP refused for partner ${partner.id}: ${sourceIp ?? 'unattributable'}`)
+      return {
+        error: NextResponse.json(
+          {
+            error: `This API key is restricted to approved IP addresses, and this request came from ${sourceIp ?? 'an address that could not be established'}. Add it in the developer dashboard (Settings → API IP allowlist) or call from an approved server.`,
+            code: 'ip_not_allowed',
+            sourceIp: sourceIp ?? null,
+          },
+          { status: 403 }
+        ),
+      }
     }
   }
 
