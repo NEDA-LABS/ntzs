@@ -36,12 +36,14 @@ export async function POST(req: NextRequest) {
   const [lpRow] = await db
     .select({
       approvalThresholdTzs: lpAccounts.approvalThresholdTzs,
+      approvalThresholdUsd: lpAccounts.approvalThresholdUsd,
       accountType: lpAccounts.accountType,
     })
     .from(lpAccounts)
     .where(eq(lpAccounts.id, session.lpId))
     .limit(1);
   const thresholdTzs = lpRow?.approvalThresholdTzs ?? null;
+  const thresholdUsd = lpRow?.approvalThresholdUsd ?? null;
   const isBank = lpRow?.accountType === 'bank';
 
   // ── Bank cash-out: redeem nTZS for TZS into the LP's bank account ─────────
@@ -58,8 +60,8 @@ export async function POST(req: NextRequest) {
     const cashoutParams = cashoutDraft as BankCashoutParams;
 
     const cashoutDisposition = actionDisposition(session.role, {
-      amountTzs: cashoutParams.amountTzs,
-      thresholdTzs,
+      amount: cashoutParams.amountTzs,
+      threshold: thresholdTzs,
     });
     if (cashoutDisposition === 'deny') {
       return NextResponse.json({ error: 'Your role does not permit withdrawals.' }, { status: 403 });
@@ -120,11 +122,15 @@ export async function POST(req: NextRequest) {
 
   // Maker-checker + least-privilege: owner/approver withdraw directly, an operator's
   // withdrawal is queued for an approver, and any other role (viewer) is denied.
-  // The ceiling is denominated in TZS, so it binds the nTZS leg; a USDC/USDT
-  // transfer is not a shilling amount and is left to the role policy.
+  // A ceiling only means anything against its own currency, so an nTZS transfer
+  // is measured in shillings and a stablecoin transfer in dollars. USDC and USDT
+  // are both dollar-pegged, so face value is the right measure — a rate lookup
+  // here would put a network call inside a control path, where a failed fetch
+  // silently disarms the ceiling.
+  const isStable = params.token.toLowerCase() !== 'ntzs';
   const disposition = actionDisposition(session.role, {
-    amountTzs: params.token.toLowerCase() === 'ntzs' ? Number(params.amount) : undefined,
-    thresholdTzs,
+    amount: Number(params.amount),
+    threshold: isStable ? thresholdUsd : thresholdTzs,
   });
   if (disposition === 'deny') {
     return NextResponse.json({ error: 'Your role does not permit withdrawals.' }, { status: 403 });

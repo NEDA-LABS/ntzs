@@ -944,6 +944,7 @@ export const lpAccounts = pgTable(
     // Value ceiling for maker-checker: actions at or above this need a second
     // approver even from an owner. NULL = role-based policy only.
     approvalThresholdTzs: bigint('approval_threshold_tzs', { mode: 'number' }),
+    approvalThresholdUsd: bigint('approval_threshold_usd', { mode: 'number' }),
 
     apiKeyHash: text('api_key_hash'),
 
@@ -1002,6 +1003,39 @@ export const lpMembers = pgTable(
   (t) => ({
     emailUq: uniqueIndex('lp_members_email_uq').on(t.email),
     lpIdx: index('lp_members_lp_id_idx').on(t.lpId),
+  })
+)
+
+/**
+ * Payout destinations an LP has saved and named.
+ *
+ * Retyping an irreversible destination on every withdrawal is the riskiest
+ * step in the flow, and a bank settling scheme float sends to the same address
+ * every cycle. `kind` picks which pair of columns is meaningful: 'crypto' uses
+ * chain + address, 'bank' uses bankCode + accountNumber.
+ */
+export const lpPayoutDestinations = pgTable(
+  'lp_payout_destinations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lpId: uuid('lp_id')
+      .notNull()
+      .references(() => lpAccounts.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    label: text('label').notNull(),
+
+    chain: text('chain'),
+    address: text('address'),
+
+    bankCode: text('bank_code'),
+    accountNumber: text('account_number'),
+
+    createdByMemberId: uuid('created_by_member_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lpIdx: index('lp_payout_destinations_lp_id_idx').on(t.lpId),
   })
 )
 

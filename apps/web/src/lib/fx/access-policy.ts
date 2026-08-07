@@ -21,14 +21,20 @@ export function actionDisposition(
    * worth at least that much, it queues for a second approver REGARDLESS of
    * role — including the owner's own. Self-approval is refused downstream, so
    * the ceiling is a real four-eyes control rather than a formality.
+   *
+   * Currency-agnostic on purpose: a shilling cash-out is measured against the
+   * TZS ceiling and a stablecoin transfer against the USD one, but the rule is
+   * identical and the caller picks the pair. Passing an amount in one currency
+   * against a threshold in another would silently mis-gate, so they travel
+   * together in a single argument.
    */
-  value?: { amountTzs?: number | null; thresholdTzs?: number | null },
+  value?: { amount?: number | null; threshold?: number | null },
 ): ActionDisposition {
   if (role !== undefined && role !== 'owner' && role !== 'approver' && role !== 'operator') return 'deny';
   if (role === 'operator') return 'queue';
 
-  const threshold = value?.thresholdTzs;
-  const amount = value?.amountTzs;
+  const threshold = value?.threshold;
+  const amount = value?.amount;
   if (
     typeof threshold === 'number' && threshold > 0 &&
     typeof amount === 'number' && Number.isFinite(amount) &&

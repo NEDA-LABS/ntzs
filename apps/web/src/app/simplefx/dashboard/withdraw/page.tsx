@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowUpRight, CheckCircle2, Loader2, AlertCircle, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Loader2, AlertCircle, ExternalLink, ShieldCheck, Bookmark } from 'lucide-react';
 import { useLp } from '../layout';
 import { SelectMenu } from '../_components/SelectMenu';
 
@@ -26,6 +26,19 @@ type TokenEntry = typeof TOKENS[number];
 const STABLES_ONLY: readonly TokenEntry[] = TOKENS.filter((t) => t.id !== 'ntzs');
 
 type WithdrawState = 'idle' | 'loading' | 'success' | 'pending' | 'error';
+
+interface Destination {
+  id: string;
+  kind: 'crypto' | 'bank';
+  label: string;
+  chain: string | null;
+  address: string | null;
+  bankCode: string | null;
+  accountNumber: string | null;
+}
+
+/** Sentinel for "type it out this time" — an id can never collide with it. */
+const NEW_DESTINATION = '__new__';
 
 export default function WithdrawPage() {
   const { lp } = useLp();
@@ -53,6 +66,24 @@ export default function WithdrawPage() {
   const [cashoutNote, setCashoutNote] = useState('');
   const [banks, setBanks] = useState<Array<{ code: string; name: string }>>([]);
 
+  // Saved destinations. An irreversible address retyped every cycle is the
+  // riskiest step here, so the common case is picking one that was checked once.
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+  // null = follow the account's own list, so a bank that settles to the same
+  // place every cycle finds it already selected.
+  const [destinationChoice, setDestinationChoice] = useState<string | null>(null);
+  const [saveLabel, setSaveLabel] = useState('');
+  const [saveError, setSaveError] = useState('');
+
+  const loadDestinations = useCallback(async () => {
+    try {
+      const d = await (await fetch('/simplefx/api/lp/destinations')).json();
+      setDestinations((d.destinations ?? []) as Destination[]);
+    } catch { /* the manual path still works without them */ }
+  }, []);
+
+  useEffect(() => { loadDestinations(); }, [loadDestinations]);
+
   useEffect(() => {
     if (!isBank) return;
     fetch('/simplefx/api/lp/banks')
@@ -64,14 +95,53 @@ export default function WithdrawPage() {
       .catch(() => {});
   }, [isBank]);
 
+  // Only destinations for the rail (and chain) currently in view — offering a
+  // Base address while BNB is selected is an invitation to send into a void.
+  const relevantDestinations = destinations.filter((d) =>
+    mode === 'bank' ? d.kind === 'bank' : d.kind === 'crypto' && d.chain === selected.chain,
+  );
+  const destinationId = destinationChoice ?? relevantDestinations[0]?.id ?? NEW_DESTINATION;
+  const chosen = relevantDestinations.find((d) => d.id === destinationId) ?? null;
+
+  // Derived, never copied into state: a saved destination that is mirrored into
+  // the input can drift from the row it came from, and the value that drifts is
+  // the one the money goes to.
+  const effectiveToAddress = chosen?.kind === 'crypto' ? chosen.address ?? '' : toAddress;
+  const effectiveBankCode = chosen?.kind === 'bank' ? chosen.bankCode ?? '' : bankCode;
+  const effectiveAccount = chosen?.kind === 'bank' ? chosen.accountNumber ?? '' : accountNumber;
+
+  const pickDestination = (id: string) => {
+    setDestinationChoice(id);
+    setErrorMsg('');
+  };
+
+  const saveDestination = async () => {
+    setSaveError('');
+    const body = mode === 'bank'
+      ? { kind: 'bank', label: saveLabel.trim(), bankCode, accountNumber }
+      : { kind: 'crypto', label: saveLabel.trim(), chain: selected.chain, address: toAddress };
+
+    try {
+      const res = await fetch('/simplefx/api/lp/destinations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) { setSaveError(d?.error || 'Could not save that destination.'); return; }
+      setSaveLabel('');
+      await loadDestinations();
+      if (d?.destination?.id) setDestinationChoice(d.destination.id);
+    } catch { setSaveError('Network error. Please try again.'); }
+  };
+
   // Stable across retries of the same withdrawal so a network retry can't
   // double-spend; regenerated after a confirmed success.
   const idemKeyRef = useRef<string | null>(null);
 
   const reset = () => {
     setState('idle');
-    setToAddress('');
     setAmount('');
+    setToAddress('');
+    setAccountNumber('');
     setTxHash('');
     setErrorMsg('');
     setCashoutNote('');
@@ -91,8 +161,8 @@ export default function WithdrawPage() {
         },
         body: JSON.stringify(
           mode === 'bank'
-            ? { method: 'bank', amountTzs: Number(amount), bankCode, accountNumber }
-            : { token: selected.id, toAddress, amount, chain: selected.chain },
+            ? { method: 'bank', amountTzs: Number(amount), bankCode: effectiveBankCode, accountNumber: effectiveAccount }
+            : { token: selected.id, toAddress: effectiveToAddress, amount, chain: selected.chain },
         ),
       });
       const data = await res.json();
@@ -253,17 +323,44 @@ export default function WithdrawPage() {
                   </div>
                 </div>
 
+                {relevantDestinations.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-zinc-600 mb-2">Destination</label>
+                    <SelectMenu
+                      ariaLabel="Saved destination"
+                      value={destinationId}
+                      onChange={pickDestination}
+                      options={[
+                        ...relevantDestinations.map((d) => ({
+                          value: d.id,
+                          label: d.kind === 'crypto'
+                            ? `${d.label} — ${(d.address ?? '').slice(0, 8)}…${(d.address ?? '').slice(-4)}`
+                            : `${d.label} — ${d.bankCode} ${d.accountNumber}`,
+                        })),
+                        { value: NEW_DESTINATION, label: mode === 'bank' ? 'Another account…' : 'Another address…' },
+                      ]}
+                    />
+                  </div>
+                )}
+
                 {mode === 'bank' ? (
                   <>
                     <div>
                       <label className="block text-[10px] uppercase tracking-widest text-zinc-600 mb-2">Bank</label>
                       <SelectMenu
                         ariaLabel="Bank"
-                        value={bankCode}
+                        value={effectiveBankCode}
                         onChange={setBankCode}
-                        options={banks.map((b) => ({ value: b.code, label: b.name }))}
+                        options={
+                          // A saved destination can outlive its bank's presence
+                          // in the payout registry; showing the bare code is
+                          // honest, where a placeholder would read as unset.
+                          effectiveBankCode && !banks.some((b) => b.code === effectiveBankCode)
+                            ? [...banks.map((b) => ({ value: b.code, label: b.name })), { value: effectiveBankCode, label: `${effectiveBankCode} (no longer payable)` }]
+                            : banks.map((b) => ({ value: b.code, label: b.name }))
+                        }
                         placeholder={banks.length === 0 ? 'Bank payouts unavailable' : 'Choose your bank'}
-                        disabled={banks.length === 0}
+                        disabled={banks.length === 0 || !!chosen}
                       />
                     </div>
                     <div>
@@ -272,9 +369,10 @@ export default function WithdrawPage() {
                         type="text"
                         inputMode="numeric"
                         placeholder="Your settlement account"
-                        value={accountNumber}
+                        value={effectiveAccount}
                         onChange={(e) => setAccountNumber(e.target.value)}
-                        className="w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 text-sm text-white font-mono placeholder-zinc-700 focus:outline-none focus:border-blue-500/40 transition-colors"
+                        readOnly={!!chosen}
+                        className={`w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 text-sm font-mono placeholder-zinc-700 focus:outline-none focus:border-blue-500/40 transition-colors ${chosen ? 'text-zinc-500' : 'text-white'}`}
                       />
                     </div>
                   </>
@@ -284,11 +382,39 @@ export default function WithdrawPage() {
                   <input
                     type="text"
                     placeholder="0x..."
-                    value={toAddress}
+                    value={effectiveToAddress}
                     onChange={(e) => setToAddress(e.target.value)}
-                    className="w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 text-sm text-white font-mono placeholder-zinc-700 focus:outline-none focus:border-blue-500/40 transition-colors"
+                    readOnly={!!chosen}
+                    className={`w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 text-sm font-mono placeholder-zinc-700 focus:outline-none focus:border-blue-500/40 transition-colors ${chosen ? 'text-zinc-500' : 'text-white'}`}
                   />
                 </div>
+                )}
+
+                {/* Offered only once the destination is complete and new — a
+                    prompt to name something half-typed just gets dismissed. */}
+                {!chosen && (mode === 'bank'
+                  ? !!bankCode && accountNumber.replace(/\D/g, '').length >= 5
+                  : /^0x[a-fA-F0-9]{40}$/.test(toAddress.trim())) && (
+                  <div className="rounded-lg border border-white/5 bg-black/30 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        value={saveLabel}
+                        onChange={(e) => { setSaveLabel(e.target.value); setSaveError(''); }}
+                        placeholder={mode === 'bank' ? 'Name this account' : 'Name this address, e.g. Visa float'}
+                        maxLength={60}
+                        className="min-w-0 flex-1 rounded-lg border border-white/8 bg-black/40 px-3 py-2 text-xs text-white placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={saveDestination}
+                        disabled={!saveLabel.trim()}
+                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-40"
+                      >
+                        <Bookmark size={12} /> Save for next time
+                      </button>
+                    </div>
+                    {saveError && <p className="mt-2 text-xs text-red-400">{saveError}</p>}
+                  </div>
                 )}
 
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-950/20 border border-amber-500/15">
@@ -310,7 +436,9 @@ export default function WithdrawPage() {
                   disabled={
                     state === 'loading' ||
                     !amount ||
-                    (mode === 'bank' ? !bankCode || accountNumber.replace(/\D/g, '').length < 5 : !toAddress)
+                    (mode === 'bank'
+                      ? !effectiveBankCode || effectiveAccount.replace(/\D/g, '').length < 5
+                      : !effectiveToAddress)
                   }
                   onClick={handleSubmit}
                   className="w-full flex items-center justify-center gap-2 rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-semibold transition-colors"

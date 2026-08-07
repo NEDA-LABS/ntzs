@@ -16,6 +16,7 @@ interface Member {
 
 interface Policy {
   thresholdTzs: number | null;
+  thresholdUsd: number | null;
   secondApproverCount: number;
   canEdit: boolean;
 }
@@ -30,7 +31,7 @@ const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner', approver: 'Approver', operator: 'Operator', viewer: 'Viewer',
 };
 
-const fmtTzs = (n: number) => n.toLocaleString('en-US');
+const fmtAmount = (n: number) => n.toLocaleString('en-US');
 
 interface Approval {
   id: string;
@@ -59,7 +60,7 @@ function summarize(action: string, payload: Record<string, unknown> | null): str
     // two carry different payloads. An approver has to see the amount they're
     // releasing, so read whichever shape this one is.
     if (p.method === 'bank') {
-      const amt = typeof p.amountTzs === 'number' ? fmtTzs(p.amountTzs) : '';
+      const amt = typeof p.amountTzs === 'number' ? fmtAmount(p.amountTzs) : '';
       const acct = typeof p.accountNumber === 'string' ? p.accountNumber : '';
       const bank = typeof p.bankCode === 'string' ? p.bankCode : 'bank';
       return `Cash out ${amt} nTZS → ${bank} ${acct}`.trim();
@@ -208,20 +209,35 @@ function TeamSection({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** The value ceiling: at or above it, even an owner's withdrawal queues. */
+/**
+ * The value ceilings: at or above one, even an owner's withdrawal queues.
+ *
+ * Two of them, because a ceiling only means anything against its own currency.
+ * A shilling cash-out is measured in nTZS; a stablecoin transfer — a bank
+ * moving card-scheme float, say — is measured in dollars. Converting one to
+ * the other would need a live rate inside a control path, where a failed
+ * lookup silently disarms the limit.
+ */
 function ThresholdSection({ policy, reload }: { policy: Policy | null; reload: () => void }) {
-  // null = untouched, so the field follows whatever the server last told us —
+  // null = untouched, so a field follows whatever the server last told us —
   // including right after a save, without an effect to copy it across.
-  const [draft, setDraft] = useState<string | null>(null);
+  const [tzsDraft, setTzsDraft] = useState<string | null>(null);
+  const [usdDraft, setUsdDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
   if (!policy) return null;
 
-  const shown = draft ?? (policy.thresholdTzs ? String(policy.thresholdTzs) : '');
-  const parsed = shown.trim() === '' ? null : Number(shown.replace(/[^\d]/g, ''));
-  const dirty = (parsed ?? null) !== (policy.thresholdTzs ?? null);
+  const read = (draft: string | null, saved: number | null) => {
+    const shown = draft ?? (saved ? String(saved) : '');
+    const digits = shown.replace(/[^\d]/g, '');
+    return { shown, parsed: digits === '' ? null : Number(digits) };
+  };
+  const tzs = read(tzsDraft, policy.thresholdTzs);
+  const usd = read(usdDraft, policy.thresholdUsd);
+  const dirty = tzs.parsed !== policy.thresholdTzs || usd.parsed !== policy.thresholdUsd;
+  const anySet = (tzs.parsed ?? 0) > 0 || (usd.parsed ?? 0) > 0;
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,66 +245,85 @@ function ThresholdSection({ policy, reload }: { policy: Policy | null; reload: (
     try {
       const res = await fetch('/simplefx/api/lp/approval-policy', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ thresholdTzs: parsed }),
+        body: JSON.stringify({ thresholdTzs: tzs.parsed, thresholdUsd: usd.parsed }),
       });
       const d = await res.json().catch(() => null);
-      if (!res.ok) setError(d?.error || 'Could not save the threshold.');
-      else { setSaved(true); setDraft(null); reload(); }
+      if (!res.ok) setError(d?.error || 'Could not save the thresholds.');
+      else { setSaved(true); setTzsDraft(null); setUsdDraft(null); reload(); }
     } catch { setError('Network error. Please try again.'); }
     setBusy(false);
   };
 
+  const field = (
+    id: 'tzs' | 'usd',
+    value: string,
+    onChange: (v: string) => void,
+    unit: string,
+    hint: string,
+  ) => (
+    <div key={id}>
+      <label className="mb-2 block text-[10px] uppercase tracking-widest text-zinc-600">{hint}</label>
+      <div className="relative">
+        <input
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => { onChange(e.target.value); setSaved(false); }}
+          disabled={!policy.canEdit}
+          placeholder="No threshold"
+          className="w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 pr-16 text-sm text-white placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none disabled:cursor-not-allowed disabled:text-zinc-500"
+        />
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600">{unit}</span>
+      </div>
+    </div>
+  );
+
   return (
     <section className="mt-10">
-      <h2 className="text-sm font-medium text-white">Approval threshold</h2>
+      <h2 className="text-sm font-medium text-white">Approval thresholds</h2>
       <p className="mt-1 text-xs text-zinc-600">
-        Withdrawals and settlements at or above this amount wait for a second sign-off, whoever raised them. Leave
-        blank to rely on roles alone.
+        Withdrawals at or above these amounts wait for a second sign-off, whoever raised them. Leave either blank to
+        rely on roles alone for that currency.
       </p>
 
       <div className="mt-4 rounded-2xl border border-white/5 bg-zinc-950 p-5">
-        <form onSubmit={save} className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative min-w-0 flex-1">
-            <input
-              inputMode="numeric"
-              value={shown}
-              onChange={(e) => { setDraft(e.target.value); setSaved(false); }}
-              disabled={!policy.canEdit}
-              placeholder="No threshold"
-              className="w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 pr-16 text-sm text-white placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none disabled:cursor-not-allowed disabled:text-zinc-500"
-            />
-            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600">nTZS</span>
+        <form onSubmit={save} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {field('tzs', tzs.shown, (v) => setTzsDraft(v), 'nTZS', 'Shilling cash-outs')}
+            {field('usd', usd.shown, (v) => setUsdDraft(v), 'USD', 'Stablecoin transfers')}
           </div>
           {policy.canEdit && (
             <button
               type="submit"
               disabled={busy || !dirty}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-40"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-40"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
             </button>
           )}
         </form>
 
-        {parsed !== null && parsed > 0 && (
+        {anySet && (
           <p className="mt-3 text-xs text-zinc-500">
-            Anything from {fmtTzs(parsed)} nTZS up needs a second approver.
+            {[
+              tzs.parsed ? `${fmtAmount(tzs.parsed)} nTZS` : null,
+              usd.parsed ? `$${fmtAmount(usd.parsed)}` : null,
+            ].filter(Boolean).join(' and ')} and up needs a second approver.
           </p>
         )}
 
         {/* A ceiling with nobody else to release it parks funds indefinitely. */}
-        {parsed !== null && parsed > 0 && policy.secondApproverCount === 0 && (
+        {anySet && policy.secondApproverCount === 0 && (
           <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
             <p className="text-xs leading-relaxed text-amber-200/80">
               Nobody on this account can approve these yet. Because a request can&apos;t be released by the person who
-              raised it, anything at or above this amount will sit pending. Invite a second approver below first.
+              raised it, anything at or above these amounts will sit pending. Invite a second approver below first.
             </p>
           </div>
         )}
 
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-        {saved && !error && <p className="mt-3 text-sm text-emerald-400">Threshold saved.</p>}
+        {saved && !error && <p className="mt-3 text-sm text-emerald-400">Thresholds saved.</p>}
       </div>
     </section>
   );

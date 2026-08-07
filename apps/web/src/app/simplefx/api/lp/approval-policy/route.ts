@@ -21,7 +21,10 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const [lp] = await db
-    .select({ approvalThresholdTzs: lpAccounts.approvalThresholdTzs })
+    .select({
+      approvalThresholdTzs: lpAccounts.approvalThresholdTzs,
+      approvalThresholdUsd: lpAccounts.approvalThresholdUsd,
+    })
     .from(lpAccounts)
     .where(eq(lpAccounts.id, session.lpId))
     .limit(1)
@@ -35,12 +38,17 @@ export async function GET() {
 
   return NextResponse.json({
     thresholdTzs: lp?.approvalThresholdTzs ?? null,
+    thresholdUsd: lp?.approvalThresholdUsd ?? null,
     secondApproverCount: canApproveOthers.length,
     canEdit: isOwner(session.role),
   })
 }
 
-/** PATCH — set or clear the ceiling. Owner only. Body: { thresholdTzs: number|null }. */
+/**
+ * PATCH — set or clear a ceiling. Owner only.
+ * Body: { thresholdTzs?: number|null, thresholdUsd?: number|null } — an omitted
+ * key is left alone, so the two ceilings can be saved independently.
+ */
 export async function PATCH(req: NextRequest) {
   const session = await getSessionFromCookies()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -48,27 +56,47 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Only the account owner can change the approval threshold.' }, { status: 403 })
   }
 
-  let body: { thresholdTzs?: number | null }
+  let body: { thresholdTzs?: number | null; thresholdUsd?: number | null }
   try { body = await req.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const raw = body.thresholdTzs
-  let thresholdTzs: number | null
-  if (raw === null || raw === undefined || raw === 0) {
-    thresholdTzs = null
-  } else {
+  // null/0/'' clears the ceiling; anything else must be a positive whole amount.
+  const parse = (raw: number | null | undefined): number | null | 'invalid' => {
+    if (raw === null || raw === undefined || raw === 0 || (raw as unknown) === '') return null
     const n = Math.trunc(Number(raw))
-    if (!Number.isFinite(n) || n <= 0) {
-      return NextResponse.json({ error: 'Threshold must be a positive amount, or blank to remove it.' }, { status: 400 })
-    }
-    thresholdTzs = n
+    return Number.isFinite(n) && n > 0 ? n : 'invalid'
   }
 
-  await db
-    .update(lpAccounts)
-    .set({ approvalThresholdTzs: thresholdTzs, updatedAt: new Date() })
-    .where(eq(lpAccounts.id, session.lpId))
+  const patch: { approvalThresholdTzs?: number | null; approvalThresholdUsd?: number | null; updatedAt: Date } = {
+    updatedAt: new Date(),
+  }
 
-  return NextResponse.json({ ok: true, thresholdTzs })
+  if ('thresholdTzs' in body) {
+    const v = parse(body.thresholdTzs)
+    if (v === 'invalid') {
+      return NextResponse.json({ error: 'Threshold must be a positive amount, or blank to remove it.' }, { status: 400 })
+    }
+    patch.approvalThresholdTzs = v
+  }
+  if ('thresholdUsd' in body) {
+    const v = parse(body.thresholdUsd)
+    if (v === 'invalid') {
+      return NextResponse.json({ error: 'Threshold must be a positive amount, or blank to remove it.' }, { status: 400 })
+    }
+    patch.approvalThresholdUsd = v
+  }
+
+  await db.update(lpAccounts).set(patch).where(eq(lpAccounts.id, session.lpId))
+
+  const [after] = await db
+    .select({
+      thresholdTzs: lpAccounts.approvalThresholdTzs,
+      thresholdUsd: lpAccounts.approvalThresholdUsd,
+    })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.id, session.lpId))
+    .limit(1)
+
+  return NextResponse.json({ ok: true, ...after })
 }
