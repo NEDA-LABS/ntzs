@@ -17,11 +17,19 @@ const TOKENS = [
 
 type TokenEntry = typeof TOKENS[number];
 
+/**
+ * A bank's nTZS is reserve, not inventory: it leaves by redemption to shillings
+ * so supply falls with it, never as an on-chain transfer. Its earned stables are
+ * its own asset and go wherever it banks them — custody, an OTC desk, or a card
+ * scheme's stablecoin float account.
+ */
+const STABLES_ONLY: readonly TokenEntry[] = TOKENS.filter((t) => t.id !== 'ntzs');
+
 type WithdrawState = 'idle' | 'loading' | 'success' | 'pending' | 'error';
 
 export default function WithdrawPage() {
   const { lp } = useLp();
-  const [selected, setSelected] = useState<TokenEntry>(TOKENS[0]);
+  const [tokenChoice, setTokenChoice] = useState<TokenEntry | null>(null);
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [state, setState] = useState<WithdrawState>('idle');
@@ -31,7 +39,15 @@ export default function WithdrawPage() {
   // Banks redeem their reserve to cash: burn nTZS, receive TZS in their bank
   // account. Crypto LPs move tokens on-chain. Both ride the same maker-checker.
   const isBank = lp?.accountType === 'bank';
-  const [mode, setMode] = useState<'crypto' | 'bank'>(isBank ? 'bank' : 'crypto');
+  // `lp` arrives a tick after mount, so neither of these can be seeded from it
+  // at useState time — null means "follow the account", which resolves as soon
+  // as the account is known and still lets an explicit choice win.
+  const [modeChoice, setModeChoice] = useState<'crypto' | 'bank' | null>(null);
+  const mode: 'crypto' | 'bank' = modeChoice ?? (isBank ? 'bank' : 'crypto');
+
+  const tokens = isBank ? STABLES_ONLY : TOKENS;
+  const selected: TokenEntry =
+    tokenChoice && tokens.includes(tokenChoice) ? tokenChoice : tokens[0];
   const [bankCode, setBankCode] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [cashoutNote, setCashoutNote] = useState('');
@@ -112,8 +128,10 @@ export default function WithdrawPage() {
         <p className="text-xs uppercase tracking-[0.25em] text-zinc-600 mb-1">Withdraw</p>
         <h1 className="text-3xl font-thin text-white mb-2">{isBank ? 'Settle out' : 'Move funds out'}</h1>
         <p className="text-sm text-zinc-500 mb-8">
-          {isBank
+          {mode === 'bank'
             ? 'Redeem nTZS for shillings. Your nTZS is burned and the TZS is paid to your bank account.'
+            : isBank
+            ? 'Send the stablecoins you have earned to your own custody, an OTC desk, or a scheme float account.'
             : 'Transfer tokens from your inventory wallet to any address on the same network.'}
         </p>
 
@@ -129,10 +147,10 @@ export default function WithdrawPage() {
             <motion.div key="success" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 p-8 text-center">
               <CheckCircle2 size={32} className="text-emerald-400 mx-auto mb-4" />
               <p className="text-lg font-medium text-white mb-1">
-                {isBank ? 'Cash-out dispatched' : 'Withdrawal confirmed'}
+                {mode === 'bank' ? 'Cash-out dispatched' : 'Withdrawal confirmed'}
               </p>
               <p className="text-sm text-zinc-500 mb-6">
-                {isBank
+                {mode === 'bank'
                   ? cashoutNote || 'Your nTZS was burned and the payout is on its way.'
                   : `Your transaction has been included on ${networkLabel}.`}
               </p>
@@ -140,17 +158,17 @@ export default function WithdrawPage() {
                 <a
                   // A cash-out burn is always on Base; a token withdrawal
                   // follows whichever chain the LP selected.
-                  href={`${isBank ? 'https://basescan.org' : selected.explorer}/tx/${txHash}`}
+                  href={`${mode === 'bank' ? 'https://basescan.org' : selected.explorer}/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors mb-6"
                 >
-                  View {isBank ? 'the burn' : ''} on {isBank || selected.chain !== 'bnb' ? 'Basescan' : 'BscScan'} <ExternalLink size={11} />
+                  View {mode === 'bank' ? 'the burn' : ''} on {mode === 'bank' || selected.chain !== 'bnb' ? 'Basescan' : 'BscScan'} <ExternalLink size={11} />
                 </a>
               )}
               <br />
               <button onClick={reset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
-                {isBank ? 'Make another cash-out' : 'Make another withdrawal'}
+                {mode === 'bank' ? 'Make another cash-out' : 'Make another withdrawal'}
               </button>
             </motion.div>
           ) : (
@@ -168,12 +186,33 @@ export default function WithdrawPage() {
                   </div>
                 </div>
               )}
-              {!isBank && (
+              {isBank && (
+                <div className="mb-6 flex w-fit flex-wrap gap-2 rounded-xl border border-white/5 bg-zinc-950 p-1">
+                  {([
+                    { id: 'bank', label: 'Settle to shillings' },
+                    { id: 'crypto', label: 'Send stablecoin' },
+                  ] as const).map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => { setModeChoice(m.id); reset(); }}
+                      className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                        mode === m.id
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {mode === 'crypto' && (
               <div className="flex flex-wrap gap-2 mb-6 p-1 bg-zinc-950 border border-white/5 rounded-xl w-fit">
-                {TOKENS.map((t, i) => (
+                {tokens.map((t, i) => (
                   <button
                     key={i}
-                    onClick={() => { setSelected(t); reset(); }}
+                    onClick={() => { setTokenChoice(t); reset(); }}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       selected === t
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
@@ -187,7 +226,7 @@ export default function WithdrawPage() {
               )}
 
               <div className="rounded-2xl border border-white/5 bg-zinc-950 p-6 space-y-4">
-                {!isBank && (
+                {mode === 'crypto' && (
                 <div className="flex items-center justify-between text-xs text-zinc-600">
                   <span>Network</span>
                   <span className={`px-2 py-0.5 rounded-full border ${selected.chain === 'bnb' ? 'border-yellow-500/20 text-yellow-400 bg-yellow-950/20' : 'border-blue-500/20 text-blue-400 bg-blue-950/20'}`}>
@@ -198,7 +237,7 @@ export default function WithdrawPage() {
 
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest text-zinc-600 mb-2">
-                    {isBank ? 'Amount to receive' : 'Amount'}
+                    {mode === 'bank' ? 'Amount to receive' : 'Amount'}
                   </label>
                   <div className="relative">
                     <input
@@ -210,11 +249,11 @@ export default function WithdrawPage() {
                       onChange={(e) => setAmount(e.target.value)}
                       className="w-full rounded-lg border border-white/8 bg-black/40 px-4 py-3 pr-20 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/40 transition-colors"
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500 pointer-events-none">{isBank ? 'TZS' : selected.id.toUpperCase()}</span>
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500 pointer-events-none">{mode === 'bank' ? 'TZS' : selected.id.toUpperCase()}</span>
                   </div>
                 </div>
 
-                {isBank ? (
+                {mode === 'bank' ? (
                   <>
                     <div>
                       <label className="block text-[10px] uppercase tracking-widest text-zinc-600 mb-2">Bank</label>
@@ -255,7 +294,7 @@ export default function WithdrawPage() {
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-950/20 border border-amber-500/15">
                   <AlertCircle size={13} className="text-amber-500 mt-0.5 shrink-0" />
                   <p className="text-xs text-zinc-400 leading-relaxed">
-                    {isBank ? (
+                    {mode === 'bank' ? (
                       <>Cash-outs are irreversible: your nTZS is burned before the payout is sent. A payout fee is
                       added to the burn, so you receive exactly the amount above.</>
                     ) : (
@@ -271,7 +310,7 @@ export default function WithdrawPage() {
                   disabled={
                     state === 'loading' ||
                     !amount ||
-                    (isBank ? !bankCode || accountNumber.replace(/\D/g, '').length < 5 : !toAddress)
+                    (mode === 'bank' ? !bankCode || accountNumber.replace(/\D/g, '').length < 5 : !toAddress)
                   }
                   onClick={handleSubmit}
                   className="w-full flex items-center justify-center gap-2 rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-semibold transition-colors"
@@ -279,7 +318,7 @@ export default function WithdrawPage() {
                   {state === 'loading' ? (
                     <><Loader2 size={14} className="animate-spin" /> Sending transaction...</>
                   ) : (
-                    <><ArrowUpRight size={14} /> {isBank ? 'Cash out to bank' : `Withdraw ${selected.label}`}</>
+                    <><ArrowUpRight size={14} /> {mode === 'bank' ? 'Cash out to bank' : `Withdraw ${selected.label}`}</>
                   )}
                 </button>
               </div>

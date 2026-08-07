@@ -34,11 +34,15 @@ export async function POST(req: NextRequest) {
   // The LP's own value ceiling: at or above it, even an owner needs a second
   // approver. Read once and applied to both withdrawal shapes.
   const [lpRow] = await db
-    .select({ approvalThresholdTzs: lpAccounts.approvalThresholdTzs })
+    .select({
+      approvalThresholdTzs: lpAccounts.approvalThresholdTzs,
+      accountType: lpAccounts.accountType,
+    })
     .from(lpAccounts)
     .where(eq(lpAccounts.id, session.lpId))
     .limit(1);
   const thresholdTzs = lpRow?.approvalThresholdTzs ?? null;
+  const isBank = lpRow?.accountType === 'bank';
 
   // ── Bank cash-out: redeem nTZS for TZS into the LP's bank account ─────────
   // Supply must fall by what leaves the reserve, so this burns rather than
@@ -101,6 +105,18 @@ export async function POST(req: NextRequest) {
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
   const params = draft as WithdrawParams;
+
+  // A bank's nTZS is issued against shillings it deposited, so it leaves the
+  // same way it arrived — burned on redemption, with supply falling to match.
+  // Letting it move on-chain instead would put circulating nTZS in the market
+  // with no reserve movement behind it. Stablecoins the bank earned are its
+  // own asset and move freely.
+  if (isBank && params.token.toLowerCase() === 'ntzs') {
+    return NextResponse.json(
+      { error: 'A bank\'s nTZS reserve is redeemed for shillings, not sent on-chain. Use Settle to shillings.' },
+      { status: 403 },
+    );
+  }
 
   // Maker-checker + least-privilege: owner/approver withdraw directly, an operator's
   // withdrawal is queued for an approver, and any other role (viewer) is denied.
