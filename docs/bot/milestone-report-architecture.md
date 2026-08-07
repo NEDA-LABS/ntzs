@@ -144,8 +144,22 @@ Closed in the generator (7 August 2026):
 2. Clear every **pre-filing warning** at the top of the page. Each one is either a
    number that could not be computed or a figure that breached an approved
    parameter. Neither may be filed as-is.
-3. Write sections 1, 7 and 8.
+3. Write sections 1, 7 and 8 — the generator ships drafts of each, and they are
+   drafts, not filings.
 4. Copy each disclosed incident verbatim from the register, then mark it disclosed
    there, naming this return.
-5. File. The register now shows what the Bank has been told, and the next return
+5. **Download as PDF** and send that file. The export is the letter in the house
+   style every submission the Bank already holds uses — same letterhead, same
+   serif body, same confidentiality footer (`apps/web/src/lib/bot-report/pdf.ts`
+   for the generated return; `scripts/build-bot-merchant-settlement-pdf.py` for
+   the markdown letters; a test pins the two to the same constants).
+6. File. The register now shows what the Bank has been told, and the next return
    starts from the same definitions.
+
+**The export refuses to look final while it is not.** While any pre-filing warning
+remains, the PDF is stamped `DRAFT — NOT FOR ISSUE`, its footer reads *DRAFT, not
+for issue*, it carries no signature block, and it appends an internal annex listing
+what is outstanding. Clear the warnings and the same button produces a signable
+letter with no annex. Nothing is ever printed as a bare zero, and a pre-filing
+warning never appears in the body of the document — those are instructions to us,
+not disclosures to the Bank.
