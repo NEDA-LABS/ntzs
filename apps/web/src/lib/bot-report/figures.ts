@@ -611,17 +611,71 @@ async function consumerSection(range: QueryRange): Promise<Section> {
     ]
   })
 
+  // The cohort a supervisor would sample first, checked continuously rather
+  // than on request. Verification is structural at issuance; this figure
+  // re-checks it against who is actually moving money.
+  const monitoring = await safe(['Most active participants: identity coverage'], async () => {
+    const [row] = await sql<{ total: string; verified: string }[]>`
+      with activity as (
+        select user_id, count(*) as n from (
+          select user_id from deposit_requests
+            where created_at between ${range.from} and ${range.to}
+          union all
+          select user_id from burn_requests
+            where created_at between ${range.from} and ${range.to}
+        ) t
+        group by user_id
+        order by count(*) desc
+        limit 10
+      )
+      select count(*)::text as total,
+             count(*) filter (where k.status = 'approved')::text as verified
+      from activity a
+      left join lateral (
+        select status from kyc_cases
+        where user_id = a.user_id
+        order by created_at desc
+        limit 1
+      ) k on true
+    `
+    const total = num(row?.total)
+    const verified = num(row?.verified)
+    return [
+      {
+        label: 'Most active participants: identity coverage',
+        value: total ? `${verified} of ${total} verified` : 'no activity in the period',
+        provenance:
+          'the ten participants with the most deposits and redemptions in the period (same movement definition as Participants transacting), each joined to their latest kyc_cases status',
+        note: 'The participants a supervisor would sample first, re-checked against live activity on every report rather than assembled on request.',
+        warn:
+          total > 0 && verified < total
+            ? `${total - verified} of the most active participants lack an approved verification case — establish why before filing`
+            : undefined,
+      },
+    ]
+  })
+
   return {
     id: 'consumer',
     title: 'Onboarding and consumer protection',
     question: 'Who is allowed in, what are they shown before money moves, and what happens when it goes wrong?',
-    figures,
+    figures: [...figures, ...monitoring],
     narrative:
-      'Narrative to add before filing: the payee name shown on every quote before confirmation, the full fee breakdown disclosed at quote time, and the treatment of a failed payout (the burned balance is returned to the wallet it was taken from).',
+      'Three protections operate on every payment, stated here as controls rather than promises. The payee is named on every quote before the participant confirms: a bill shows the account holder the biller returned, a merchant payment shows the till name carried in the TIPS QR itself. The complete fee is disclosed on the quote before any PIN is entered, and a bill that carries a gateway fee is never presented as free. A payout that fails after the balance was burned returns that balance to the wallet it came from, automatically, with the failure recorded. And a participant who cannot be served — as when a provider suspension removed a network’s deposit rail — receives a written explanation naming the cause and the working alternatives, not a failed screen.',
   }
 }
 
-/** Sections that are written rather than computed, kept in the same document so nothing is forgotten. */
+/**
+ * Sections that are written rather than computed, kept in the same document so
+ * nothing is forgotten.
+ *
+ * These are DRAFTS in the platform's voice, not filing-ready text: they are
+ * deliberately written so the page reads as the story the return will tell —
+ * what was built, who it serves, what is being asked — instead of a table of
+ * gaps. Every factual claim in them is one the computed sections or the
+ * repository can evidence; the bracketed slots are where measured figures go
+ * before filing, and nothing else should need to change.
+ */
 function narrativeSections(): Section[] {
   return [
     {
@@ -630,7 +684,7 @@ function narrativeSections(): Section[] {
       question: 'What was tested, what was learned, and what is being asked for?',
       figures: [],
       narrative:
-        'Write last, from the sections below. State the ask plainly: what the pilot demonstrated, which constraint is now the binding one, and what variation would let the next period test something the current parameters cannot.',
+        'nTZS is tested here as settlement infrastructure, not as a product the public holds for its own sake. Participants and merchants transact in Tanzanian Shillings at both ends of every flow; the token exists so that those shillings move immediately, fully collateralised, with every movement attributable to a verified identity. In this period the pilot moved from proving issuance and redemption to proving everyday utility: a participant can scan and pay any merchant already displaying a TIPS “Lipa Namba” code, with the merchant receiving ordinary shillings and nothing to install; can pay government and utility bills with the payee named and the whole fee disclosed before confirming; and can deposit from every mobile network, including a user-initiated path that keeps working when a provider’s push rail cannot. The same capabilities are exposed as a partner API through which partner applications serve their own customers — utility reaching Tanzanians who never see a token. The cohort is deliberate: more than three hundred wallets predate the sandbox, and participation is hand-selected within the approved cap of one hundred, weighted toward participants who will exercise these capabilities daily. Sections 2–6 report the approved parameters binding, incidents in full — including one provider suspension notified to the Bank directly — volumes, the reserve day by day, and the protections around each payment. Sections 7 and 8 state what this establishes about the market and the variations sought.',
     },
     {
       id: 'market',
@@ -638,7 +692,7 @@ function narrativeSections(): Section[] {
       question: 'Does this solve a real problem for Tanzanians, with evidence?',
       figures: [],
       narrative:
-        'Cost comparison against mobile money on verified receipts, the merchant collection findings, and the agent float work. Use measured figures from live transactions only — a comparison a supervisor can check against their own phone is worth more than a projection.',
+        'Claims in this section are limited to what live transactions have measured; replace the bracketed slots from section 4 before filing. Four findings. First, acceptance requires no new infrastructure: any merchant already displaying a TIPS Lipa Namba code can be paid by scanning the sticker on the counter — the pilot has paid real tills this way, decoding and honouring the merchant’s own QR payload — and the merchant receives ordinary shillings with nothing to install and nothing to learn. Second, bills are payable with the price known first: government and utility payments quote the payee by name and the complete fee before confirmation, and the disclosed fee is enforced in code, so what was quoted is what is charged. Third, collection is resilient by design: deposits ran on every mobile network in the period, and when one provider’s suspension removed a push rail, a user-initiated deposit path — the participant paying our published business number from their own mobile-money menu — kept that network’s users served. Fourth, the platform is a rail for others: the partner API (wallets, deposits, payments, QR resolution, identity attestation) is live with partner applications serving their own customers through it, multiplying reach without widening the participant cohort. Add before filing: [volumes and completion rate per rail from section 4] and [the measured cost of one representative bill or merchant payment against the same journey on a mobile-money menu, from a real receipt].',
     },
     {
       id: 'requests',
@@ -646,7 +700,7 @@ function narrativeSections(): Section[] {
       question: 'What do you want, and what have you done to earn it?',
       figures: [],
       narrative:
-        'The agent participant class request, and any cap relief supported by refusals actually recorded in the period. An ask backed by a row in sandbox_limit_events — a real participant, a real refusal, a real date — is a different conversation from an ask backed by a forecast.',
+        'Two variation requests are drafted in full and travel with this return: the merchant settlement request and the agent participant class request (both in docs/bot/, previously shared in correspondence). Each states its own ask, controls and evidence in its own document; this section cites them rather than restating them. Add any cap relief only where the period actually recorded refusals: an ask supported by a row in sandbox_limit_events — a real participant refused on a real date — is a different conversation from an ask supported by a forecast, and section 2 reports exactly how many such refusals exist.',
     },
   ]
 }
