@@ -704,7 +704,7 @@ const user = await res.json()
             isActive={activeSection === 'deposits'}
             step="Step 6"
             title="Accept deposits (On-Ramp)"
-            description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money, card and bank-transfer payments."
+            description="Initiate a payment in Tanzanian Shillings. On success, nTZS is minted 1:1 to the user's wallet. Supports mobile money (push prompt), Lipa Namba (user-initiated — works even with no push rail), card and bank transfer."
           >
             <Note variant="info">
               <span className="font-semibold text-blue-200">userId</span> must be the{' '}
@@ -773,6 +773,36 @@ body: JSON.stringify({
 // GET /api/v1/deposits/:id echoes it while the deposit is open, so you can
 // re-show the payment details. A transfer with a missing reference or a
 // different amount is held for manual review — money is never lost.`}
+            />
+            <CodeBlock
+              title="POST /api/v1/deposits — Lipa Namba (user pays from their own phone)"
+              code={`// No push prompt: your user pays OUR Lipa Namba from their own
+// mobile-money menu. Works on EVERY network — including when no push
+// rail can reach the user's network — because the user initiates it.
+body: JSON.stringify({
+  userId: user.id,
+  amountTzs: 10000,
+  paymentMethod: 'lipa_namba',
+  phoneNumber: '255744123456',   // the number they will PAY FROM — this
+})                               //   is the matching key, not a prompt target
+// {
+//   id, status: "submitted", amountTzs: 10000,
+//   paymentMethod: "lipa_namba",
+//   instructions: {
+//     lipaNamba: "70031820",            // the business number they pay
+//     accountName: "NEDA LABS LIMITED", // shown in their M-Pesa confirm screen
+//     amountTzs: 10000,                 // MUST be paid exactly
+//     payFromPhone: "255744123456",     // MUST be paid from this number
+//     note: "..."                       // ready-to-show payer guidance
+//   }
+// }
+// Show instructions; the user does "Lipa kwa M-Pesa / Lipa Namba" in their
+// own menu. The credit is matched by EXACT amount + payer phone and nTZS
+// mints automatically, typically within ~5 minutes — poll
+// GET /api/v1/deposits/:id for the status change. A payment from a
+// different number or a different amount is held for manual review rather
+// than guessed — money is never lost. Their network may add its own fee on
+// top; say so in your UI to avoid "I paid 1,050, got 1,000" tickets.`}
             />
             <CodeBlock
               title="POST /api/v1/deposits — collect to treasury"
