@@ -127,6 +127,92 @@ describe('pre-filing warnings', () => {
 })
 
 /**
+ * A disclosure and a warning are different things, and conflating them breaks
+ * the return in one direction or the other.
+ *
+ * A warning is unfinished work: the return waits. A disclosure is a position
+ * we have decided to report — the verified cohort above the approved cap while
+ * relief is sought — and its handling IS the telling. If a disclosure counted
+ * as a warning, the return could never be signed while the fact stayed true,
+ * and the control would become a nuisance people route around.
+ */
+describe('a disclosure is reported, not treated as unfinished work', () => {
+  const disclosed = () =>
+    report([
+      section({
+        title: 'Parameters',
+        figures: [
+          {
+            label: 'Verified participants (Parameter 2)',
+            value: 723,
+            provenance: 'approved kyc_cases',
+            disclosure: 'The verified cohort stands at 723 against the approved cap of 100.',
+          },
+        ],
+        narrative: 'the cohort is explained here',
+      }),
+    ])
+
+  it('does not stop the filing', () => {
+    expect(preFilingWarnings(disclosed())).toEqual([])
+    expect(hasUnavailableFigures(disclosed())).toBe(false)
+  })
+
+  it('still stops the filing when the same figure also carries a warning', () => {
+    const r = report([
+      section({
+        title: 'Parameters',
+        figures: [
+          {
+            label: 'Verified participants (Parameter 2)',
+            value: 723,
+            provenance: 'approved kyc_cases',
+            disclosure: 'reported to the Bank',
+            warn: 'and something is genuinely unresolved',
+          },
+        ],
+      }),
+    ])
+    expect(preFilingWarnings(r)).toHaveLength(1)
+  })
+
+  it('is carried by the section that explains it', () => {
+    // A disclosure with no narrative around it is a number without a position,
+    // which is how a supervisor ends up inferring the worst reading.
+    const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+    const at = src.indexOf('disclosure:\n')
+    expect(at).toBeGreaterThan(-1)
+    expect(src).toContain('We have not narrowed the definition to fit the cap')
+    expect(src).toContain('We seek relief on the participant cap')
+  })
+})
+
+/**
+ * The cohort is three populations, and the return must never let one stand for
+ * another: the wallet register, the verified cohort, and the hundred selected
+ * to demonstrate utility.
+ */
+describe('the participant figure separates the register from the cohort', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+
+  it('counts verified holders, and reports the register total beside it', () => {
+    expect(src).toContain('Verified participants (Parameter 2)')
+    expect(src).toMatch(/count\(\*\) filter \(\s*\n?\s*where exists \(/)
+    expect(src).toContain("kc.status = 'approved'")
+    expect(src).toContain('wallet records on the register')
+  })
+
+  it('asks for relief only when the cohort has actually outgrown the cap', () => {
+    expect(src).toMatch(/if \(!ctx\.verifiedParticipants \|\| ctx\.verifiedParticipants <= SANDBOX_USER_CAP\)/)
+    expect(src).toContain('No relief is sought on the participant cap')
+  })
+
+  it('quotes the measured cohort in the request rather than a hand-typed number', () => {
+    expect(src).toContain('${ctx.verifiedParticipants.toLocaleString()}')
+  })
+})
+
+/**
  * The notes the generator actually ships have to survive the warning rule —
  * this asserts against the real source rather than a fixture, which is the gap
  * that let the prose-matching bug through in the first place.

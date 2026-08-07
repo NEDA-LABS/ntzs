@@ -51,6 +51,22 @@ export interface Figure {
    * cries wolf is one people learn to click past.
    */
   warn?: string
+  /**
+   * A fact the return states to the Bank in its own body — as distinct from
+   * `warn`, which is an instruction to us.
+   *
+   * The difference decides whether the document can be signed. A figure that
+   * could not be computed, or a loss that has not been established, is unfinished
+   * work: the return waits. A known position we have decided to report — the
+   * verified cohort standing above the approved cap while relief is sought — is
+   * finished work whose handling *is* the telling. Marking it as a warning would
+   * mean the return could never be signed while the fact remained true, which
+   * turns the control into a nuisance people learn to route around.
+   *
+   * A disclosure is only honest if the section around it explains the position.
+   * Never set one without the narrative that carries it.
+   */
+  disclosure?: string
 }
 
 /** A tabulated exhibit — a register or breakdown that is a list, not a figure. */
@@ -142,13 +158,27 @@ async function parameterSection(range: QueryRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
-    ['Participants (Parameter 2)', 'Largest single transaction (Parameter 3)', 'Largest participant day (Parameter 4)', 'Largest participant 30-day total (Parameter 5)'],
+    ['Verified participants (Parameter 2)', 'Largest single transaction (Parameter 3)', 'Largest participant day (Parameter 4)', 'Largest participant 30-day total (Parameter 5)'],
     async () => {
-      const [participants] = await sql<{ n: string }[]>`
-        select count(distinct w.user_id)::text as n
-        from wallets w
-        join users u on u.id = w.user_id
-        where u.role = 'end_user' and w.created_at <= ${range.to}
+      // The register and the cohort are different populations, and reporting
+      // only the first is what makes a dormant pre-commencement wallet look
+      // like a sandbox participant. Both are counted in one pass so they
+      // cannot drift apart.
+      const [participants] = await sql<{ registered: string; verified: string }[]>`
+        select
+          count(*)::text as registered,
+          count(*) filter (
+            where exists (
+              select 1 from kyc_cases kc
+              where kc.user_id = t.user_id and kc.status = 'approved'
+            )
+          )::text as verified
+        from (
+          select distinct w.user_id
+          from wallets w
+          join users u on u.id = w.user_id
+          where u.role = 'end_user' and w.created_at <= ${range.to}
+        ) t
       `
 
       const [largestTxn] = await sql<{ n: string | null }[]>`
@@ -196,19 +226,28 @@ async function parameterSection(range: QueryRange): Promise<Section> {
         ) per_user
       `
 
-      const participantCount = num(participants?.n)
+      const registeredCount = num(participants?.registered)
+      const participantCount = num(participants?.verified)
       const maxTxn = num(largestTxn?.n)
       const maxDay = num(largestDay?.n)
       const maxPeriod = num(largestMonth?.n)
 
       return [
         {
-          label: 'Participants (Parameter 2)',
+          label: 'Verified participants (Parameter 2)',
           value: participantCount,
-          unit: `of ${SANDBOX_USER_CAP} permitted`,
-          provenance: 'count(distinct wallets.user_id) joined to users where role = end_user and the wallet existed on or before the period end',
-          note: 'Includes merchants: a collection mints nTZS to the merchant, so they hold the token and count as a participant.',
-          warn: participantCount > SANDBOX_USER_CAP ? 'above the permitted cohort of ' + SANDBOX_USER_CAP : undefined,
+          unit: `of ${SANDBOX_USER_CAP} permitted · ${registeredCount.toLocaleString()} wallet records on the register`,
+          provenance:
+            'holders of a wallet created on or before the period end, whose role is end_user and who hold an approved identity-verification case; the register total counts the same wallets without the verification test',
+          note:
+            'Includes merchants: a collection mints nTZS to the merchant, so they hold the token and are counted. ' +
+            'The register total is larger because wallets issued before this sandbox commenced remain on it; those ' +
+            'holders are not part of the tested cohort until they verify under the standard now in force.',
+          disclosure:
+            participantCount > SANDBOX_USER_CAP
+              ? `The verified cohort stands at ${participantCount.toLocaleString()} against the approved cap of ${SANDBOX_USER_CAP}. ` +
+                'This is reported in full, explained in this section, and a variation is sought in the final section of this return.'
+              : undefined,
         },
         {
           label: 'Largest single transaction (Parameter 3)',
@@ -264,6 +303,20 @@ async function parameterSection(range: QueryRange): Promise<Section> {
     title: 'Compliance with the approved testing parameters',
     question: 'Are the limits the Bank approved actually binding, and can you show one binding?',
     figures: [...figures, ...blocks],
+    narrative:
+      'On the size of the cohort, we report the position plainly. Three populations must be distinguished, and ' +
+      'conflating them is what would make this figure unreadable. The first is the wallet register: every wallet ' +
+      'ever issued on the platform, including those created before this sandbox commenced. The second is the ' +
+      'verified cohort: holders who have completed identity verification to the standard now in force, against the ' +
+      'National Identification Authority registry or through a partner we rely upon under a signed agreement. The ' +
+      'third is the demonstration group: one hundred participants we are selecting from within the verified cohort ' +
+      'to exercise the utility this pilot exists to test — merchant payment, bill payment and deposit on every ' +
+      'network — and whose activity is the evidence the next return will carry. The verified cohort exceeds one ' +
+      'hundred. We have not narrowed the definition to fit the cap, and we are not treating the excess as ' +
+      'immaterial: it is stated here, the composition is set out in the holders section below, and a variation is ' +
+      'sought in the final section. Holders who have not verified under the current standard are dormant on the ' +
+      'register rather than active in the pilot, and the holders section reports how many of them hold any balance ' +
+      'at all.',
   }
 }
 
@@ -849,7 +902,44 @@ async function holdersSection(): Promise<Section> {
  * repository can evidence; the bracketed slots are where measured figures go
  * before filing, and nothing else should need to change.
  */
-function narrativeSections(): Section[] {
+/**
+ * The participant-cap request, written from what the period actually measured.
+ *
+ * The ask is made only when the cohort has in fact outgrown the cap; asking
+ * for relief we do not need would be the fastest way to make the next ask
+ * unwelcome. The paragraph names the excess rather than implying it, because
+ * the same figure is already on the face of the compliance section and a
+ * request that soft-pedals what the tables show reads as evasion.
+ */
+function capReliefParagraph(ctx: NarrativeContext): string {
+  if (!ctx.verifiedParticipants || ctx.verifiedParticipants <= SANDBOX_USER_CAP) {
+    return (
+      'No relief is sought on the participant cap: the verified cohort remains within the approved limit of ' +
+      `${SANDBOX_USER_CAP}.`
+    )
+  }
+  return (
+    'We seek relief on the participant cap. The approved limit is ' +
+    `${SANDBOX_USER_CAP} participants; the cohort verified to the standard now in force stands at ` +
+    `${ctx.verifiedParticipants.toLocaleString()}, and demand has arrived faster than the cap anticipated. Our ` +
+    'immediate operating position is conservative: we are selecting one hundred participants from within the ' +
+    'verified cohort to exercise the utility this pilot exists to test, and it is their activity the next return ' +
+    'will carry. But we do not propose to hold verified Tanzanians at the door indefinitely, and we would rather ' +
+    'report the position to the Bank than manage the number quietly. We therefore ask the Bank to consider a ' +
+    'participant limit set at a level the verified population supports, on the same testing parameters in every ' +
+    'other respect — the per-transaction, daily and monthly limits unchanged, verification unchanged, reserve ' +
+    'and reporting unchanged. We will supply whatever composition, activity or control evidence the Bank wishes ' +
+    'to see in support.'
+  )
+}
+
+/** What the written sections need from the measured ones. */
+interface NarrativeContext {
+  /** Holders verified to the current standard, or null when it could not be computed. */
+  verifiedParticipants: number | null
+}
+
+function narrativeSections(ctx: NarrativeContext): Section[] {
   return [
     {
       id: 'summary',
@@ -873,7 +963,13 @@ function narrativeSections(): Section[] {
       question: 'What do you want, and what have you done to earn it?',
       figures: [],
       narrative:
-        'Two variation requests are drafted in full and travel with this return: the merchant settlement request and the agent participant class request (both in docs/bot/, previously shared in correspondence). Each states its own ask, controls and evidence in its own document; this section cites them rather than restating them. Add any cap relief only where the period actually recorded refusals: an ask supported by a row in sandbox_limit_events — a real participant refused on a real date — is a different conversation from an ask supported by a forecast, and section 2 reports exactly how many such refusals exist.',
+        capReliefParagraph(ctx) +
+        ' Two further variation requests are drafted in full and travel with this return: the merchant settlement ' +
+        'request and the agent participant class request, each previously shared in correspondence. Each states its ' +
+        'own ask, its controls and its evidence in its own document; this section cites them rather than restating ' +
+        'them. Any further relief will be sought only where this period actually recorded a refusal — an ask ' +
+        'supported by a real participant refused on a real date is a different conversation from an ask supported ' +
+        'by a forecast, and the compliance section reports exactly how many such refusals exist.',
     },
   ]
 }
@@ -899,7 +995,15 @@ export async function buildReport(range: DateRange): Promise<Report> {
     holdersSection(),
   ])
 
-  const [summary, market, requests] = narrativeSections()
+  // The written sections quote measured figures, so they are built from the
+  // computed ones rather than kept in step by hand.
+  const verifiedFigure = parameters.figures.find((f) => f.label.startsWith('Verified participants'))
+  const [summary, market, requests] = narrativeSections({
+    verifiedParticipants:
+      verifiedFigure && !verifiedFigure.unavailable && typeof verifiedFigure.value === 'number'
+        ? verifiedFigure.value
+        : null,
+  })
 
   // Ordered as the return is read: the ask last, the compliance first. Holders
   // follow the reserve because they are the other half of the same question —

@@ -67,6 +67,12 @@ export interface TableCell {
   text: string
   /** Small muted second line inside the cell — a derivation or a caveat. */
   sub?: string
+  /**
+   * A line the Bank must actually read, set above the muted ones and in the
+   * body ink. Muted italic is where a reader's eye skips; a disclosure printed
+   * there would be technically present and practically absent.
+   */
+  strongSub?: string
   bold?: boolean
 }
 
@@ -128,7 +134,10 @@ function atAGlance(report: Report): Array<{ label: string; value: string; sub?: 
 
   push('nTZS in circulation', 'nTZS in circulation at period end', () => 'at period end, as attested')
   push('Days fully backed', 'Days fully backed', (unit) => (unit ? `${unit} attested` : undefined))
-  push('Verified holders', 'Verified holders')
+  // The cohort figure the parameters section computes, not the holders one:
+  // they are close in name and different in definition, and a panel carrying
+  // both would invite a supervisor to read a discrepancy where there is none.
+  push('Verified participants', 'Verified participants (Parameter 2)', () => 'identity verified to current standard')
   push('Participants transacting', 'Participants transacting', () => 'in the period')
   push('Value issued', 'nTZS issued', () => 'TZS, minted in the period')
   push('Value redeemed', 'nTZS redeemed', () => 'TZS, burned in the period')
@@ -184,7 +193,7 @@ export function buildReturnDocument(report: Report, opts: ReturnDocumentOptions)
             .filter(Boolean)
             .join('\n')
           return [
-            { text: figure.label, sub },
+            { text: figure.label, sub, strongSub: figure.disclosure },
             {
               text: figureValue(figure.value, figure.unavailable),
               // A unit qualifies a real value; on an unavailable figure it
@@ -504,11 +513,16 @@ function renderBlock(state: RenderState, block: Block) {
         // Measure the row whole before committing to it, so a cell never lands
         // on a different page from the figure it belongs to.
         let height = 0
-        const cellLines: Array<{ main: string[]; sub: string[] }> = row.map((cell, i) => {
+        const cellLines: Array<{ main: string[]; strong: string[]; sub: string[] }> = row.map((cell, i) => {
           const w = widths[i] - PAD * 2
           doc.setFont('times', cell.bold ? 'bold' : 'normal')
           doc.setFontSize(9.4)
           const main = doc.splitTextToSize(ascii(cell.text), w) as string[]
+          doc.setFont('times', 'bolditalic')
+          doc.setFontSize(8.6)
+          const strong = cell.strongSub
+            ? (doc.splitTextToSize(ascii(cell.strongSub), w) as string[])
+            : []
           doc.setFont('times', 'italic')
           doc.setFontSize(8)
           const sub = cell.sub
@@ -516,8 +530,8 @@ function renderBlock(state: RenderState, block: Block) {
                 .split('\n')
                 .flatMap((line) => doc.splitTextToSize(ascii(line), w) as string[]) as string[])
             : []
-          height = Math.max(height, main.length * 12 + sub.length * 10)
-          return { main, sub }
+          height = Math.max(height, main.length * 12 + strong.length * 11 + sub.length * 10)
+          return { main, strong, sub }
         })
         height += 10
 
@@ -528,7 +542,7 @@ function renderBlock(state: RenderState, block: Block) {
 
         let x = MARGIN_X
         row.forEach((cell, i) => {
-          const { main, sub } = cellLines[i]
+          const { main, strong, sub } = cellLines[i]
           let ty = state.y + 12
           main.forEach((line) => {
             doc.setFont('times', cell.bold ? 'bold' : 'normal')
@@ -540,6 +554,17 @@ function renderBlock(state: RenderState, block: Block) {
                 : x + PAD
             doc.text(line, tx, ty)
             ty += 12
+          })
+          strong.forEach((line) => {
+            doc.setFont('times', 'bolditalic')
+            doc.setFontSize(8.6)
+            doc.setTextColor(INK)
+            const tx =
+              block.columns[i].align === 'right'
+                ? x + widths[i] - PAD - doc.getTextWidth(line)
+                : x + PAD
+            doc.text(line, tx, ty)
+            ty += 11
           })
           sub.forEach((line) => {
             doc.setFont('times', 'italic')
