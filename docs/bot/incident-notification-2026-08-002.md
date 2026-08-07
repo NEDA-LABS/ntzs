@@ -51,15 +51,15 @@ That report was **not** sent to the Bank. The platform correctly classified the 
 
 Customers attempting an M-Pesa deposit now receive a message naming their network, stating the cause is ours and temporary, offering an alternative network or bank transfer, and confirming their balance is untouched and nothing has been charged.
 
-**On customer losses.** No customer has been shown to have lost funds and we do not expect any to have. We report the figure as **unestablished rather than zero**, in line with our policy that a loss figure is never defaulted to zero before it is established: a collection in flight at the moment the account was disabled cannot be excluded until we have read the provider's statement of the account. Three deposit attempts on the morning of 6 August, across two wallet holders, are under review on the same basis; two of the three timestamp before the first evidenced effect of the suspension and may belong to a separate, already-corrected defect.
+**On customer losses.** No customer has been shown to have lost funds and we do not expect any to have. We continue to report the figure as **unestablished rather than zero**, in line with our policy that a loss figure is never defaulted to zero before it is established. The provider's statement of the account (received 7 August) confirms that funds in flight at the moment of suspension do exist: **TZS 248,320 is held as "funds pending"** — amounts taken on the platform but not yet settled to the available balance when the account was blocked. We have requested a transaction-level breakdown of that pending sum so each item can be reconciled to a customer deposit record; any confirmed customer collection will be credited in full once identified. Three deposit attempts on the morning of 6 August, across two wallet holders, are under review on the same basis; two of the three timestamp before the first evidenced effect of the suspension and may belong to a separate, already-corrected defect.
 
-We will confirm the position in writing once the provider's statement is received.
+We will report the completed reconciliation of the pending sum, and the final loss figure, in the next periodic return or sooner if material.
 
 ## 5. Reserve position
 
 The reserve is fully backed. The balance held with the suspended provider has not moved and, per the provider's own notice, cannot move while the account is suspended.
 
-Because that balance can no longer be read through the provider's interface, the reserve component is currently evidenced by other means, and every report carrying it is **qualified on its face**: it names the source, states the date the figure was true, and states that it is not verified as at the date of the report. We have asked the provider for a statement of the account balance, which they have agreed to supply while API access is withheld.
+Because that balance can no longer be read through the provider's interface, the reserve component is currently evidenced by other means, and every report carrying it is **qualified on its face**: it names the source, states the date the figure was true, and states that it is not verified as at the date of the report. The provider has now supplied a statement of the account (snapshot dated 7 August 2026): an available balance of **TZS 2,668,816**, internally consistent with the account's lifetime totals (TZS 11,441,234 received less TZS 8,772,418 paid out), plus **TZS 248,320 pending settlement**, with the account confirmed blocked since 6 August and no movement since. The reserve component is carried at the available figure — the same settled-balance basis the provider's API reported — with the pending sum excluded until reconciled, which errs on the side of understating reserves. On that basis, reserves cover circulating supply at approximately **106.35%**.
 
 We draw the Bank's attention to the limits we have placed on this. A substituted figure **expires**: seven days for a balance carried forward from our own last verified reading, thirty days for a statement issued by the custodian confirming an account it has frozen. After expiry the daily report refuses to attest and requires a person to decide. These limits are controls and we do not intend to extend them to keep a figure alive; if the suspension outlasts them, the answer is reinstatement or relocation of the balance, not a longer clock.
 
@@ -85,8 +85,8 @@ We draw the Bank's attention to the limits we have placed on this. A substituted
 |---|---|
 | Suspension | **Unresolved.** Reason disputed; provider asked to identify the transactions concerned and to receive our sandbox authorisation |
 | Vodacom M-Pesa deposits | **Unavailable.** Restoration requires reinstatement, or enabling a third collection path already implemented |
-| Reserve | Fully backed; the affected component evidenced by statement, every report qualified on its face |
-| Customer losses | Unestablished; to be confirmed on receipt of the provider's statement |
+| Reserve | Fully backed (~106.35% of supply); the affected component evidenced by the provider's 7 August statement, every report qualified on its face |
+| Customer losses | Unestablished; the statement shows TZS 248,320 pending settlement — transaction-level breakdown requested to complete reconciliation. No loss shown |
 
 We will report the outcome, the confirmed loss figure and the restoration of M-Pesa collections in the next periodic return, or sooner if the position changes materially.
 
