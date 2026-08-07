@@ -239,7 +239,7 @@ async function incidentSection(range: DateRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
-    ['Incidents recorded', 'Material incidents', 'Customer funds lost', 'Still open at period end'],
+    ['Incidents recorded', 'Material incidents', 'Customer funds lost', 'Still open at period end', 'How incidents were found'],
     async () => {
       const [row] = await sql<
         { total: string; material: string; lost: string; unknown_loss: string; open: string; mean_days: string | null }[]
@@ -253,6 +253,13 @@ async function incidentSection(range: DateRange): Promise<Section> {
           avg(extract(epoch from (resolved_at - occurred_at)) / 86400)::text as mean_days
         from incidents
         where occurred_at between ${range.from} and ${range.to}
+      `
+
+      const foundBy = await sql<{ by: string; n: string }[]>`
+        select coalesce(detected_by, 'unrecorded') as by, count(*)::text as n
+        from incidents
+        where occurred_at between ${range.from} and ${range.to}
+        group by 1 order by 2 desc, 1
       `
 
       const unknownLoss = num(row?.unknown_loss)
@@ -282,6 +289,18 @@ async function incidentSection(range: DateRange): Promise<Section> {
           value: num(row?.open),
           unit: row?.mean_days ? `mean ${Number(row.mean_days).toFixed(1)} days to resolve` : undefined,
           provenance: 'incidents whose status is not resolved; mean time to resolve is over resolved entries only',
+        },
+        {
+          // The distribution is diagnostic in itself: a register where nothing
+          // is found by monitoring is telling us about the monitoring, and the
+          // return says so rather than leaving it to be noticed.
+          label: 'How incidents were found',
+          value: foundBy.length ? foundBy.map((r) => `${r.by} ${r.n}`).join(' · ') : 'none in period',
+          provenance: 'count of incidents per detected_by value',
+          warn:
+            foundBy.length > 0 && !foundBy.some((r) => r.by === 'monitoring')
+              ? 'nothing in this period was found by automated monitoring — report it as a known weakness with the work planned against it, not silence'
+              : undefined,
         },
       ]
     }
@@ -418,7 +437,7 @@ async function reserveSection(range: DateRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
-    ['Days attested', 'Days fully backed', 'Worst peg deviation', 'nTZS in circulation at period end'],
+    ['Days attested', 'Days fully backed', 'Worst peg deviation', 'nTZS in circulation at period end', 'Days without an attestation', 'Days attested on a qualified basis'],
     async () => {
       const [row] = await sql<
         { days: string; backed: string; worst: string | null; latest_supply: string | null; latest_date: string | null }[]
@@ -435,6 +454,35 @@ async function reserveSection(range: DateRange): Promise<Section> {
              order by report_date desc limit 1) as latest_date
         from attestations
         where report_date between to_char(${range.from}::date,'YYYY-MM-DD') and to_char(${range.to}::date,'YYYY-MM-DD')
+      `
+
+      // ── The calendar, day by day. The Bank holds one attestation per EAT
+      // day; a straight count hides which days are missing and which were
+      // attested on substituted evidence. Both need naming, not inferring.
+      // 'now + 3h' is the EAT calendar-date trick the attestation itself uses.
+      const missing = await sql<{ d: string }[]>`
+        select to_char(gs.d, 'YYYY-MM-DD') as d
+        from generate_series(
+          ${range.from}::date,
+          least(${range.to}::date, (now() + interval '3 hours')::date),
+          interval '1 day'
+        ) as gs(d)
+        where not exists (select 1 from attestations a where a.report_date = to_char(gs.d, 'YYYY-MM-DD'))
+        order by 1
+      `
+
+      // A qualified day carries a reserve pot that was not read live: the
+      // custodian's statement, or our own last verified reading carried
+      // forward. The annex records each pot's source, so the days are listable
+      // rather than asserted.
+      const qualified = await sql<{ d: string; sources: string }[]>`
+        select report_date as d,
+               string_agg(distinct p->>'source', '+') as sources
+        from attestations, jsonb_array_elements(annex->'pots') as p
+        where report_date between to_char(${range.from}::date,'YYYY-MM-DD') and to_char(${range.to}::date,'YYYY-MM-DD')
+          and p->>'source' in ('stale', 'statement')
+        group by report_date
+        order by report_date
       `
 
       const days = num(row?.days)
@@ -466,6 +514,30 @@ async function reserveSection(range: DateRange): Promise<Section> {
           unit: row?.latest_date ? `TZS · as attested ${row.latest_date}` : 'TZS',
           provenance: 'ntzs_circulation from the latest attestation inside the period',
           unavailable: row?.latest_supply == null ? 'no attestation rows in the period' : undefined,
+        },
+        {
+          label: 'Days without an attestation',
+          value: missing.length,
+          unit: missing.length ? missing.map((m) => m.d).slice(0, 10).join(', ') + (missing.length > 10 ? ', …' : '') : undefined,
+          provenance:
+            'EAT calendar days in the period (up to today) with no attestation row — a day the platform refused to attest rather than send a degraded reading',
+          warn:
+            missing.length > 0
+              ? 'each missing day needs its explanation in the return — the Bank can see the hole in the series it already holds'
+              : undefined,
+        },
+        {
+          label: 'Days attested on a qualified basis',
+          value: qualified.length,
+          unit: qualified.length
+            ? qualified.map((q) => `${q.d} (${q.sources})`).slice(0, 10).join(', ') + (qualified.length > 10 ? ', …' : '')
+            : undefined,
+          provenance:
+            "attestation rows whose annex carries a reserve pot not read live that day: 'statement' = the custodian's own figure entered by an operator; 'stale' = our last verified reading carried forward",
+          warn:
+            qualified.length > 0
+              ? 'each qualified day should be explained once in the return, with the evidence source named — the daily emails already carry the banner'
+              : undefined,
         },
       ]
     }

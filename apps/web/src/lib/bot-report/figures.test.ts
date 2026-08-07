@@ -182,6 +182,65 @@ describe('every figure the generator can emit carries a derivation', () => {
   })
 })
 
+/**
+ * Section 5 must name the days, not just count them. The Bank holds one
+ * attestation per EAT day, so it can already see any hole in the series — the
+ * return has to name each hole and each substituted day before the Bank does.
+ */
+describe('the attestation calendar is named day by day', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+
+  it('lists days with no attestation row, capped at the EAT today', () => {
+    expect(src).toContain('generate_series')
+    // Without the cap, a period ending in the future reports every
+    // not-yet-happened day as a hole. 'now + 3h' is the same EAT calendar-date
+    // arithmetic the attestation run itself uses.
+    expect(src).toMatch(/least\(\$\{range\.to\}::date, \(now\(\) \+ interval '3 hours'\)::date\)/)
+    expect(src).toContain('Days without an attestation')
+  })
+
+  it('lists qualified days from the annex each day actually carried', () => {
+    // The annex records each reserve pot's source at the moment of attestation;
+    // 'statement' and 'stale' are the two substituted kinds. Reading them back
+    // is what makes the qualified days listable rather than asserted.
+    expect(src).toContain("jsonb_array_elements(annex->'pots')")
+    expect(src).toMatch(/p->>'source' in \('stale', 'statement'\)/)
+    expect(src).toContain('Days attested on a qualified basis')
+  })
+
+  it('warns on both, so neither can be filed unexplained', () => {
+    const calendar = src.slice(src.indexOf('Days without an attestation'))
+    expect(calendar).toContain('each missing day needs its explanation')
+    expect(calendar).toContain('each qualified day should be explained once')
+  })
+})
+
+/**
+ * How incidents were found is diagnostic in itself: a register where nothing is
+ * found by automated monitoring is telling us about the monitoring. The return
+ * computes the distribution and states the weakness rather than leaving it to
+ * be noticed by whoever reads the register later.
+ */
+describe('the found-by distribution is computed, not asserted', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+
+  it('reports incidents grouped by how they were detected, keeping unrecorded visible', () => {
+    expect(src).toMatch(/coalesce\(detected_by, 'unrecorded'\)/)
+    expect(src).toContain('How incidents were found')
+  })
+
+  it('warns when nothing in the period was found by automated monitoring', () => {
+    expect(src).toMatch(/foundBy\.some\(\(r\) => r\.by === 'monitoring'\)/)
+    expect(src).toContain('nothing in this period was found by automated monitoring')
+  })
+
+  it('stays silent when the period has no incidents at all', () => {
+    // Zero incidents is not a monitoring failure — the warn must require a
+    // non-empty distribution, or an uneventful period files with a false alarm.
+    expect(src).toMatch(/foundBy\.length > 0 &&/)
+  })
+})
+
 describe('the architecture document stays in step with the generator', () => {
   // Prose is line-wrapped, so assertions are made against the unwrapped text —
   // the claim is about what the document says, not how it is laid out.
@@ -209,5 +268,21 @@ describe('the architecture document stays in step with the generator', () => {
     // The two that are easiest to quietly omit.
     expect(doc).toMatch(/twelve June deposits/i)
     expect(doc).toMatch(/ring-fenced trust account/i)
+  })
+
+  it('records closed gaps instead of deleting them', () => {
+    // The closure trail: the period anchor and its env var, and the calendar
+    // figures section 5 now emits. If someone reverts the generator, this pins
+    // the document claim that would then be false.
+    expect(doc).toContain('BOT_SANDBOX_COMMENCED_ON')
+    expect(doc).toMatch(/no attestation row/i)
+    expect(doc).toMatch(/qualified basis/i)
+  })
+
+  it('documents the period anchor where the operator will look', () => {
+    // The variable only closes the gap if someone sets it — .env.example is
+    // where every other operational variable is discovered.
+    const env = fs.readFileSync(path.join(__dirname, '../../../../../.env.example'), 'utf8')
+    expect(env).toContain('BOT_SANDBOX_COMMENCED_ON=')
   })
 })
