@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { CheckCircle2, Copy, AlertCircle, Pencil, RefreshCw, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useLp } from '../layout';
 import ReserveMonitor from '../_components/ReserveMonitor';
+import PayoutDestinations from '../_components/PayoutDestinations';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -232,6 +233,8 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        <PayoutDestinations isBank={lp.accountType === 'bank'} />
 
         <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-zinc-600 mb-4">Legal</p>
