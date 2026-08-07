@@ -539,7 +539,7 @@ export default async function LpDetailPage({
                       <dd className="text-white">{bank.bankName || '—'}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-zinc-600 mb-0.5">Trust / escrow reference</dt>
+                      <dt className="text-xs text-zinc-600 mb-0.5">Settlement account reference</dt>
                       <dd className="font-mono text-xs text-zinc-300 break-all">{bank.trustAccountRef || '—'}</dd>
                     </div>
                     {bank.swift && (

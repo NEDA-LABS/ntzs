@@ -8,6 +8,14 @@ import { actionDisposition, createApproval } from '@/lib/fx/approvals';
 
 interface BankingProfile {
   bankName?: string;
+  /**
+   * Shown as "Settlement account reference". The key kept its original name
+   * because renaming it would mean migrating jsonb on every existing profile
+   * for a cosmetic gain — but it is NOT where a reserve is held: TZS funded
+   * through this portal sits in our own trust account, and this is a KYB
+   * record, not a routing field. Payouts take a bank and account number
+   * chosen at settle-out time.
+   */
   trustAccountRef?: string;
   swift?: string;
   contactName?: string;
@@ -28,7 +36,7 @@ export async function GET() {
   return NextResponse.json({ banking: (lp?.bankingProfile as BankingProfile | null) ?? null });
 }
 
-/** PUT /api/lp/banking — save the trust-account / settlement details. */
+/** PUT /api/lp/banking — save the settlement account and contacts. */
 export async function PUT(req: NextRequest) {
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -41,7 +49,7 @@ export async function PUT(req: NextRequest) {
   }
 
   if (!body.bankName?.trim() || !body.trustAccountRef?.trim()) {
-    return NextResponse.json({ error: 'Partner bank and trust account reference are required.' }, { status: 400 });
+    return NextResponse.json({ error: 'Partner bank and settlement account reference are required.' }, { status: 400 });
   }
 
   const profile: BankingProfile = {

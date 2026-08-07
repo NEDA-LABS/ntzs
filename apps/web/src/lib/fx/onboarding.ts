@@ -23,7 +23,7 @@ export const ONBOARDING_STEPS: Record<AccountType, OnboardingStepDef[]> = {
   bank: [
     { key: 'profile', label: 'Organisation', description: 'Your institution’s details.' },
     { key: 'kyb', label: 'KYB documents', description: 'Licence, ownership, AML policy, signatories.' },
-    { key: 'banking', label: 'Banking & reserve', description: 'Trust account and settlement details.' },
+    { key: 'banking', label: 'Banking & reserve', description: 'Settlement account and contacts.' },
     { key: 'fx', label: 'FX configuration', description: 'Spread and exposure limits.' },
     { key: 'team', label: 'Team & roles', description: 'Invite an operator and an approver.' },
     { key: 'sandbox', label: 'Sandbox test', description: 'Run a guided test settlement.' },

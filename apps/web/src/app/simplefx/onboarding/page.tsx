@@ -224,7 +224,7 @@ function Field({
   );
 }
 
-/** Banking & reserve step — trust account + settlement details → bankingProfile. */
+/** Banking & reserve step — settlement account + contacts → bankingProfile. */
 function BankingStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const [form, setForm] = useState({ bankName: '', trustAccountRef: '', swift: '', contactName: '', contactEmail: '' });
   const [saving, setSaving] = useState(false);
@@ -242,7 +242,7 @@ function BankingStep({ onDone, onBack }: { onDone: () => void; onBack: () => voi
   const save = async () => {
     setError('');
     if (!form.bankName.trim() || !form.trustAccountRef.trim()) {
-      setError('Partner bank and trust account reference are required.');
+      setError('Partner bank and settlement account reference are required.');
       return;
     }
     setSaving(true);
@@ -264,12 +264,11 @@ function BankingStep({ onDone, onBack }: { onDone: () => void; onBack: () => voi
         <Field label="Partner bank" value={form.bankName} onChange={(v) => set('bankName', v)} placeholder="e.g. CRDB Bank" />
         <Field label="SWIFT / BIC" value={form.swift} onChange={(v) => set('swift', v)} placeholder="Optional" />
       </div>
-      <Field label="Trust / escrow account reference" value={form.trustAccountRef} onChange={(v) => set('trustAccountRef', v)} placeholder="Account number or reference" />
+      <Field label="Settlement account reference" value={form.trustAccountRef} onChange={(v) => set('trustAccountRef', v)} placeholder="Account number or reference" />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Settlement contact" value={form.contactName} onChange={(v) => set('contactName', v)} placeholder="Name" />
         <Field label="Contact email" value={form.contactEmail} onChange={(v) => set('contactEmail', v)} placeholder="ops@bank.com" type="email" />
       </div>
-      <p className="text-xs leading-relaxed text-zinc-600">Your reserves stay in this ring-fenced account at your own bank — NEDA never holds your funds.</p>
       {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="flex items-center gap-3 pt-1">
         <button onClick={onBack} className={PILL_GHOST}><ArrowLeft size={15} /> Back</button>
