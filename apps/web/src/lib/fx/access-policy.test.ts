@@ -39,3 +39,28 @@ describe('canDecide', () => {
     expect(canDecide('viewer')).toBe(false)
   })
 })
+
+describe('actionDisposition — value ceiling', () => {
+  it('queues an owner once the amount reaches the threshold', () => {
+    expect(actionDisposition('owner', { amountTzs: 1_000_000, thresholdTzs: 1_000_000 })).toBe('queue')
+    expect(actionDisposition('owner', { amountTzs: 1_500_000, thresholdTzs: 1_000_000 })).toBe('queue')
+    expect(actionDisposition('approver', { amountTzs: 2_000_000, thresholdTzs: 1_000_000 })).toBe('queue')
+  })
+
+  it('lets an owner act directly below the threshold', () => {
+    expect(actionDisposition('owner', { amountTzs: 999_999, thresholdTzs: 1_000_000 })).toBe('direct')
+  })
+
+  it('ignores the ceiling when unset, zero, or the amount is unknown', () => {
+    expect(actionDisposition('owner', { amountTzs: 5_000_000, thresholdTzs: null })).toBe('direct')
+    expect(actionDisposition('owner', { amountTzs: 5_000_000, thresholdTzs: 0 })).toBe('direct')
+    expect(actionDisposition('owner', { thresholdTzs: 1_000 })).toBe('direct')
+  })
+
+  it('never promotes a denied or queued role', () => {
+    // A viewer stays denied however small the amount…
+    expect(actionDisposition('viewer', { amountTzs: 1, thresholdTzs: 1_000_000 })).toBe('deny')
+    // …and an operator still queues below the ceiling.
+    expect(actionDisposition('operator', { amountTzs: 1, thresholdTzs: 1_000_000 })).toBe('queue')
+  })
+})

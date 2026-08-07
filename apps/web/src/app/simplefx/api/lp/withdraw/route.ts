@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { eq } from 'drizzle-orm';
+
 import { getSessionFromCookies } from '@/lib/fx/auth';
+import { db } from '@/lib/fx/db';
+import { lpAccounts } from '@ntzs/db';
 import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency';
 import { actionDisposition, createApproval } from '@/lib/fx/approvals';
 import { executeWithdraw, validateWithdrawParams, type WithdrawParams } from '@/lib/fx/withdraw';
@@ -27,6 +31,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
+  // The LP's own value ceiling: at or above it, even an owner needs a second
+  // approver. Read once and applied to both withdrawal shapes.
+  const [lpRow] = await db
+    .select({ approvalThresholdTzs: lpAccounts.approvalThresholdTzs })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.id, session.lpId))
+    .limit(1);
+  const thresholdTzs = lpRow?.approvalThresholdTzs ?? null;
+
   // ── Bank cash-out: redeem nTZS for TZS into the LP's bank account ─────────
   // Supply must fall by what leaves the reserve, so this burns rather than
   // transfers. Same maker-checker gate as the on-chain path.
@@ -40,7 +53,10 @@ export async function POST(req: NextRequest) {
     if (cashoutError) return NextResponse.json({ error: cashoutError }, { status: 400 });
     const cashoutParams = cashoutDraft as BankCashoutParams;
 
-    const cashoutDisposition = actionDisposition(session.role);
+    const cashoutDisposition = actionDisposition(session.role, {
+      amountTzs: cashoutParams.amountTzs,
+      thresholdTzs,
+    });
     if (cashoutDisposition === 'deny') {
       return NextResponse.json({ error: 'Your role does not permit withdrawals.' }, { status: 403 });
     }
@@ -88,7 +104,12 @@ export async function POST(req: NextRequest) {
 
   // Maker-checker + least-privilege: owner/approver withdraw directly, an operator's
   // withdrawal is queued for an approver, and any other role (viewer) is denied.
-  const disposition = actionDisposition(session.role);
+  // The ceiling is denominated in TZS, so it binds the nTZS leg; a USDC/USDT
+  // transfer is not a shilling amount and is left to the role policy.
+  const disposition = actionDisposition(session.role, {
+    amountTzs: params.token.toLowerCase() === 'ntzs' ? Number(params.amount) : undefined,
+    thresholdTzs,
+  });
   if (disposition === 'deny') {
     return NextResponse.json({ error: 'Your role does not permit withdrawals.' }, { status: 403 });
   }

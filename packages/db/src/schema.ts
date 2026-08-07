@@ -941,6 +941,10 @@ export const lpAccounts = pgTable(
     testAccessUntil: timestamp('test_access_until', { withTimezone: true }),
     testAccessNote: text('test_access_note'),
 
+    // Value ceiling for maker-checker: actions at or above this need a second
+    // approver even from an owner. NULL = role-based policy only.
+    approvalThresholdTzs: bigint('approval_threshold_tzs', { mode: 'number' }),
+
     apiKeyHash: text('api_key_hash'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

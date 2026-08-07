@@ -54,8 +54,14 @@ export async function POST(req: NextRequest) {
 
   if (!appr) return NextResponse.json({ error: 'Request not found.' }, { status: 404 });
   if (appr.status !== 'pending') return NextResponse.json({ error: 'This request has already been decided.' }, { status: 409 });
-  if (appr.requestedByMemberId && session.memberId && appr.requestedByMemberId === session.memberId) {
-    return NextResponse.json({ error: 'You cannot approve your own request.' }, { status: 403 });
+  // Four eyes on the way through, but not on the way back: the whole point of
+  // maker-checker is that nobody releases their own request. Cancelling one is
+  // the opposite — it takes an action away, and refusing it would strand a
+  // mistaken request forever on an account with no second approver.
+  const isOwnRequest =
+    !!appr.requestedByMemberId && !!session.memberId && appr.requestedByMemberId === session.memberId;
+  if (isOwnRequest && body.decision === 'approve') {
+    return NextResponse.json({ error: 'You cannot approve your own request. Ask a teammate to release it, or cancel it.' }, { status: 403 });
   }
 
   // Atomically claim the request before executing — two approvers must not both

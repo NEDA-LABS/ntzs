@@ -14,10 +14,29 @@ export type ActionDisposition = 'direct' | 'queue' | 'deny';
  * non-owner role (including the read-only `viewer`) fall through to direct
  * execution — allowing a viewer to move LP funds and rewrite spreads/banking.
  */
-export function actionDisposition(role: string | undefined): ActionDisposition {
-  if (role === undefined || role === 'owner' || role === 'approver') return 'direct';
+export function actionDisposition(
+  role: string | undefined,
+  /**
+   * Optional value ceiling. When the LP has set a threshold and this action is
+   * worth at least that much, it queues for a second approver REGARDLESS of
+   * role — including the owner's own. Self-approval is refused downstream, so
+   * the ceiling is a real four-eyes control rather than a formality.
+   */
+  value?: { amountTzs?: number | null; thresholdTzs?: number | null },
+): ActionDisposition {
+  if (role !== undefined && role !== 'owner' && role !== 'approver' && role !== 'operator') return 'deny';
   if (role === 'operator') return 'queue';
-  return 'deny';
+
+  const threshold = value?.thresholdTzs;
+  const amount = value?.amountTzs;
+  if (
+    typeof threshold === 'number' && threshold > 0 &&
+    typeof amount === 'number' && Number.isFinite(amount) &&
+    amount >= threshold
+  ) {
+    return 'queue';
+  }
+  return 'direct';
 }
 
 /** Who may decide (approve/reject) a queued action. undefined = legacy = owner. */
