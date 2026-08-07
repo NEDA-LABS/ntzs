@@ -68,6 +68,29 @@ export interface DateRange {
 }
 
 /**
+ * The range as it is allowed to touch the database: ISO strings, never Date
+ * instances.
+ *
+ * In production the report page was the only code in the app passing raw Date
+ * objects as query parameters, and every one of its queries failed with
+ * `The "string" argument must be of type string … Received an instance of
+ * Date` — an instanceof check missing the value because the deployed bundle
+ * and the driver do not share a realm. Strings behave identically in every
+ * realm and every driver wrapper, which is why the rest of the app (which
+ * passes strings) never hit this. All section queries therefore take this
+ * type, and `buildReport` converts exactly once at the boundary.
+ */
+interface QueryRange {
+  from: string
+  to: string
+}
+
+const toQueryRange = (range: DateRange): QueryRange => ({
+  from: range.from.toISOString(),
+  to: range.to.toISOString(),
+})
+
+/**
  * Run a query that produces figures, and convert any failure into figures
  * marked unavailable rather than letting the section vanish or read as zero.
  * A missing table (migration not applied) is reported differently from a
@@ -77,6 +100,10 @@ async function safe(labels: string[], fn: () => Promise<Figure[]>): Promise<Figu
   try {
     return await fn()
   } catch (err) {
+    // The page shows a one-line reason; the function log keeps the stack. The
+    // realm bug that once broke every figure on this page was diagnosable only
+    // from its message — never make the next one that expensive.
+    console.error('[bot-report] figures failed:', labels.join(' / '), err)
     const reason = isMissingSchemaObject(err)
       ? 'the table this reads has not been created in this database yet'
       : `query failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`
@@ -100,7 +127,7 @@ const num = (v: unknown): number => (v == null ? 0 : Number(v))
  * attempts it refused — the last of which only exists because every enforcement
  * point records its blocks (drizzle/0069).
  */
-async function parameterSection(range: DateRange): Promise<Section> {
+async function parameterSection(range: QueryRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
@@ -235,7 +262,7 @@ async function parameterSection(range: DateRange): Promise<Section> {
  * Reported from the register rather than written fresh, so the return cannot
  * quietly contain a shorter list than the internal record.
  */
-async function incidentSection(range: DateRange): Promise<Section> {
+async function incidentSection(range: QueryRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
@@ -323,7 +350,7 @@ async function incidentSection(range: DateRange): Promise<Section> {
  * rail because "the platform worked" is not a useful claim when four providers
  * sit behind it and they do not fail together.
  */
-async function operationsSection(range: DateRange): Promise<Section> {
+async function operationsSection(range: QueryRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
@@ -433,7 +460,7 @@ async function operationsSection(range: DateRange): Promise<Section> {
  * Read from the attestation series rather than recomputed, so the return and
  * the daily submissions the Bank already holds cannot disagree.
  */
-async function reserveSection(range: DateRange): Promise<Section> {
+async function reserveSection(range: QueryRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(
@@ -554,7 +581,7 @@ async function reserveSection(range: DateRange): Promise<Section> {
 /**
  * Section 6 — onboarding and consumer protection.
  */
-async function consumerSection(range: DateRange): Promise<Section> {
+async function consumerSection(range: QueryRange): Promise<Section> {
   const { sql } = getDb()
 
   const figures = await safe(['Identities verified', 'Verification outcomes'], async () => {
@@ -631,13 +658,17 @@ export interface Report {
 }
 
 export async function buildReport(range: DateRange): Promise<Report> {
+  // The single point where Dates become strings — nothing below this line may
+  // pass a Date instance to the driver.
+  const q = toQueryRange(range)
+
   // Independent queries; one slow section should not serialise the rest.
   const [parameters, incidents, operations, reserve, consumer] = await Promise.all([
-    parameterSection(range),
-    incidentSection(range),
-    operationsSection(range),
-    reserveSection(range),
-    consumerSection(range),
+    parameterSection(q),
+    incidentSection(q),
+    operationsSection(q),
+    reserveSection(q),
+    consumerSection(q),
   ])
 
   const [summary, market, requests] = narrativeSections()
