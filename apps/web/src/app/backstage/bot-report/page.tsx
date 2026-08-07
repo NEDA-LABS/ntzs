@@ -92,6 +92,44 @@ function SectionBlock({ section, index }: { section: Section; index: number }) {
 
       {section.figures.length > 0 && <div>{section.figures.map((f) => <FigureCard key={f.label} figure={f} />)}</div>}
 
+      {section.table && (
+        <div className="border-t border-white/5">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-zinc-500">
+                  {section.table.columns.map((c) => (
+                    <th key={c.header} className={`px-6 py-3 ${c.align === 'right' ? 'text-right' : ''}`}>
+                      {c.header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {section.table.rows.map((row, i) => (
+                  <tr key={i} className="border-b border-white/5 last:border-b-0">
+                    {row.map((cell, j) => (
+                      <td
+                        key={j}
+                        className={`px-6 py-2.5 ${section.table!.columns[j]?.align === 'right' ? 'text-right' : ''} ${
+                          j === 0 ? 'text-zinc-200' : 'text-zinc-400'
+                        }`}
+                      >
+                        {cell.text}
+                        {cell.sub && <span className="ml-2 text-xs text-zinc-600">{cell.sub}</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {section.table.caption && (
+            <p className="px-6 py-3 text-xs leading-relaxed text-zinc-600">{section.table.caption}</p>
+          )}
+        </div>
+      )}
+
       {section.narrative && (
         <p className="border-t border-white/5 bg-zinc-950/40 px-6 py-4 text-xs leading-relaxed text-zinc-400">
           {section.figures.length === 0 && (

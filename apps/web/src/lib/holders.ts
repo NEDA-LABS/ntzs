@@ -2,6 +2,7 @@ import { ethers } from 'ethers'
 
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
+import { extractNidaHolderName } from '@/lib/kyc/display'
 
 /**
  * The holders register: every address holding nTZS matched to the verified
@@ -26,6 +27,15 @@ export interface HolderRow {
   userId: string
   email: string
   role: string
+  /**
+   * The holder's legal name as the verifier returned it — the NIDA registry
+   * through Selcom, or the partner who attested them. Null when no approved
+   * case carries one, and in that case the holder has no verified name at all:
+   * this field is never filled from a self-declared profile or an email
+   * address. A supervisory document names people from the register that
+   * verified them or does not name them.
+   */
+  verifiedName: string | null
   /** Latest kyc_cases status for the user, or null when no case exists. */
   kycStatus: string | null
   kycProvider: string | null
@@ -57,8 +67,47 @@ export interface HoldersView {
   holdingCount: number
   /** Of those holding, how many have an approved verification case. */
   holdingVerifiedCount: number
+  /** Cohort composition — what the wallet count is actually made of. */
+  cohort: CohortComposition
   chainError?: string
   generatedAt: string
+}
+
+/**
+ * The register is not one population but three, and reporting the total alone
+ * is what makes a wallet count look like a participant count.
+ *
+ * Wallets were issued before the sandbox commenced, and many of those holders
+ * never returned to verify under the standard now in force. They still appear
+ * in `wallets`. Naming the split is the difference between a figure a
+ * supervisor can interpret and a figure that invites the wrong question.
+ */
+export interface CohortComposition {
+  /** Every wallet on the register, whatever its state. */
+  totalWallets: number
+  /** Holders with an approved verification case. */
+  verified: number
+  /** Verified holders whose legal name came back from the verifier. */
+  verifiedNamed: number
+  /** Verified holders currently holding a balance. */
+  verifiedHolding: number
+  /** Verified holders who moved money in the last 30 days. */
+  verifiedActive30d: number
+  /** No approved case: legacy or lapsed, and not part of the tested cohort. */
+  unverified: number
+  /** Unverified holders nonetheless holding a balance — the ones that matter. */
+  unverifiedHolding: number
+}
+
+/**
+ * Verified holders, named, largest holding first — the register a supervisor
+ * would ask to see. Holders without a verified name are never in this list:
+ * an unnamed row in an identity register is not evidence of anything.
+ */
+export function verifiedNamedHolders(view: HoldersView): HolderRow[] {
+  return view.holders
+    .filter((h) => h.kycStatus === 'approved' && h.verifiedName)
+    .sort((a, b) => (b.balanceTzs ?? -1) - (a.balanceTzs ?? -1) || b.activity30d - a.activity30d)
 }
 
 interface DbHolderRow {
@@ -69,6 +118,8 @@ interface DbHolderRow {
   role: string
   kyc_status: string | null
   kyc_provider: string | null
+  /** Ladder/attestation evidence; carries "NIDA holder: …" or "Holder: …". */
+  kyc_review_reason: string | null
   activity_30d: string
   last_activity_at: string | null
 }
@@ -92,12 +143,18 @@ export function assembleHoldersView(input: {
     const balance = input.balances.has(r.address.toLowerCase())
       ? input.balances.get(r.address.toLowerCase())!
       : null
+    // Only an approved case yields a verified name. A pending or rejected case
+    // may well carry a name in its evidence string, and presenting that as
+    // verified would be the whole point of verification thrown away.
+    const verifiedName =
+      r.kyc_status === 'approved' ? extractNidaHolderName(r.kyc_review_reason) : null
     return {
       address: r.address,
       frozen: r.frozen,
       userId: r.user_id,
       email: r.email,
       role: r.role,
+      verifiedName,
       kycStatus: r.kyc_status,
       kycProvider: r.kyc_provider,
       balanceTzs: balance,
@@ -131,6 +188,18 @@ export function assembleHoldersView(input: {
     input.supplyTzs != null && failedReads === 0 ? input.supplyTzs - attributedTzs : null
 
   const holding = holders.filter((h) => (h.balanceTzs ?? 0) > 0)
+  const verified = holders.filter((h) => h.kycStatus === 'approved')
+  const unverified = holders.filter((h) => h.kycStatus !== 'approved')
+
+  const cohort: CohortComposition = {
+    totalWallets: holders.length,
+    verified: verified.length,
+    verifiedNamed: verified.filter((h) => h.verifiedName).length,
+    verifiedHolding: verified.filter((h) => (h.balanceTzs ?? 0) > 0).length,
+    verifiedActive30d: verified.filter((h) => h.activity30d > 0).length,
+    unverified: unverified.length,
+    unverifiedHolding: unverified.filter((h) => (h.balanceTzs ?? 0) > 0).length,
+  }
 
   return {
     holders,
@@ -141,6 +210,7 @@ export function assembleHoldersView(input: {
     failedReads,
     holdingCount: holding.length,
     holdingVerifiedCount: holding.filter((h) => h.kycStatus === 'approved').length,
+    cohort,
     chainError: input.chainError,
     generatedAt: new Date().toISOString(),
   }
@@ -156,22 +226,77 @@ const ERC20_READS = [
   'function balanceOf(address) view returns (uint256)',
 ]
 
-/** Batched balance reads; a failed address yields null, never zero. */
+/**
+ * Multicall3, at the same address on every chain it is deployed to, Base
+ * included. The register holds well over a thousand wallets, and asking the
+ * node for them one at a time takes long enough that the page and the return
+ * would both time out. One multicall answers hundreds.
+ */
+const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
+const MULTICALL3_ABI = [
+  'function aggregate3((address target, bool allowFailure, bytes callData)[] calls) view returns ((bool success, bytes returnData)[])',
+]
+const MULTICALL_BATCH = 400
+
+const erc20Interface = new ethers.Interface(ERC20_READS)
+
+function toTzs(data: string): number {
+  const [value] = erc20Interface.decodeFunctionResult('balanceOf', data)
+  return Number(ethers.formatUnits(value as bigint, 18))
+}
+
+/**
+ * Balance reads for many addresses. A failed read yields null, never zero —
+ * the totals then exclude it and say so, rather than reporting an unread
+ * wallet as an empty one.
+ */
 async function readBalances(
   contract: ethers.Contract,
+  provider: ethers.JsonRpcProvider,
+  token: string,
   addresses: string[]
 ): Promise<Map<string, number | null>> {
   const out = new Map<string, number | null>()
-  const CHUNK = 40
-  for (let i = 0; i < addresses.length; i += CHUNK) {
-    const chunk = addresses.slice(i, i + CHUNK)
-    const results = await Promise.allSettled(chunk.map((a) => contract.balanceOf(a)))
-    results.forEach((res, j) => {
-      out.set(
-        chunk[j].toLowerCase(),
-        res.status === 'fulfilled' ? Number(ethers.formatUnits(res.value, 18)) : null
-      )
-    })
+  if (addresses.length === 0) return out
+
+  const multicall = new ethers.Contract(MULTICALL3, MULTICALL3_ABI, provider)
+
+  for (let i = 0; i < addresses.length; i += MULTICALL_BATCH) {
+    const chunk = addresses.slice(i, i + MULTICALL_BATCH)
+    try {
+      const calls = chunk.map((address) => ({
+        target: token,
+        allowFailure: true,
+        callData: erc20Interface.encodeFunctionData('balanceOf', [address]),
+      }))
+      const results: Array<{ success: boolean; returnData: string }> = await multicall.aggregate3(calls)
+      results.forEach((res, j) => {
+        let value: number | null = null
+        if (res.success) {
+          try {
+            value = toTzs(res.returnData)
+          } catch {
+            value = null
+          }
+        }
+        out.set(chunk[j].toLowerCase(), value)
+      })
+    } catch {
+      // Multicall is an optimisation, not a dependency: a chain without it
+      // deployed, or a node that refuses the call, must still produce a
+      // register. Fall back to individual reads for this chunk only.
+      const CHUNK = 40
+      for (let k = 0; k < chunk.length; k += CHUNK) {
+        const small = chunk.slice(k, k + CHUNK)
+        const settled = await Promise.allSettled(small.map((a) => contract.balanceOf(a)))
+        settled.forEach((res, j) => {
+          out.set(
+            small[j].toLowerCase(),
+            res.status === 'fulfilled' ? Number(ethers.formatUnits(res.value, 18)) : null
+          )
+        })
+      }
+    }
   }
   return out
 }
@@ -188,14 +313,17 @@ export async function loadHoldersView(): Promise<HoldersView> {
            u.role,
            k.status as kyc_status,
            k.provider as kyc_provider,
+           k.review_reason as kyc_review_reason,
            coalesce(a.n30, 0)::text as activity_30d,
            a.last_at as last_activity_at
     from wallets w
     join users u on u.id = w.user_id
     left join lateral (
-      select status, provider from kyc_cases
+      -- An approved case outranks a later pending one: re-opening a case must
+      -- not make a verified holder look unverified in a supervisory register.
+      select status, provider, review_reason from kyc_cases
       where user_id = u.id
-      order by created_at desc
+      order by (status = 'approved') desc, created_at desc
       limit 1
     ) k on true
     left join lateral (
@@ -234,8 +362,10 @@ export async function loadHoldersView(): Promise<HoldersView> {
 
       const [supply, balanceMap, treasuryBalances] = await Promise.all([
         contract.totalSupply().then((s: bigint) => Number(ethers.formatUnits(s, 18))).catch(() => null),
-        readBalances(contract, holderAddresses),
-        treasury ? readBalances(contract, [treasury]) : Promise.resolve(new Map<string, number | null>()),
+        readBalances(contract, provider, NTZS_CONTRACT_ADDRESS_BASE, holderAddresses),
+        treasury
+          ? readBalances(contract, provider, NTZS_CONTRACT_ADDRESS_BASE, [treasury])
+          : Promise.resolve(new Map<string, number | null>()),
       ])
 
       supplyTzs = supply
@@ -272,9 +402,12 @@ export function holdersCsv(view: HoldersView): string {
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const lines = [
-    'address,email,role,kyc_status,kyc_provider,balance_tzs,activity_30d,last_activity_at,frozen',
+    'verified_name,address,email,role,kyc_status,kyc_provider,balance_tzs,activity_30d,last_activity_at,frozen',
     ...view.holders.map((h) =>
       [
+        // Blank rather than a guess: an unverified holder has no verified name,
+        // and filling the column from a profile would make the register lie.
+        h.verifiedName ?? '',
         h.address,
         h.email,
         h.role,
@@ -289,7 +422,7 @@ export function holdersCsv(view: HoldersView): string {
         .join(',')
     ),
     ...view.systemAccounts.map((s) =>
-      [s.address, s.label, 'system', '', '', s.balanceTzs == null ? 'read_failed' : s.balanceTzs, '', '', '']
+      [s.label, s.address, '', 'system', '', '', s.balanceTzs == null ? 'read_failed' : s.balanceTzs, '', '', '']
         .map(esc)
         .join(',')
     ),

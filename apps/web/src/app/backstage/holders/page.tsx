@@ -247,8 +247,21 @@ export default async function HoldersPage({
               {rows.map((h) => (
                 <tr key={h.address} className="border-b border-white/5 last:border-b-0">
                   <td className="px-4 py-3">
-                    <span className="text-zinc-200">{h.email}</span>
-                    <span className="ml-2 text-xs text-zinc-500">{h.role}</span>
+                    {/* The verified legal name leads; the account it belongs to
+                        is secondary. A holder with no verified name is shown as
+                        unnamed rather than being labelled with an email. */}
+                    {h.verifiedName ? (
+                      <>
+                        <span className="text-zinc-100">{h.verifiedName}</span>
+                        <span className="ml-2 text-xs text-zinc-500">{h.email}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-zinc-500 italic">no verified name</span>
+                        <span className="ml-2 text-xs text-zinc-500">{h.email}</span>
+                      </>
+                    )}
+                    <span className="ml-2 text-xs text-zinc-600">{h.role}</span>
                     {h.frozen && (
                       <span className="ml-2 rounded border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-rose-300">
                         frozen
