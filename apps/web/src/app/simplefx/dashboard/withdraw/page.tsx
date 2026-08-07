@@ -400,7 +400,7 @@ export default function WithdrawPage() {
                       <input
                         value={saveLabel}
                         onChange={(e) => { setSaveLabel(e.target.value); setSaveError(''); }}
-                        placeholder={mode === 'bank' ? 'Name this account' : 'Name this address, e.g. Visa float'}
+                        placeholder={mode === 'bank' ? 'Name this account' : 'Name this address, e.g. Treasury custody'}
                         maxLength={60}
                         className="min-w-0 flex-1 rounded-lg border border-white/8 bg-black/40 px-3 py-2 text-xs text-white placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none"
                       />

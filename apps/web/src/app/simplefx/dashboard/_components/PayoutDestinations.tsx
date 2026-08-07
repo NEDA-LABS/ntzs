@@ -206,7 +206,7 @@ export default function PayoutDestinations({ isBank }: { isBank: boolean }) {
           <input
             value={label}
             onChange={(e) => { setLabel(e.target.value); setError(''); }}
-            placeholder={kind === 'bank' ? 'Name this account' : 'Name this address, e.g. Visa float'}
+            placeholder={kind === 'bank' ? 'Name this account' : 'Name this address, e.g. Treasury custody'}
             maxLength={60}
             className="w-full rounded-lg border border-white/8 bg-black/40 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-blue-500/40 focus:outline-none"
           />
