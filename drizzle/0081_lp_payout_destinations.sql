@@ -1,7 +1,7 @@
 -- Saved payout destinations, and a USD ceiling to sit beside the TZS one.
 --
--- A bank off-ramping into a card scheme's stablecoin float account sends to the
--- same address every cycle. Retyping a 42-character address each time is the
+-- A bank off-ramping stablecoin to a counterparty sends to the same address
+-- every cycle. Retyping a 42-character address each time is the
 -- single riskiest step in the whole flow: it is irreversible, it is unverified,
 -- and a transposition sends real money to nobody. The same applies to the
 -- shilling rail, where the settlement account number is retyped just as often.
@@ -44,7 +44,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS lp_payout_destinations_label_uq
   ON lp_payout_destinations (lp_id, lower(label));
 
 -- The existing ceiling is denominated in shillings, so it says nothing about a
--- USDC transfer. A bank moving scheme float moves dollars, and an uncapped
+-- USDC transfer. A bank moving stablecoin float moves dollars, and an uncapped
 -- dollar leg beside a capped shilling one is a gap, not a policy.
 ALTER TABLE lp_accounts ADD COLUMN IF NOT EXISTS approval_threshold_usd bigint;
 

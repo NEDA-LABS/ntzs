@@ -1010,7 +1010,7 @@ export const lpMembers = pgTable(
  * Payout destinations an LP has saved and named.
  *
  * Retyping an irreversible destination on every withdrawal is the riskiest
- * step in the flow, and a bank settling scheme float sends to the same address
+ * step in the flow, and a bank settling float sends to the same address
  * every cycle. `kind` picks which pair of columns is meaningful: 'crypto' uses
  * chain + address, 'bank' uses bankCode + accountNumber.
  */

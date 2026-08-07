@@ -20,8 +20,8 @@ type TokenEntry = typeof TOKENS[number];
 /**
  * A bank's nTZS is reserve, not inventory: it leaves by redemption to shillings
  * so supply falls with it, never as an on-chain transfer. Its earned stables are
- * its own asset and go wherever it banks them — custody, an OTC desk, or a card
- * scheme's stablecoin float account.
+ * its own asset and go wherever it banks them — custody, an OTC desk, or any
+ * other institution that takes stablecoin.
  */
 const STABLES_ONLY: readonly TokenEntry[] = TOKENS.filter((t) => t.id !== 'ntzs');
 
@@ -201,7 +201,7 @@ export default function WithdrawPage() {
           {mode === 'bank'
             ? 'Redeem nTZS for shillings. Your nTZS is burned and the TZS is paid to your bank account.'
             : isBank
-            ? 'Send the stablecoins you have earned to your own custody, an OTC desk, or a scheme float account.'
+            ? 'Send the stablecoins you have earned to your own custody, an OTC desk, or another institution.'
             : 'Transfer tokens from your inventory wallet to any address on the same network.'}
         </p>
 

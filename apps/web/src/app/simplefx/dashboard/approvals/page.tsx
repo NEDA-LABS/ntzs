@@ -214,7 +214,7 @@ function TeamSection({ onChanged }: { onChanged: () => void }) {
  *
  * Two of them, because a ceiling only means anything against its own currency.
  * A shilling cash-out is measured in nTZS; a stablecoin transfer — a bank
- * moving card-scheme float, say — is measured in dollars. Converting one to
+ * moving stablecoin float, say — is measured in dollars. Converting one to
  * the other would need a live rate inside a control path, where a failed
  * lookup silently disarms the limit.
  */
