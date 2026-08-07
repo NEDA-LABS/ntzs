@@ -58,13 +58,28 @@ describe('a return with outstanding items cannot be mistaken for a final one', (
   })
 })
 
+/** Every figure row in the document, as (label, value, sub) triples. */
+function figureRows(blocks: Block[]): Array<{ label: string; value: string; sub: string; unit?: string }> {
+  return blocks
+    .filter((b): b is Extract<Block, { kind: 'table' }> => b.kind === 'table')
+    .flatMap((t) => t.rows)
+    .map((row) => ({
+      label: row[0]?.text ?? '',
+      value: row[1]?.text ?? '',
+      sub: row[0]?.sub ?? '',
+      unit: row[1]?.sub,
+    }))
+}
+
+const rowFor = (blocks: Block[], label: string) => figureRows(blocks).find((r) => r.label === label)!
+
 /**
  * A warning is an instruction to us. Printing one in the body would put our
  * internal to-do list in a supervisory document — and worse, would read as a
  * disclosure we had not decided to make.
  */
 describe('pre-filing warnings never reach the body', () => {
-  it('keeps a figure warning out of the figure block', () => {
+  it('keeps a figure warning out of its table row', () => {
     const blocks = buildReturnDocument(
       report([
         section({
@@ -81,9 +96,8 @@ describe('pre-filing warnings never reach the body', () => {
       ]),
       { warnings: [] }
     )
-    const figure = blocks.find((b) => b.kind === 'figure')
-    expect(figure).toBeTruthy()
-    expect(JSON.stringify(figure)).not.toContain('establish them before filing')
+    expect(JSON.stringify(blocks)).not.toContain('establish them before filing')
+    expect(rowFor(blocks, 'Customer funds lost').value).toBe('0')
   })
 })
 
@@ -112,18 +126,17 @@ describe('an uncomputable figure prints as unavailable, with the reason', () => 
     )
 
   it('never prints an empty value or a zero', () => {
-    const figure = blocks().find((b) => b.kind === 'figure')!
-    expect(figure.kind === 'figure' && figure.value).toBe('unavailable')
+    expect(rowFor(blocks(), 'Days attested').value).toBe('unavailable')
   })
 
-  it('carries the reason as the note, so the gap explains itself', () => {
-    const figure = blocks().find((b) => b.kind === 'figure')!
-    expect(figure.kind === 'figure' && figure.note).toContain('has not been created')
+  it('carries the reason beside the derivation, so the gap explains itself', () => {
+    const row = rowFor(blocks(), 'Days attested')
+    expect(row.sub).toContain('has not been created')
+    expect(row.sub).toContain('Basis:')
   })
 
   it('drops the unit, which would dress a non-answer as an answer', () => {
-    const figure = blocks().find((b) => b.kind === 'figure')!
-    expect(figure.kind === 'figure' && figure.unit).toBeUndefined()
+    expect(rowFor(blocks(), 'Days attested').unit).toBeUndefined()
   })
 
   it('still prints a real zero as zero', () => {
@@ -131,8 +144,98 @@ describe('an uncomputable figure prints as unavailable, with the reason', () => 
       report([section({ figures: [{ label: 'Refusals', value: 0, provenance: 'count(*)' }] })]),
       { warnings: [] }
     )
-    const figure = b.find((x) => x.kind === 'figure')!
-    expect(figure.kind === 'figure' && figure.value).toBe('0')
+    expect(rowFor(b, 'Refusals').value).toBe('0')
+  })
+})
+
+/**
+ * A return read by a supervisor is scanned before it is read. Figures belong in
+ * ruled tables and the headline numbers in a panel above them; a flat list of
+ * label-value pairs is a spreadsheet printed sideways.
+ */
+describe('figures are tabulated, not listed', () => {
+  const built = () =>
+    buildReturnDocument(
+      report([
+        section({
+          title: 'Reserve management and the peg',
+          figures: [
+            { label: 'Days fully backed', value: 37, unit: 'of 37', provenance: 'attestations where fully_backed' },
+            { label: 'nTZS in circulation at period end', value: 6725494, unit: 'TZS', provenance: 'latest attestation' },
+          ],
+        }),
+      ]),
+      { warnings: [] }
+    )
+
+  it('emits a ruled table with a header for each section that has figures', () => {
+    const tables = built().filter((b) => b.kind === 'table')
+    expect(tables.length).toBeGreaterThan(0)
+    const table = tables[0] as Extract<Block, { kind: 'table' }>
+    expect(table.columns.map((c) => c.header)).toEqual(['Figure', 'Reported'])
+    expect(table.columns[1].align).toBe('right')
+  })
+
+  it('opens with a panel of headline numbers taken verbatim from the sections', () => {
+    const grid = built().find((b) => b.kind === 'grid') as Extract<Block, { kind: 'grid' }>
+    expect(grid).toBeTruthy()
+    const circulation = grid.items.find((i) => i.label === 'nTZS in circulation')
+    expect(circulation?.value).toBe('6,725,494')
+  })
+
+  it('leaves an uncomputed figure out of the panel rather than caveating it there', () => {
+    const blocks = buildReturnDocument(
+      report([
+        section({
+          figures: [
+            { label: 'nTZS issued', value: null, provenance: 'not computed', unavailable: 'query failed' },
+          ],
+        }),
+      ]),
+      { warnings: [] }
+    )
+    const grid = blocks.find((b) => b.kind === 'grid') as Extract<Block, { kind: 'grid' }> | undefined
+    expect(grid?.items.some((i) => i.label === 'Value issued') ?? false).toBe(false)
+  })
+})
+
+/**
+ * The holder register is an exhibit, not a figure: a list of people and what
+ * they hold. It travels with its caption, because a truncated list without a
+ * stated scope is a misleading one.
+ */
+describe('a section exhibit is rendered as its own table', () => {
+  const withTable = () =>
+    buildReturnDocument(
+      report([
+        section({
+          title: 'Holders of nTZS and identity coverage',
+          figures: [{ label: 'Verified holders', value: 723, provenance: 'approved kyc_cases' }],
+          table: {
+            columns: [
+              { header: 'Holder (as verified)', weight: 0.5 },
+              { header: 'Holding (nTZS)', weight: 0.5, align: 'right' },
+            ],
+            rows: [[{ text: 'ASHA JUMA MRISHO' }, { text: '120,000' }]],
+            caption: 'Verified holders, largest holding first — 1 of 1 shown.',
+          },
+        }),
+      ]),
+      { warnings: [] }
+    )
+
+  it('renders the exhibit after the figures, with its own columns', () => {
+    const tables = withTable().filter(
+      (b): b is Extract<Block, { kind: 'table' }> => b.kind === 'table'
+    )
+    expect(tables).toHaveLength(2)
+    expect(tables[1].columns[0].header).toBe('Holder (as verified)')
+    expect(tables[1].rows[0][0].text).toBe('ASHA JUMA MRISHO')
+  })
+
+  it('keeps the caption, so a truncated register states its own scope', () => {
+    const caption = withTable().find((b) => b.kind === 'caption')
+    expect(caption && 'text' in caption ? caption.text : '').toContain('1 of 1 shown')
   })
 })
 

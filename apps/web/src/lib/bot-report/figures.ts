@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db'
 import { isMissingSchemaObject } from '@/lib/db-errors'
+import { loadHoldersView, verifiedNamedHolders } from '@/lib/holders'
 import {
   SANDBOX_USER_CAP,
   SANDBOX_PER_TXN_CAP_TZS,
@@ -52,6 +53,14 @@ export interface Figure {
   warn?: string
 }
 
+/** A tabulated exhibit — a register or breakdown that is a list, not a figure. */
+export interface SectionTable {
+  columns: Array<{ header: string; weight: number; align?: 'left' | 'right' }>
+  rows: Array<Array<{ text: string; sub?: string }>>
+  /** Printed under the table: scope, cut-off, and what was left out. */
+  caption?: string
+}
+
 export interface Section {
   id: string
   title: string
@@ -60,6 +69,8 @@ export interface Section {
   figures: Figure[]
   /** Sections that are narrative rather than computed say so here. */
   narrative?: string
+  /** Optional exhibit rendered under the figures, on screen and in the PDF. */
+  table?: SectionTable
 }
 
 export interface DateRange {
@@ -666,6 +677,168 @@ async function consumerSection(range: QueryRange): Promise<Section> {
 }
 
 /**
+ * How many holders the return names. The full register is exportable and is
+ * offered in the caption; a hundred pages of names would obscure the exhibit
+ * rather than evidence it.
+ */
+const HOLDER_ROWS_IN_RETURN = 40
+
+/**
+ * What the holder was verified against, in the Bank's vocabulary rather than
+ * ours. `selcom_nida` is the name of an integration; what a supervisor needs
+ * to know is that the identity was checked against the national register.
+ */
+function verifierLabel(provider: string | null): string {
+  switch (provider) {
+    case 'selcom_nida':
+    case 'selcom':
+      return 'NIDA registry'
+    case 'partner_attested':
+      return 'Relied-upon partner'
+    case 'manual':
+      return 'Manual review'
+    default:
+      return provider ?? 'Not recorded'
+  }
+}
+
+/**
+ * Section 7 — who holds the token.
+ *
+ * The holder list is public on the block explorer, so the register that
+ * matches it to verified identities answers a question the Bank can ask
+ * without us. Two disciplines apply:
+ *
+ * ONLY VERIFIED HOLDERS ARE NAMED, and only with the name the verifier
+ * returned — the NIDA registry through our identity provider, or the partner
+ * who attested them. A name taken from a self-declared profile would put an
+ * unverified claim into a supervisory register, and an email address is not an
+ * identity at all.
+ *
+ * THE COHORT IS REPORTED AS ITS PARTS. Wallets were issued before the sandbox
+ * commenced and many of those holders never returned to verify under the
+ * standard now in force; they remain on the register. Reporting the total
+ * alone is what turns a wallet count into an apparent participant count.
+ */
+async function holdersSection(): Promise<Section> {
+  const view = await loadHoldersView().catch((err) => {
+    console.error('[bot-report] holders view failed:', err)
+    return null
+  })
+
+  if (!view) {
+    return {
+      id: 'holders',
+      title: 'Holders of nTZS and identity coverage',
+      question: 'Who holds the token, and is every one of them a verified person?',
+      figures: [
+        'Wallets on the register',
+        'Verified holders',
+        'Verified holders holding a balance',
+        'Holders without an approved verification',
+      ].map((label) => ({
+        label,
+        value: null,
+        provenance: 'not computed',
+        unavailable: 'the holder register could not be assembled for this report',
+      })),
+    }
+  }
+
+  const c = view.cohort
+  const named = verifiedNamedHolders(view)
+  const listed = named.slice(0, HOLDER_ROWS_IN_RETURN)
+  const listedBalance = listed.reduce((sum, h) => sum + (h.balanceTzs ?? 0), 0)
+
+  const figures: Figure[] = [
+    {
+      label: 'Wallets on the register',
+      value: c.totalWallets,
+      unit: `${c.verified} verified · ${c.unverified} not verified`,
+      provenance: 'count of rows in wallets on the reporting chain, joined to their holder',
+      note:
+        'Not a participant count. Wallets issued before this sandbox commenced remain on the register; holders who ' +
+        'have not verified under the standard now in force are reported separately below.',
+    },
+    {
+      label: 'Verified holders',
+      value: c.verified,
+      unit: `${c.verifiedNamed} carry the verifier's name`,
+      provenance:
+        "holders whose latest kyc_cases row is approved; the name is the verifier's, read from the case evidence",
+      warn:
+        c.verified > c.verifiedNamed
+          ? `${c.verified - c.verifiedNamed} approved holder(s) carry no verifier name — they cannot be named in the register; establish why before filing`
+          : undefined,
+    },
+    {
+      label: 'Verified holders holding a balance',
+      value: c.verifiedHolding,
+      unit: `${c.verifiedActive30d} transacted in the last 30 days`,
+      provenance: 'approved holders whose on-chain balance is above zero, read from the token contract',
+    },
+    {
+      label: 'Holders without an approved verification',
+      value: c.unverified,
+      unit: `${c.unverifiedHolding} of them hold a balance`,
+      provenance: 'holders with no approved kyc_cases row; balance read from the token contract',
+      note:
+        'Predominantly wallets issued before this sandbox commenced whose holders have not returned to verify. They ' +
+        'are outside the tested cohort.',
+      warn:
+        c.unverifiedHolding > 0
+          ? `${c.unverifiedHolding} holder(s) hold a balance without an approved verification — state the remediation in the return`
+          : undefined,
+    },
+  ]
+
+  if (view.chainError) {
+    figures.push({
+      label: 'On-chain balances',
+      value: null,
+      provenance: 'not computed',
+      unavailable: view.chainError,
+    })
+  }
+
+  const table: SectionTable = {
+    columns: [
+      { header: 'Holder (as verified)', weight: 0.38 },
+      { header: 'Wallet', weight: 0.23 },
+      { header: 'Verified against', weight: 0.19 },
+      { header: 'Holding (nTZS)', weight: 0.2, align: 'right' },
+    ],
+    rows: listed.map((h) => [
+      { text: h.verifiedName ?? '—' },
+      { text: `${h.address.slice(0, 10)}…${h.address.slice(-6)}` },
+      { text: verifierLabel(h.kycProvider) },
+      { text: h.balanceTzs == null ? 'not read' : Math.round(h.balanceTzs).toLocaleString() },
+    ]),
+    caption:
+      `Verified holders, largest holding first — ${listed.length} of ${named.length} shown` +
+      (named.length > listed.length ? ', the remainder available in the full register on request' : '') +
+      `. Listed holdings total ${Math.round(listedBalance).toLocaleString()} nTZS. Wallet addresses are abbreviated; ` +
+      'each is verifiable in full against the token contract on the public block explorer.',
+  }
+
+  return {
+    id: 'holders',
+    title: 'Holders of nTZS and identity coverage',
+    question: 'Who holds the token, and is every one of them a verified person?',
+    figures,
+    table: listed.length ? table : undefined,
+    narrative:
+      'Every holding is attributable to a person. The token contract is public, so the list of addresses holding ' +
+      'nTZS can be read by anyone; what follows matches that list to the people behind it. A wallet is issued only ' +
+      'after identity verification, and holders are named here exactly as the verifying registry returned them — ' +
+      'through the National Identification Authority registry via our identity provider, or by a partner we rely ' +
+      'upon under a signed reliance agreement. Wallets issued before this sandbox commenced remain on the register ' +
+      'and are reported separately: those holders are outside the tested cohort until they verify under the standard ' +
+      'now in force, and the figures below state how many of them hold any balance.',
+  }
+}
+
+/**
  * Sections that are written rather than computed, kept in the same document so
  * nothing is forgotten.
  *
@@ -717,21 +890,24 @@ export async function buildReport(range: DateRange): Promise<Report> {
   const q = toQueryRange(range)
 
   // Independent queries; one slow section should not serialise the rest.
-  const [parameters, incidents, operations, reserve, consumer] = await Promise.all([
+  const [parameters, incidents, operations, reserve, consumer, holders] = await Promise.all([
     parameterSection(q),
     incidentSection(q),
     operationsSection(q),
     reserveSection(q),
     consumerSection(q),
+    holdersSection(),
   ])
 
   const [summary, market, requests] = narrativeSections()
 
-  // Ordered as the return is read: the ask last, the compliance first.
+  // Ordered as the return is read: the ask last, the compliance first. Holders
+  // follow the reserve because they are the other half of the same question —
+  // what is backed, and who holds it.
   return {
     range,
     generatedAt: new Date(),
-    sections: [summary, parameters, incidents, operations, reserve, consumer, market, requests],
+    sections: [summary, parameters, incidents, operations, reserve, holders, consumer, market, requests],
   }
 }
 

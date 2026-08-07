@@ -219,7 +219,7 @@ describe('query parameters are never Date instances', () => {
     // An empty period may honestly mark figures unavailable ("no attestation
     // rows in the period") — but nothing may FAIL: a query error here means a
     // parameter the driver refused.
-    expect(report.sections.length).toBe(8)
+    expect(report.sections.length).toBe(9)
     for (const s of report.sections) {
       for (const f of s.figures) {
         expect(f.unavailable ?? '', `${s.id} / ${f.label} errored`).not.toContain('query failed')
