@@ -73,6 +73,18 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.21.0 (7 Aug 2026)
+
+**Deposits by Lipa Namba — the user pays from their own phone.** `POST /api/v1/deposits` accepts `paymentMethod: "lipa_namba"`. Instead of us pushing a payment prompt, the response carries an `instructions` block — our business number (`lipaNamba`), account name, the exact amount, and the phone the user said they will pay from — and your user completes an ordinary *Lipa kwa M-Pesa / Lipa Namba* payment in their own mobile-money menu. Because the USER initiates it, this method works on **every network**, including when no push rail can reach their network at all.
+
+- **`phoneNumber` is the matching key, not a prompt target**: it is the number the user will PAY FROM. The incoming credit is matched by **exact amount + payer phone** within 72 hours and nTZS mints automatically — typically under ~5 minutes. Poll `GET /api/v1/deposits/:id` for the status change.
+- **Two rules your UI must make impossible to miss**: pay *exactly* the stated amount, *from* the stated number. Anything else is held for manual review rather than guessed — funds are never lost, but the flow stalls on a human.
+- The payer's own network may add its **own fee on top** (e.g. M-Pesa's charge). Say so in your UI, or "I paid 1,050 and got 1,000" becomes a support ticket.
+- Method availability is flagged server-side: while the rail is off, the endpoint answers `400` with `lipa_namba deposits are not enabled`.
+- **Test keys support the method** with the same request and response shapes, so the whole screen is buildable in sandbox.
+
+---
+
 ## What's New — v1.20.0 (7 Aug 2026)
 
 **Restrict your API key to your servers: per-partner IP allowlisting.** From the dashboard (Settings → API IP allowlist) add your egress IPs or IPv4 CIDR blocks; requests with your key from any other address are then refused with `403 ip_not_allowed`, and the error names the address the request came from so a legitimate caller knows exactly what to add. Empty list = no restriction (opt-in). The list is managed only with your dashboard login — never with the API key — so a stolen key cannot allowlist itself, and a lockout is always fixable from the dashboard. Details under [Authentication](#authentication).
