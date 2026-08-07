@@ -1741,6 +1741,46 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
     }
   }
 
+  // API source-IP allowlist (issue #231) — whole-list edit, saved in one PUT.
+  const [ipList, setIpList] = useState<string[] | null>(null)
+  const [ipDraft, setIpDraft] = useState('')
+  const [ipSaving, setIpSaving] = useState(false)
+  const [ipError, setIpError] = useState('')
+  const [ipNotice, setIpNotice] = useState('')
+
+  useEffect(() => {
+    fetch('/api/v1/partners/ip-allowlist', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((j) => setIpList(Array.isArray(j.allowlist) ? j.allowlist : []))
+      .catch(() => setIpList([]))
+  }, [])
+
+  const saveIpList = async (next: string[]) => {
+    setIpSaving(true)
+    setIpError('')
+    setIpNotice('')
+    try {
+      const res = await fetch('/api/v1/partners/ip-allowlist', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ allowlist: next }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setIpError(json.error || 'Failed to save the allowlist')
+        return
+      }
+      setIpList(json.allowlist)
+      setIpDraft('')
+      setIpNotice(json.message || 'Saved.')
+    } catch {
+      setIpError('Failed to save the allowlist')
+    } finally {
+      setIpSaving(false)
+    }
+  }
+
   const handleSaveWebhook = async () => {
     setWebhookSaving(true)
     setWebhookError('')
@@ -1895,6 +1935,67 @@ function SettingsSection({ partner, onRefresh }: { partner: PartnerInfo; onRefre
           )}
         </div>
       )}
+
+      {/* API IP allowlist (issue #231) */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <h3 className="text-base font-semibold">API IP allowlist</h3>
+        <p className="mt-1 text-sm text-white/50">
+          Restrict your API key to your servers&apos; IP addresses. With the list empty, the key works from
+          anywhere; with entries, requests from any other address are refused — so a leaked key is useless
+          off your infrastructure. Add every production egress IP <span className="text-white/70">before</span> relying on it.
+        </p>
+        {ipList === null ? (
+          <p className="mt-4 text-xs text-white/40">Loading…</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {ipList.length > 0 && (
+              <div className="space-y-1.5">
+                {ipList.map((entry) => (
+                  <div key={entry} className="flex items-center justify-between rounded-lg bg-black/30 px-3 py-2">
+                    <code className="text-sm font-mono text-white/90">{entry}</code>
+                    <button
+                      onClick={() => saveIpList(ipList.filter((e) => e !== entry))}
+                      disabled={ipSaving}
+                      className="rounded px-2 py-1 text-xs text-red-300/80 hover:bg-red-500/10 hover:text-red-300 transition-colors disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                value={ipDraft}
+                onChange={(e) => setIpDraft(e.target.value)}
+                placeholder="e.g. 41.59.226.10 or 41.59.226.0/24"
+                className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-mono text-white/90 placeholder-white/30 focus:border-emerald-500/40 focus:outline-none"
+              />
+              <button
+                onClick={() => ipDraft.trim() && saveIpList([...ipList, ipDraft.trim()])}
+                disabled={ipSaving || !ipDraft.trim()}
+                className="shrink-0 rounded-lg bg-emerald-500/20 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+              >
+                {ipSaving ? 'Saving…' : 'Add'}
+              </button>
+            </div>
+            {ipError && <p className="text-xs text-red-400">{ipError}</p>}
+            {ipNotice && <p className="text-xs text-emerald-300/80">{ipNotice}</p>}
+            {ipList.length > 0 ? (
+              <p className="text-xs text-amber-300/70">
+                Enforced now. If a legitimate request is refused, the error names the address it came from —
+                add that address here. Managing this list works from any location (it uses your dashboard
+                login, not the API key).
+              </p>
+            ) : (
+              <p className="text-xs text-white/40">
+                Not enforced — the list is empty. Tip: your server&apos;s egress IP is what the internet sees,
+                not its local address; check with <code className="rounded bg-white/10 px-1 py-0.5">curl ifconfig.me</code> from the server.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Webhook */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-6">

@@ -1,0 +1,16 @@
+-- Per-partner API source-IP allowlist (issue #231 — "protection layer").
+--
+-- Partner API keys are server-side bearer tokens. The enforceable boundary for
+-- a server key is the SOURCE ADDRESS, not a domain: an Origin/Referer header is
+-- whatever the caller types, and /api/v1 sends no CORS headers, so browsers
+-- cannot call it cross-origin in the first place. An IP allowlist is the same
+-- control Selcom and AzamPay impose on us, offered to our own partners.
+--
+-- Empty / NULL = no restriction (the feature is OPT-IN — enabling it for a
+-- partner who never asked would take their integration down). Entries are
+-- exact IPs or IPv4 CIDR blocks, validated at write time in the application.
+--
+-- The allowlist is managed ONLY through the dashboard session (cookie auth),
+-- never with the API key itself — otherwise a stolen key could simply add the
+-- attacker's address before using it.
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS api_ip_allowlist text[];

@@ -597,6 +597,10 @@ export const partners = pgTable(
     // Enabled capability scopes (composable platform model). NULL = legacy
     // partner → resolved to the full set for backward compatibility.
     capabilities: text('capabilities').array(),
+    // API source-IP allowlist (issue #231). NULL/empty = no restriction.
+    // Managed ONLY via dashboard session auth — never with the API key, or a
+    // stolen key could add its own address. Requires drizzle/0080.
+    apiIpAllowlist: text('api_ip_allowlist').array(),
     encryptedHdSeed: text('encrypted_hd_seed'),
     nextWalletIndex: integer('next_wallet_index').notNull().default(0),
     nextSubWalletIndex: integer('next_sub_wallet_index').notNull().default(1),

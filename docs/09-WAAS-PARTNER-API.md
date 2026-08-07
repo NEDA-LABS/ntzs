@@ -73,6 +73,12 @@ Partners integrate via a REST + SSE API using a bearer token issued during onboa
 
 ---
 
+## What's New — v1.20.0 (7 Aug 2026)
+
+**Restrict your API key to your servers: per-partner IP allowlisting.** From the dashboard (Settings → API IP allowlist) add your egress IPs or IPv4 CIDR blocks; requests with your key from any other address are then refused with `403 ip_not_allowed`, and the error names the address the request came from so a legitimate caller knows exactly what to add. Empty list = no restriction (opt-in). The list is managed only with your dashboard login — never with the API key — so a stolen key cannot allowlist itself, and a lockout is always fixable from the dashboard. Details under [Authentication](#authentication).
+
+---
+
 ## What's New — v1.19.0 (5 Aug 2026)
 
 **Scan-to-pay: `POST /api/v1/lookup/qr` turns a scanned TANQR code into a payable Lipa Namba.** A camera gives you a string, not a till number — this endpoint reads the EMVCo payload, verifies its checksum, extracts the merchant identifier and confirms it against the acquirer's register before handing it back.
@@ -340,6 +346,18 @@ Authorization: Bearer <partner-api-key>
 ```
 
 API keys are issued per partner and scoped to their sub-wallet namespace. Keys can be rotated via `POST /api/v1/partners/regenerate-key`.
+
+### API IP allowlist (optional, recommended for production)
+
+From the developer dashboard (**Settings → API IP allowlist**) you can restrict your API key to your servers' addresses. With the list empty nothing changes; with entries, any request carrying your key from an address not on the list is refused with `403 ip_not_allowed` — so a leaked key is useless away from your infrastructure. Entries are exact IPs or IPv4 CIDR blocks (e.g. `41.59.226.0/24`).
+
+Three things to know before enabling it:
+
+- **Add every production egress IP first.** Your server's egress address is what the internet sees, not its local address (`curl ifconfig.me` from the server tells you). Cloud platforms with dynamic egress need a NAT/static IP before this feature fits.
+- **A refused request tells you its own address** — the `403` body includes the `sourceIp` it arrived from, which is exactly what to add if the request was legitimate.
+- **The list is managed with your dashboard login, never with the API key.** That is deliberate: the allowlist exists to contain a stolen key, so the key itself cannot edit it — and it also means you can always fix a lockout from the dashboard, from anywhere.
+
+Why IP and not domain: an `Origin` header is whatever the caller writes, so a domain list restrains only honest callers; the source address is the one thing a caller cannot freely choose.
 
 Keys are **mode-scoped**. A key beginning `ntzs_live_` moves real money; a key beginning `ntzs_test_` is served entirely by the sandbox described below. There is no per-request flag and no way to mix the two — the key decides.
 
