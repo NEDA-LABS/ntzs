@@ -68,6 +68,16 @@ function FigureCard({ figure }: { figure: Figure }) {
       ) : (
         <>
           {figure.warn && <p className="mt-1 text-xs font-medium text-rose-400">{figure.warn}</p>}
+          {/* A disclosure is not a to-do: it is stated to the Bank in the body
+              of the return, so it reads as reported, not as outstanding. */}
+          {figure.disclosure && (
+            <p className="mt-1 text-xs text-sky-300">
+              <span className="mr-1.5 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                disclosed
+              </span>
+              {figure.disclosure}
+            </p>
+          )}
           {figure.note && <p className="mt-1 text-xs text-zinc-500">{figure.note}</p>}
         </>
       )}
