@@ -112,8 +112,9 @@ function BankOverviewBody({ lp, spreadPct }: { lp: LpAccount; spreadPct: string 
       <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">
         <p className="text-sm font-medium text-white">Reserve &amp; settlement</p>
         <p className="mt-1 text-xs leading-relaxed text-zinc-600">
-          You hold TZS reserves in your trust account; nTZS is issued 1:1 against them. Your FX rate prices the trades
-          routed to you, settled in TZS — you never hold or touch USDC or USDT.
+          nTZS is issued to you 1:1 against your TZS reserve. Your FX rate prices the trades routed to you: when one
+          fills you release nTZS and take in USDC or USDT, and the spread is what you earn. Settle either side — redeem
+          nTZS for shillings into your bank account, or send the stablecoins on.
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
