@@ -1,9 +1,20 @@
 import fs from 'fs'
 import path from 'path'
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
-import { hasUnavailableFigures, preFilingWarnings, type Report, type Section } from './figures'
+import { buildReport, hasUnavailableFigures, preFilingWarnings, type Report, type Section } from './figures'
+
+const capturedParams: unknown[] = []
+
+vi.mock('@/lib/db', () => ({
+  getDb: () => ({
+    sql: (_strings: TemplateStringsArray, ...params: unknown[]) => {
+      capturedParams.push(...params)
+      return Promise.resolve([])
+    },
+  }),
+}))
 
 function section(over: Partial<Section>): Section {
   return { id: 's', title: 'Section', question: 'q', figures: [], ...over }
@@ -179,6 +190,41 @@ describe('every figure the generator can emit carries a derivation', () => {
     expect(query).toContain('burn_requests')
     expect(query).toContain('union all')
     expect(query).toContain("date_trunc('day', created_at)")
+  })
+})
+
+/**
+ * No Date instance may ever reach the database driver.
+ *
+ * In production, every figure on the report page failed with `The "string"
+ * argument must be of type string … Received an instance of Date`: the
+ * deployed bundle and the driver did not share a realm, so the driver's
+ * `instanceof Date` check missed our Dates and a raw Date hit the wire
+ * encoder. This page was the only code in the app passing Date objects as
+ * parameters — everything else passes strings, which behave identically in
+ * every realm. This test runs the real buildReport against a capturing stub
+ * and fails if any parameter is a Date, so the class of bug cannot return.
+ */
+describe('query parameters are never Date instances', () => {
+  it('buildReport converts the range before any query runs', async () => {
+    capturedParams.length = 0
+    const report = await buildReport({ from: new Date('2026-06-23T00:00:00Z'), to: new Date() })
+
+    expect(capturedParams.length).toBeGreaterThan(10)
+    for (const p of capturedParams) {
+      expect(p instanceof Date, `a Date instance reached the driver: ${String(p)}`).toBe(false)
+    }
+
+    // The stub returns empty rows everywhere; the report must still be whole.
+    // An empty period may honestly mark figures unavailable ("no attestation
+    // rows in the period") — but nothing may FAIL: a query error here means a
+    // parameter the driver refused.
+    expect(report.sections.length).toBe(8)
+    for (const s of report.sections) {
+      for (const f of s.figures) {
+        expect(f.unavailable ?? '', `${s.id} / ${f.label} errored`).not.toContain('query failed')
+      }
+    }
   })
 })
 
