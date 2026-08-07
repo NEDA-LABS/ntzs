@@ -113,7 +113,9 @@ Still open:
 
 - **Incidents predating the register.** The twelve June deposits that were paid but
   not credited are known and excluded until the underlying records are read. They
-  belong in section 3 of this return.
+  belong in section 3 of this return. Method, classification rules and the
+  commencement-line split are in `docs/bot/june-deposits-reconstruction.md`; the
+  remaining input is the manual database reads it describes.
 - **Reserve custody.** The Bank's approval letter requires a single ring-fenced
   trust account at a regulated commercial bank. The reserve is currently spread
   across payment service provider float accounts. This needs a resolution and a
