@@ -94,7 +94,7 @@ function SectionBlock({ section, index }: { section: Section; index: number }) {
         <p className="border-t border-white/5 bg-zinc-950/40 px-6 py-4 text-xs leading-relaxed text-zinc-400">
           {section.figures.length === 0 && (
             <span className="mr-2 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-500">
-              to write
+              draft — edit before filing
             </span>
           )}
           {section.narrative}

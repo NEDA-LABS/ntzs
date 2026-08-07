@@ -287,6 +287,43 @@ describe('the found-by distribution is computed, not asserted', () => {
   })
 })
 
+/**
+ * The return must inform, not alarm: a supervisor should meet the story —
+ * what was built, who it serves, in fiat at both ends — before the tables.
+ * These pins keep the narrative sections as real drafts rather than letting
+ * them regress to "to write" placeholders, and keep the monitoring figure
+ * that shows the most active participants re-checked against KYC on every
+ * generation.
+ */
+describe('the return tells the story, not just the numbers', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+
+  it('ships draft narratives, not placeholders', () => {
+    expect(src).not.toContain('Write last, from the sections below')
+    expect(src).not.toContain('Narrative to add before filing')
+  })
+
+  it('states the framing and the built capabilities a supervisor must meet first', () => {
+    // Fiat at both ends, the token as rails underneath.
+    expect(src).toContain('settlement infrastructure')
+    expect(src).toMatch(/Shillings at both ends/)
+    // The capabilities the pilot added, by name.
+    expect(src).toMatch(/Lipa Namba/)
+    expect(src).toMatch(/government and utility bills/)
+    expect(src).toContain('partner API')
+    // The cohort story: pre-sandbox demand, hand-selected within the cap.
+    expect(src).toMatch(/three hundred wallets/)
+    expect(src).toMatch(/cap of one hundred/)
+  })
+
+  it('re-checks the most active participants against KYC on every generation', () => {
+    expect(src).toContain('Most active participants: identity coverage')
+    expect(src).toMatch(/order by count\(\*\) desc/)
+    expect(src).toContain('kyc_cases')
+    expect(src).toContain('lack an approved verification case')
+  })
+})
+
 describe('the architecture document stays in step with the generator', () => {
   // Prose is line-wrapped, so assertions are made against the unwrapped text —
   // the claim is about what the document says, not how it is laid out.
