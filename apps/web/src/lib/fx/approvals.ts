@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/fx/db';
 import { lpApprovals, lpAccounts } from '@ntzs/db';
 import { executeWithdraw, type WithdrawParams } from '@/lib/fx/withdraw';
+import { executeBankCashout, type BankCashoutParams } from '@/lib/fx/bank-cashout';
 
 export type ApprovalAction = 'set_fx' | 'set_banking' | 'withdraw';
 
@@ -46,6 +47,13 @@ export async function applyApproval(action: string, lpId: string, payload: unkno
     return { ok: true };
   }
   if (action === 'withdraw') {
+    // A withdrawal is either an on-chain transfer or a fiat cash-out (burn +
+    // bank payout). The maker's payload carries which; routing on it keeps an
+    // approved cash-out from being executed as a token transfer.
+    if ((payload as { method?: string })?.method === 'bank') {
+      const r = await executeBankCashout(lpId, payload as unknown as BankCashoutParams);
+      return { ok: r.ok, error: r.error, txHash: r.burnTxHash };
+    }
     const r = await executeWithdraw(lpId, payload as WithdrawParams);
     return { ok: r.ok, error: r.error, txHash: r.txHash };
   }

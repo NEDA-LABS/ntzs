@@ -44,7 +44,9 @@ const NAV: NavItem[] = [
   // Banks fund by bank transfer (TZS in → nTZS minted to their wallet), so the
   // deposit screen is theirs too — labelled as the reserve funding it is.
   { href: '/simplefx/dashboard/deposit', label: 'Deposit', icon: ArrowDownToLine, bankLabel: 'Fund reserve' },
-  { href: '/simplefx/dashboard/withdraw', label: 'Withdraw', icon: ArrowUpRight, hideForBank: true },
+  // Banks redeem their reserve to cash (burn nTZS → TZS to their bank), so the
+  // screen is theirs too — the mirror of "Fund reserve".
+  { href: '/simplefx/dashboard/withdraw', label: 'Withdraw', icon: ArrowUpRight, bankLabel: 'Settle out' },
   { href: '/simplefx/dashboard/spread', label: 'Spread', icon: SlidersHorizontal, bankLabel: 'FX rate' },
   { href: '/simplefx/dashboard/swap', label: 'Swap', icon: ArrowLeftRight, hideForBank: true },
   { href: '/simplefx/dashboard/positions', label: 'Positions', icon: Activity, hideForBank: true },
