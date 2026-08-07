@@ -2,7 +2,7 @@
 
 **Owner:** NEDA Labs Limited · nTZS
 **First application:** milestone report due 31 August 2026
-**Last updated:** 28 July 2026
+**Last updated:** 7 August 2026
 
 ---
 
@@ -76,6 +76,14 @@ from a fresh calculation. If the return recomputed the peg it could disagree wit
 the daily submissions the Bank already holds, and no explanation of that
 discrepancy would be worth hearing.
 
+The section also names the calendar rather than only counting it: the EAT days
+with **no attestation row** (days the platform refused to attest rather than send
+a degraded reading), and the days attested on a **qualified basis** — a reserve
+pot evidenced by the custodian's statement or by our last verified reading
+carried forward instead of a live read. Both are listed by date with a
+pre-filing warning, because the Bank can see the holes in a daily series it
+already holds; the return must name them first and explain each one.
+
 ## 4. What can and cannot be reconstructed
 
 Most of the return is reconstructible from data already held: every deposit, burn,
@@ -98,20 +106,35 @@ present a partial series as a complete one.
 
 ## 5. Known gaps to close before filing
 
-- **The period start must be stated, not inferred.** The generator defaults to the
-  earliest attestation on record; the commencement date from the Bank's letter
-  should be set explicitly so every period figure is anchored to it.
+Closed gaps move down the list rather than disappearing — the closure is part of
+the record of how the return came to look the way it does.
+
+Still open:
+
 - **Incidents predating the register.** The twelve June deposits that were paid but
   not credited are known and excluded until the underlying records are read. They
   belong in section 3 of this return.
-- **How incidents are found.** The register currently shows almost everything found
-  by internal review or by reading logs, and one by a customer. Nothing is found by
-  automated alerting. That is a real weakness, and reporting it as one — with the
-  work planned against it — is stronger than leaving it to be noticed.
 - **Reserve custody.** The Bank's approval letter requires a single ring-fenced
   trust account at a regulated commercial bank. The reserve is currently spread
   across payment service provider float accounts. This needs a resolution and a
   paragraph, not silence.
+
+Closed in the generator (7 August 2026):
+
+- **The period start is stated, not inferred.** The default period is anchored to
+  `BOT_SANDBOX_COMMENCED_ON` (the commencement date from the Bank's letter,
+  documented in `.env.example`), and the page labels where its default came from.
+  Until the variable is set it falls back to the earliest attestation on record —
+  a fact, but not the anchor. The remaining step is operational: set the variable
+  from the letter, once, before the first return.
+- **How incidents are found.** Section 3 now computes the distribution of
+  `detected_by` across the period and raises a pre-filing warning when nothing in
+  the period was found by automated monitoring. The weakness itself is still real
+  — the closure is that the return now states it, with the work planned against
+  it, instead of leaving it to be noticed.
+- **The attestation calendar, day by day.** Section 5 now lists days with no
+  attestation row and days attested on substituted evidence, each by date with a
+  pre-filing warning — see §3 above.
 
 ## 6. Filing discipline
 
