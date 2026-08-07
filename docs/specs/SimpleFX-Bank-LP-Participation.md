@@ -23,7 +23,9 @@ This ADR defines how a bank funds, holds, and trades **now** — in a way that l
 
 ### D1 — A bank funds by **issuance request**, not a crypto deposit
 
-nTZS does not exist until it is minted against verified fiat. Banks hold shillings, not tokens; a "deposit nTZS" button would presuppose tokens they have no legitimate way to hold. Instead the bank proves fiat arrived in trust and requests issuance against it.
+nTZS does not exist until it is minted against verified fiat. Banks hold shillings, not tokens; a "deposit nTZS" button would presuppose tokens they have no legitimate way to hold. Instead the bank proves fiat arrived in **our** trust account and requests issuance against it.
+
+Whose account that is matters and is easy to blur. Until a bank partners with us as a custodian, reserves funded this way are held by NEDA at Selcom and counted in the attestation as backing for the supply we issue — they do not sit at the bank. The account the bank registers at onboarding is its **settlement** destination, a KYB record and where payouts go, never where the reserve rests. Portal copy that claimed otherwise shipped and had to be removed; state it plainly here so it is not re-derived.
 
 This is not new machinery. **PR #227 (3 Aug 2026)** shipped bank-transfer collections: an intent generates a reference token (`NTZ-XXXXXX`, ambiguous glyphs excluded), the payer puts it in the transfer narration, and `selcom-statement-sync` matches the credit by **token + exact amount** inside a 72-hour intent-first window (`SELCOM-BANK` channel). Institutional funding is that same rail with an approval wrapper and a different mint destination.
 
@@ -57,11 +59,11 @@ Funding and redemption route through the existing maker-checker approvals engine
 Bank operator        Bank approver        Real world            NEDA                Chain
 ─────────────        ─────────────        ──────────            ────                ─────
 request 50M TZS ──►  approves       ──►   wire w/ NTZ-4K2P9X ──► statement-sync   ──► mint 50M nTZS
-(portal)             (their Approvals)    to trust account      auto-matches         → bank vault
+(portal)             (their Approvals)    to our trust account  auto-matches         → bank vault
                                           (72h window)          + admin confirms     (capped, attested)
 ```
 
-1. **Request** — the bank's Reserve page takes an amount, shows their registered trust-account details (captured at the "Banking & reserve" onboarding step) and issues a reference token. Row created; no money, no tokens.
+1. **Request** — the bank's Reserve page takes an amount, shows **our** collection account details for the wire, and issues a reference token. Row created; no money, no tokens. (The bank's own account, captured at the "Banking & reserve" step, is not the wire destination — it is where settle-out pays back to.)
 2. **Bank approval** — lands in their own Approvals tab beside `set_fx`. Their internal controls bind before we ever see it.
 3. **Fiat moves** — a real interbank transfer carrying the reference in the narration. The one step software must not fake.
 4. **Match & verify** — `selcom-statement-sync` matches token + exact amount automatically; an admin confirms the institutional issuance in the Backstage minting queue. Ambiguity → manual review, never an auto-mint.
