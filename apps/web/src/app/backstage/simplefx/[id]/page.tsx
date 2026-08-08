@@ -6,11 +6,12 @@ import { JsonRpcProvider, Contract, formatUnits } from 'ethers'
 
 import { requireAnyRole } from '@/lib/auth/rbac'
 import { getDb } from '@/lib/db'
-import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions, lpKybDocuments, lpOtpCodes } from '@ntzs/db'
+import { lpAccounts, lpPoolPositions, lpFills, lpWalletTransactions, lpKybDocuments, lpOtpCodes, auditLogs } from '@ntzs/db'
 import { CHAIN_TOKENS, getChainConfig, type ChainId } from '@/lib/fx/chainConfig'
 import { SubmitButton } from '../../_components/SubmitButton'
 import { formatDateEAT } from '@/lib/format-date'
 import { sendFxMail, fxEmailShell } from '@/lib/fx/mailer'
+import { totalSteps } from '@/lib/fx/onboarding'
 import { KYB_DOC_TYPES } from '@/lib/fx/onboarding'
 
 const TOKENS = {
@@ -182,27 +183,109 @@ async function deleteLpAction(formData: FormData) {
   redirect('/backstage/simplefx')
 }
 
+/**
+ * Approving the documents is a compliance decision. Putting the bank into the
+ * market is an operational one, and they are not the same call: this used to
+ * set status='active' in the same click, so a bank whose paperwork was fine
+ * went live before anyone ran the sandbox settlement the wizard promises. The
+ * two are now separate, and `status` carries real weight — the LP's own
+ * activate route refuses to go live unless it reads 'active'.
+ */
 async function approveKybAction(formData: FormData) {
   'use server'
-  await requireAnyRole(['super_admin'])
+  const actor = await requireAnyRole(['super_admin'])
   const id = String(formData.get('id') ?? '')
   if (!id) throw new Error('Missing id')
   const { db } = getDb()
   const [lp] = await db
     .update(lpAccounts)
-    .set({ kybStatus: 'approved', status: 'active', kybReviewNote: null, updatedAt: new Date() })
+    .set({ kybStatus: 'approved', kybReviewNote: null, updatedAt: new Date() })
     .where(eq(lpAccounts.id, id))
     .returning({ email: lpAccounts.email, displayName: lpAccounts.displayName })
+
+  await db.insert(auditLogs).values({
+    actorUserId: actor.id,
+    action: 'lp_kyb_approved',
+    entityType: 'lp_account',
+    entityId: id,
+    metadata: { email: lp?.email ?? null },
+  }).catch((e) => console.error('[kyb approve audit]', e))
+
   if (lp?.email) {
     await sendFxMail(
       lp.email,
-      'Your SimpleFX partner account is approved',
-      fxEmailShell('You’re approved', `
-        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, your KYB documents have been reviewed and approved — your SimpleFX bank-partner account is now active.</p>
-        <p style="font-size:14px;line-height:1.6;color:#334155">Sign in to continue setting up your liquidity.</p>
+      'Your SimpleFX KYB documents are approved',
+      fxEmailShell('Documents approved', `
+        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, your KYB documents have been reviewed and approved.</p>
+        <p style="font-size:14px;line-height:1.6;color:#334155">We’ll run the sandbox settlement and activate your account — you’ll get a second email the moment you can trade. Nothing else is needed from you.</p>
         <p><a href="https://www.ntzs.co.tz/simplefx" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px">Open SimpleFX</a></p>
       `),
     ).catch((e) => console.error('[kyb approve email]', e))
+  }
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
+/**
+ * Go live. Flips the account's lifecycle status, which is the gate the LP's own
+ * activate route checks before it will sweep anything into the solver, and
+ * closes the onboarding cursor so the wizard stops asking for a step nobody can
+ * complete.
+ *
+ * It does NOT touch `isActive`. That flag means "capital is in the solver pool"
+ * and moving it without moving funds is how an LP's position gets stranded —
+ * the LP performs that step themselves, from their own dashboard.
+ */
+async function activateBankAction(formData: FormData) {
+  'use server'
+  const actor = await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  if (!id) throw new Error('Missing id')
+  const { db } = getDb()
+
+  const [current] = await db
+    .select({ kybStatus: lpAccounts.kybStatus, status: lpAccounts.status, accountType: lpAccounts.accountType })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.id, id))
+    .limit(1)
+
+  if (!current) throw new Error('LP not found')
+  if (current.kybStatus !== 'approved') {
+    redirect(`/backstage/simplefx/${id}?actionError=${encodeURIComponent(
+      'Approve the KYB documents before activating — going live is the step that lets this account take real fills.',
+    )}`)
+  }
+
+  const [lp] = await db
+    .update(lpAccounts)
+    .set({
+      status: 'active',
+      // Past the last step, so the wizard reads complete and the dashboard
+      // stops showing a submission that is no longer pending.
+      onboardingStep: totalSteps('bank') + 1,
+      updatedAt: new Date(),
+    })
+    .where(eq(lpAccounts.id, id))
+    .returning({ email: lpAccounts.email, displayName: lpAccounts.displayName })
+
+  await db.insert(auditLogs).values({
+    actorUserId: actor.id,
+    action: 'lp_activated',
+    entityType: 'lp_account',
+    entityId: id,
+    metadata: { email: lp?.email ?? null, accountType: current.accountType, previousStatus: current.status },
+  }).catch((e) => console.error('[lp activate audit]', e))
+
+  if (lp?.email) {
+    await sendFxMail(
+      lp.email,
+      'Your SimpleFX account is live',
+      fxEmailShell('You’re live', `
+        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, your SimpleFX account is now active.</p>
+        <p style="font-size:14px;line-height:1.6;color:#334155">Set your FX rate, then activate your position from the dashboard to start receiving fills.</p>
+        <p><a href="https://www.ntzs.co.tz/simplefx/dashboard/spread" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px">Open SimpleFX</a></p>
+      `),
+    ).catch((e) => console.error('[lp activate email]', e))
   }
   revalidatePath(`/backstage/simplefx/${id}`)
   revalidatePath('/backstage/simplefx')
@@ -495,15 +578,45 @@ export default async function LpDetailPage({
               </ul>
 
               <div className="space-y-3 border-t border-white/5 pt-4">
-                <form action={approveKybAction}>
-                  <input type="hidden" name="id" value={lp.id} />
-                  <SubmitButton
-                    pendingText="Activating..."
-                    className="w-full rounded-xl bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
-                  >
-                    Approve KYB &amp; activate
-                  </SubmitButton>
-                </form>
+                {/* Two decisions, two buttons. Approving the paperwork does not
+                    put a bank in the market; going live is its own call, and it
+                    is the one the LP's activate route now checks. */}
+                {lp.kybStatus === 'approved' ? (
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+                    <p className="text-xs text-emerald-300">KYB approved</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">
+                      {lp.status === 'active'
+                        ? 'This account is live and can activate its position.'
+                        : 'Not live yet. Run the sandbox settlement, then activate below.'}
+                    </p>
+                  </div>
+                ) : (
+                  <form action={approveKybAction}>
+                    <input type="hidden" name="id" value={lp.id} />
+                    <SubmitButton
+                      pendingText="Approving..."
+                      className="w-full rounded-xl bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
+                    >
+                      Approve KYB documents
+                    </SubmitButton>
+                  </form>
+                )}
+
+                {lp.kybStatus === 'approved' && lp.status !== 'active' && (
+                  <form action={activateBankAction}>
+                    <input type="hidden" name="id" value={lp.id} />
+                    <SubmitButton
+                      pendingText="Activating..."
+                      className="w-full rounded-xl bg-blue-600/15 px-4 py-2 text-sm font-medium text-blue-400 hover:bg-blue-600/25 disabled:opacity-40"
+                    >
+                      Activate — put this account live
+                    </SubmitButton>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600">
+                      Lets them go live from their own dashboard. It does not move funds — the LP sweeps their own
+                      wallet into the pool.
+                    </p>
+                  </form>
+                )}
                 <form action={requestKybInfoAction} className="space-y-2">
                   <input type="hidden" name="id" value={lp.id} />
                   <textarea
