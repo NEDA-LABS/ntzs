@@ -127,6 +127,53 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
   const amountTzsTrunc = Math.ceil((receiveAmountTrunc + pspFeeTzs) / (1 - PLATFORM_FEE_PERCENT / 100))
   const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - pspFeeTzs
 
+  const rpcUrl = BASE_RPC_URL
+  if (!rpcUrl) return { success: false, error: 'Burn executor not configured' }
+
+  // Pre-flight on-chain balance check, BEFORE the approval branch below.
+  //
+  // It used to sit inside the execute-inline path, so a withdrawal large enough
+  // to need a second authorisation was queued without anyone asking whether the
+  // participant held the balance at all. Three requests for money that was
+  // never there sat in that queue for six weeks, and then appeared in a
+  // regulatory return as transactions above an approved limit. A request to
+  // move value nobody holds is not a withdrawal to approve — it is one to
+  // refuse at the door.
+  //
+  // Iterates ALL user wallets so that a CDP/HD provider mismatch (tokens minted
+  // to the CDP address before migration) is handled transparently: we burn from
+  // whichever address actually holds the balance, and the queued row records
+  // that wallet rather than the default one.
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
+    const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, provider)
+
+    let fundedWallet: (typeof allWallets)[0] | null = null
+    let maxBalanceTzs = BigInt(0)
+
+    for (const w of allWallets) {
+      const balWei: bigint = await token.balanceOf(w.address)
+      const balTzs = balWei / (BigInt(10) ** BigInt(18))
+      if (balTzs >= BigInt(amountTzsTrunc)) {
+        fundedWallet = w
+        break
+      }
+      if (balTzs > maxBalanceTzs) maxBalanceTzs = balTzs
+    }
+
+    if (!fundedWallet) {
+      return {
+        success: false,
+        error: `Insufficient balance. You have ${maxBalanceTzs.toString()} nTZS but need ${amountTzsTrunc.toLocaleString()} nTZS to withdraw ${receiveAmountTrunc.toLocaleString()} TZS (including fees).`,
+      }
+    }
+
+    wallet = fundedWallet
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: `Could not verify balance: ${msg}` }
+  }
+
   // BoT Parameters #3/#4/#5, measured on the GROSS burn — the nTZS actually
   // leaving the participant's wallet, which is what the return reports and
   // what the cap is about. Checked before anything is written or burned, so a
@@ -169,43 +216,8 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
 
   // ── Small amounts: execute burn + payout inline ──────────────────────────
 
-  const rpcUrl = BASE_RPC_URL
   const privateKey = MINTER_PRIVATE_KEY
-  if (!rpcUrl || !privateKey) return { success: false, error: 'Burn executor not configured' }
-
-  // Pre-flight on-chain balance check — avoids cryptic revert messages.
-  // Iterates ALL user wallets so that a CDP/HD provider mismatch (tokens minted
-  // to the CDP address before migration) is handled transparently: we burn from
-  // whichever address actually holds the balance.
-  try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, provider)
-
-    let fundedWallet: (typeof allWallets)[0] | null = null
-    let maxBalanceTzs = BigInt(0)
-
-    for (const w of allWallets) {
-      const balWei: bigint = await token.balanceOf(w.address)
-      const balTzs = balWei / (BigInt(10) ** BigInt(18))
-      if (balTzs >= BigInt(amountTzsTrunc)) {
-        fundedWallet = w
-        break
-      }
-      if (balTzs > maxBalanceTzs) maxBalanceTzs = balTzs
-    }
-
-    if (!fundedWallet) {
-      return {
-        success: false,
-        error: `Insufficient balance. You have ${maxBalanceTzs.toString()} nTZS but need ${amountTzsTrunc.toLocaleString()} nTZS to withdraw ${receiveAmountTrunc.toLocaleString()} TZS (including fees).`,
-      }
-    }
-
-    wallet = fundedWallet
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: `Could not verify balance: ${msg}` }
-  }
+  if (!privateKey) return { success: false, error: 'Burn executor not configured' }
 
   // Duplicate guard — same user, same destination, same amount within 5
   // minutes while an earlier attempt still holds funds. On 1 Aug 2026 retries
