@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowDownToLine, ArrowUpRight, Zap, ZapOff, Smartphone, ExternalLink, type LucideIcon } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRight, Zap, ZapOff, Smartphone, ExternalLink, Scale, CircleDot, type LucideIcon } from 'lucide-react'
 import { useLp } from '../layout'
 
 interface WalletTx {
   id: string
-  type: 'deposit' | 'withdrawal' | 'activation_sweep' | 'deactivation_return'
+  type: 'deposit' | 'withdrawal' | 'activation_sweep' | 'deactivation_return' | 'reconciliation_topup'
   source: 'mpesa' | 'onchain' | 'system'
   tokenAddress: string
   tokenSymbol: string
@@ -18,14 +18,27 @@ interface WalletTx {
 }
 
 const TYPE_META: Record<WalletTx['type'], { label: string; Icon: LucideIcon; color: string }> = {
-  deposit:             { label: 'Deposit',           Icon: ArrowDownToLine, color: 'text-emerald-400' },
-  withdrawal:          { label: 'Withdrawal',        Icon: ArrowUpRight,    color: 'text-rose-400'    },
-  activation_sweep:    { label: 'Pool deposit',      Icon: Zap,             color: 'text-blue-400'    },
-  deactivation_return: { label: 'Pool withdrawal',   Icon: ZapOff,          color: 'text-amber-400'   },
+  deposit:              { label: 'Deposit',          Icon: ArrowDownToLine, color: 'text-emerald-400' },
+  withdrawal:           { label: 'Withdrawal',       Icon: ArrowUpRight,    color: 'text-rose-400'    },
+  activation_sweep:     { label: 'Pool deposit',     Icon: Zap,             color: 'text-blue-400'    },
+  deactivation_return:  { label: 'Pool withdrawal',  Icon: ZapOff,          color: 'text-amber-400'   },
+  reconciliation_topup: { label: 'Reconciliation',   Icon: Scale,           color: 'text-violet-400'  },
 }
 
+/**
+ * Anything the table can hold but this map has not been taught yet.
+ *
+ * The union above is a hand-written mirror of a database enum, so it drifts the
+ * moment a new type is written — `reconciliation_topup` did exactly that, and
+ * because the row read `TYPE_META[tx.type].Icon` unguarded, one unmapped row
+ * threw and took the whole page down. Which is the worst possible time for it:
+ * a reconciliation entry exists precisely because something went wrong and
+ * someone wants to look at the history.
+ */
+const UNKNOWN_TYPE = { label: 'Adjustment', Icon: CircleDot, color: 'text-zinc-400' } as const
+
 function TxRow({ tx }: { tx: WalletTx }) {
-  const meta = TYPE_META[tx.type]
+  const meta = TYPE_META[tx.type] ?? UNKNOWN_TYPE
   const Icon = meta.Icon
   const amount = parseFloat(tx.amount)
   const isCredit = tx.type === 'deposit' || tx.type === 'deactivation_return'
@@ -92,9 +105,12 @@ export default function TransactionsPage() {
   if (!lp) return null
 
   // Per-token summaries
+  // Key by canonical symbol: the same token is written both "NTZS" and "nTZS"
+  // depending on which code path recorded the row, and bucketing on the raw
+  // string splits one balance into two contradictory totals on screen.
   const summary: Record<string, { in: number; out: number }> = {}
   for (const tx of txs) {
-    const sym = tx.tokenSymbol
+    const sym = tx.tokenSymbol.toUpperCase() === 'NTZS' ? 'nTZS' : tx.tokenSymbol.toUpperCase()
     if (!summary[sym]) summary[sym] = { in: 0, out: 0 }
     const amt = parseFloat(tx.amount)
     if (tx.type === 'deposit' || tx.type === 'deactivation_return') {
