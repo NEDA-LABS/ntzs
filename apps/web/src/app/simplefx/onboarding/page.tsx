@@ -609,13 +609,20 @@ export default function OnboardingPage() {
                   team has reviewed your earlier submissions.
                 </p>
               </div>
+              <p className="text-xs leading-relaxed text-zinc-600">
+                Nothing more is needed from you — we&apos;ll contact your settlement contact when this is ready, and
+                the account goes live from there.
+              </p>
+              {/* No Continue. Advancing past a step we own only moved the cursor
+                  past the end of the wizard, which then redirected away and left
+                  a dashboard banner nobody could ever clear. */}
               <div className="flex items-center gap-3">
                 <button onClick={back} disabled={saving} className={PILL_GHOST}>
                   <ArrowLeft size={15} /> Back
                 </button>
-                <button onClick={next} disabled={saving} className={PILL_PRIMARY}>
-                  Continue <ArrowRight size={15} />
-                </button>
+                <a href="/simplefx/dashboard" className={PILL_PRIMARY}>
+                  Back to dashboard <ArrowRight size={15} />
+                </a>
               </div>
             </div>
           )}

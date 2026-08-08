@@ -8,6 +8,7 @@ import {
   Copy, CheckCircle2, ChevronRight, Clock, ArrowLeftRight, AlertTriangle, Building2, Settings,
 } from 'lucide-react';
 import { useLp, type LpAccount } from './layout';
+import { awaitingReview } from '@/lib/fx/onboarding';
 
 const STEPS = [
   {
@@ -384,6 +385,10 @@ export default function OverviewPage() {
   }
 
   const isBankOnboarding = lp.accountType === 'bank' && lp.status === 'onboarding';
+  // Everything asked of them is done and only our review is left, so there is
+  // nothing to resume — the banner says so instead of pointing at a wizard that
+  // redirects straight back here.
+  const bankAwaitingReview = isBankOnboarding && awaitingReview('bank', lp.onboardingStep);
   const isStandardOnboarding = lp.accountType === 'standard' && lp.onboardingStep < 4;
   const isBank = lp.accountType === 'bank';
   const spreadPct = ((lp.bidBps + lp.askBps) / 2 / 100).toFixed(2);
@@ -410,7 +415,26 @@ export default function OverviewPage() {
         <StatusBadge isActive={lp.isActive} />
       </motion.div>
 
-      {isBankOnboarding && (
+      {bankAwaitingReview ? (
+        <div className="mb-10 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 text-zinc-400">
+              <Building2 size={18} />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-white">Your submission is with us</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {lp.kybStatus === 'approved'
+                  ? 'KYB approved. We’ll run the sandbox settlement and activate the account.'
+                  : 'We’re reviewing your KYB documents. Nothing more is needed from you.'}
+              </p>
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-widest text-zinc-500">
+            In review
+          </span>
+        </div>
+      ) : isBankOnboarding ? (
         <Link
           href="/simplefx/onboarding"
           className="mb-10 flex items-center justify-between gap-4 rounded-xl border border-blue-500/30 bg-blue-600/[0.06] p-5 transition-colors hover:border-blue-400/50"
@@ -434,7 +458,7 @@ export default function OverviewPage() {
             Resume <ChevronRight size={13} />
           </span>
         </Link>
-      )}
+      ) : null}
       {isStandardOnboarding && (
         <div className="mb-10">
           <OnboardingWizard currentStep={lp.onboardingStep} />

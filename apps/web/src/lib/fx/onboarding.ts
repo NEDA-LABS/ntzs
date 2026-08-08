@@ -12,6 +12,13 @@ export interface OnboardingStepDef {
   key: string
   label: string
   description: string
+  /**
+   * True when the step is OURS to complete, not the account's — a review, a
+   * guided test, an activation. The account can see it coming but cannot do
+   * anything about it, so the wizard must not offer to advance past it and the
+   * dashboard must not tell them to "continue".
+   */
+  reviewedByUs?: boolean
 }
 
 export const ONBOARDING_STEPS: Record<AccountType, OnboardingStepDef[]> = {
@@ -26,8 +33,8 @@ export const ONBOARDING_STEPS: Record<AccountType, OnboardingStepDef[]> = {
     { key: 'banking', label: 'Banking & reserve', description: 'Settlement account and contacts.' },
     { key: 'fx', label: 'FX configuration', description: 'Spread and exposure limits.' },
     { key: 'team', label: 'Team & roles', description: 'Invite an operator and an approver.' },
-    { key: 'sandbox', label: 'Sandbox test', description: 'Run a guided test settlement.' },
-    { key: 'golive', label: 'Go live', description: 'Final review and activation.' },
+    { key: 'sandbox', label: 'Sandbox test', description: 'Run a guided test settlement.', reviewedByUs: true },
+    { key: 'golive', label: 'Go live', description: 'Final review and activation.', reviewedByUs: true },
   ],
 }
 
@@ -59,6 +66,30 @@ export function totalSteps(type: AccountType): number {
   return ONBOARDING_STEPS[type].length
 }
 
+/**
+ * The last step the account itself can act on. Past it, every remaining step is
+ * ours, so there is nothing for them to resume.
+ */
+export function lastSelfServeStep(type: AccountType): number {
+  const steps = stepsFor(type)
+  for (let i = steps.length - 1; i >= 0; i--) {
+    if (!steps[i].reviewedByUs) return i + 1
+  }
+  return 0
+}
+
+/**
+ * Has the account done everything asked of it, with only our review left?
+ *
+ * This is the state the dashboard used to get wrong: it showed "Continue the
+ * remaining steps" with a Resume link forever, and the link bounced straight
+ * back because the wizard treats a finished cursor as complete. Nothing sets
+ * status to 'active' yet, so without this the banner never cleared.
+ */
+export function awaitingReview(type: AccountType, step: number): boolean {
+  return step > lastSelfServeStep(type)
+}
+
 /** Onboarding is done once the cursor passes the last step. */
 export function isComplete(type: AccountType, step: number): boolean {
   return step > totalSteps(type)
@@ -76,6 +107,7 @@ export function onboardingState(type: AccountType, step: number) {
     step,
     total: totalSteps(type),
     complete: isComplete(type, step),
+    awaitingReview: awaitingReview(type, step),
     steps: stepsFor(type).map((s, i) => ({ ...s, index: i + 1 })),
   }
 }
