@@ -220,12 +220,12 @@ async function parameterSection(range: QueryRange): Promise<Section> {
           coalesce((select max(d.amount_tzs) from deposit_requests d
                     join users u on u.id = d.user_id
                     where d.created_at between ${range.from} and ${range.to}
-                      and d.status not in ('rejected','cancelled','kyc_rejected')
+                      and d.status not in ('rejected','cancelled','kyc_rejected','mint_requires_safe')
                       and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'), 0),
           coalesce((select max(b.amount_tzs) from burn_requests b
                     join users u on u.id = b.user_id
                     where b.created_at between ${range.from} and ${range.to}
-                      and b.status not in ('rejected','failed')
+                      and b.status not in ('rejected','failed','requires_second_approval')
                       and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'), 0)
         )::text as n
       `
@@ -238,13 +238,13 @@ async function parameterSection(range: QueryRange): Promise<Section> {
           select d.user_id, d.created_at, d.amount_tzs from deposit_requests d
             join users u on u.id = d.user_id
             where d.created_at between ${range.from} and ${range.to}
-              and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+              and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed','mint_requires_safe')
               and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
           union all
           select b.user_id, b.created_at, b.amount_tzs from burn_requests b
             join users u on u.id = b.user_id
             where b.created_at between ${range.from} and ${range.to}
-              and b.status not in ('rejected','failed')
+              and b.status not in ('rejected','failed','requires_second_approval')
               and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
         )
         select coalesce(max(total), 0)::text as n from (
@@ -258,13 +258,13 @@ async function parameterSection(range: QueryRange): Promise<Section> {
           select d.user_id, d.amount_tzs from deposit_requests d
             join users u on u.id = d.user_id
             where d.created_at between ${range.from} and ${range.to}
-              and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+              and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed','mint_requires_safe')
               and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
           union all
           select b.user_id, b.amount_tzs from burn_requests b
             join users u on u.id = b.user_id
             where b.created_at between ${range.from} and ${range.to}
-              and b.status not in ('rejected','failed')
+              and b.status not in ('rejected','failed','requires_second_approval')
               and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
         )
         select coalesce(max(total), 0)::text as n from (
@@ -318,6 +318,49 @@ async function parameterSection(range: QueryRange): Promise<Section> {
       ]
     }
   )
+
+  // Requests a control stopped before they executed. They are not transactions
+  // — no value moved — so counting them as ones would report a breach that
+  // never happened. But they are exactly the evidence section 2 exists to give:
+  // a limit binding on a real participant on a real date.
+  const stopped = await safe(['Largest request stopped before execution'], async () => {
+    const [row] = await sql<{ n: string | null; c: string }[]>`
+      select coalesce(max(m.amount_tzs), 0)::text as n, count(*)::text as c
+      from (
+        select b.amount_tzs from burn_requests b
+          join users u on u.id = b.user_id
+          where b.created_at between ${range.from} and ${range.to}
+            and b.status = 'requires_second_approval'
+            and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
+        union all
+        select d.amount_tzs from deposit_requests d
+          join users u on u.id = d.user_id
+          where d.created_at between ${range.from} and ${range.to}
+            and d.status = 'mint_requires_safe'
+            and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
+      ) m
+    `
+    const count = num(row?.c)
+    const largest = num(row?.n)
+    return [
+      {
+        label: 'Largest request stopped before execution',
+        value: largest,
+        unit: count ? `TZS · ${count} request${count === 1 ? '' : 's'} held` : 'TZS · none in the period',
+        provenance:
+          'largest participant deposit or redemption still held for a second authorisation at the date of this report — value that was requested and did not move',
+        note:
+          'Held requests are reported separately from the parameters above, which measure value that actually moved. ' +
+          'A request stopped by a control is not a transaction.',
+        disclosure:
+          largest > SANDBOX_PER_TXN_CAP_TZS
+            ? `${count} participant request${count === 1 ? '' : 's'} above the approved per-transaction limit ` +
+              `were made in this period, the largest at TZS ${largest.toLocaleString()}. None executed: each was held ` +
+              'for a second authorisation and no value moved. The circumstances are reported in the incidents section.'
+            : undefined,
+      },
+    ]
+  })
 
   // The other side of scoping the parameters: what the service accounts moved
   // is reported here rather than dropped. A figure removed from one place and
@@ -384,8 +427,11 @@ async function parameterSection(range: QueryRange): Promise<Section> {
     id: 'parameters',
     title: 'Compliance with the approved testing parameters',
     question: 'Are the limits the Bank approved actually binding, and can you show one binding?',
-    figures: [...figures, ...float, ...blocks],
+    figures: [...figures, ...stopped, ...float, ...blocks],
     narrative:
+      'The parameter figures below measure value that actually moved. A request that a control stopped before it ' +
+      'executed is not a transaction and is not counted as one; such requests are reported separately, because they ' +
+      'are the evidence a limit bound on a real participant on a real date. ' +
       'Every figure in this section counts participants — people holding wallets on the platform. It excludes ' +
       'movements of our own and our partners’ working capital, which are reported separately below: a partner ' +
       'topping up the float that funds its customers’ wallets is not a customer transaction, and the approved ' +
