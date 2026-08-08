@@ -7,6 +7,7 @@ import { deriveWallet } from '@/lib/fx/lp-wallet';
 import { JsonRpcProvider, Wallet, Contract, formatUnits, parseUnits } from 'ethers';
 import { getChainConfig, type ChainId } from '@/lib/fx/chainConfig';
 import { withLpOpLock, LP_LOCK_BUSY } from '@/lib/fx/lp-lock';
+import { canOperate, canGoLive } from '@/lib/fx/access-policy';
 
 // Activate/deactivate wait on real on-chain transfers (sweeps and returns,
 // potentially across chains). Without this, the platform default timeout can
@@ -42,6 +43,33 @@ export async function PATCH(req: NextRequest) {
     .limit(1);
 
   if (!lp) return NextResponse.json({ error: 'LP account not found' }, { status: 404 });
+
+  // Activating sweeps this account's tokens into the shared solver and
+  // deactivating pays them back, so both move real funds. Neither had any
+  // check beyond "is signed in": a viewer could do it, and an account still in
+  // onboarding could put itself in the market before anyone had reviewed it.
+  if (!canOperate(session.role)) {
+    return NextResponse.json(
+      { error: 'Your role does not permit activating or deactivating the position.' },
+      { status: 403 },
+    );
+  }
+
+  // Only the way IN is gated. An account that is suspended or mid-onboarding
+  // must still be able to pull its funds back out of the solver — locking
+  // capital inside a shared wallet is precisely the failure this codebase has
+  // already lived through once.
+  if (isActive && !canGoLive(lp.status)) {
+    return NextResponse.json(
+      {
+        error:
+          lp.status === 'suspended'
+            ? 'This account is suspended and cannot go live.'
+            : 'Finish onboarding before going live. Ask us for sandbox test access if you need to trade sooner.',
+      },
+      { status: 403 },
+    );
+  }
 
   const provider = new JsonRpcProvider(chainCfg.rpcUrl);
 
@@ -159,7 +187,10 @@ async function handleActivation({
 
     const [updated] = await db
       .update(lpAccounts)
-      .set({ isActive: true, onboardingStep: 4, updatedAt: new Date() })
+      // No onboardingStep here. Going live is not a step of the bank wizard,
+      // and writing one rewound a fully onboarded account into the middle of
+      // it — the same defect the spread route carried.
+      .set({ isActive: true, updatedAt: new Date() })
       .where(eq(lpAccounts.id, lp.id))
       .returning();
 
@@ -261,7 +292,7 @@ async function handleActivation({
     if (failed.length === 0) {
       const [updated] = await db
         .update(lpAccounts)
-        .set({ isActive: false, onboardingStep: 3, updatedAt: new Date() })
+        .set({ isActive: false, updatedAt: new Date() })
         .where(eq(lpAccounts.id, lp.id))
         .returning();
       return NextResponse.json({ lp: updated, returned, failed });

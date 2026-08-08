@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Zap } from 'lucide-react';
+import { CheckCircle2, Zap, ShieldCheck } from 'lucide-react';
 import { useLp } from '../layout';
 
 // ─── Slider + number input (synced) ──────────────────────────────────────────
@@ -145,6 +145,8 @@ export default function SpreadPage() {
   const [askBps, setAskBps] = useState(150);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
   const [mid, setMid] = useState(3750);
@@ -170,15 +172,32 @@ export default function SpreadPage() {
 
   const saveSpread = async () => {
     setSaving(true);
-    await fetch('/simplefx/api/lp/spread', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bidBps, askBps }),
-    });
+    setSaveError(null);
+    setSaveMessage(null);
+    try {
+      const res = await fetch('/simplefx/api/lp/spread', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bidBps, askBps }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        // A viewer is refused and an operator's change is queued. Both used to
+        // land here silently: the response was never read, so the refresh below
+        // just snapped the sliders back and the change looked as though it had
+        // simply not taken.
+        setSaveError(data?.error || 'Could not save the spread.');
+      } else if (data?.pending) {
+        setSaveMessage(data.message || 'Submitted to an approver.');
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+      }
+    } catch {
+      setSaveError('Network error. Please try again.');
+    }
     await refresh();
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
   };
 
   const toggleActive = async () => {
@@ -224,15 +243,23 @@ export default function SpreadPage() {
           <SpreadPreview bidBps={bidBps} askBps={askBps} mid={mid} />
         </div>
 
-        <div className="flex items-center gap-3 mb-10">
-          <button
-            onClick={saveSpread}
-            disabled={saving || !hasChanges}
-            className="px-6 py-2.5 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-sm font-medium hover:from-blue-400 hover:to-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : saved ? 'Saved' : 'Save spread'}
-          </button>
-          {saved && <CheckCircle2 size={16} className="text-blue-400" />}
+        <div className="mb-10">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={saveSpread}
+              disabled={saving || !hasChanges}
+              className="px-6 py-2.5 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-sm font-medium hover:from-blue-400 hover:to-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving...' : saved ? 'Saved' : 'Save spread'}
+            </button>
+            {saved && <CheckCircle2 size={16} className="text-blue-400" />}
+          </div>
+          {saveMessage && (
+            <p className="mt-3 flex items-center gap-2 text-sm text-blue-400">
+              <ShieldCheck size={14} className="shrink-0" /> {saveMessage}
+            </p>
+          )}
+          {saveError && <p className="mt-3 text-sm text-red-400">{saveError}</p>}
         </div>
 
         <div className="rounded-xl border border-white/5 bg-zinc-950 p-5">

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { actionDisposition, canDecide } from './access-policy'
+import { actionDisposition, canDecide, canOperate, canGoLive } from './access-policy'
 
 describe('actionDisposition (H8 — maker-checker + least-privilege)', () => {
   it('lets owner and approver act directly', () => {
@@ -64,3 +64,38 @@ describe('actionDisposition — value ceiling', () => {
     expect(actionDisposition('operator', { amount: 1, threshold: 1_000_000 })).toBe('queue')
   })
 })
+
+describe('canOperate', () => {
+  it('lets an owner, approver or operator activate', () => {
+    expect(canOperate('owner')).toBe(true);
+    expect(canOperate('approver')).toBe(true);
+    expect(canOperate('operator')).toBe(true);
+  });
+
+  it('treats a legacy session with no role as the owner', () => {
+    expect(canOperate(undefined)).toBe(true);
+  });
+
+  it('refuses a viewer — read-only must not move funds', () => {
+    expect(canOperate('viewer')).toBe(false);
+  });
+
+  it('refuses an unrecognised role rather than defaulting open', () => {
+    expect(canOperate('auditor')).toBe(false);
+  });
+});
+
+describe('canGoLive', () => {
+  it('allows an active account', () => {
+    expect(canGoLive('active')).toBe(true);
+  });
+
+  it('refuses an account still onboarding, and a suspended one', () => {
+    expect(canGoLive('onboarding')).toBe(false);
+    expect(canGoLive('suspended')).toBe(false);
+  });
+
+  it('refuses an unknown or missing status rather than defaulting open', () => {
+    expect(canGoLive(undefined)).toBe(false);
+  });
+});

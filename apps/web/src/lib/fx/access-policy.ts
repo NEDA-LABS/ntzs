@@ -45,6 +45,33 @@ export function actionDisposition(
   return 'direct';
 }
 
+/**
+ * May this role take an operational action that moves the account's own funds
+ * between its wallet and the solver — activate and deactivate?
+ *
+ * Deliberately NOT actionDisposition: that returns 'queue' for an operator,
+ * and 'activate' is not an ApprovalAction, so a queued one could never be
+ * executed. The only thing that must be true here is that a viewer — read-only
+ * by definition — cannot do it, which is exactly the hole this closes.
+ */
+export function canOperate(role: string | undefined): boolean {
+  return !role || role === 'owner' || role === 'approver' || role === 'operator';
+}
+
+/**
+ * May this account be live in the market?
+ *
+ * `status` is the field that already means "cleared to operate": granting
+ * sandbox test access in Backstage sets it to 'active', and that is the
+ * documented remedy for an account that needs to trade before full KYB. So the
+ * gate is status, NOT kybStatus — every LP that has ever filled an order is
+ * kyb_status='not_started', and gating on KYB would take the whole market
+ * offline rather than secure it.
+ */
+export function canGoLive(status: string | undefined): boolean {
+  return status === 'active';
+}
+
 /** Who may decide (approve/reject) a queued action. undefined = legacy = owner. */
 export function canDecide(role: string | undefined): boolean {
   return !role || role === 'owner' || role === 'approver';
