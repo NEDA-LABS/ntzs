@@ -213,6 +213,46 @@ describe('the participant figure separates the register from the cohort', () => 
 })
 
 /**
+ * The defect that put a false confession into the first real export.
+ *
+ * Partner treasuries and liquidity-provider accounts are written into the same
+ * deposit and burn tables as customers, with `role = 'end_user'` because the
+ * tables need a user to point at. Parameter 2 filtered on role and the others
+ * did not, so a partner topping up its own float by TZS 1,509,046 was reported
+ * to the Bank as a participant breaching an approved cap of 1,000,000 — a
+ * breach that never happened.
+ */
+describe('the parameters count participants, not the platform', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'figures.ts'), 'utf8')
+  const PARTICIPANT = "u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'"
+
+  it('excludes service accounts from every parameter figure, not just the cohort', () => {
+    // One occurrence per parameter query (2, 3 twice, 4 twice, 5 twice) — if a
+    // query loses the predicate, the count drops and this fails.
+    const uses = src.split(PARTICIPANT).length - 1
+    expect(uses, 'a parameter query lost the participant predicate').toBeGreaterThanOrEqual(7)
+  })
+
+  it('names both service-account prefixes, since either one would distort a figure', () => {
+    for (const prefix of ['treasury', 'lp']) {
+      expect(src).toContain(prefix)
+    }
+    expect(src).toContain('PARTICIPANT_ACCOUNT_SQL')
+    expect(src).toContain('SERVICE_ACCOUNT_SQL')
+  })
+
+  it('still reports what the service accounts moved, rather than dropping it', () => {
+    // Scoping a figure and not reinstating what was scoped out is hiding it.
+    expect(src).toContain('Largest platform float movement')
+    expect(src).toContain("u.neon_auth_user_id ~ '^(treasury|lp)_'")
+  })
+
+  it('says in the return itself that the parameters are participant-scoped', () => {
+    expect(src).toContain('Every figure in this section counts participants')
+  })
+})
+
+/**
  * The notes the generator actually ships have to survive the warning rule —
  * this asserts against the real source rather than a fixture, which is the gap
  * that let the prose-matching bug through in the first place.

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
+import { enforceSandboxLimits } from '@/lib/sandbox/limits'
 import { getDb } from '@/lib/db'
 import { depositRequests, kycCases, banks } from '@ntzs/db'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
@@ -47,6 +48,17 @@ export async function createDepositRequestAction(formData: FormData) {
   if (!Number.isFinite(amountTzs) || amountTzs <= 0) {
     throw new Error('Invalid amount')
   }
+
+  // BoT Parameters #3/#4/#5. The portal is a participant-facing path: the
+  // person signing in holds the nTZS this mints, so the approved caps apply
+  // exactly as they do on the partner API. Enforced BEFORE the row is written,
+  // so a refused attempt leaves a limit event and no deposit.
+  const limitErr = await enforceSandboxLimits(
+    { kind: 'user', id: dbUser.id },
+    Math.trunc(amountTzs),
+    { endpoint: 'app/user/deposits/new', stage: 'execute' },
+  )
+  if (limitErr) throw new Error(limitErr.message)
 
   // Validate phone for M-Pesa
   if (paymentMethod === 'mpesa') {
@@ -218,6 +230,17 @@ export async function createW2bDepositIntentAction(
   const amountTzs = Number(amountTzsRaw)
   if (!Number.isFinite(amountTzs) || amountTzs <= 0) throw new Error('Invalid amount')
 
+  // BoT Parameters #3/#4/#5. The portal is a participant-facing path: the
+  // person signing in holds the nTZS this mints, so the approved caps apply
+  // exactly as they do on the partner API. Enforced BEFORE the row is written,
+  // so a refused attempt leaves a limit event and no deposit.
+  const limitErr = await enforceSandboxLimits(
+    { kind: 'user', id: dbUser.id },
+    Math.trunc(amountTzs),
+    { endpoint: 'app/user/deposits/intent', stage: 'execute' },
+  )
+  if (limitErr) throw new Error(limitErr.message)
+
   if (!buyerPhone) throw new Error('Phone number required — we match your payment by the number it is sent from')
   if (!isValidTanzanianPhone(buyerPhone)) throw new Error('Invalid Tanzanian mobile number')
 
@@ -297,6 +320,17 @@ export async function createBankDepositIntentAction(formData: FormData): Promise
   const amountTzs = Number(amountTzsRaw)
   if (!Number.isFinite(amountTzs) || amountTzs <= 0) throw new Error('Invalid amount')
 
+  // BoT Parameters #3/#4/#5. The portal is a participant-facing path: the
+  // person signing in holds the nTZS this mints, so the approved caps apply
+  // exactly as they do on the partner API. Enforced BEFORE the row is written,
+  // so a refused attempt leaves a limit event and no deposit.
+  const limitErr = await enforceSandboxLimits(
+    { kind: 'user', id: dbUser.id },
+    Math.trunc(amountTzs),
+    { endpoint: 'app/user/deposits/intent', stage: 'execute' },
+  )
+  if (limitErr) throw new Error(limitErr.message)
+
   const { db } = getDb()
 
   const wallet = await getUserPrimaryWallet(dbUser.id)
@@ -357,6 +391,17 @@ export async function createCardDepositRequestAction(formData: FormData): Promis
 
   const amountTzs = Number(amountTzsRaw)
   if (!Number.isFinite(amountTzs) || amountTzs <= 0) throw new Error('Invalid amount')
+
+  // BoT Parameters #3/#4/#5. The portal is a participant-facing path: the
+  // person signing in holds the nTZS this mints, so the approved caps apply
+  // exactly as they do on the partner API. Enforced BEFORE the row is written,
+  // so a refused attempt leaves a limit event and no deposit.
+  const limitErr = await enforceSandboxLimits(
+    { kind: 'user', id: dbUser.id },
+    Math.trunc(amountTzs),
+    { endpoint: 'app/user/deposits/intent', stage: 'execute' },
+  )
+  if (limitErr) throw new Error(limitErr.message)
 
   const { db } = getDb()
 

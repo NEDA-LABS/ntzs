@@ -5,6 +5,7 @@ import { ethers } from 'ethers'
 import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
+import { enforceSandboxLimits } from '@/lib/sandbox/limits'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
@@ -125,6 +126,17 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
     : expectedPayoutFeeTzs(receiveAmountTrunc)
   const amountTzsTrunc = Math.ceil((receiveAmountTrunc + pspFeeTzs) / (1 - PLATFORM_FEE_PERCENT / 100))
   const platformFeeTzs = amountTzsTrunc - receiveAmountTrunc - pspFeeTzs
+
+  // BoT Parameters #3/#4/#5, measured on the GROSS burn — the nTZS actually
+  // leaving the participant's wallet, which is what the return reports and
+  // what the cap is about. Checked before anything is written or burned, so a
+  // refusal costs the user nothing and leaves the evidence that it bound.
+  const limitErr = await enforceSandboxLimits(
+    { kind: 'user', id: dbUser.id },
+    amountTzsTrunc,
+    { endpoint: 'app/user/withdraw', stage: 'execute' },
+  )
+  if (limitErr) return { success: false, error: limitErr.message }
   // The rail's `amount` = net amount the recipient receives; the PSP debits its
   // own charge separately on top of this from our PSP balance/float. So we pass
   // the exact receive amount.
