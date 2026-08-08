@@ -10,9 +10,13 @@ interface WithdrawInlineProps {
    * full /withdraw page does — see WithdrawFormProps. */
   expectedRail?: string | null
   approvalThresholdTzs: number
+  /** Same figures the /withdraw page shows — see WithdrawFormProps. */
+  availableTzs: number
+  totalTzs: number
+  splitAcrossWallets: boolean
 }
 
-export function WithdrawInline({ userPhone, expectedRail, approvalThresholdTzs }: WithdrawInlineProps) {
+export function WithdrawInline({ userPhone, expectedRail, approvalThresholdTzs, availableTzs, totalTzs, splitAcrossWallets }: WithdrawInlineProps) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -54,7 +58,7 @@ export function WithdrawInline({ userPhone, expectedRail, approvalThresholdTzs }
                 </svg>
               </button>
             </div>
-            <WithdrawForm userPhone={userPhone} expectedRail={expectedRail} approvalThresholdTzs={approvalThresholdTzs} />
+            <WithdrawForm userPhone={userPhone} expectedRail={expectedRail} approvalThresholdTzs={approvalThresholdTzs} availableTzs={availableTzs} totalTzs={totalTzs} splitAcrossWallets={splitAcrossWallets} />
             </div>
           </motion.div>
         </>

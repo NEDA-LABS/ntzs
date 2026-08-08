@@ -5,6 +5,11 @@ import { requireAnyRole } from '@/lib/auth/rbac'
 import { getCachedWallet } from '@/lib/user/cachedWallet'
 import { expectedDisbursementRail } from '@/lib/psp'
 import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
+import { readAvailability } from '@/lib/burns/available'
+import { getDb } from '@/lib/db'
+import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE } from '@/lib/env'
+import { and, eq } from 'drizzle-orm'
+import { wallets } from '@ntzs/db'
 import {
   IconChevronRight,
   IconPlus,
@@ -27,6 +32,20 @@ export default async function WalletPage() {
   const dbUser = await requireAnyRole(['end_user', 'super_admin'])
 
   const wallet = await getCachedWallet(dbUser.id)
+
+  // The withdrawal modal opens from this page, so it needs the same figure the
+  // /withdraw page prints — read by the same function the action refuses with.
+  const { db: walletDb } = getDb()
+  const userWallets = await walletDb.query.wallets.findMany({
+    where: and(eq(wallets.userId, dbUser.id), eq(wallets.chain, 'base'), eq(wallets.frozen, false)),
+  })
+  const availability =
+    NTZS_CONTRACT_ADDRESS_BASE && BASE_RPC_URL && userWallets.length
+      ? await readAvailability(userWallets, {
+          rpcUrl: BASE_RPC_URL,
+          contractAddress: NTZS_CONTRACT_ADDRESS_BASE,
+        }).catch(() => null)
+      : null
 
   if (!wallet) {
     redirect('/app/user')
@@ -140,6 +159,9 @@ export default async function WalletPage() {
           userPhone={dbUser.phone}
           expectedRail={expectedDisbursementRail()}
           approvalThresholdTzs={SAFE_BURN_THRESHOLD_TZS}
+          availableTzs={availability?.maxTzs ?? 0}
+          totalTzs={availability?.totalTzs ?? 0}
+          splitAcrossWallets={availability?.splitAcrossWallets ?? false}
         />
       </div>
     </div>
