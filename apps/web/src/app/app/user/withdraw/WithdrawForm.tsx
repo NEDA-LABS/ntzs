@@ -68,9 +68,19 @@ interface WithdrawFormProps {
    * promise instant payouts it can't deliver.
    */
   approvalThresholdTzs: number
+  /**
+   * The most this participant can withdraw in one request, read on the server
+   * from the chain. A burn is paid out of a SINGLE wallet, so this is the
+   * largest single-wallet balance and not the sum — showing the sum would put a
+   * figure on screen that the server refuses.
+   */
+  availableTzs: number
+  /** Held across more than one wallet, so the sum exceeds what is withdrawable. */
+  totalTzs: number
+  splitAcrossWallets: boolean
 }
 
-export function WithdrawForm({ userPhone, expectedRail, banks = [], approvalThresholdTzs }: WithdrawFormProps) {
+export function WithdrawForm({ userPhone, expectedRail, banks = [], approvalThresholdTzs, availableTzs, totalTzs, splitAcrossWallets }: WithdrawFormProps) {
   const [destination, setDestination] = useState<'mobile' | 'bank'>('mobile')
   const [phone, setPhone] = useState(userPhone || '')
   const [bankCode, setBankCode] = useState(banks[0]?.code ?? '')
@@ -162,6 +172,27 @@ export function WithdrawForm({ userPhone, expectedRail, banks = [], approvalThre
         }}
         className="space-y-4 p-6"
       >
+        {/* What the participant actually holds. The screen used to show nothing
+            at all, so an amount was typed cold — and a request for money that
+            was never there could be accepted. This is the largest SINGLE wallet
+            balance, because a withdrawal is paid from one wallet; the sum would
+            be a figure the server refuses. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-2xl border border-border/40 bg-background/35 px-4 py-3 backdrop-blur-xl">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Available to withdraw
+          </span>
+          <span className="text-sm font-semibold text-foreground">
+            {availableTzs.toLocaleString()} nTZS
+          </span>
+          {splitAcrossWallets && (
+            <p className="w-full text-[11px] leading-relaxed text-muted-foreground">
+              You hold {totalTzs.toLocaleString()} nTZS in total, across more than one wallet. A withdrawal is paid
+              from a single wallet, so the amount above is the most you can take out at once — contact support to
+              consolidate them.
+            </p>
+          )}
+        </div>
+
         <div className="rounded-2xl border border-border/40 bg-background/35 p-4 space-y-1 backdrop-blur-xl">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">You receive</p>
           <div className="flex items-center gap-3">

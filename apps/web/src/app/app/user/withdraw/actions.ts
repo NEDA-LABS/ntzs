@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { requireDbUser, requireAnyRole } from '@/lib/auth/rbac'
 import { enforceSandboxLimits } from '@/lib/sandbox/limits'
+import { readAvailability, insufficientBalanceMessage } from '@/lib/burns/available'
 import { getDb } from '@/lib/db'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, PLATFORM_TREASURY_ADDRESS } from '@/lib/env'
 import { burnRequests, kycCases, wallets } from '@ntzs/db'
@@ -132,47 +133,33 @@ async function _createWithdrawRequestAction(formData: FormData): Promise<Withdra
 
   // Pre-flight on-chain balance check, BEFORE the approval branch below.
   //
-  // It used to sit inside the execute-inline path, so a withdrawal large enough
-  // to need a second authorisation was queued without anyone asking whether the
-  // participant held the balance at all. Three requests for money that was
-  // never there sat in that queue for six weeks, and then appeared in a
-  // regulatory return as transactions above an approved limit. A request to
-  // move value nobody holds is not a withdrawal to approve — it is one to
-  // refuse at the door.
+  // It used to sit inside the execute-inline path, past the early return that
+  // queues large withdrawals, so a withdrawal needing a second authorisation
+  // was queued without anyone asking whether the participant held the balance.
+  // Three requests for money that was never there sat in that queue for six
+  // weeks and reached a regulatory return as transactions above an approved
+  // limit. A request to move value nobody holds is not a withdrawal to
+  // approve — it is one to refuse at the door.
   //
-  // Iterates ALL user wallets so that a CDP/HD provider mismatch (tokens minted
-  // to the CDP address before migration) is handled transparently: we burn from
-  // whichever address actually holds the balance, and the queued row records
-  // that wallet rather than the default one.
+  // readAvailability() is the same function the withdrawal screen calls to
+  // print the figure, so what the participant was shown and what they are
+  // refused with cannot describe different worlds.
+  let availability
   try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    const token = new ethers.Contract(contractAddress, NTZS_BURN_ABI, provider)
-
-    let fundedWallet: (typeof allWallets)[0] | null = null
-    let maxBalanceTzs = BigInt(0)
-
-    for (const w of allWallets) {
-      const balWei: bigint = await token.balanceOf(w.address)
-      const balTzs = balWei / (BigInt(10) ** BigInt(18))
-      if (balTzs >= BigInt(amountTzsTrunc)) {
-        fundedWallet = w
-        break
-      }
-      if (balTzs > maxBalanceTzs) maxBalanceTzs = balTzs
-    }
-
-    if (!fundedWallet) {
-      return {
-        success: false,
-        error: `Insufficient balance. You have ${maxBalanceTzs.toString()} nTZS but need ${amountTzsTrunc.toLocaleString()} nTZS to withdraw ${receiveAmountTrunc.toLocaleString()} TZS (including fees).`,
-      }
-    }
-
-    wallet = fundedWallet
+    availability = await readAvailability(allWallets, { rpcUrl, contractAddress })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: `Could not verify balance: ${msg}` }
   }
+
+  if (!availability.fundedWallet || availability.maxTzs < amountTzsTrunc) {
+    return {
+      success: false,
+      error: insufficientBalanceMessage(availability, amountTzsTrunc, receiveAmountTrunc),
+    }
+  }
+
+  wallet = availability.fundedWallet
 
   // BoT Parameters #3/#4/#5, measured on the GROSS burn — the nTZS actually
   // leaving the participant's wallet, which is what the return reports and

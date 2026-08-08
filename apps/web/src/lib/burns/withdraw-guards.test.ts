@@ -49,8 +49,8 @@ describe('no withdrawal is queued for approval without a balance behind it', () 
 
   it('refuses rather than queueing when no wallet holds the amount', () => {
     const block = SRC.slice(balanceAt, queueAt)
-    expect(block).toContain('Insufficient balance')
-    expect(block).toContain('return {')
+    expect(block).toContain('insufficientBalanceMessage(')
+    expect(block).toMatch(/return \{\s*\n\s*success: false/)
   })
 
   it('still enforces the approved caps before writing anything', () => {
@@ -61,12 +61,20 @@ describe('no withdrawal is queued for approval without a balance behind it', () 
     expect(capAt).toBeLessThan(insertAt)
   })
 
-  it('searches every wallet the participant holds, not just the default one', () => {
+  it('reads every wallet the participant holds, not just the default one', () => {
     // Tokens minted to a CDP address before the HD migration live on a wallet
     // that is not the default selection; checking only the default would refuse
-    // a withdrawal the participant can actually fund.
+    // a withdrawal the participant can actually fund. The iteration itself is
+    // readAvailability's, and is tested there — what matters here is that this
+    // path hands it the whole set and burns from the wallet it names.
     const block = SRC.slice(balanceAt, queueAt)
-    expect(block).toContain('for (const w of allWallets)')
-    expect(block).toContain('wallet = fundedWallet')
+    expect(block).toContain('readAvailability(allWallets')
+    expect(block).toContain('wallet = availability.fundedWallet')
+  })
+
+  it('shows the screen and the refusal the same figure', () => {
+    // One module answers "how much can this participant withdraw", so a number
+    // the screen offered cannot be one the server then denies.
+    expect(SRC).toContain("from '@/lib/burns/available'")
   })
 })
