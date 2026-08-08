@@ -109,6 +109,12 @@ export default function DepositPage() {
   // prompt, and a retail LP to sit waiting on a settlement statement.
   const isBank = lp?.accountType === 'bank';
   const fundMethod: 'mpesa' | 'bank' = isBank ? 'bank' : 'mpesa';
+
+  // A bank cannot deposit nTZS. Its nTZS is minted against shillings it wires
+  // in, so an address to "send nTZS to" contradicts the whole funding model —
+  // the mirror of the withdraw side, where a bank's nTZS leaves by redemption
+  // and never on-chain. Stablecoins are its own asset and go both ways.
+  const tokens = isBank ? TOKENS.filter((t) => t.id !== 'ntzs') : TOKENS;
   const [payerAccount, setPayerAccount] = useState('');
   const [bankIntent, setBankIntent] = useState<{
     reference: string;
@@ -123,7 +129,9 @@ export default function DepositPage() {
     };
   } | null>(null);
 
-  const token = TOKENS.find((t) => t.id === activeToken)!;
+  // `lp` lands a tick after mount, so the tab cannot be seeded from it at
+  // useState time; fall back to the first tab this account is allowed.
+  const token = tokens.find((t) => t.id === activeToken) ?? tokens[0];
 
   useEffect(() => {
     if (!lp) return;
@@ -145,11 +153,210 @@ export default function DepositPage() {
     return n === 0 ? '0' : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
   };
 
+  // One definition, two placements: nested under the nTZS card for a retail LP
+  // (where it is the "or" alternative to sending tokens), and standing alone
+  // above everything for a bank, where wiring shillings IS the way in.
+  const fiatFunding = (
+    <>
+          {!isBank && (
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex-1 h-px bg-white/5" />
+              <span className="text-[10px] uppercase tracking-widest text-zinc-600">or deposit via M-Pesa</span>
+              <div className="flex-1 h-px bg-white/5" />
+            </div>
+          )}
+
+          {fundMethod === 'bank' ? (
+            bankIntent ? (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 space-y-3">
+                <p className="text-sm font-medium text-emerald-300">Transfer these exact details</p>
+                <div className="space-y-2 text-xs">
+                  {([
+                    { label: 'Bank', value: bankIntent.instructions.institution, copy: false },
+                    { label: 'Account name', value: bankIntent.instructions.accountName, copy: true },
+                    { label: 'Account number', value: bankIntent.instructions.accountNumber, copy: true },
+                    { label: 'Reference (narration)', value: bankIntent.instructions.reference, copy: true },
+                    // Copies the digits only — pasting "250,000 TZS" into a
+                    // bank amount field is never what anyone wants.
+                    { label: 'Exact amount', value: `${bankIntent.amountTzs.toLocaleString()} TZS`, copy: true, copyValue: String(bankIntent.amountTzs) },
+                    { label: 'Send from account', value: payerAccount, copy: false },
+                  ] as const)
+                    .filter((row) => row.value)
+                    .map((row) => (
+                      <div key={row.label} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 last:border-0">
+                        <span className="text-zinc-500">{row.label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-zinc-200 text-right">{row.value}</span>
+                          {row.copy && (
+                            <CopyButton value={'copyValue' in row ? row.copyValue : String(row.value)} label={row.label} />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                <p className="text-[11px] leading-relaxed text-zinc-500">{bankIntent.instructions.note}</p>
+                <button
+                  onClick={() => { setBankIntent(null); setMintAmount(''); }}
+                  className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                >
+                  Fund a different amount
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="relative mb-3">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600 pointer-events-none">TZS</span>
+                  <input
+                    type="number"
+                    min="500"
+                    placeholder="Amount in TZS (min 500)"
+                    value={mintAmount}
+                    onChange={(e) => setMintAmount(e.target.value)}
+                    className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  />
+                </div>
+                {/* The icon centres on the INPUT, so the hint below must sit
+                    outside the relative box — otherwise top-1/2 resolves
+                    against input+hint and the icon drifts to the bottom. */}
+                <div className="mb-3">
+                  <div className="relative">
+                    <Landmark size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Account number you send from"
+                      value={payerAccount}
+                      onChange={(e) => setPayerAccount(e.target.value)}
+                      className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600">
+                    Banks often strip the reference in transit, so we identify your transfer by the account it
+                    comes from. Send from this exact account.
+                  </p>
+                </div>
+
+                {mintError && <p className="text-xs text-red-400 mb-3">{mintError}</p>}
+                <button
+                  disabled={mintState === 'loading' || !mintAmount || payerAccount.replace(/\D/g, '').length < 5}
+                  onClick={async () => {
+                    setMintError('');
+                    setMintState('loading');
+                    try {
+                      if (!mintIdemKeyRef.current) mintIdemKeyRef.current = crypto.randomUUID();
+                      const res = await fetch('/simplefx/api/lp/mint', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
+                        body: JSON.stringify({ amountTzs: Number(mintAmount), method: 'bank_transfer', payerAccountNumber: payerAccount }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) {
+                        setMintError(data.error || 'Could not create the transfer instruction.');
+                        setMintState('error');
+                      } else {
+                        mintIdemKeyRef.current = null;
+                        setBankIntent({ reference: data.reference, amountTzs: data.amountTzs, instructions: data.instructions });
+                        setMintState('idle');
+                      }
+                    } catch {
+                      setMintError('Network error. Please try again.');
+                      setMintState('error');
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-medium text-white transition-colors"
+                >
+                  {mintState === 'loading' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Preparing...</>
+                  ) : (
+                    <><Landmark size={14} /> Get transfer details</>
+                  )}
+                </button>
+              </div>
+            )
+          ) : (
+          <AnimatePresence mode="wait">
+            {mintState === 'sent' ? (
+              <motion.div key="sent" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 text-center">
+                <Smartphone size={20} className="text-emerald-400 mx-auto mb-2" />
+                <p className="text-sm font-medium text-emerald-300 mb-1">Check your phone</p>
+                <p className="text-xs text-zinc-500">An M-Pesa prompt has been sent. Once you confirm, nTZS will be minted to your inventory wallet automatically.</p>
+                <button onClick={() => { mintIdemKeyRef.current = null; setMintState('idle'); setMintAmount(''); setMintPhone(''); }} className="mt-3 text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+                  Make another deposit
+                </button>
+              </motion.div>
+            ) : (
+              <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="space-y-2 mb-3">
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600 pointer-events-none">TZS</span>
+                    <input
+                      type="number"
+                      min="500"
+                      placeholder="Amount in TZS (min 500)"
+                      value={mintAmount}
+                      onChange={(e) => setMintAmount(e.target.value)}
+                      className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Smartphone size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
+                    <input
+                      type="tel"
+                      placeholder="Phone number (e.g. 0741 234 567)"
+                      value={mintPhone}
+                      onChange={(e) => setMintPhone(e.target.value)}
+                      className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {mintError && <p className="text-xs text-red-400 mb-3">{mintError}</p>}
+
+                <button
+                  disabled={mintState === 'loading' || !mintAmount || !mintPhone}
+                  onClick={async () => {
+                    setMintError('');
+                    setMintState('loading');
+                    try {
+                      if (!mintIdemKeyRef.current) mintIdemKeyRef.current = crypto.randomUUID();
+                      const res = await fetch('/simplefx/api/lp/mint', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
+                        body: JSON.stringify({ amountTzs: Number(mintAmount), phoneNumber: mintPhone }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) {
+                        setMintError(data.error || 'Deposit failed. Please try again.');
+                        setMintState('error');
+                      } else {
+                        mintIdemKeyRef.current = null;
+                        setMintState('sent');
+                      }
+                    } catch {
+                      setMintError('Network error. Please try again.');
+                      setMintState('error');
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-medium text-white transition-colors"
+                >
+                  {mintState === 'loading' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Sending prompt...</>
+                  ) : (
+                    <><Smartphone size={14} /> Deposit via M-Pesa</>
+                  )}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          )}
+    </>
+  );
+
   return (
     <div className="px-6 py-8 max-w-2xl mx-auto">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <p className="text-xs uppercase tracking-[0.25em] text-zinc-600 mb-1">Deposit</p>
-        <h1 className="text-3xl font-thin text-white mb-6">Fund your inventory</h1>
+        <h1 className="text-3xl font-thin text-white mb-6">{isBank ? 'Fund reserve' : 'Fund your inventory'}</h1>
 
         <div className="grid grid-cols-3 gap-3 mb-8">
           {[
@@ -164,13 +371,29 @@ export default function DepositPage() {
           ))}
         </div>
 
+        {isBank && (
+          <div className="rounded-2xl border border-white/5 bg-zinc-950 p-6 mb-6">
+            <p className="text-white font-semibold text-lg">Fund your reserve</p>
+            <p className="text-zinc-500 text-sm mt-0.5 mb-5">
+              Wire shillings to our collection account and nTZS is issued to your wallet 1:1 against them.
+            </p>
+            {fiatFunding}
+          </div>
+        )}
+
+        {isBank && (
+          <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-3">
+            Or top up stablecoin inventory
+          </p>
+        )}
+
         <div className="flex gap-2 mb-8 p-1 bg-zinc-950 border border-white/5 rounded-xl w-fit">
-          {TOKENS.map((t) => (
+          {tokens.map((t) => (
             <button
               key={t.id}
               onClick={() => setActiveToken(t.id as 'ntzs' | 'usdc' | 'usdt-base' | 'usdt-bnb')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeToken === t.id
+                token.id === t.id
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}
@@ -181,7 +404,7 @@ export default function DepositPage() {
           ))}
         </div>
 
-        <motion.div key={activeToken} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="rounded-2xl border border-white/5 bg-zinc-950 p-6 mb-6">
+        <motion.div key={token.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="rounded-2xl border border-white/5 bg-zinc-950 p-6 mb-6">
           <div className="flex items-start justify-between mb-6">
             <div>
               <p className="text-white font-semibold text-lg">{token.label}</p>
@@ -195,201 +418,7 @@ export default function DepositPage() {
             <CopyField label="Token contract" value={token.contract} />
           </div>
 
-          {activeToken === 'ntzs' && (
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex-1 h-px bg-white/5" />
-                <span className="text-[10px] uppercase tracking-widest text-zinc-600">
-                  {isBank ? 'or fund your reserve by bank transfer' : 'or deposit via M-Pesa'}
-                </span>
-                <div className="flex-1 h-px bg-white/5" />
-              </div>
-
-              {fundMethod === 'bank' ? (
-                bankIntent ? (
-                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 space-y-3">
-                    <p className="text-sm font-medium text-emerald-300">Transfer these exact details</p>
-                    <div className="space-y-2 text-xs">
-                      {([
-                        { label: 'Bank', value: bankIntent.instructions.institution, copy: false },
-                        { label: 'Account name', value: bankIntent.instructions.accountName, copy: true },
-                        { label: 'Account number', value: bankIntent.instructions.accountNumber, copy: true },
-                        { label: 'Reference (narration)', value: bankIntent.instructions.reference, copy: true },
-                        // Copies the digits only — pasting "250,000 TZS" into a
-                        // bank amount field is never what anyone wants.
-                        { label: 'Exact amount', value: `${bankIntent.amountTzs.toLocaleString()} TZS`, copy: true, copyValue: String(bankIntent.amountTzs) },
-                        { label: 'Send from account', value: payerAccount, copy: false },
-                      ] as const)
-                        .filter((row) => row.value)
-                        .map((row) => (
-                          <div key={row.label} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 last:border-0">
-                            <span className="text-zinc-500">{row.label}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-zinc-200 text-right">{row.value}</span>
-                              {row.copy && (
-                                <CopyButton value={'copyValue' in row ? row.copyValue : String(row.value)} label={row.label} />
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-500">{bankIntent.instructions.note}</p>
-                    <button
-                      onClick={() => { setBankIntent(null); setMintAmount(''); }}
-                      className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-                    >
-                      Fund a different amount
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="relative mb-3">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600 pointer-events-none">TZS</span>
-                      <input
-                        type="number"
-                        min="500"
-                        placeholder="Amount in TZS (min 500)"
-                        value={mintAmount}
-                        onChange={(e) => setMintAmount(e.target.value)}
-                        className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
-                      />
-                    </div>
-                    {/* The icon centres on the INPUT, so the hint below must sit
-                        outside the relative box — otherwise top-1/2 resolves
-                        against input+hint and the icon drifts to the bottom. */}
-                    <div className="mb-3">
-                      <div className="relative">
-                        <Landmark size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="Account number you send from"
-                          value={payerAccount}
-                          onChange={(e) => setPayerAccount(e.target.value)}
-                          className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
-                        />
-                      </div>
-                      <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600">
-                        Banks often strip the reference in transit, so we identify your transfer by the account it
-                        comes from. Send from this exact account.
-                      </p>
-                    </div>
-
-                    {mintError && <p className="text-xs text-red-400 mb-3">{mintError}</p>}
-                    <button
-                      disabled={mintState === 'loading' || !mintAmount || payerAccount.replace(/\D/g, '').length < 5}
-                      onClick={async () => {
-                        setMintError('');
-                        setMintState('loading');
-                        try {
-                          if (!mintIdemKeyRef.current) mintIdemKeyRef.current = crypto.randomUUID();
-                          const res = await fetch('/simplefx/api/lp/mint', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
-                            body: JSON.stringify({ amountTzs: Number(mintAmount), method: 'bank_transfer', payerAccountNumber: payerAccount }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok) {
-                            setMintError(data.error || 'Could not create the transfer instruction.');
-                            setMintState('error');
-                          } else {
-                            mintIdemKeyRef.current = null;
-                            setBankIntent({ reference: data.reference, amountTzs: data.amountTzs, instructions: data.instructions });
-                            setMintState('idle');
-                          }
-                        } catch {
-                          setMintError('Network error. Please try again.');
-                          setMintState('error');
-                        }
-                      }}
-                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-medium text-white transition-colors"
-                    >
-                      {mintState === 'loading' ? (
-                        <><Loader2 size={14} className="animate-spin" /> Preparing...</>
-                      ) : (
-                        <><Landmark size={14} /> Get transfer details</>
-                      )}
-                    </button>
-                  </div>
-                )
-              ) : (
-              <AnimatePresence mode="wait">
-                {mintState === 'sent' ? (
-                  <motion.div key="sent" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 text-center">
-                    <Smartphone size={20} className="text-emerald-400 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-emerald-300 mb-1">Check your phone</p>
-                    <p className="text-xs text-zinc-500">An M-Pesa prompt has been sent. Once you confirm, nTZS will be minted to your inventory wallet automatically.</p>
-                    <button onClick={() => { mintIdemKeyRef.current = null; setMintState('idle'); setMintAmount(''); setMintPhone(''); }} className="mt-3 text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
-                      Make another deposit
-                    </button>
-                  </motion.div>
-                ) : (
-                  <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <div className="space-y-2 mb-3">
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-zinc-600 pointer-events-none">TZS</span>
-                        <input
-                          type="number"
-                          min="500"
-                          placeholder="Amount in TZS (min 500)"
-                          value={mintAmount}
-                          onChange={(e) => setMintAmount(e.target.value)}
-                          className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-12 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
-                        />
-                      </div>
-                      <div className="relative">
-                        <Smartphone size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
-                        <input
-                          type="tel"
-                          placeholder="Phone number (e.g. 0741 234 567)"
-                          value={mintPhone}
-                          onChange={(e) => setMintPhone(e.target.value)}
-                          className="w-full rounded-lg border border-white/8 bg-zinc-900 pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
-                        />
-                      </div>
-                    </div>
-
-                    {mintError && <p className="text-xs text-red-400 mb-3">{mintError}</p>}
-
-                    <button
-                      disabled={mintState === 'loading' || !mintAmount || !mintPhone}
-                      onClick={async () => {
-                        setMintError('');
-                        setMintState('loading');
-                        try {
-                          if (!mintIdemKeyRef.current) mintIdemKeyRef.current = crypto.randomUUID();
-                          const res = await fetch('/simplefx/api/lp/mint', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': mintIdemKeyRef.current },
-                            body: JSON.stringify({ amountTzs: Number(mintAmount), phoneNumber: mintPhone }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok) {
-                            setMintError(data.error || 'Deposit failed. Please try again.');
-                            setMintState('error');
-                          } else {
-                            mintIdemKeyRef.current = null;
-                            setMintState('sent');
-                          }
-                        } catch {
-                          setMintError('Network error. Please try again.');
-                          setMintState('error');
-                        }
-                      }}
-                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-medium text-white transition-colors"
-                    >
-                      {mintState === 'loading' ? (
-                        <><Loader2 size={14} className="animate-spin" /> Sending prompt...</>
-                      ) : (
-                        <><Smartphone size={14} /> Deposit via M-Pesa</>
-                      )}
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              )}
-            </div>
-          )}
+          {!isBank && activeToken === 'ntzs' && <div className="mb-6">{fiatFunding}</div>}
 
           <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-950/30 border border-blue-500/15">
             <Info size={14} className="text-blue-400 mt-0.5 shrink-0" />
@@ -402,7 +431,7 @@ export default function DepositPage() {
           </div>
         </motion.div>
 
-        {activeToken === 'usdt-bnb' ? (
+        {token.id === 'usdt-bnb' ? (
           <a href={`https://bscscan.com/address/${lp.walletAddress}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
             View on BscScan <ArrowUpRight size={12} />
           </a>
