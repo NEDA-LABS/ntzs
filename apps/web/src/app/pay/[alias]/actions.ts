@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { getDb } from '@/lib/db'
 import { depositRequests, users, banks } from '@ntzs/db'
 import { getUserPrimaryWallet } from '@/lib/user/getUserPrimaryWallet'
+import { enforceSandboxLimits } from '@/lib/sandbox/limits'
 import {
   initiatePayment,
   normalizePhone,
@@ -49,6 +50,17 @@ export async function createPayLinkDeposit(
   if (!recipient) {
     return { success: false, error: 'Payment link is not active' }
   }
+
+  // BoT Parameters #3/#4/#5, counted against the RECIPIENT. The payer funds
+  // this from their own mobile money and never holds nTZS; the minted balance
+  // lands on the person whose link it is, and they are the participant — the
+  // same reasoning that governs merchant collections.
+  const limitErr = await enforceSandboxLimits(
+    { kind: 'user', id: recipient.id },
+    Math.trunc(amount),
+    { endpoint: 'pay/[alias]', stage: 'execute' },
+  )
+  if (limitErr) return { success: false, error: limitErr.message }
 
   // Get recipient's primary wallet (same one shown on their dashboard)
   const wallet = await getUserPrimaryWallet(recipient.id)

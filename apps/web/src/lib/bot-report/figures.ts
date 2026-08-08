@@ -146,6 +146,40 @@ async function safe(labels: string[], fn: () => Promise<Figure[]>): Promise<Figu
 const num = (v: unknown): number => (v == null ? 0 : Number(v))
 
 /**
+ * A sandbox participant is a person. The platform also writes deposit and burn
+ * rows against SERVICE ACCOUNTS, and those are not people:
+ *
+ *   `treasury_<partnerId>`  — a partner's own float, topped up to fund the
+ *                             wallets it operates. One movement of the
+ *                             partner's working capital, not a customer's.
+ *   `lp_<walletAddress>`    — a liquidity provider's account on the exchange
+ *                             side. Also our own plumbing.
+ *
+ * Both are created with `role = 'end_user'` because the deposit table needs a
+ * user to point at, so role alone cannot tell them apart. Counting them as
+ * participants is what put "a participant transacted TZS 1,509,046 against a
+ * cap of 1,000,000" into the first real export of this return — a breach of an
+ * approved parameter that never happened, reported to the Bank as though it
+ * had. Nothing costs more credibility than confessing to something untrue.
+ *
+ * The service accounts are still reported, as what they are: a separate
+ * platform-float figure below. This scopes the parameters; it hides nothing.
+ *
+ * Applied to every parameter figure, so Parameter 2 and Parameters 3–5 cannot
+ * disagree about who is being counted — they did, and only Parameter 2 was
+ * right.
+ */
+/**
+ * Written out in each query rather than interpolated. Composing a fragment
+ * into a tagged template is driver behaviour, and this module has already lost
+ * an entire production render to a driver surprise; a constant that reads
+ * identically in six places and is pinned by a test is worth more here than
+ * one that is assembled at runtime.
+ */
+export const PARTICIPANT_ACCOUNT_SQL = "u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'"
+export const SERVICE_ACCOUNT_SQL = "u.neon_auth_user_id ~ '^(treasury|lp)_'"
+
+/**
  * Section 2 — compliance with the approved testing parameters.
  *
  * The section a supervisor reads first, and the one where the useful answer is
@@ -177,18 +211,22 @@ async function parameterSection(range: QueryRange): Promise<Section> {
           select distinct w.user_id
           from wallets w
           join users u on u.id = w.user_id
-          where u.role = 'end_user' and w.created_at <= ${range.to}
+          where u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_' and w.created_at <= ${range.to}
         ) t
       `
 
       const [largestTxn] = await sql<{ n: string | null }[]>`
         select greatest(
-          coalesce((select max(amount_tzs) from deposit_requests
-                    where created_at between ${range.from} and ${range.to}
-                      and status not in ('rejected','cancelled','kyc_rejected')), 0),
-          coalesce((select max(amount_tzs) from burn_requests
-                    where created_at between ${range.from} and ${range.to}
-                      and status not in ('rejected','failed')), 0)
+          coalesce((select max(d.amount_tzs) from deposit_requests d
+                    join users u on u.id = d.user_id
+                    where d.created_at between ${range.from} and ${range.to}
+                      and d.status not in ('rejected','cancelled','kyc_rejected')
+                      and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'), 0),
+          coalesce((select max(b.amount_tzs) from burn_requests b
+                    join users u on u.id = b.user_id
+                    where b.created_at between ${range.from} and ${range.to}
+                      and b.status not in ('rejected','failed')
+                      and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'), 0)
         )::text as n
       `
 
@@ -197,13 +235,17 @@ async function parameterSection(range: QueryRange): Promise<Section> {
       // enforced cap cannot disagree.
       const [largestDay] = await sql<{ n: string | null }[]>`
         with movements as (
-          select user_id, created_at, amount_tzs from deposit_requests
-            where created_at between ${range.from} and ${range.to}
-              and status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+          select d.user_id, d.created_at, d.amount_tzs from deposit_requests d
+            join users u on u.id = d.user_id
+            where d.created_at between ${range.from} and ${range.to}
+              and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+              and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
           union all
-          select user_id, created_at, amount_tzs from burn_requests
-            where created_at between ${range.from} and ${range.to}
-              and status not in ('rejected','failed')
+          select b.user_id, b.created_at, b.amount_tzs from burn_requests b
+            join users u on u.id = b.user_id
+            where b.created_at between ${range.from} and ${range.to}
+              and b.status not in ('rejected','failed')
+              and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
         )
         select coalesce(max(total), 0)::text as n from (
           select user_id, date_trunc('day', created_at) as d, sum(amount_tzs) as total
@@ -213,13 +255,17 @@ async function parameterSection(range: QueryRange): Promise<Section> {
 
       const [largestMonth] = await sql<{ n: string | null }[]>`
         with movements as (
-          select user_id, amount_tzs from deposit_requests
-            where created_at between ${range.from} and ${range.to}
-              and status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+          select d.user_id, d.amount_tzs from deposit_requests d
+            join users u on u.id = d.user_id
+            where d.created_at between ${range.from} and ${range.to}
+              and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+              and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
           union all
-          select user_id, amount_tzs from burn_requests
-            where created_at between ${range.from} and ${range.to}
-              and status not in ('rejected','failed')
+          select b.user_id, b.amount_tzs from burn_requests b
+            join users u on u.id = b.user_id
+            where b.created_at between ${range.from} and ${range.to}
+              and b.status not in ('rejected','failed')
+              and u.role = 'end_user' and u.neon_auth_user_id !~ '^(treasury|lp)_'
         )
         select coalesce(max(total), 0)::text as n from (
           select user_id, sum(amount_tzs) as total from movements group by 1
@@ -273,6 +319,42 @@ async function parameterSection(range: QueryRange): Promise<Section> {
     }
   )
 
+  // The other side of scoping the parameters: what the service accounts moved
+  // is reported here rather than dropped. A figure removed from one place and
+  // not reinstated in another is a figure hidden, whatever the intention.
+  const float = await safe(['Largest platform float movement'], async () => {
+    const [row] = await sql<{ n: string | null; c: string }[]>`
+      select coalesce(max(m.amount_tzs), 0)::text as n, count(*)::text as c
+      from (
+        select d.amount_tzs from deposit_requests d
+          join users u on u.id = d.user_id
+          where d.created_at between ${range.from} and ${range.to}
+            and d.status not in ('rejected','cancelled','kyc_rejected','mint_failed')
+            and u.neon_auth_user_id ~ '^(treasury|lp)_'
+        union all
+        select b.amount_tzs from burn_requests b
+          join users u on u.id = b.user_id
+          where b.created_at between ${range.from} and ${range.to}
+            and b.status not in ('rejected','failed')
+            and u.neon_auth_user_id ~ '^(treasury|lp)_'
+      ) m
+    `
+    const count = num(row?.c)
+    return [
+      {
+        label: 'Largest platform float movement',
+        value: num(row?.n),
+        unit: count ? `TZS · ${count} movement${count === 1 ? '' : 's'} in the period` : 'TZS · none in the period',
+        provenance:
+          'largest single deposit or redemption recorded against a platform service account (a partner treasury float or a liquidity provider account) rather than a participant',
+        note:
+          'Reported separately because the approved per-participant parameters do not describe it: these are movements ' +
+          'of our own and our partners’ working capital, not customer transactions. No customer holds the balance ' +
+          'at either end.',
+      },
+    ]
+  })
+
   // Blocks are the evidence the caps bind. They only exist from drizzle/0069
   // onward, so the figure states that rather than implying a clean history.
   const blocks = await safe(['Transactions refused by a testing parameter'], async () => {
@@ -302,8 +384,12 @@ async function parameterSection(range: QueryRange): Promise<Section> {
     id: 'parameters',
     title: 'Compliance with the approved testing parameters',
     question: 'Are the limits the Bank approved actually binding, and can you show one binding?',
-    figures: [...figures, ...blocks],
+    figures: [...figures, ...float, ...blocks],
     narrative:
+      'Every figure in this section counts participants — people holding wallets on the platform. It excludes ' +
+      'movements of our own and our partners’ working capital, which are reported separately below: a partner ' +
+      'topping up the float that funds its customers’ wallets is not a customer transaction, and the approved ' +
+      'per-participant parameters do not describe it. ' +
       'On the size of the cohort, we report the position plainly. Three populations must be distinguished, and ' +
       'conflating them is what would make this figure unreadable. The first is the wallet register: every wallet ' +
       'ever issued on the platform, including those created before this sandbox commenced. The second is the ' +

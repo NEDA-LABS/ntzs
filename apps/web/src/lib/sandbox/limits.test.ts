@@ -130,6 +130,79 @@ describe('every enforced cap leaves evidence', () => {
     }
   })
 
+  /**
+   * The scanner above walks `app/api/**\/route.ts` only. Every money path that
+   * is NOT an API route was therefore invisible to it — server actions, and
+   * library helpers that write the tables directly.
+   *
+   * That blind spot is not hypothetical. The user portal's own deposit and
+   * withdrawal actions create participant deposit and burn rows and reference
+   * no cap at all; nothing failed, because nothing was looking. The first real
+   * periodic return then read the platform's own float movements as customer
+   * transactions and told the Bank a participant had transacted TZS 1,509,046
+   * against an approved cap of 1,000,000.
+   *
+   * So the inventory is explicit. Every writer of deposit_requests or
+   * burn_requests is listed with what it is; adding a writer without listing it
+   * fails this test, and listing one as exempt requires saying who holds the
+   * tokens.
+   */
+  describe('every writer of a participant deposit or burn is accounted for', () => {
+    const SRC = path.join(__dirname, '../..')
+
+    /**
+     * Writers that move the platform's or a partner's own working capital.
+     * The per-participant parameters do not describe these — no customer holds
+     * the balance at either end — and the return reports them separately as
+     * platform float. An entry here is a claim about who holds the tokens.
+     */
+    const PLATFORM_FLOAT: Record<string, string> = {
+      'app/api/v1/partners/fund-treasury/route.ts': "a partner topping up its own float; the row is booked to the partner's treasury service account",
+      'app/simplefx/api/lp/mint/route.ts': 'a liquidity provider funding its own account on the exchange side',
+      'lib/fx/bank-cashout.ts': 'the liquidity-provider cash-out leg, against the same LP account',
+      'lib/ramp/onramp.ts': 'the settlement leg of a ramp; the route above it enforces per counterparty before anything is written',
+      'lib/ramp/offramp.ts': 'the settlement leg of a ramp; the route above it enforces per counterparty before anything is written',
+    }
+
+    function walkAll(dir: string, base = ''): string[] {
+      const out: string[] = []
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name.startsWith('.')) continue
+        const rel = base ? `${base}/${e.name}` : e.name
+        if (e.isDirectory()) out.push(...walkAll(path.join(dir, e.name), rel))
+        else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')) out.push(rel)
+      }
+      return out
+    }
+
+    const writers = walkAll(SRC).filter((rel) => {
+      const src = fs.readFileSync(path.join(SRC, rel), 'utf8')
+      return src.includes('insert(depositRequests)') || src.includes('insert(burnRequests)')
+    })
+
+    it('finds the writers at all, so a silent rename cannot empty this test', () => {
+      expect(writers.length).toBeGreaterThan(5)
+    })
+
+    it('every participant-facing writer enforces the caps', () => {
+      const offenders = writers.filter((rel) => {
+        if (rel in PLATFORM_FLOAT) return false
+        return !fs.readFileSync(path.join(SRC, rel), 'utf8').includes('enforceSandboxLimits(')
+      })
+      expect(
+        offenders,
+        'These create a participant deposit or burn with no BoT cap. Call enforceSandboxLimits(), or ' +
+          'add the file to PLATFORM_FLOAT with the reason no participant holds the balance:\n  ' +
+          offenders.join('\n  ')
+      ).toEqual([])
+    })
+
+    it('keeps the platform-float list honest — no stale entries', () => {
+      const stale = Object.keys(PLATFORM_FLOAT).filter((rel) => !writers.includes(rel))
+      expect(stale, `no longer writes deposits or burns; remove from PLATFORM_FLOAT:\n  ${stale.join('\n  ')}`).toEqual([])
+    })
+  })
+
   it('a ramp counterparty keeps one identity across formats and round-trips', () => {
     // The subject id doubles as the evidence key (subject_ref), so the ref
     // must survive a round-trip — including bill refs, which follow a second
