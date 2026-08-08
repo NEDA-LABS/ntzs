@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { and, desc, eq, gt, isNull, ne, notInArray, or } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, lt, ne, notInArray, or } from 'drizzle-orm'
 
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { getDb } from '@/lib/db'
@@ -17,6 +17,7 @@ import {
   formatBankReference,
 } from '@/lib/psp/selcom-statement'
 import { getW2bConfig, getBankCollectionConfig } from '@/lib/psp/selcom-w2b'
+import { sendEmail, GAS_ALERT_RECIPIENTS } from '@/lib/email'
 import { suggestOrphanMatch, samePhone } from '@/lib/deposits/orphan-match'
 import { SAFE_MINT_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
@@ -426,6 +427,75 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // ── Make a failure impossible to miss ───────────────────────────────────
+    //
+    // This cron is the ONLY settlement path for Lipa Namba: no push, no
+    // callback. When it stops working, deposits do not fail — they sit at
+    // 'submitted' looking like a customer who has not paid yet, while the
+    // money is already in our account. The run still answers 200 with an empty
+    // result, which reads exactly like a quiet five minutes.
+    //
+    // That is not hypothetical. On 5 August 2026 the statement client timed
+    // out on every single run for days, nothing was ever ingested, and no
+    // deposit auto-credited — found by a person noticing, not by the platform
+    // saying so. The warnings were in the response body the whole time, and
+    // nobody reads a cron's response body.
+    const fetchFailed = warnings.filter((w) => w.includes('statement fetch failed'))
+    const readNothing = transactions.length === 0
+
+    // The other half of the failure space, and just as invisible: the
+    // statement reads fine, credits are ingested, and nothing matches them. The
+    // money is in our account, attributable to nobody, and the customer is
+    // still looking at 'submitted'. Six hours is roughly seventy runs — long
+    // past any reasonable settling delay.
+    const STRANDED_AFTER_HOURS = 6
+    const strandedSince = new Date(now.getTime() - STRANDED_AFTER_HOURS * 3600_000)
+    const stranded = await db
+      .select({ id: orphanPayments.id, amountTzs: orphanPayments.amountTzs })
+      .from(orphanPayments)
+      .where(
+        and(
+          eq(orphanPayments.provider, 'selcom'),
+          eq(orphanPayments.status, 'unmatched'),
+          lt(orphanPayments.receivedAt, strandedSince)
+        )
+      )
+      .limit(200)
+
+    if (stranded.length > 0) {
+      const total = stranded.reduce((sum, o) => sum + Number(o.amountTzs ?? 0), 0)
+      console.error(
+        `[cron/selcom-statement-sync] ${stranded.length} credit(s) unattributed for over ${STRANDED_AFTER_HOURS}h — ${total} TZS`
+      )
+      await sendEmail({
+        to: GAS_ALERT_RECIPIENTS,
+        subject: `nTZS: ${stranded.length} paid deposit(s) unattributed for over ${STRANDED_AFTER_HOURS} hours`,
+        html: `<p>${stranded.length} credit(s) totalling <strong>${total.toLocaleString()} TZS</strong> have been in
+               our Selcom account for more than ${STRANDED_AFTER_HOURS} hours without matching an open deposit
+               intent. The money is ours to account for and somebody has paid it.</p>
+               <p>The usual causes are a payer using a different number from the one on the intent, an amount that
+               does not match the intent exactly, or no intent having been created at all. Attach them by hand from
+               the orphan queue in Backstage &rarr; Minting.</p>`,
+      }).catch((e) => console.error('[cron/selcom-statement-sync] alert email failed:', e))
+    }
+
+    if (fetchFailed.length > 0 || readNothing) {
+      const reason = fetchFailed.length > 0
+        ? `statement fetch failed: ${fetchFailed.join(' · ')}`
+        : 'the statement returned no rows at all for today or yesterday'
+      console.error(`[cron/selcom-statement-sync] SETTLEMENT BLIND — ${reason}`)
+      await sendEmail({
+        to: GAS_ALERT_RECIPIENTS,
+        subject: 'nTZS: Lipa Namba settlement is blind — deposits are not auto-crediting',
+        html: `<p>The Selcom statement sync could not read the account, so no Lipa Namba or
+               bank-transfer deposit can settle. Customers who have already paid will sit at
+               &ldquo;submitted&rdquo; until this is fixed; their money is in our account.</p>
+               <p><strong>${reason}</strong></p>
+               <p>Open intents are visible in Backstage &rarr; Minting. Credits that did arrive can be
+               attached by hand from the orphan queue once the statement is readable again.</p>`,
+      }).catch((e) => console.error('[cron/selcom-statement-sync] alert email failed:', e))
+    }
+
     return NextResponse.json({
       ingested,
       alreadyKnown,
@@ -436,6 +506,10 @@ export async function GET(request: NextRequest) {
       bankMatched,
       bankDeferredToManual,
       warnings,
+      // Named so a failure is legible in the response too, not only by
+      // inferring it from a zero.
+      settlementBlind: fetchFailed.length > 0 || readNothing,
+      strandedCredits: stranded.length,
       closingBalance,
       timestamp: now.toISOString(),
     })
