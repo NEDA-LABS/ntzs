@@ -25,7 +25,7 @@ type TokenEntry = typeof TOKENS[number];
  */
 const STABLES_ONLY: readonly TokenEntry[] = TOKENS.filter((t) => t.id !== 'ntzs');
 
-type WithdrawState = 'idle' | 'loading' | 'success' | 'pending' | 'error';
+type WithdrawState = 'idle' | 'loading' | 'success' | 'pending' | 'error' | 'unresolved';
 
 interface Destination {
   id: string;
@@ -165,10 +165,14 @@ export default function WithdrawPage() {
             : { token: selected.id, toAddress: effectiveToAddress, amount, chain: selected.chain },
         ),
       });
-      const data = await res.json();
+      // A crashed route can answer with an empty body; parsing it blind threw
+      // and dropped every real cause into the generic "Network error" branch.
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setErrorMsg(data.error || 'Withdrawal failed. Please try again.');
-        setState('error');
+        setErrorMsg(data?.error || `Withdrawal failed (HTTP ${res.status}).`);
+        // The send may have gone out. Offering "try again" here is how one
+        // payment becomes two, so this state says so and offers no retry.
+        setState(data?.indeterminate ? 'unresolved' : 'error');
       } else if (data.pending) {
         // Maker-checker: an operator's withdrawal is held for an approver.
         setState('pending');
@@ -206,7 +210,25 @@ export default function WithdrawPage() {
         </p>
 
         <AnimatePresence mode="wait">
-          {state === 'pending' ? (
+          {state === 'unresolved' ? (
+            <motion.div key="unresolved" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-2xl border border-amber-500/25 bg-amber-950/20 p-8 text-center">
+              <AlertCircle size={32} className="text-amber-400 mx-auto mb-4" />
+              <p className="text-lg font-medium text-white mb-1">We could not confirm this one</p>
+              <p className="text-sm text-zinc-400 mb-6 leading-relaxed">{errorMsg}</p>
+              <a
+                href={`${selected.explorer}/address/${lp?.walletAddress ?? ''}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-200 transition-colors"
+              >
+                Check your wallet on the explorer <ExternalLink size={11} />
+              </a>
+              <br />
+              <button onClick={reset} className="mt-6 text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+                Back to withdraw
+              </button>
+            </motion.div>
+          ) : state === 'pending' ? (
             <motion.div key="pending" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-2xl border border-blue-500/20 bg-blue-950/20 p-8 text-center">
               <ShieldCheck size={32} className="text-blue-400 mx-auto mb-4" />
               <p className="text-lg font-medium text-white mb-1">Submitted for approval</p>

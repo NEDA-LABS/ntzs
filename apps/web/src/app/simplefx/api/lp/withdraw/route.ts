@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { getSessionFromCookies } from '@/lib/fx/auth';
 import { db } from '@/lib/fx/db';
 import { lpAccounts } from '@ntzs/db';
-import { withIdempotency, getIdempotencyKey } from '@/lib/idempotency';
+import { withIdempotency, getIdempotencyKey, IDEMPOTENCY_RETAIN_HEADER } from '@/lib/idempotency';
 import { actionDisposition, createApproval } from '@/lib/fx/approvals';
 import { executeWithdraw, validateWithdrawParams, type WithdrawParams } from '@/lib/fx/withdraw';
 import { executeBankCashout, validateBankCashout, type BankCashoutParams } from '@/lib/fx/bank-cashout';
@@ -143,7 +143,21 @@ export async function POST(req: NextRequest) {
   // Dedup the on-chain transfer so a client retry can't double-withdraw.
   return withIdempotency(`lp_withdraw:${session.lpId}`, getIdempotencyKey(req), async () => {
     const r = await executeWithdraw(session.lpId, params);
-    if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status ?? 400 });
-    return NextResponse.json({ txHash: r.txHash, status: 'confirmed', chain: params.chain });
+    if (!r.ok) {
+      // An indeterminate send keeps its idempotency claim, so retrying the same
+      // key replays this answer instead of putting a second transfer on-chain.
+      return NextResponse.json(
+        { error: r.error, indeterminate: r.indeterminate ?? false },
+        {
+          status: r.status ?? 400,
+          headers: r.indeterminate ? { [IDEMPOTENCY_RETAIN_HEADER]: '1' } : undefined,
+        },
+      );
+    }
+    return NextResponse.json({
+      txHash: r.txHash,
+      status: r.confirmed === false ? 'pending' : 'confirmed',
+      chain: params.chain,
+    });
   });
 }

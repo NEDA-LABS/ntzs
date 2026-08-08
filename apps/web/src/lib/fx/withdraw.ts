@@ -23,7 +23,33 @@ const ERC20_ABI = [
 ];
 
 export interface WithdrawParams { token: string; toAddress: string; amount: string; chain?: ChainId }
-export interface WithdrawResult { ok: boolean; status?: number; error?: string; txHash?: string }
+
+/**
+ * True for errors ethers raises BEFORE anything is broadcast — gas estimation
+ * reverts, a rejected call, insufficient native balance. Anything else around a
+ * send (a timeout, a dropped connection) tells us nothing about whether the
+ * transaction reached the mempool, and must not be reported as "it failed".
+ */
+export function isPreBroadcast(err: unknown): boolean {
+  const code = (err as { code?: string })?.code
+  return code === 'CALL_EXCEPTION' || code === 'INSUFFICIENT_FUNDS' ||
+    code === 'UNPREDICTABLE_GAS_LIMIT' || code === 'NONCE_EXPIRED' ||
+    code === 'REPLACEMENT_UNDERPRICED' || code === 'INVALID_ARGUMENT'
+}
+
+const rpcMessage = (err: unknown) =>
+  (err as { shortMessage?: string })?.shortMessage ||
+  (err instanceof Error ? err.message : 'Unknown error')
+export interface WithdrawResult {
+  ok: boolean
+  status?: number
+  error?: string
+  txHash?: string
+  /** Broadcast succeeded but the confirmation was not observed. */
+  confirmed?: boolean
+  /** The transfer may or may not have been sent — a retry could pay twice. */
+  indeterminate?: boolean
+}
 
 /** Validate withdraw params without side effects. Returns an error string, or null. */
 export function validateWithdrawParams(p: Partial<WithdrawParams>): string | null {
@@ -74,7 +100,18 @@ export async function executeWithdraw(lpId: string, params: WithdrawParams): Pro
   const signer = new Wallet(privateKey, provider);
   const contract = new Contract(tokenConfig.address, ERC20_ABI, signer);
 
-  const balance: bigint = await contract.balanceOf(lp.walletAddress);
+  let balance: bigint;
+  try {
+    balance = await contract.balanceOf(lp.walletAddress);
+  } catch (err) {
+    // Nothing has been sent at this point, so this one is safely retriable —
+    // say so, rather than throwing and letting the client show "Network error".
+    return {
+      ok: false,
+      status: 503,
+      error: `Could not reach the ${chain === 'bnb' ? 'BNB Smart Chain' : 'Base'} network to check your balance (${rpcMessage(err)}). Nothing was sent — try again in a moment.`,
+    };
+  }
   if (balance < amountWei) {
     if (lp.isActive) {
       return {
@@ -98,24 +135,45 @@ export async function executeWithdraw(lpId: string, params: WithdrawParams): Pro
     console.warn('[withdraw] gas top-up failed (continuing):', gasErr instanceof Error ? gasErr.message : gasErr);
   }
 
+  let tx: Awaited<ReturnType<Contract['transfer']>>;
   try {
-    const tx = await contract.transfer(toAddress, amountWei);
-    await tx.wait(1);
-
-    await db.insert(lpWalletTransactions).values({
-      lpId,
-      chain,
-      type: 'withdrawal',
-      source: 'onchain',
-      tokenAddress: tokenConfig.address,
-      tokenSymbol: token.toUpperCase(),
-      decimals: tokenConfig.decimals,
-      amount,
-      txHash: tx.hash,
-    }).catch((err) => console.error('[withdraw] failed to record tx:', err));
-
-    return { ok: true, txHash: tx.hash };
+    tx = await contract.transfer(toAddress, amountWei);
   } catch (err) {
-    return { ok: false, status: 500, error: err instanceof Error ? err.message : 'Transaction failed' };
+    if (isPreBroadcast(err)) {
+      return { ok: false, status: 400, error: `The transfer was rejected before sending: ${rpcMessage(err)}` };
+    }
+    // The send may or may not have reached the mempool. Retrying could pay
+    // twice, so this is reported as unresolved, not as a failure.
+    return {
+      ok: false,
+      status: 502,
+      indeterminate: true,
+      error: `The network did not answer while sending (${rpcMessage(err)}). We cannot tell whether the transfer went out — check your wallet on the explorer before trying again.`,
+    };
   }
+
+  // Broadcast succeeded, so the money is on its way whatever happens next.
+  let confirmed = true;
+  try {
+    await tx.wait(1);
+  } catch (err) {
+    confirmed = false;
+    console.warn('[withdraw] broadcast but not confirmed:', tx.hash, rpcMessage(err));
+  }
+
+  await db.insert(lpWalletTransactions).values({
+    lpId,
+    chain,
+    type: 'withdrawal',
+    source: 'onchain',
+    tokenAddress: tokenConfig.address,
+    tokenSymbol: token.toUpperCase(),
+    decimals: tokenConfig.decimals,
+    amount,
+    txHash: tx.hash,
+  }).catch((err) => console.error('[withdraw] failed to record tx:', err));
+
+  // A transfer we sent but did not see confirm is still sent. Reporting it as
+  // an error would invite a retry that pays the same address twice.
+  return { ok: true, txHash: tx.hash, confirmed };
 }

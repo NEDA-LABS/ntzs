@@ -11,7 +11,7 @@
  *     action is NOT repeated);
  *   - retry while still running  → 409 (request already in progress);
  *   - non-2xx outcome           → the claim is released so a corrected retry
- *     can proceed.
+ *     can proceed, UNLESS the handler sets `X-Idempotency-Retain` (see below).
  *
  * When no key is supplied, the handler runs normally (no dedup) — this keeps
  * existing API clients working while first-party callers opt in.
@@ -21,6 +21,17 @@ import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
 const IN_PROGRESS = { error: 'A request with this Idempotency-Key is already being processed.' }
+
+/**
+ * Set by a handler whose failure is INDETERMINATE — the side effect may have
+ * happened. Releasing the claim would invite the client to retry and do it a
+ * second time, so the response is stored and replayed like a success instead.
+ *
+ * The withdrawal path is the case that matters: once a transfer is broadcast,
+ * an RPC timeout tells us nothing about whether it landed, and "please try
+ * again" is the one instruction that can turn one payment into two.
+ */
+export const IDEMPOTENCY_RETAIN_HEADER = 'X-Idempotency-Retain'
 
 /** Pull the idempotency key from a request, if present and non-empty. */
 export function getIdempotencyKey(request: Request): string | null {
@@ -64,6 +75,15 @@ export async function withIdempotency(
   try {
     const res = await handler()
     if (res.status >= 200 && res.status < 300) {
+      const body = await res.clone().json().catch(() => null)
+      await sql`
+        update idempotency_keys
+        set status = 'completed', response_status = ${res.status}, response_body = ${JSON.stringify(body)}::jsonb
+        where scope = ${scope} and idem_key = ${key}
+      `
+    } else if (res.headers.get(IDEMPOTENCY_RETAIN_HEADER)) {
+      // Ambiguous outcome: keep the claim and store the answer, so a retry
+      // replays "we don't know" instead of doing the work a second time.
       const body = await res.clone().json().catch(() => null)
       await sql`
         update idempotency_keys
