@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { lpFxPairs, lpAccounts } from '@ntzs/db';
 import { eq } from 'drizzle-orm';
+import { routableLp } from '@/lib/fx/lp-eligibility';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('Authorization');
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     db
       .select({ bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
       .from(lpAccounts)
-      .where(eq(lpAccounts.isActive, true)),
+      .where(routableLp()),
   ]);
 
   // Mean spread across all active LPs; fall back to safe defaults if none active yet

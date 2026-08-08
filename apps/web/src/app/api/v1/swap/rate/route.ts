@@ -6,6 +6,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { calcMinOutput, selectLPForSwap, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig } from '@/lib/fx/swap'
 import { getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 import { PLATFORM_FX_FEE_BPS } from '@/lib/env'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 export const runtime = 'nodejs'
 
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
-    .where(eq(lpAccounts.isActive, true as unknown as boolean))
+    .where(routableLp())
 
   let bidBps = 120
   let askBps = 150

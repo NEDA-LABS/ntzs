@@ -7,6 +7,7 @@ import { calcMinOutput, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/li
 import { estimateSpendFee } from '@/lib/psp/selcom-fees'
 import { expectedPayoutFeeTzs } from '@/lib/psp'
 import { BASE_RPC_URL } from '@/lib/env'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 export const RAMP_QUOTE_TTL_MS = 60_000
 /** Legacy flat PSP fee — fallback pricing only; wallet off-ramps now price on
@@ -93,7 +94,7 @@ async function getPairAndSpread(direction: RampDirection): Promise<{ midRate: nu
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
-    .where(eq(lpAccounts.isActive, true))
+    .where(routableLp())
 
   let bidBps = 120, askBps = 150
   if (activeLPs.length > 0) {

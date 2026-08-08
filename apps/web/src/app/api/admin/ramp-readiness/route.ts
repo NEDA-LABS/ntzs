@@ -12,6 +12,7 @@ import { rampSpendEnabled, computeRampQuote } from '@/lib/ramp/quote'
 import { spendKindEnabled } from '@/lib/waas/spend-quote'
 import { SWAP_TOKENS } from '@/lib/fx/swap'
 import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY, BURNER_PRIVATE_KEY } from '@/lib/env'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -131,7 +132,7 @@ async function runReadiness(request: NextRequest) {
   const activeLps = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
-    .where(eq(lpAccounts.isActive, true))
+    .where(routableLp())
   note(!pair, "no ACTIVE USDC/nTZS pair on Base in lp_fx_pairs — every quote returns 'No active USDC/nTZS pair configured'. Configure it in /backstage/simplefx")
   note(activeLps.length === 0, 'no active LP account — off-ramps fail with "No active liquidity provider available". Activate one in /backstage/simplefx')
 

@@ -9,6 +9,7 @@ import { eq, and, sql, inArray } from 'drizzle-orm'
 import { executeSwap, calcMinOutput, rankLPsByRate, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
 import { getChainConfig, getChainToken, type ChainId } from '@/lib/fx/chainConfig'
 import { PLATFORM_FX_FEE_BPS } from '@/lib/env'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
-    .where(eq(lpAccounts.isActive, true as unknown as boolean))
+    .where(routableLp())
 
   if (activeLPs.length === 0) {
     return new Response('No active liquidity provider', { status: 503 })

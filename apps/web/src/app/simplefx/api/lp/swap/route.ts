@@ -7,6 +7,7 @@ import { eq, and, sql, inArray } from 'drizzle-orm'
 import { deriveWallet } from '@/lib/fx/lp-wallet'
 import { executeSwap, calcMinOutput, rankLPsByRate, filterLPsByInventory, SWAP_TOKENS, type SwapTokenSymbol, type LPConfig, type SwapResult } from '@/lib/fx/swap'
 import { BASE_RPC_URL, PLATFORM_FX_FEE_BPS } from '@/lib/env'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
   const activeLPs = await db
     .select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps })
     .from(lpAccounts)
-    .where(eq(lpAccounts.isActive, true as unknown as boolean))
+    .where(routableLp())
 
   if (activeLPs.length === 0) {
     return new Response('No active liquidity provider to take the other side of the swap. Activate a pool LP first.', { status: 503 })

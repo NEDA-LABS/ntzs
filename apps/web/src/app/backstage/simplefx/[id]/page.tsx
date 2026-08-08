@@ -291,6 +291,115 @@ async function activateBankAction(formData: FormData) {
   revalidatePath('/backstage/simplefx')
 }
 
+/**
+ * Stop an account trading, without touching its money.
+ *
+ * Suspension excludes the LP from routing, pricing and readiness — see
+ * `routableLp` — and blocks it from going live again. It deliberately leaves
+ * `isActive` and any pooled capital exactly where they are: flipping that flag
+ * here would mark the position closed while the funds sat in the shared solver,
+ * which is the stranding the active-toggle already refuses to do. The LP can
+ * still sign in and deactivate to bring its own funds home, which is the
+ * behaviour we want for a commercial suspension.
+ *
+ * A suspension that must also freeze withdrawals is a different, heavier
+ * control and is not this one.
+ */
+async function suspendLpAction(formData: FormData) {
+  'use server'
+  const actor = await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  const note = String(formData.get('note') ?? '').trim()
+  if (!id) throw new Error('Missing id')
+  if (!note) throw new Error('A reason is required')
+  const { db } = getDb()
+
+  const [current] = await db
+    .select({ status: lpAccounts.status, isActive: lpAccounts.isActive })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.id, id))
+    .limit(1)
+  if (!current) throw new Error('LP not found')
+
+  const [lp] = await db
+    .update(lpAccounts)
+    .set({ status: 'suspended', updatedAt: new Date() })
+    .where(eq(lpAccounts.id, id))
+    .returning({ email: lpAccounts.email, displayName: lpAccounts.displayName })
+
+  await db.insert(auditLogs).values({
+    actorUserId: actor.id,
+    action: 'lp_suspended',
+    entityType: 'lp_account',
+    entityId: id,
+    // Whether capital was still pooled at the moment of suspension is the first
+    // thing anyone reviewing this later will ask.
+    metadata: { email: lp?.email ?? null, reason: note, previousStatus: current.status, wasPooled: current.isActive },
+  }).catch((e) => console.error('[lp suspend audit]', e))
+
+  if (lp?.email) {
+    await sendFxMail(
+      lp.email,
+      'Your SimpleFX account has been suspended',
+      fxEmailShell('Account suspended', `
+        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, your SimpleFX account has been suspended and will not receive further fills.</p>
+        <blockquote style="margin:12px 0;padding:12px 14px;background:#f8fafc;border-left:3px solid #b91c1c;border-radius:6px;color:#0f172a;font-size:14px">${note.replace(/</g, '&lt;')}</blockquote>
+        <p style="font-size:14px;line-height:1.6;color:#334155">You can still sign in, and any liquidity you have in the pool can be returned to your wallet from the Rebalance screen. Reply to this email if you think this is a mistake.</p>
+      `),
+    ).catch((e) => console.error('[lp suspend email]', e))
+  }
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
+/** Lift a suspension. A suspension nobody can lift is a deletion with extra steps. */
+async function unsuspendLpAction(formData: FormData) {
+  'use server'
+  const actor = await requireAnyRole(['super_admin'])
+  const id = String(formData.get('id') ?? '')
+  if (!id) throw new Error('Missing id')
+  const { db } = getDb()
+
+  const [current] = await db
+    .select({ kybStatus: lpAccounts.kybStatus })
+    .from(lpAccounts)
+    .where(eq(lpAccounts.id, id))
+    .limit(1)
+  if (!current) throw new Error('LP not found')
+
+  // Back to where they can trade only if their paperwork still stands; anything
+  // else returns them to onboarding rather than quietly promoting them.
+  const restored = current.kybStatus === 'approved' ? 'active' : 'onboarding'
+
+  const [lp] = await db
+    .update(lpAccounts)
+    .set({ status: restored, updatedAt: new Date() })
+    .where(eq(lpAccounts.id, id))
+    .returning({ email: lpAccounts.email, displayName: lpAccounts.displayName })
+
+  await db.insert(auditLogs).values({
+    actorUserId: actor.id,
+    action: 'lp_unsuspended',
+    entityType: 'lp_account',
+    entityId: id,
+    metadata: { email: lp?.email ?? null, restoredTo: restored },
+  }).catch((e) => console.error('[lp unsuspend audit]', e))
+
+  if (lp?.email) {
+    await sendFxMail(
+      lp.email,
+      'Your SimpleFX account has been reinstated',
+      fxEmailShell('Suspension lifted', `
+        <p style="font-size:14px;line-height:1.6;color:#334155">Hi${lp.displayName ? ' ' + lp.displayName : ''}, the suspension on your SimpleFX account has been lifted.</p>
+        <p style="font-size:14px;line-height:1.6;color:#334155">${restored === 'active' ? 'You can trade again — activate your position from the dashboard to start receiving fills.' : 'Your account is back in onboarding; finish the remaining steps and we’ll review it.'}</p>
+        <p><a href="https://www.ntzs.co.tz/simplefx/dashboard" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px">Open SimpleFX</a></p>
+      `),
+    ).catch((e) => console.error('[lp unsuspend email]', e))
+  }
+  revalidatePath(`/backstage/simplefx/${id}`)
+  revalidatePath('/backstage/simplefx')
+}
+
 async function requestKybInfoAction(formData: FormData) {
   'use server'
   await requireAnyRole(['super_admin'])
@@ -708,6 +817,57 @@ export default async function LpDetailPage({
                 {lp.isActive ? 'Deactivate' : 'Activate'}
               </SubmitButton>
             </form>
+          </div>
+
+          {/* Account standing — distinct from Position above: that one is about
+              where the capital sits, this one about whether they may trade. */}
+          <div className={`rounded-2xl border p-6 space-y-3 ${
+            lp.status === 'suspended' ? 'border-red-500/30 bg-red-500/[0.04]' : 'border-white/10 bg-zinc-950'
+          }`}>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Standing</h2>
+            {lp.status === 'suspended' ? (
+              <>
+                <p className="text-xs leading-relaxed text-red-300">
+                  Suspended. This account is excluded from routing, pricing and readiness, and cannot go live.
+                </p>
+                {lp.isActive && (
+                  <p className="text-[11px] leading-relaxed text-amber-300/80">
+                    Its capital is still in the solver pool. Suspension does not move funds — only the LP can return
+                    them, from their own Rebalance screen.
+                  </p>
+                )}
+                <form action={unsuspendLpAction}>
+                  <input type="hidden" name="id" value={lp.id} />
+                  <SubmitButton
+                    pendingText="Reinstating..."
+                    className="rounded-xl bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
+                  >
+                    Lift suspension
+                  </SubmitButton>
+                </form>
+              </>
+            ) : (
+              <form action={suspendLpAction} className="space-y-2">
+                <input type="hidden" name="id" value={lp.id} />
+                <p className="text-xs leading-relaxed text-zinc-500">
+                  Stops fills and blocks go-live. Funds are untouched
+                  {lp.isActive ? ' — this LP still has capital in the pool, which only they can return.' : '.'}
+                </p>
+                <textarea
+                  name="note"
+                  rows={2}
+                  required
+                  placeholder="Reason (recorded in the audit log and emailed to them)"
+                  className="w-full resize-none rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-red-500/40 focus:outline-none"
+                />
+                <SubmitButton
+                  pendingText="Suspending..."
+                  className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 disabled:opacity-40"
+                >
+                  Suspend account
+                </SubmitButton>
+              </form>
+            )}
           </div>
 
           {/* Sandbox test access */}

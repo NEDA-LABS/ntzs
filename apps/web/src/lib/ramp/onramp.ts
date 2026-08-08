@@ -9,6 +9,7 @@ import { executeSwap, selectLPForSwap, SWAP_TOKENS, type LPConfig } from '@/lib/
 import { initiatePayment } from '@/lib/psp'
 import { queuePartnerWebhook } from '@/lib/waas/partner-webhooks'
 import { getOrCreateSettlementWallet, getSettlementSigner } from '@/lib/ramp/wallet'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 const PRODUCTION_URL = 'https://www.ntzs.co.tz'
 const webhookBase = () => process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || PRODUCTION_URL
@@ -133,7 +134,7 @@ export async function runOnrampSwapLeg(settlementId: string): Promise<{ ok: bool
   }
 
   // Pick an LP for nTZS→USDC.
-  const active = await db.select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps }).from(lpAccounts).where(eq(lpAccounts.isActive, true))
+  const active = await db.select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps }).from(lpAccounts).where(routableLp())
   if (active.length === 0) { await setStatus(settlementId, { status: 'failed', error: 'no active LP' }); return { ok: false, status: 'failed', error: 'no active LP' } }
   const configs: LPConfig[] = active.map((l) => ({ id: l.id, bidBps: l.bidBps ?? 120, askBps: l.askBps ?? 150 }))
   const lastRows = await db.select({ lpId: lpFills.lpId, lastAt: sql<Date>`max(${lpFills.createdAt})` }).from(lpFills).where(inArray(lpFills.lpId, configs.map((c) => c.id))).groupBy(lpFills.lpId)

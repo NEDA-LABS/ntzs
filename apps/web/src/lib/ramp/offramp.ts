@@ -15,6 +15,7 @@ import { getSettlementSigner } from '@/lib/ramp/wallet'
 import { type RampOfframpDestination } from '@/lib/ramp/quote'
 import { estimateSpendFee } from '@/lib/psp/selcom-fees'
 import { dispatchSpendPayment } from '@/lib/waas/spend-dispatch'
+import { routableLp } from '@/lib/fx/lp-eligibility'
 
 const APP_URL = process.env.NTZS_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
@@ -57,7 +58,7 @@ async function resolveRampUserWallet(settlementAddress: string): Promise<{ userI
 
 async function pickLpId(): Promise<string | null> {
   const { db } = getDb()
-  const active = await db.select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps }).from(lpAccounts).where(eq(lpAccounts.isActive, true))
+  const active = await db.select({ id: lpAccounts.id, bidBps: lpAccounts.bidBps, askBps: lpAccounts.askBps }).from(lpAccounts).where(routableLp())
   if (active.length === 0) return null
   const configs: LPConfig[] = active.map((l) => ({ id: l.id, bidBps: l.bidBps ?? 120, askBps: l.askBps ?? 150 }))
   const lastRows = await db.select({ lpId: lpFills.lpId, lastAt: sql<Date>`max(${lpFills.createdAt})` }).from(lpFills).where(inArray(lpFills.lpId, configs.map((c) => c.id))).groupBy(lpFills.lpId)
