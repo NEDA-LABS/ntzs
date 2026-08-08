@@ -9,6 +9,7 @@ import { BASE_RPC_URL, NTZS_CONTRACT_ADDRESS_BASE, MINTER_PRIVATE_KEY } from '@/
 import { burnRequests, users, wallets } from '@ntzs/db'
 import { writeAuditLog } from '@/lib/audit'
 import { formatDateTimeEAT } from '@/lib/format-date'
+import { burnAgeing, isHeld, orderBurnQueue, summariseBurnQueue } from '@/lib/burns/ageing'
 import { SAFE_BURN_THRESHOLD_TZS } from '@/lib/approvals/thresholds'
 
 const NTZS_CONTRACT_ADDRESS = NTZS_CONTRACT_ADDRESS_BASE
@@ -382,16 +383,49 @@ export default async function BurnsPage() {
     .orderBy(desc(burnRequests.createdAt))
     .limit(200)
 
+  // A queue ordered by arrival is a log; ordered by what is waiting, it is a
+  // work list. Three withdrawals once sat six weeks below the fold here.
+  const now = new Date()
+  const queue = orderBurnQueue(requests)
+  const summary = summariseBurnQueue(requests, now)
+
   return (
     <div className="min-h-screen">
       <div className="border-b border-white/10 bg-zinc-950/50">
         <div className="px-8 py-6">
           <h1 className="text-2xl font-bold text-white">Burns</h1>
           <p className="mt-1 text-sm text-zinc-400">Create and execute user-tied burn requests (withdrawals)</p>
+          {summary.held > 0 && (
+            <p className="mt-2 text-sm text-zinc-300">
+              <span className="font-semibold text-white">{summary.held}</span> waiting on us ·{' '}
+              <span className="font-mono">{summary.heldTzs.toLocaleString()} TZS</span> owed
+              {summary.oldest && (
+                <>
+                  {' '}· longest wait <span className="font-semibold">{summary.oldest.label}</span>
+                </>
+              )}
+            </p>
+          )}
         </div>
       </div>
 
       <div className="p-8 space-y-8">
+        {summary.needsAttention > 0 && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-6 py-4">
+            <p className="text-sm font-semibold text-rose-200">
+              {summary.needsAttention} withdrawal{summary.needsAttention === 1 ? '' : 's'} ha
+              {summary.needsAttention === 1 ? 's' : 've'} been waiting more than three days
+              {summary.oldest?.tier === 'overdue' && ` — the longest for ${summary.oldest.label}`}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-rose-200/80">
+              Each one is a person who asked for their money and has not received it. Approve it, reject it with a
+              reason, or contact them — but it should not simply keep waiting. A request above the sandbox
+              per-transaction limit cannot be approved as it stands and needs the customer told, not left in the
+              queue. They are listed first below.
+            </p>
+          </div>
+        )}
+
         <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-6">
           <h2 className="text-lg font-semibold text-white">Create burn request</h2>
           <form action={createBurnRequestAction} className="mt-4 grid gap-4 md:grid-cols-4">
@@ -454,7 +488,7 @@ export default async function BurnsPage() {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((r) => (
+                {queue.map((r) => (
                   <tr key={r.id} className="border-b border-white/10">
                     <td className="px-6 py-4">
                       <div className="text-sm text-white">{r.userEmail}</div>
@@ -472,6 +506,28 @@ export default async function BurnsPage() {
                       <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-zinc-300">
                         {String(r.status).replace(/_/g, ' ')}
                       </span>
+                      {/* Only held rows age: a completed burn's elapsed time is
+                          history, not a debt. */}
+                      {isHeld(String(r.status)) &&
+                        (() => {
+                          const age = burnAgeing(r.createdAt, now)
+                          const style =
+                            age.tier === 'overdue'
+                              ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                              : age.tier === 'stale'
+                                ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                : age.tier === 'ageing'
+                                  ? 'border-white/10 bg-white/5 text-zinc-400'
+                                  : 'border-white/10 bg-white/5 text-zinc-500'
+                          return (
+                            <span
+                              className={`mt-1 block w-fit rounded-full border px-2 py-0.5 text-[11px] font-medium ${style}`}
+                              title={`Waiting since ${formatDateTimeEAT(r.createdAt)}`}
+                            >
+                              waiting {age.label}
+                            </span>
+                          )
+                        })()}
                     </td>
                     <td className="px-6 py-4">
                       {r.recipientPhone && (
